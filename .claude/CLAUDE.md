@@ -138,7 +138,7 @@ as a guarantee of the skill itself.
   groups its tasks and the groups are independent or weakly coupled, `writing-plans` may
   lay out a two-tier execution graph and `subagent-driven-development` fans wave-1 groups
   into sibling worktrees, capped at 2-3 at once — full mechanics in the
-  `parallel-group-execution` capability (`openspec/specs/parallel-group-execution/spec.md`)
+  `parallel-group-execution` capability (`docs/flow-specs/parallel-group-execution/spec.md`)
   and `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `apply` instruction. Additive:
   a plan with no independent groups behaves exactly as before.
 - Section 1 workflows still apply: the archive stage ingests what was learned into
@@ -152,13 +152,19 @@ as a guarantee of the skill itself.
 
 ## 3. Flow Documentation
 
-`openspec/specs/` is the authoritative statement of what the flow does — nine capabilities,
-listed in `README.md`. When behaviour and documentation disagree, the spec is right.
+`docs/flow-specs/` describes what the flow does — nine capabilities, listed in
+`docs/flow-specs/README.md`. These are **historical documents**: the archived specs the
+flow wrote about itself while it was being built. Nothing reads them at runtime, and they
+are never merged into a host project's `openspec/specs/`, which stays that project's own.
+Because they are historical they can drift; where a document there and the behaviour of
+`.claude/commands/opsx/` disagree, the command is right.
 
 `.claude/memory/concepts/opsx-workflow.md` explains *why* the flow is shaped the way it
 is — the incidents each guard was built against, and the approaches that were tried and
-dropped. It is cross-check material, never the spec: where the two disagree, the spec is
-right and the page is stale.
+dropped. Read alongside `docs/flow-specs/`, not as a substitute for it.
+
+Both are documentation of this flow. A host project's own live specifications go in
+`openspec/specs/`, written only by `/opsx:archive`, as described in Section 2.
 
 ## 4. Adopting This In A Host Project
 

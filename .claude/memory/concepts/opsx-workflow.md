@@ -1,9 +1,9 @@
 # OpenSpec + Superpowers Change Workflow
 
 The mechanics of the cycle — the five commands, the eight artifacts, the branch model —
-live in [`.claude/CLAUDE.md`](../CLAUDE.md) §5 and, normatively, in
-`openspec/specs/change-workflow-schema/`, `change-branch-isolation/` and
-`superpowers-availability-gate/`. Those are the source of truth and this page does not
+live in [`.claude/CLAUDE.md`](../CLAUDE.md) §5 and, in requirement form, in
+`docs/flow-specs/change-workflow-schema/`, `change-branch-isolation/` and
+`superpowers-availability-gate/` — historical documents, not live specs. This page does not
 restate them.
 
 This page carries what neither the specs nor git history explain: why the surface is shaped
@@ -340,7 +340,7 @@ change — not something to fold into whatever change happens to notice the prob
 ## The review stage (added by `ai-code-review-gate`, archived 2026-08-17)
 
 The cycle is five commands and eight artifacts: `/opsx:review` and `review.md` sit between
-verify and archive. Mechanics live in `openspec/specs/ai-review-flow-stage/` and
+verify and archive. Mechanics live in `docs/flow-specs/ai-review-flow-stage/` and
 `.claude/CLAUDE.md` §5; this section carries what those cannot.
 
 **The staleness anchor is the stage's whole value, and it will re-run the review.** The record

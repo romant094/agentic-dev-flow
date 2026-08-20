@@ -17,8 +17,8 @@
 #   4. Set the CI variables listed under "Required CI variables" below.
 #
 # The behaviour this fragment implements is specified in
-# openspec/specs/ai-review-ci-gate/spec.md (the gate) and
-# openspec/specs/ci-unit-testing/spec.md (which stage runs which tests).
+# docs/flow-specs/ai-review-ci-gate/spec.md (the gate) and
+# docs/flow-specs/ci-unit-testing/spec.md (which stage runs which tests).
 #
 # Required CI variables:
 #   AI_CLAUDE_INSPECT_ENABLED — the gate runs only when this is exactly "true"

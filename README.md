@@ -10,8 +10,12 @@ application code — only the commands, specs, schema, guard scripts, review har
 fragment that make the flow run.
 
 Start with the cycle table below for what the flow does. Read `.claude/CLAUDE.md` for the
-agent-facing rules, `openspec/specs/` for what each stage is contractually required to do,
+agent-facing rules, `docs/flow-specs/` for what each stage is contractually required to do,
 and `.claude/memory/concepts/opsx-workflow.md` for *why* each guard exists.
+
+`docs/flow-specs/` is historical documentation — the specs the flow wrote about itself as
+it was built. Nothing reads them at runtime, and they are never merged into a host
+project's `openspec/specs/`, which ships empty and stays that project's own.
 
 ## The cycle
 
@@ -47,8 +51,12 @@ path in, and a developer merges it.
   mr.mjs                                merge request create/update/undraft plumbing
   *.test.mjs                            node:test unit tests for all of the above
 
+docs/flow-specs/                        HISTORICAL — the nine capabilities that define the
+                                        flow, as archived specs. Documentation only.
+
 openspec/
-  specs/                                the nine capabilities that define the flow
+  specs/                                EMPTY — your project's own capabilities land here,
+                                        written only by /opsx:archive
   schemas/sdd-plus-superpowers/         artifact order, per-stage instructions, templates
   config.yaml                           TEMPLATE — replace the context and rules
   changes/                              where a change lives while it is in flight
@@ -64,7 +72,7 @@ infra/claude/
 .lefthook.json                          pre-commit: the English guard
 ```
 
-The nine capabilities under `openspec/specs/`: `change-workflow-schema` (the cycle and its
+The nine capabilities under `docs/flow-specs/`: `change-workflow-schema` (the cycle and its
 artifacts), `change-branch-isolation` (branch and worktree lifecycle),
 `merge-request-lifecycle` (who pushes and undrafts, and when), `ci-unit-testing` (which
 stage runs which tests), `ai-review-flow-stage` (the local review stage),

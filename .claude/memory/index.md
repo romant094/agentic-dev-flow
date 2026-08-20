@@ -11,8 +11,8 @@ directory.
 
 - [concepts/opsx-workflow.md](concepts/opsx-workflow.md) — why the OpenSpec + Superpowers
   change workflow is shaped the way it is: the reasoning, the incidents behind each guard,
-  and the decisions that were tried and dropped. Cross-check material for the specs under
-  `openspec/specs/`, never a substitute for them.
+  and the decisions that were tried and dropped. Read alongside the historical flow specs
+  under `docs/flow-specs/`.
 
 ## Concepts
 
