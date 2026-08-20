@@ -1,0 +1,11 @@
+{
+	"pre-commit": {
+		"parallel": true,
+		"commands": {
+			"english": {
+				"glob": "*.{md,mjs,yaml,yml}",
+				"run": "node .claude/scripts/check-english.mjs {staged_files}"
+			}
+		}
+	}
+}

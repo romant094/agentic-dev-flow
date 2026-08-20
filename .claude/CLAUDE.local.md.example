@@ -1,0 +1,13 @@
+# Local Overrides — example
+
+Copy to `.claude/CLAUDE.local.md`. Gitignored, optional, personal: it never reaches
+another developer's session, and it wins over the shared `CLAUDE.md` where the two
+conflict. A rule the team needs belongs in `CLAUDE.md` instead, where it gets reviewed.
+
+## My local environment
+
+Describe what is already running, so the agent does not try to start it:
+
+| Component | Where |
+|---|---|
+| <service> | <url or port> |

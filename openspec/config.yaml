@@ -1,0 +1,98 @@
+schema: sdd-plus-superpowers
+
+# TEMPLATE — the `context` block below is a placeholder. The origin project's
+# description was intentionally not copied: it is project knowledge, not flow.
+# Replace it with the host project's own overview before running the flow.
+#
+# What belongs here: what the project is, its module/package layout, its stack,
+# its architectural invariants, its deployment shape, and the conventions every
+# change must respect. The propose and design stages read this file, so anything
+# omitted here is something the agent will not know.
+context: |
+  # <Project name>
+
+  <One paragraph: what this project is and who uses it.>
+
+  ## Layout
+  - `<path>/` → `<package-name>` — <what it is>
+
+  ## Stack
+  <Languages, frameworks, test runner, package manager, linter/formatter.
+  Name the linter explicitly — agents guess wrong otherwise.>
+
+  ## Architectural invariants
+  - <Rules a change must not break. Be specific; these are the ones the design
+    stage is checked against.>
+
+  ## Deployment
+  <How it ships, and what a change must account for because of that.>
+
+  ## Conventions
+  - All repository artifacts are written in English.
+  - Conventional Commits: `type(scope): description`.
+  - Simplicity first: minimum code that solves the problem, no speculative
+    abstractions, no unrequested configurability.
+  - Surgical changes: touch only what the change requires.
+  - Dependency installs are never run inside a worktree, except when the change
+    itself touches the dependency manifests or the ORM schema — then they run
+    there, so that code generation cannot write into the main checkout. A
+    dependency update is otherwise a separate task and a separate merge request.
+  - Match the agent to the work: dispatch each unit of work at the cheapest
+    capability level that can execute it, a middle level for integration and
+    debugging, and the highest available for architecture, adjudication and
+    whole-branch review. State the chosen level in the dispatch. Never name a
+    model or vendor — the flow runs on more than one agent runtime.
+  - Never run `openspec update`. It regenerates `.claude/commands/opsx/` and
+    `.claude/skills/openspec-*/` from the CLI's templates, deleting this
+    project's availability gate, branch model, worktree lifecycle and
+    provisioning decision, and restoring the removed `/opsx:explore`.
+
+  ## Reference material
+  Deeper background lives in `.claude/memory/` — `system.md` (overview),
+  `concepts/` (patterns, protocols, workflows), `entities/` (modules,
+  components, services), indexed by `.claude/memory/index.md`. Read it for
+  context; do not copy it into specs.
+
+# The `rules` blocks below are the flow-invariant instructions, kept from the
+# origin project because they constrain how each artifact is written rather than
+# what the project is. Add project-specific rules alongside them; the commented
+# examples show the shape the origin project used.
+rules:
+  brainstorm:
+    - Cover 2-3 alternatives with their trade-offs, and say why each was not
+      chosen.
+    - Do not write the design document here — brainstorm.md records the decision
+      and the discarded options; design.md explains how.
+    - Before proposing anything, read `.claude/memory/index.md` and the pages it
+      points at for this area, then read the code that area actually contains.
+      Name what you read.
+    - Check the developer's stated approach against both. Then either agree,
+      citing the evidence that supports it, or propose a better alternative,
+      citing what in the memory or the code makes it better. Agreeing is a valid
+      outcome — do not manufacture an alternative to look thorough.
+    - Never disagree on a general principle alone. A disagreement cites something
+      you read.
+    - Where the memory and the code disagree, the code is the fact and the memory
+      is stale. Say which page is stale so it can be fixed.
+    # - Name the concrete module and route the idea would land in, or state
+    #   explicitly that the change touches no runtime code.
+  proposal:
+    - Use kebab-case capability names scoped to the domain, not to the UI
+      screen (e.g. `firmware-catalog`, not `firmware-page`).
+    # - State which runtime modes the change covers.
+    # - Call out packaging impact when the change adds a runtime dependency,
+    #   background service, or on-disk state.
+  specs:
+    - Write behaviour in terms of the system's own contracts and operations,
+      never in terms of specific UI widgets.
+    # - Where validation is specified, state which shared schema module owns the
+    #   rule, so server and client cannot diverge.
+  design:
+    - Name the concrete module and route the change lands in.
+    - Prefer extending an existing module over introducing a new abstraction;
+      justify any new abstraction explicitly.
+    # - State where new validation schemas, generated keys, and data models go.
+  tasks:
+    - Order tasks so that a shared dependency is delivered before the packages
+      that consume it.
+    # - Include a schema migration task whenever the data model changes.

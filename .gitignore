@@ -1,0 +1,17 @@
+node_modules
+
+# Secrets. The tracked template is the only env file that belongs in git.
+.env
+.env.*
+!.env.example
+
+# Agent worktrees and local-only instruction overrides
+.claude/worktrees
+.claude/CLAUDE.local.md
+.claude-reports/
+
+# Review artifact produced by infra/claude/review.sh
+claude-review.md
+
+.DS_Store
+.idea

@@ -1,0 +1,33 @@
+{
+	"enabledPlugins": {
+		"superpowers@claude-plugins-official": true
+	},
+	"permissions": {
+		"allow": [
+			"Read(.claude/memory/**)",
+			"Edit(.claude/memory/**)",
+			"Bash(git *)"
+		],
+		"deny": [
+			"Bash(openspec update)",
+			"Bash(openspec update *)",
+			"Bash(npx openspec update)",
+			"Bash(npx openspec update *)",
+
+			"Bash(git push --force *)",
+			"Bash(git push -f *)",
+			"Bash(git push --force-with-lease *)",
+			"Bash(git reset --hard *)",
+			"Bash(git clean -fd *)",
+
+			"Read(./secrets/**)",
+			"Read(**/*.pem)",
+			"Read(**/*.key)",
+			"Read(**/*.p12)",
+
+			"Bash(rm -rf *)",
+			"Bash(sudo *)",
+			"Bash(chmod 777 *)"
+		]
+	}
+}
