@@ -76,8 +76,6 @@ fi
 # Available models: https://platform.claude.com/docs/en/about-claude/models/overview
 echo "[claude-review] model=${CLAUDE_MODEL} max_tokens=${CLAUDE_MAX_TOKENS} thinking=${CLAUDE_THINKING} effort=${CLAUDE_EFFORT}" >&2
 
-rm -f .env ~/.ssh/id_rsa
-
 # All temp files cleaned up unconditionally on exit
 MR_DIFF_JSON=$(mktemp)
 MR_DIFF=$(mktemp)
