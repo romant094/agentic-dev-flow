@@ -142,9 +142,8 @@ persists past apply.
 
 Provisioning SHALL be decided at `/opsx:apply`, when the change's file list is known. When
 the change touches `prisma/`, `package.json` or `package-lock.json`, `npm ci` SHALL run
-inside the worktree. Otherwise `node_modules`, `apps/client/node_modules`,
-`apps/server/node_modules`, `packages/shared/node_modules` and the root `.env` SHALL be
-symlinked from the main checkout. The worktree created at propose contains only markdown
+inside the worktree. Otherwise the root `node_modules`, each workspace package's own
+`node_modules` and the root `.env` SHALL be symlinked from the main checkout. The worktree created at propose contains only markdown
 and SHALL be provisioned with nothing.
 
 #### Scenario: Change touches the Prisma schema

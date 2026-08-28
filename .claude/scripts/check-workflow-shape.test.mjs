@@ -224,6 +224,26 @@ test('a correct verify.md section count is not reported', () => {
   assert.equal(ok, true)
 })
 
+// Regression guard for the eleven-checks shape this repository actually has: a template
+// grown to eleven `## N.` sections while the verify.md declaration sentence still says
+// nine must name both stale sites, not just one, and expect the derived count (eleven).
+test('a template grown to eleven sections against a verify.md sentence still saying nine is reported at both sites', () => {
+  const elevenSectionTemplate = Array.from({ length: 11 }, (_, i) => `## ${i + 1}. Section ${i + 1}`)
+    .concat('## Overall Decision')
+    .join('\n')
+  const io = fake(
+    baseline({
+      [TEMPLATE]: elevenSectionTemplate,
+      [VERIFY_MD]: verifyMd('nine', 'nine')
+    }),
+    baseDirs
+  )
+  const { ok, findings } = checkWorkflowShape(io)
+  assert.equal(ok, false)
+  assert.ok(findings.some((f) => f.site === 'verify-md-sections' && f.expected === 11 && f.actual === 9))
+  assert.ok(findings.some((f) => f.site === 'verify-md-checks' && f.expected === 11 && f.actual === 9))
+})
+
 // --- Missing anchors ---
 //
 // Every declaration site finds its anchor by pattern. A site that returns nothing when its

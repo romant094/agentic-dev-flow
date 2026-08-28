@@ -51,36 +51,32 @@ Implement tasks from an OpenSpec change.
    If a change name was given, use it.
 
    Otherwise build the candidate list from two sources, because neither one is complete
-   on its own.
+   on its own: read either alone and the list is short by exactly the change you are
+   looking for. Stated in full in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s
+   `resolve` instruction.
 
-   `openspec list` reads `openspec/changes/` from the repository root of the current
-   working directory, and this session most likely starts in the main checkout, whose
-   branch is `develop` or an unrelated feature branch. `origin/develop` carries no
-   `openspec/changes/` directory at all — a change directory is committed only on its own
-   feature branch, by `/opsx:propose` — so a change that has a worktree is usually
-   invisible from here. And a change the developer chose to author in place has no
-   worktree at all, so it is invisible to `git worktree list`. Read both, always:
+   Run both:
 
    ```bash
    git worktree list
    openspec list --json
    ```
 
-   Every `.claude/worktrees/<TASK-ID>` entry is a change in flight. Its branch name
-   usually carries the change's short description — `<type>/<TASK-ID>/<short-description>`
-   — but `/opsx:propose` lets the developer edit the name at the confirmation prompt and
-   forbids validating it, so treat a name derived from a branch as a guess to be checked,
-   never as the change. Check it against the change the worktree actually holds:
+   Every `.claude/worktrees/<TASK-ID>` entry is a change in flight, named provisionally by
+   its branch. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `resolve` instruction.
+
+   Then list what that worktree actually holds:
 
    ```bash
    git -C <worktree path> ls-tree --name-only HEAD openspec/changes/ \
      | sed 's|.*/||' | grep -v '^archive$'
    ```
 
-   Each remaining line is a change name. `openspec/changes/archive/` is excluded because it
-   holds past changes rather than being one: `openspec status --change archive` answers
-   without error, so nothing downstream would reject it, and every branch cut from
-   `origin/develop` carries it once any change has been archived.
+   Each remaining line is a change name; `openspec/changes/archive/` is excluded because it
+   holds past changes rather than being one, and offering it would let a past change be
+   selected as a live one. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `resolve` instruction.
 
    If that returns exactly one name, offer it — it is authoritative and the branch name is
    not. If it returns several, offer them all for that worktree. If it returns nothing, or
@@ -134,9 +130,8 @@ Implement tasks from an OpenSpec change.
 
    Take the change this workspace holds; if it holds more than one, ask which with the
    **AskUserQuestion tool**. Announce `Using change: <name>` before the first
-   `openspec status --change` call, and never pass a name derived only from a branch: a
-   branch renamed at the propose prompt yields a name no change answers to, and the
-   status call would fail on an unknown change with the answer sitting in this directory.
+   `openspec status --change` call. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `resolve` instruction.
 
    If `git worktree list` shows no worktree for this change, it was authored in place
    on the current branch (the stay-on-the-current-branch case). Check which branch that
@@ -147,10 +142,10 @@ Implement tasks from an OpenSpec change.
    ```
 
    If it is `develop`, STOP. Do not implement here and do not commit here: every commit
-   this command's executor produces would land on `develop` directly, and all work
-   reaches `develop` through a merge request, never a direct commit. Say so plainly and
-   ask the developer to check out the change's branch, or to name the worktree it lives
-   in.
+   this command's executor produces would land on `develop` directly, bypassing the merge
+   request every change is integrated through. Stated in full in `.claude/CLAUDE.md` §5.
+   Say so plainly and ask the developer to check out the change's branch, or to name the
+   worktree it lives in.
 
    Otherwise say which branch you are on, by name, so the choice is on the record, and
    continue here without provisioning.
@@ -161,10 +156,10 @@ Implement tasks from an OpenSpec change.
    change will create or modify, and `plan.md` is guaranteed to exist here because
    apply is blocked without it.
 
-   Do NOT decide from `git diff --name-only origin/develop`. At apply time nothing
-   is implemented yet, so that diff holds only the change's own markdown and would
-   route every change to the symlink branch — including the ones that must not take
-   it.
+   Do NOT decide from `git diff --name-only origin/develop` — at apply time that diff
+   holds only the change's own markdown, so it routes every change to the symlink
+   branch. Stated in full in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `apply`
+   instruction.
 
    The schema's apply instruction describes this same provisioning. It is performed
    here, once. When you reach it in the instruction text, treat it as already done.
@@ -185,7 +180,7 @@ Implement tasks from an OpenSpec change.
 
      ```bash
      MAIN=$(git rev-parse --path-format=absolute --git-common-dir)/..
-     for d in node_modules apps/client/node_modules apps/server/node_modules packages/shared/node_modules; do
+     for d in node_modules <this repository's other top-level packages>/node_modules; do
        ln -s "$MAIN/$d" "$d"
      done
      ln -s "$MAIN/.env" .env
@@ -193,10 +188,12 @@ Implement tasks from an OpenSpec change.
 
      There is one `.env`, at the repository root.
 
-   `npm install` and `npm ci` are never run inside a worktree outside the first case.
-   If implementation turns out to need a package that is not installed, STOP and
-   report it as separate work — a dependency update is its own task and its own
-   merge request.
+   Never run `npm install` or `npm ci` inside a worktree outside the first case — an
+   install there rewrites the main checkout's dependency tree through the symlinks below.
+   Stated in full in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `apply`
+   instruction. If implementation turns out to need a package that is not
+   installed, STOP and report it as separate work — a dependency update is its own task
+   and its own merge request.
 
 5. **Check status to understand the schema**
    ```bash
@@ -220,16 +217,9 @@ Implement tasks from an OpenSpec change.
    - Dynamic instruction based on current state
 
    **Handle states:**
-   - If `state` is `"blocked"`, the change is missing a required artifact — in this
-     workflow that is nearly always `plan.md`. Name the missing artifact and stop.
-
-     The way forward is to write it: `plan.md` comes from
-     `superpowers:writing-plans`, run against this change's `tasks.md`. Re-running
-     `/opsx:apply` will not create it.
-
-     The CLI may print advice naming `openspec-continue-change`. Ignore it — that
-     skill is not installed in this project by design. Do not surface it to the user
-     as a suggestion.
+   - If `state` is `"blocked"`, the change is missing a required artifact — name it and
+     stop, because apply cannot execute a plan that does not exist. Stated in full in
+     `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `apply` instruction.
    - If `state: "all_done"`: congratulate, suggest archive
    - Otherwise: proceed to implementation
 
@@ -250,6 +240,54 @@ Implement tasks from an OpenSpec change.
 
 9. **Implement**
 
+   **Context discipline applies throughout this step.** Delegate any question needing more
+   than one file opened, and keep raw output out of the orchestrator's context — an
+   orchestrator that reads instead of delegating degrades its own reasoning. Stated in full
+   in `.claude/CLAUDE.md` §5, "The orchestrator delegates rather than reads".
+
+   **Dispatch contract.** Every prompt carries four things: the task id, the files in
+   scope, the question, and the shape the answer must take. A continuation sentence is not
+   a prompt — a fresh agent holds none of the prior context and will spend output tokens
+   rediscovering that it was given none. When earlier work needs one more step, send it to
+   the agent that already holds the context via `SendMessage`, rather than dispatching a
+   new one. A read-only question about code on the current branch gets no
+   `isolation: worktree`: it writes nothing, and the worktree costs setup and disk for
+   nothing. A read-only agent's verdict has a fixed, bounded form; when a verdict does not
+   answer the question, issue a second read-only dispatch with a wider required shape.
+
+   **Recite before solving.** An implementer states its task's `**Files:**`,
+   `**Interfaces:**` and acceptance criteria before its first edit — an implementer that
+   has not restated its own scope solves against the plan as a whole and wanders. Stated
+   in full in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `apply` instruction.
+
+   **The pre-flight symbol scan remains, as a backstop.** Resolving every symbol, file and
+   path a task names now happens at plan authoring time (see the `plan` instruction in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`). Apply's own scan for the same
+   class of issue is kept rather than removed, and is expected to report zero: a finding
+   from it is a finding against plan authoring, not against the plan's executor.
+
+   **Fan-out is mandatory, not discretionary.** When `plan.md`'s execution graph names two
+   or more wave-1 groups eligible to share a wave, run them in sibling worktrees up to the
+   2-3 cap. Running them serially is a deliberate deviation: record one ledger line naming
+   the groups and the reason. No verify check gates this — a gate firing after the work
+   already ran serially reports history rather than preventing it.
+
+   **The execution ledger, and the handoff threshold.** Before invoking
+   `subagent-driven-development`, create the ledger at
+   `.superpowers/sdd/<change-name>/progress.md` with its identity as the first line, and
+   record dispatches, deviations, debt and sessions in it — `subagent-driven-development`
+   and `.claude/scripts/check-sdd-workspace.mjs` both read that first line, and a change
+   spanning several sessions is otherwise analysable only in fragments. At the handoff
+   threshold, finish the current task group, write `## Handoff` and stop for a fresh
+   session; never mid-group, never mid-dispatch, or the resumed session cannot come up
+   from the ledger alone. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `apply` instruction.
+
+   Record one `## Deviations` line for every deliberate departure from a rule in this
+   command — a named wave not fanned out, a task meeting the split rule and not split, a
+   multi-file question answered without delegating — with its reason. A rule correctly
+   judged inapplicable is not a deviation and is not recorded as one.
+
    Do not implement the tasks here. Invoke
    `superpowers:subagent-driven-development` and let it execute `plan.md`
    task by task. It brings a fresh implementer per task and a code review
@@ -265,8 +303,8 @@ Implement tasks from an OpenSpec change.
    task should be test-driven and its plan text does not say so, fix the
    plan text first — do not assume the executor adds the cycle.
 
-   If that skill cannot be invoked, STOP and report which skill is missing.
-   Never do a missing skill's work manually.
+   If that skill cannot be invoked, STOP and report which skill is missing. Stated in full
+   in `.claude/CLAUDE.md` §5.
 
    **After each task group merges, push the change branch:**
 
@@ -274,10 +312,9 @@ Implement tasks from an OpenSpec change.
    git push
    ```
 
-   Run this in the main change worktree, never in a group worktree — group branches merge
-   back into the change branch here, so this point is reached identically whether groups ran
-   serially or in parallel waves. The push is a backup and a progress signal; the draft
-   merge request runs no pipeline, so it gates nothing.
+   Run this in the main change worktree, never in a group worktree — a push from a group
+   worktree pushes the group branch instead of the change branch. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `apply` instruction.
 
    **Once `subagent-driven-development` has returned** (all tasks complete, all wave groups
    merged, and its own final whole-implementation review already run), tick every completed
@@ -285,6 +322,15 @@ Implement tasks from an OpenSpec change.
    this per task, but control leaves this command while that skill runs and returns here, so
    this is the point where the ticking actually gets done — and `/opsx:verify` check 2 fails
    on an unticked box, which is where the omission surfaces otherwise.
+
+   **Then issue the code reuse sweep — once, over the merged branch, before the suite
+   run.** Stated in full in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `apply`
+   instruction.
+
+   **Apply does not conclude while a sweep finding is unresolved** — a confirmed
+   duplicate is work this branch still owes, so it is resolved here and not deferred to
+   the merge request. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `apply` instruction.
 
    Then run the whole suite:
 
@@ -316,8 +362,11 @@ Implement tasks from an OpenSpec change.
    how the previous whole-suite gate came to be overridden by hand.
 
    Write the result to `<changeRoot>/.apply-test-record.md` exactly as before — commit SHA,
-   packages, and the real output including the `Cached: 0 cached` line — and commit it
-   alongside the implementation work it documents.
+   packages, and the real output including the `Cached: 0 cached` line. Commit it as
+   apply's final commit — after every checkbox is ticked and after any documentation
+   commit. Verify's staleness scan reads the commits after this record; writing it
+   earlier leaves a non-empty range that the scan reports as a finding about the work
+   the record was meant to cover.
 
    A failure that is not pre-existing on `origin/develop` is treated exactly as apply
    treats any other implementation issue, wherever in the suite it surfaced: pause and

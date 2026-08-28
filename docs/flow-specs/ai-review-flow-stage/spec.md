@@ -110,6 +110,10 @@ finding and the file it names — not the review text, and not the other finding
 in different files MAY be dispatched concurrently; findings in the same file MUST be
 serialised.
 
+Each fix subagent MUST state, with its fix, what happens if the code it added fails. That
+statement is part of the fix's output, not a comment in the source, and it exists because
+the fix is the only participant that knows what it assumed.
+
 MEDIUM and LOW findings SHALL be recorded and MUST NOT trigger a fix round, matching the
 thresholds the CI gate applies.
 
@@ -128,12 +132,20 @@ thresholds the CI gate applies.
 - **WHEN** the reviewer reports MEDIUM findings and no CRITICAL or HIGH
 - **THEN** no fix subagent is dispatched and the findings are recorded as non-blocking
 
+#### Scenario: A fix adds a fallback path
+
+- **WHEN** a fix subagent resolves a finding by adding a fallback for a call that may fail
+- **THEN** its output states what happens when that fallback itself fails
+
 ### Requirement: Later rounds re-review only the fixes, and rounds are capped
 
 After a fix round the stage SHALL send the reviewer only the diff of the fixes together
-with the list of findings those fixes were meant to close. Re-reviewing the whole branch
-diff each round costs as much as the first review and buys a regression check that the CI
-review already performs against the full merge request diff.
+with the list of findings those fixes were meant to close, and the failure-mode statement
+each fix produced. The re-review SHALL check that stated failure mode rather than
+rediscovering it: two of three permitted rounds in the measured session went to defects in
+round one's own fix, which the fix itself was best placed to have named. Re-reviewing the
+whole branch diff each round costs as much as the first review and buys a regression check
+that the CI review already performs against the full merge request diff.
 
 The stage SHALL stop after three rounds and record BLOCKED. A loop that has not converged
 in three rounds is a design problem and MUST be handed to the developer rather than
@@ -150,6 +162,13 @@ retried, by the same reasoning as the round-limit breaker in
 - **WHEN** the second review of the fix diff reports a new HIGH finding
 - **THEN** a third round runs
 
+#### Scenario: The re-review checks the stated failure mode
+
+- **WHEN** a fix stated that its fallback silently returns an empty result when the
+  underlying call fails
+- **THEN** the re-review evaluates that stated behaviour rather than deriving the fix's
+  failure modes from scratch
+
 #### Scenario: Three rounds do not converge
 
 - **WHEN** the third round still reports a blocking finding
@@ -162,11 +181,19 @@ A fix subagent that judges a finding to be a false positive SHALL report that ju
 with its reasoning and MUST NOT act on it alone. The stage SHALL put the dismissal to the
 developer, and silence MUST NOT be treated as approval.
 
-On approval the stage SHALL place a `// review-ignore: CWE-XXX — reason` marker on the
-line the finding names, and SHALL record the reasoning in the change's review record. The
-marker is the durable half: both `review-prompt.md` and the CI review honour it, so a
+On approval the stage SHALL place a `// review-ignore: <key> — reason` marker on the line
+the finding names, and SHALL record the reasoning in the change's review record. The key
+SHALL be the one `infra/claude/review-prompt.md` defines for the finding's kind — a CWE
+identifier for a finding this stage produced, and `DUP` for the duplicate class the code reuse
+sweep produces, which is dismissed at apply. The marker syntax and its permitted keys are
+stated in full in that file and MUST NOT be restated here, for the same reason the prompt
+itself is not copied.
+
+The marker is the durable half: both `review-prompt.md` and the CI review honour it, so a
 dismissal accepted locally is also accepted on the merge request, and it travels with the
-code rather than with the session.
+code rather than with the session. That is also why a finding with no CWE needs a key of its
+own rather than a record in a session — a dismissal only one surface honours reproduces the
+local-pass-then-CI-block drift.
 
 #### Scenario: Fix subagent judges a finding to be a false positive
 
@@ -177,13 +204,19 @@ code rather than with the session.
 #### Scenario: Developer accepts the dismissal
 
 - **WHEN** the developer agrees the finding is a false positive
-- **THEN** a `// review-ignore` marker naming the CWE and the reason is added to the line,
-  and the dismissal with its reasoning is recorded in the review record
+- **THEN** a `// review-ignore` marker naming the finding's key and the reason is added to
+  the line, and the dismissal with its reasoning is recorded in the review record
 
 #### Scenario: Developer rejects the dismissal
 
 - **WHEN** the developer says the finding is real
 - **THEN** the finding is fixed and no suppression marker is added
+
+#### Scenario: The finding has no CWE
+
+- **WHEN** an accepted dismissal is for a finding class that carries no CWE identifier
+- **THEN** the marker carries the key the prompt defines for that class rather than being
+  omitted or recorded only in the session
 
 ### Requirement: The stage records a commit-anchored verdict
 

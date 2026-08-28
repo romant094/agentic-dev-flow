@@ -48,8 +48,9 @@ archive applies MODIFIED as a whole-text replacement.
 ## REMOVED Requirements
 
 <!--
-Removing an existing Requirement. MUST include Reason and Migration so the
-reviewer understands why it is being dropped and how existing callers should migrate.
+Removing an existing Requirement. MUST include Reason, Migration, and Code Disposition so the
+reviewer understands why it is being dropped, how existing callers should migrate, and where
+the behaviour's code went.
 -->
 
 ### Requirement: <!-- header being removed, exactly matching the existing spec -->
@@ -58,12 +59,18 @@ reviewer understands why it is being dropped and how existing callers should mig
 
 **Migration**: <!-- how existing callers/dependents should adjust -->
 
+**Code Disposition:** <!-- where the behaviour's code went: deleted, superseded by a named
+path, or deliberately left in place with a reason - and whether the old path is still
+reachable -->
+
 ---
 
 ## RENAMED Requirements
 
 <!--
-Renaming a Requirement header. Fixed format: FROM / TO with a code-fence header.
+Renaming a Requirement header. Fixed format: FROM / TO with a code-fence header, plus
+Code Disposition so the reviewer knows where the behaviour's code went and whether the old
+path is still reachable.
 If the name changes **and** the content changes, list the rename in RENAMED
 **and** write the full content again under MODIFIED using the **new** header.
 
@@ -72,3 +79,7 @@ archive apply order: RENAMED → REMOVED → MODIFIED → ADDED
 
 - FROM: `### Requirement: <Old Name>`
 - TO: `### Requirement: <New Name>`
+
+**Code Disposition:** <!-- where the behaviour's code went: deleted, superseded by a named
+path, or deliberately left in place with a reason - and whether the old path is still
+reachable -->

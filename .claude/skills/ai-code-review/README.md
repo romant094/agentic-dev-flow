@@ -31,8 +31,8 @@ looks for means editing that file — which changes CI at the same time, by cons
 ## Shape
 
 Review the filtered branch diff at the highest available capability → **validate the
-response before acting on it** → fix each CRITICAL/HIGH finding with a scoped subagent
-→ put any false-positive claim to the developer → re-review only the fix diff → stop
+response before acting on it** → fix each CRITICAL/HIGH finding with a scoped subagent that states its failure mode
+→ put any false-positive claim to the developer → re-review the fix diff and check its stated failure mode → stop
 after three rounds.
 
 A response missing its Executive Summary, its verdict or its structured findings stops

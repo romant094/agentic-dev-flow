@@ -1,8 +1,8 @@
 # Flow Specifications (historical reference)
 
-These nine documents describe how the agentic dev flow itself works. They were written by
-the flow, about the flow, while it was being built in the project it grew in — each one is
-the archived output of a real `propose → apply → verify → review → archive` cycle.
+These fourteen documents describe how the agentic dev flow itself works. They were written
+by the flow, about the flow, while it was being built in the project it grew in — each one
+is the archived output of a real `propose → apply → verify → review → archive` cycle.
 
 **They are documentation, not live specifications.** Nothing reads them at runtime. No
 command, skill or script resolves a path under `docs/flow-specs/`. They were moved out of
@@ -32,7 +32,7 @@ Because they are historical, they can drift from what the commands actually do. 
 document here and the behaviour of `.claude/commands/opsx/` disagree, **the commands are
 right** — the reverse of the rule that applied while these were live specs.
 
-## The nine capabilities
+## The fourteen capabilities
 
 | Capability | What it describes |
 |---|---|
@@ -44,4 +44,9 @@ right** — the reverse of the rule that applied while these were live specs.
 | [`ai-review-ci-gate`](ai-review-ci-gate/spec.md) | The merge request review gate in CI |
 | [`superpowers-availability-gate`](superpowers-availability-gate/spec.md) | Why every command stops without the plugin |
 | [`parallel-group-execution`](parallel-group-execution/spec.md) | Independent task groups in sibling worktrees |
-| [`flow-retrospective`](flow-retrospective/spec.md) | The token/time retro over a past session |
+| [`flow-retrospective`](flow-retrospective/spec.md) | The token/time retro over a past session, `adf-retro` |
+| [`apply-execution-ledger`](apply-execution-ledger/spec.md) | The durable record apply keeps of groups, sessions and dispatches |
+| [`code-reuse-sweep`](code-reuse-sweep/spec.md) | The one gate with repository read access, and the blocking maintainability class |
+| [`flow-regression-checks`](flow-regression-checks/spec.md) | The regression set behind verify check 11, one script per confirmed flow defect |
+| [`normative-text-single-source`](normative-text-single-source/spec.md) | The four surfaces a flow rule can live on, and the duplication check that enforces it |
+| [`spec-corpus-lint`](spec-corpus-lint/spec.md) | The manual, non-blocking lint over the whole `openspec/specs/` corpus |

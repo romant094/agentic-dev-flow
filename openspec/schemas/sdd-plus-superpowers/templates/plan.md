@@ -9,7 +9,7 @@
 
 **Tech Stack:** <!-- Key technologies -->
 
-## Execution Graph <!-- omit this section entirely if every task is one group / one wave -->
+## Execution Graph
 
 <!-- One row per group. "Files" is the union of that group's tasks' **Files:** entries. -->
 
@@ -35,8 +35,12 @@
 **Files:**
 - Create: <!-- path --> — <!-- what goes in it -->
 - Modify: <!-- path --> — <!-- which lines, and why -->
+<!-- A hardware smoke pass belongs to the group that lands the write path, never a single task at the end. -->
+<!-- A task narrowing a contract lists here the callers that construct the payloads it now rejects. -->
 
 **Interfaces:** <!-- signatures, types or contracts this task fixes; "none" is an answer -->
+
+**Level:** <!-- mechanical | integration | architecture -->
 
 - [ ] **Step 1: RED** — <!-- the failing test, and the command that runs it -->
 - [ ] **Step 2: GREEN** — <!-- the smallest change that passes it -->

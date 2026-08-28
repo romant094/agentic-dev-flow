@@ -159,6 +159,30 @@ or that the site's anchor could not be found. Incidental prose is not scanned.
 
 ---
 
+## 10. Out-Of-Plan Commits
+
+Commits on the change branch whose files lie outside every `### Task N`'s `**Files:**` block
+in `plan.md`. Allowlisted: `openspec/changes/**`, `.claude-reports/**`.
+
+- Commits checked: <!-- range -->
+- Out-of-plan commits: <!-- none, or one line per commit: sha, file, why it has no task -->
+- Result: <!-- PASS / FAIL -->
+
+---
+
+## 11. Flow Regression Set
+
+One deterministic script per confirmed flow defect, under `.claude/scripts/adf-regression/`.
+This is **one** check reporting per item, not one check per script: the shape check derives
+the check count from this template's sections, so a set growing by one check per incident
+would move that count on every future change.
+
+- Items run: <!-- count, or 0 -->
+- Per item: <!-- name, PASS/FAIL, incident, last fired -->
+- Result: <!-- PASS / FAIL — an empty set is a PASS -->
+
+---
+
 ## Overall Decision
 
 - [ ] ✅ PASS — proceed to archive (removing the worktree is archive's last step)

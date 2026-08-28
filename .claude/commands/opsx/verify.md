@@ -33,36 +33,32 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    If a change name was given, use it.
 
    Otherwise build the candidate list from two sources, because neither one is complete
-   on its own.
+   on its own: read either alone and the list is short by exactly the change you are
+   looking for. Stated in full in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s
+   `resolve` instruction.
 
-   `openspec list` reads `openspec/changes/` from the repository root of the current
-   working directory, and this session most likely starts in the main checkout, whose
-   branch is `develop` or an unrelated feature branch. `origin/develop` carries no
-   `openspec/changes/` directory at all — a change directory is committed only on its own
-   feature branch, by `/opsx:propose` — so a change that has a worktree is usually
-   invisible from here. And a change the developer chose to author in place has no
-   worktree at all, so it is invisible to `git worktree list`. Read both, always:
+   Run both:
 
    ```bash
    git worktree list
    openspec list --json
    ```
 
-   Every `.claude/worktrees/<TASK-ID>` entry is a change in flight. Its branch name
-   usually carries the change's short description — `<type>/<TASK-ID>/<short-description>`
-   — but `/opsx:propose` lets the developer edit the name at the confirmation prompt and
-   forbids validating it, so treat a name derived from a branch as a guess to be checked,
-   never as the change. Check it against the change the worktree actually holds:
+   Every `.claude/worktrees/<TASK-ID>` entry is a change in flight, named provisionally by
+   its branch. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `resolve` instruction.
+
+   Then list what that worktree actually holds:
 
    ```bash
    git -C <worktree path> ls-tree --name-only HEAD openspec/changes/ \
      | sed 's|.*/||' | grep -v '^archive$'
    ```
 
-   Each remaining line is a change name. `openspec/changes/archive/` is excluded because it
-   holds past changes rather than being one: `openspec status --change archive` answers
-   without error, so nothing downstream would reject it, and every branch cut from
-   `origin/develop` carries it once any change has been archived.
+   Each remaining line is a change name; `openspec/changes/archive/` is excluded because it
+   holds past changes rather than being one, and offering it would let a past change be
+   selected as a live one. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `resolve` instruction.
 
    If that returns exactly one name, offer it — it is authoritative and the branch name is
    not. If it returns several, offer them all for that worktree. If it returns nothing, or
@@ -117,9 +113,8 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    Take the change this workspace holds; if it holds more than one, ask which with the
    **AskUserQuestion tool**. Announce `Using change: <name>` before the first
-   `openspec status --change` call, and never pass a name derived only from a branch: a
-   branch renamed at the propose prompt yields a name no change answers to, and the
-   status call would fail on an unknown change with the answer sitting in this directory.
+   `openspec status --change` call. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `resolve` instruction.
 
    If `git worktree list` shows no worktree for this change, it was authored in place
    on the current branch (the stay-on-the-current-branch case). Check which branch that
@@ -131,9 +126,9 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    If it is `develop`, STOP. Do not verify here and do not commit here: the last step of
    this command commits `verify.md`, and from `develop` that is a direct commit to
-   `develop`, which all work reaches through a merge request instead. Say so plainly and
-   ask the developer to check out the change's branch, or to name the worktree it lives
-   in.
+   `develop`, bypassing the merge request every change is integrated through. Stated in
+   full in `.claude/CLAUDE.md` §5. Say so plainly and ask the developer to check out the
+   change's branch, or to name the worktree it lives in.
 
    Otherwise say which branch you are on, by name, so the choice is on the record, and
    continue here.
@@ -155,12 +150,12 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    This command's JSON does not include a `contextFiles` field — that field exists only
    on `openspec instructions apply`, a different subcommand. Read two fields here instead:
-   - `instruction` — the nine mandated checks, verbatim. This is the authority for
-     steps 6 to 14 below; where the prose here and the instruction differ, the
+   - `instruction` — the eleven mandated checks, verbatim. This is the authority for
+     steps 6 to 16 below; where the prose here and the instruction differ, the
      instruction wins.
    - `template` — the structure the last step writes, at
-     `openspec/schemas/sdd-plus-superpowers/templates/verify.md`. Its nine sections are
-     the nine checks, in order.
+     `openspec/schemas/sdd-plus-superpowers/templates/verify.md`. Its eleven sections are
+     the eleven checks, in order.
 
    For concrete file paths per artifact, use `artifactPaths` from the `openspec status`
    call in step 4 above — same shape (artifact ID -> array of file paths), already
@@ -231,11 +226,10 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    **First, check for an apply-time record.** If `<changeRoot>/.apply-test-record.md`
    exists, read its `**Commit:**` field and compare it to a scan of the whole repository
-   for commits made since that SHA, not just the change directory — the record's own
-   commit always lands inside `<changeRoot>`, so a pathspec scoped to `<changeRoot>` would
-   always find at least one commit and the short-circuit below could never fire; the
-   commits that actually invalidate a test result usually land outside `<changeRoot>`
-   (e.g. under `apps/server/`, `apps/client/`, `packages/shared/`):
+   for commits made since that SHA, not just the change directory — a pathspec scoped to
+   `<changeRoot>` can never short-circuit, because the record's own commit lands inside it.
+   Stated in full in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `verify`
+   instruction. Run:
    ```bash
    git log --oneline <that SHA>..HEAD -- . ':(exclude)<changeRoot>/.apply-test-record.md' ':(exclude)<changeRoot>/verify.md'
    ```
@@ -314,8 +308,10 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
        the only failing check, the rest of verify) to confirm the finding is resolved.
      - **Declined, with a reason** → record the decline and its reason in `verify.md`'s Check 8
        section. This resolves the finding; the check no longer blocks the verdict on it.
-     Never apply an edit to a skill file without an explicit approval response captured in this
-     step. Never proceed past a CONFIRMED finding by treating silence as approval.
+     Never apply an edit to a skill file without an explicit approval response captured in
+     this step — silence is not approval, and an automatic dismissal is indistinguishable
+     from a missed bug. Stated in full in
+     `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `verify` instruction.
    - **PLAUSIBLE** (the skill might be affected, but it's not clearly contradicted): record as a
      non-blocking warning, same as a Check 4 drift finding.
    - **No skill affected**: record that the diff touches no code or behavior any `SKILL.md`
@@ -331,23 +327,57 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    naming the file, the line, the rule and the count it derived; record them in the report
    and treat the check as a blocking FAIL.
 
-   The check derives the workflow's shape from `schema.yaml`, `.claude/commands/opsx/` and
-   `templates/verify.md` rather than carrying it as constants, so it does not need updating
-   when the shape changes — only when a non-cycle command is added, which it names.
+   The check derives the workflow's shape from the files that define it and compares it
+   against the declaration sites that state it. Read a finding and correct the site it
+   names rather than widening the script — a widened script that cries wolf gets switched
+   off, which leaves less protection than none. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `verify` instruction.
 
-   It compares that shape against the places that declare it — the cycle line, the stated
-   artifact count and the artifact table in `.claude/CLAUDE.md`'s change-workflow section,
-   the artifact sequence in `schema.yaml`'s own description, and this file's statement of
-   how many sections and checks the report has — and nothing else. Incidental prose is not scanned, so a finding
-   always names a declaration site that either contradicts the derived shape or whose
-   anchor is missing; read the finding and correct that site rather than widening the
-   script.
+15. **Check 10 — Out-of-plan commits**
 
-15. **Write verify.md**
+   Collect every `### Task N`'s `**Files:**` paths from `plan.md`, then list the branch's
+   commits and the files each one touched:
+
+   ```bash
+   git log --name-only --format='%H' origin/develop..HEAD
+   ```
+
+   Report any file matching no task's `**Files:**` path and no allowlist entry
+   (`openspec/changes/**`, `.claude-reports/**`) as an out-of-plan commit, naming the sha,
+   the file and why it has no task.
+
+   Without the allowlist this fires on every documentation commit and becomes noise;
+   without the check, an edit belonging to no task is reviewed by nothing until the
+   whole-branch review — which is how a deleted credential-scrub line became a change's
+   single CRITICAL finding twenty-three hours after it was made.
+
+16. **Check 11 — Flow regression set**
+
+   ```bash
+   node --input-type=module -e "const {runRegressionSet}=await import('./.claude/scripts/adf-regression/index.mjs'); const fs=await import('node:fs/promises'); console.log(await runRegressionSet({read:(p)=>fs.readFile(p,'utf8'), list:(d)=>fs.readdir(d)}))"
+   ```
+
+   Runs every script under `.claude/scripts/adf-regression/` (one per confirmed flow
+   defect) and reports per item — name, PASS/FAIL, incident, last fired. An empty
+   directory reports zero items and PASSes; that is not a skipped check. Every
+   retrospective that touches this set must name a removal candidate, per the
+   `flow-regression-checks` capability's "Every retrospective names a removal candidate"
+   requirement — this step cross-references it rather than restating it.
+
+17. **Write verify.md**
+
+   **Context discipline applies throughout this step.** Delegate any question needing more
+   than one file opened, and keep raw output out of the orchestrator's context — an
+   orchestrator that reads instead of delegating degrades its own reasoning. Stated in full
+   in `.claude/CLAUDE.md` §5, "The orchestrator delegates rather than reads".
+
+   Test and script output this report quotes is written straight into verify.md. It does
+   not pass through the orchestrator's context first — the report needs the text verbatim,
+   the orchestrator needs only the verdict.
 
    Render the results into `<changeRoot>/verify.md` using the template the instruction
-   names — `openspec/schemas/sdd-plus-superpowers/templates/verify.md`. Its nine
-   sections are checks 1 to 9 from steps 6 to 14, in that order. Record each one with
+   names — `openspec/schemas/sdd-plus-superpowers/templates/verify.md`. Its eleven
+   sections are checks 1 to 11 from steps 6 to 16, in that order. Record each one with
    the verbatim output of the command that produced it, not a paraphrase. Every section
    has a producing step above; if you find yourself with nothing to paste, the step was
    skipped — go back and run it rather than describing what it would have said.
@@ -361,7 +391,7 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    git commit -m "docs(openspec): verify <change-name>"
    ```
 
-16. **On a passing verdict, offer to clean up the worktree now**
+18. **On a passing verdict, offer to clean up the worktree now**
 
    Runs only when the verdict is ✅ PASS or ⚠️ PASS WITH WARNINGS. On ❌ FAIL,
    skip this step entirely — the work isn't done, there is nothing to offer.
@@ -395,7 +425,11 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
    **If yes:** remove it using the same mechanics as `/opsx:archive`'s own
    worktree-cleanup step — run from the main checkout, by the path
-   `git worktree list` reports, never reconstructed from a task ID:
+   `git worktree list` reports, never reconstructed from a task ID, because a rebuilt
+   path can name a worktree that is not this change's. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `archive` instruction.
+
+   Run:
 
    ```bash
    cd "$(git rev-parse --path-format=absolute --git-common-dir)/.."
@@ -404,9 +438,11 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
    ```
 
    If it refuses because the tree is dirty, report the refusal and
-   `git status --porcelain` and stop — never pass `--force`. (This should not
-   happen here: step 12 just committed `verify.md`, and nothing since then
-   should have modified the tree.)
+   `git status --porcelain` and stop — never pass `--force` and never delete the
+   directory by hand, or uncommitted work is destroyed. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `archive` instruction.
+   (This should not happen here: step 12 just committed `verify.md`, and nothing
+   since then should have modified the tree.)
 
    **If no:** do not remove anything. Ask what the developer wants to do
    instead — offer the same shape of choice `superpowers:finishing-a-development-branch`
@@ -427,8 +463,9 @@ Verify that an implementation matches the change artifacts (specs, tasks, design
 
 - No delta specs: check 3 is N/A and check 4 covers design against tasks. Say so.
 - No `design.md`: check 4 covers specs against the implementation. Say so.
-- A check that cannot be run is recorded as not run, with the reason. It is never
-  recorded as passed.
+- A check that cannot be run is recorded as not run, with the reason — never as passed,
+  because a check nobody ran is not evidence. Stated in full in
+  `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `verify` instruction.
 
 **Output**
 

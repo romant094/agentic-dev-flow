@@ -34,36 +34,32 @@ Archive a completed change in the experimental workflow.
    If a change name was given, use it.
 
    Otherwise build the candidate list from two sources, because neither one is complete
-   on its own.
+   on its own: read either alone and the list is short by exactly the change you are
+   looking for. Stated in full in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s
+   `resolve` instruction.
 
-   `openspec list` reads `openspec/changes/` from the repository root of the current
-   working directory, and this session most likely starts in the main checkout, whose
-   branch is `develop` or an unrelated feature branch. `origin/develop` carries no
-   `openspec/changes/` directory at all — a change directory is committed only on its own
-   feature branch, by `/opsx:propose` — so a change that has a worktree is usually
-   invisible from here. And a change the developer chose to author in place has no
-   worktree at all, so it is invisible to `git worktree list`. Read both, always:
+   Run both:
 
    ```bash
    git worktree list
    openspec list --json
    ```
 
-   Every `.claude/worktrees/<TASK-ID>` entry is a change in flight. Its branch name
-   usually carries the change's short description — `<type>/<TASK-ID>/<short-description>`
-   — but `/opsx:propose` lets the developer edit the name at the confirmation prompt and
-   forbids validating it, so treat a name derived from a branch as a guess to be checked,
-   never as the change. Check it against the change the worktree actually holds:
+   Every `.claude/worktrees/<TASK-ID>` entry is a change in flight, named provisionally by
+   its branch. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `resolve` instruction.
+
+   Then list what that worktree actually holds:
 
    ```bash
    git -C <worktree path> ls-tree --name-only HEAD openspec/changes/ \
      | sed 's|.*/||' | grep -v '^archive$'
    ```
 
-   Each remaining line is a change name. `openspec/changes/archive/` is excluded because it
-   holds past changes rather than being one: `openspec status --change archive` answers
-   without error, so nothing downstream would reject it, and every branch cut from
-   `origin/develop` carries it once any change has been archived.
+   Each remaining line is a change name; `openspec/changes/archive/` is excluded because it
+   holds past changes rather than being one, and offering it would let a past change be
+   selected as a live one. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `resolve` instruction.
 
    If that returns exactly one name, offer it — it is authoritative and the branch name is
    not. If it returns several, offer them all for that worktree. If it returns nothing, or
@@ -119,9 +115,8 @@ Archive a completed change in the experimental workflow.
 
    Take the change this workspace holds; if it holds more than one, ask which with the
    **AskUserQuestion tool**. Announce `Using change: <name>` before the first
-   `openspec status --change` call, and never pass a name derived only from a branch: a
-   branch renamed at the propose prompt yields a name no change answers to, and the
-   status call would fail on an unknown change with the answer sitting in this directory.
+   `openspec status --change` call. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `resolve` instruction.
 
    If `git worktree list` shows no worktree for this change, it was authored in place
    on the current branch (the stay-on-the-current-branch case). Check which branch that
@@ -133,9 +128,9 @@ Archive a completed change in the experimental workflow.
 
    If it is `develop`, STOP. Do not archive here: this command commits the archive move
    and the memory ingest on the branch you are standing on — from `develop` that is two
-   direct commits to `develop`. All work reaches `develop` through a merge request. Say
-   so plainly and ask the developer to check out the change's branch, or to name the
-   worktree it lives in.
+   direct commits to `develop`, bypassing the merge request every change is integrated
+   through. Stated in full in `.claude/CLAUDE.md` §5. Say so plainly and ask the developer
+   to check out the change's branch, or to name the worktree it lives in.
 
    Otherwise say which branch you are on, by name, so the choice is on the record, and
    continue here; step 12 then has nothing to remove.
@@ -219,10 +214,13 @@ Archive a completed change in the experimental workflow.
    continue to the staleness check below.
 
    **Staleness check — runs for any record allowed to proceed, PASS or
-   overridden-BLOCKED alike.** A record that names neither case above never reaches this
-   point, because both branches above already stopped. The check itself does not care
-   which case let it through: reviewing a clean branch and then committing three more
-   times before archiving must be caught regardless of the verdict on record.
+   overridden-BLOCKED alike.** Archive refuses a change with no record whose verdict is
+   allowed to proceed and whose commit is still HEAD. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `review` instruction. A record
+   that names neither case above never reaches this point, because both branches above
+   already stopped. The check itself does not care which case let it through: reviewing a
+   clean branch and then committing three more times before archiving must be caught
+   regardless of the verdict on record.
 
    Extract the reviewed commit first, and check it before running anything that depends
    on it:
@@ -231,11 +229,10 @@ Archive a completed change in the experimental workflow.
    recorded="$(grep -m1 -E '^\*\*Reviewed commit[:*]' <changeRoot>/review.md | grep -oE '[0-9a-f]{7,40}')"
    ```
 
-   If `recorded` is empty, the record is malformed — the commit could not be read. Treat
-   it as no record at all: STOP and require the review to be re-run, before running any
-   `git log`. A range with an empty left side (`git log --oneline "..HEAD"`) defaults to
-   `HEAD..HEAD` and prints nothing, which would misread as "review covers HEAD" — the
-   corrupt record this check exists to catch must never reach that log.
+   If `recorded` is empty, the record is malformed — treat it as no record at all: STOP
+   and require the review to be re-run, before running any `git log`, because a range with
+   an empty left side prints nothing and would misread as "review covers HEAD". Stated in
+   full in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `archive` instruction.
 
    Only once `recorded` is confirmed non-empty, scan for commits since it, anchored to
    the repository root rather than the current working directory — a subagent's working
@@ -252,22 +249,10 @@ Archive a completed change in the experimental workflow.
    passes. If it names any commit, STOP: code landed after the review, and the record
    describes something else. Require `/opsx:review` to be re-run.
 
-   The scan covers the whole repository and excludes only `review.md` itself. Scoping it
-   to `<changeRoot>` cannot work — the record's own commit always lands inside that
-   directory, so such a scan always finds at least one commit and can never
-   short-circuit. That is the defect this project already shipped once, in the staleness
-   check for `.apply-test-record.md`, and it is recorded in
-   `.claude/memory/concepts/opsx-workflow.md`. Running it with `git -C "$repo_root"`
-   rather than a bare `git log` is what keeps it repository-wide in fact, not only in
-   this description — a bare `git log` run from any subdirectory silently narrows the
-   scan instead.
-
-   If this check refuses immediately after a clean review, compare `changeRoot` (absolute,
-   from `openspec status --json`) against `repo_root` (from `git rev-parse
-   --show-toplevel`) before assuming the review is actually stale — if the two disagree on
-   what the repository root is, the `:(exclude)` above never matches the record's own
-   commit, and every archive is refused. The failure is fail-closed but total, so this is
-   worth checking before re-running the review a second time for nothing.
+   The scan covers the whole repository and excludes only `review.md` itself — scoping it
+   to `<changeRoot>` can never short-circuit, and running it with `git -C "$repo_root"`
+   rather than a bare `git log` is what keeps it repository-wide in fact. Stated in full
+   in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `archive` instruction.
 
    Unlike the artifact-completion and task-completion warnings in the previous two
    steps, this one is **not** dismissible by user confirmation. Those two guard against
@@ -324,6 +309,33 @@ Archive a completed change in the experimental workflow.
    - If yes: Fail with error, suggest renaming existing archive or using different date
    - If no: Move `changeRoot` to the archive directory
 
+   **Preserve the ledger's durable half.** The ledger is untracked scratch under
+   `.superpowers/` and the worktree is about to be removed. Write
+   `openspec/changes/<change-name>/ledger.md` carrying the ledger's `## Sessions` list and
+   every **unresolved** `## Debt` line, and commit it with the archive move so it travels
+   into `openspec/changes/archive/<date>-<change-name>/ledger.md`.
+
+   Do not preserve the per-dispatch or deviation lines: `adf-metrics.mjs` has already
+   reduced them to tables while the worktree existed, and committing them puts turn-count
+   noise into the permanent record of every change.
+
+   `ledger.md` is **not** a schema artifact. It gets no `- id:` entry in `schema.yaml`, no
+   row in `.claude/CLAUDE.md` §5's table, and no `openspec instructions` support. The
+   artifact count stays eight.
+
+   **Run the metrics extractor now, before the move below**, because it reads
+   `openspec/changes/<change-name>/plan.md` at its pre-archive path — once `mv` runs that
+   path is gone and the extractor's compliance table comes out empty:
+
+   ```bash
+   node .claude/scripts/adf-metrics.mjs --change <change-name>
+   ```
+
+   This is a script run, not an agent dispatch. It costs no agent tokens, cannot fabricate a
+   figure, and cannot inflate the context it is measuring. The numbers accumulate whether or
+   not a retrospective is ever run — five iterations of this flow produced one measurement,
+   and that one was unrequested.
+
    ```bash
    mv "<changeRoot>" "<planningHome.changesDir>/archive/YYYY-MM-DD-<name>"
    ```
@@ -359,6 +371,12 @@ Archive a completed change in the experimental workflow.
 
 9. **Display summary**
 
+   **State the interval.** Print one line naming how many changes have been archived since
+   the last retrospective report under `.claude-reports/adf-retro/`, excluding every
+   `-metrics.md` file from the count — archive writes one on every run, so counting it
+   would always report zero. This is a reminder and MUST NOT invoke `adf-retro`. Stated in
+   full in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `archive` instruction.
+
    Show archive completion summary including:
    - Change name
    - Schema that was used
@@ -378,6 +396,18 @@ Archive a completed change in the experimental workflow.
    This replaces the per-change retrospective. If nothing was learned that the
    code and git history do not already carry, say so and write nothing — an
    empty ingest is worse than none.
+
+   The ingest additionally answers two fixed questions: (a) the invariant this change
+   introduced that is not visible in any single file, and (b) what a future implementer
+   would most plausibly get wrong. "Write or update the relevant pages" recovers neither,
+   and these two answers are the whole content of comprehension debt — in the measured
+   change, 61 subagents produced 9 287 insertions and no participant saw the whole, while
+   review.md records dispositions rather than finding bodies.
+
+   Turn every unresolved `## Debt` line into a page in `.claude/memory/` or a task in a
+   follow-up change. A change is not archived leaving a debt line whose only home is a
+   commit message. A compromise the developer accepts permanently is recorded as accepted,
+   with that decision stated.
 
    Commit what the ingest wrote:
 
@@ -462,9 +492,15 @@ Archive a completed change in the experimental workflow.
    If the two point at the same repository root, the change was authored in place with
    no worktree (the stay-on-the-current-branch case) — skip this step.
 
+   Confirm `ledger.md` was written in step 8 before removing the worktree — the ledger is
+   deleted with it.
+
    Otherwise `cd` to the main checkout and remove the worktree by the path
-   `git worktree list` reports for it — do not reconstruct the path from a task ID
-   you were never given:
+   `git worktree list` reports for it — a path rebuilt from a task ID you were never
+   given can name a worktree that is not this change's. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `archive` instruction.
+
+   Run:
 
    ```bash
    cd "$(git rev-parse --path-format=absolute --git-common-dir)/.."
@@ -478,9 +514,11 @@ Archive a completed change in the experimental workflow.
    Symlinks are removed as symlinks; their targets in the main checkout are untouched.
 
    If the worktree is still dirty, `git worktree remove` refuses. That is correct —
-   report the refusal, show `git status --porcelain`, and stop. Never pass `--force`,
-   and never delete the directory by hand: steps 8 and 10 committed everything this
-   command generates, so anything left is the developer's to resolve. Every commit is on
+   report the refusal, show `git status --porcelain`, and stop. Never pass `--force` and
+   never delete the directory by hand, or uncommitted work is destroyed. Stated in full
+   in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `archive` instruction. Steps 8
+   and 10 committed everything this command generates, so anything left is the developer's
+   to resolve. Every commit is on
    the branch and the branch is untouched by this step, so stopping here loses nothing.
    Step 11 has already undrafted and described the merge request and pushed the final
    commit, so a refusal here leaves the merge request ready all the same.
@@ -552,4 +590,6 @@ Target archive directory already exists.
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
 - If sync is requested, use the Skill tool to invoke `openspec-sync-specs` (agent-driven)
-- If delta specs exist, always run the sync assessment and show the combined summary before prompting
+- If delta specs exist, always run the sync assessment and show the combined summary before
+  prompting — a prompt offered without it asks the developer to choose blind. Stated in
+  full in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `archive` instruction.

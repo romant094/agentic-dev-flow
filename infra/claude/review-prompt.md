@@ -37,10 +37,20 @@ If any answer is "no" → drop the finding or downgrade one severity level.
 
 ## Suppression Markers
 
-If a line or block is immediately preceded by a `// review-ignore: CWE-XXX — reason` comment
-(or wrapped in `// review-ignore-start: CWE-XXX — reason` ... `// review-ignore-end`), do NOT
-report a finding for that CWE on that line/block. Still report any OTHER CWE or issue category
+If a line or block is immediately preceded by a `// review-ignore: <key> — reason` comment
+(or wrapped in `// review-ignore-start: <key> — reason` ... `// review-ignore-end`), do NOT
+report a finding for that key on that line/block. Still report any OTHER key or issue category
 found on the same line/block that the comment doesn't name.
+
+`<key>` is one of:
+
+- `CWE-XXX` — a CWE identifier, for any finding the sections below produce.
+- `DUP` — a deliberately accepted duplicate of code that exists elsewhere in the repository.
+  You never produce such a finding, because you see a diff and not the repository. Honour the
+  marker, and do not report the comment itself as dead code, an unexplained annotation or a
+  magic value.
+
+An unrecognised key suppresses nothing, and is not itself a finding.
 
 ---
 

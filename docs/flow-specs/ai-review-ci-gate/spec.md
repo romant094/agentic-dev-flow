@@ -158,3 +158,59 @@ than to the pipeline. Retention stays at 7 days.
 - **WHEN** the Anthropic API call fails and no review text exists
 - **THEN** the job exits non-zero, the failure is described in the job log, and the
   absence of the artifact is not treated as a passing review
+
+### Requirement: The gate is not given a question its input cannot answer
+
+`infra/claude/review-prompt.md` MUST NOT gain a duplication or reuse finding category while
+the `ai_claude_inspect` job's input is a merge request diff. The job fetches the diff over the
+GitLab API and holds no checkout to compare it against, so "does this already exist in the
+repository" is a question the reviewer would have to guess at — and a guessed finding in a
+category with no evidence available is the false-positive rate this prompt's Confidence Gate
+and `## Do NOT Flag These` list were written to protect.
+
+The gate's verdict thresholds SHALL NOT change: BLOCK on CRITICAL, REQUEST CHANGES on HIGH,
+APPROVE otherwise, with MEDIUM and LOW never affecting the exit code. The one maintainability
+class that blocks in this workflow is confirmed locally by the code reuse sweep, which has the
+repository access the question needs, and it blocks there rather than here.
+
+Should the job ever be given a checkout, this requirement is what must be revisited first, in
+its own change — the reviewer's input, this prompt's blast radius across every merge request
+in the repository, and the cost model of the job all move together.
+
+#### Scenario: A duplication category is proposed for the prompt
+
+- **WHEN** a change would add a "does this helper already exist" item to `review-prompt.md`
+- **THEN** it is refused while the job's input is a diff, and the question stays with the
+  local sweep
+
+#### Scenario: A branch duplicates existing code and is otherwise clean
+
+- **WHEN** the merge request diff introduces a helper the tree already carries and contains no
+  CRITICAL or HIGH finding
+- **THEN** the job exits zero, because the duplicate was the local sweep's block to hold and
+  not this gate's
+
+### Requirement: The gate honours every suppression key the prompt defines
+
+The CI review SHALL honour the suppression markers `infra/claude/review-prompt.md` defines,
+for every key that file permits and not only for CWE keys. The job runs that prompt verbatim,
+which is what makes this automatic — and it is stated as a requirement because it is the
+property that lets a dismissal accepted locally survive the merge request, which is the whole
+purpose of putting the marker in the code.
+
+A marker whose key the reviewer does not recognise MUST NOT be reported as a finding of any
+kind. An unrecognised marker read as an unexplained comment turns an accepted dismissal into a
+new finding on the next diff that touches the line.
+
+#### Scenario: A diff carries a marker with a non-CWE key
+
+- **WHEN** the diff contains a line preceded by a `// review-ignore` marker whose key is one
+  the prompt permits but is not a CWE identifier
+- **THEN** the reviewer suppresses that class on that line and reports nothing about the
+  marker itself
+
+#### Scenario: A marker suppresses one class and not another
+
+- **WHEN** a line carries a marker naming one key and also has a genuine finding of a
+  different class
+- **THEN** the other finding is still reported, exactly as it is for a CWE key today

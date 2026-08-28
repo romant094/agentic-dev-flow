@@ -10,8 +10,8 @@ over this branch's diff, then fixes the blocking findings.
 
 **Read the prompt file. Never restate it.** It is the single copy of what the review
 looks for: the Confidence Gate, the false-positive suppression list, the
-SNMP/Prisma/NestJS/React CWE table and the `// review-ignore: CWE-XXX — reason`
-markers. A paraphrase here would drift from what CI enforces, and the failure mode is
+SNMP/Prisma/NestJS/React CWE table and the `// review-ignore:` suppression marker
+grammar. A paraphrase here would drift from what CI enforces, and the failure mode is
 the worst available — passing locally and blocking on the merge request.
 
 ## Severity thresholds
@@ -137,6 +137,8 @@ not the other findings.
 Each subagent returns either a fix, or a claim that the finding is a false positive
 with its reasoning.
 
+Each fix subagent states, with its fix, what happens if the code it added fails. That statement is part of the fix's output, not a comment in the source. The fix is the only participant that knows what it assumed.
+
 ### 4. Dismissals are the developer's decision
 
 A subagent's false-positive claim is a proposal, never an action. Put every claim to
@@ -156,12 +158,13 @@ On rejection, the finding is fixed.
 
 ### 5. Re-review, capped at three rounds
 
-Send the reviewer **only the diff of the fixes** plus the list of findings they were
-meant to close:
+Send the reviewer the fix diff, the findings those fixes were meant to close, and each fix's failure-mode statement:
 
 ```bash
 git diff <SHA before the fixes>..HEAD -- <the same exclusions as step 1>
 ```
+
+The re-review checks that stated failure mode rather than rediscovering it: two of three permitted rounds in the measured session went to defects in round one's own fix, which the fix itself was best placed to have named.
 
 Re-reviewing the whole branch each round costs as much as the first review, to catch
 regressions the CI review already catches against the full merge request diff. A

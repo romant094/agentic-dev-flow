@@ -100,8 +100,12 @@ artifacts:
       Delta operations (use ## headers):
       - **ADDED Requirements**: New capabilities
       - **MODIFIED Requirements**: Changed behavior - MUST include full updated content
-      - **REMOVED Requirements**: Deprecated features - MUST include **Reason** and **Migration**
-      - **RENAMED Requirements**: Name changes only - use FROM:/TO: format
+      - **REMOVED Requirements**: Deprecated features - MUST include **Reason**, **Migration**,
+        and **Code Disposition:** (where the behaviour's code went: deleted, superseded by a
+        named path, or deliberately left in place with a reason - and whether the old path is
+        still reachable)
+      - **RENAMED Requirements**: Name changes only - use FROM:/TO: format - MUST include
+        **Code Disposition:** (same meaning as above)
 
       Format requirements:
       - Each requirement: `### Requirement: <name>` followed by description
@@ -161,6 +165,13 @@ artifacts:
         isolated review attention can share one checkbox instead of one each.
       - Keep a checkbox on its own when the item is risky, large, or needs
         review attention isolated from its neighbors.
+
+      The bound in the other direction is structural, not a token number: a task whose
+      `**Files:**` block spans two or more of the repository's top-level packages
+      **and** changes a failure or rollback path is split before dispatch. Only the
+      conjunction triggers it. It is structural because an agent cannot reliably measure
+      its own context at the moment the split decision is made — the same reason the
+      handoff threshold uses observable proxies.
     requires:
       - specs
 
@@ -190,13 +201,21 @@ artifacts:
       Write one `### Task N` per tasks.md checkbox, in the same order. Each one
       MUST open with an explicit back-reference naming the checkbox it implements,
       for example `> Implements tasks.md 3.4.` Every task carries Files,
-      Interfaces, and RED-GREEN-REFACTOR-commit steps.
+      Interfaces, Level, and RED-GREEN-REFACTOR-commit steps. A task's text
+      MUST direct the implementer to state that task's Files, Interfaces and
+      acceptance criteria before its first edit.
 
-      **Execution Graph — for plans whose tasks fall into independent groups.**
+      Every `### Task N` MUST carry `**Level:** mechanical | integration | architecture`.
+      The level is a scope judgement and scope is known while the plan is written, not
+      while the dispatch is issued; the orchestrator dispatches at the declared level and
+      still names it. An implementer whose fix loop reaches round 2 is re-dispatched one
+      tier higher.
 
-      When the plan's tasks partition into groups that touch different files or
-      services, add an `## Execution Graph` section (see the plan.md template)
-      before the first `### Task N`. For every pair of groups, score their
+      **Execution Graph — required in every plan, without exception.**
+
+      Add an `## Execution Graph` section (see the plan.md template) before
+      the first `### Task N`. When the plan's tasks partition into groups
+      that touch different files or services, for every pair of groups score their
       coupling from the file sets in each group's tasks' `**Files:**` blocks: zero
       overlap is `none`; overlap limited to files neither group writes is `weak` or
       `medium`; any file both groups write is `strong` — this floor MUST NOT be
@@ -208,15 +227,37 @@ artifacts:
       capped at 2-3 concurrent) or wave 2 (depends on one or more wave-1 groups, by
       explicit dependency or by `strong`/high-criticality-`medium` coupling that
       rules out sharing a wave). No group may depend on another wave-2 group — the
-      graph has exactly two tiers. A plan with no independent groups needs no
-      Execution Graph section; it runs as a single implicit wave-1 group, exactly as
-      plans do today.
+      graph has exactly two tiers. The `## Execution Graph` section is
+      required in every plan without exception. A plan whose tasks do not
+      partition MUST state that it is a single group and name the shared
+      files that make it one. An omitted section is indistinguishable from
+      a partition never attempted, which is how a plan of 22 tasks came to
+      run serially with nothing out of order.
 
       plan.md MUST NOT introduce a deliverable that has no tasks.md checkbox. If
       the plan needs one, add the checkbox to tasks.md first.
 
       The back-reference is what makes drift visible between what the executor
       runs (plan.md) and what progress tracking counts (tasks.md).
+
+      **Resolve what the plan names, before the plan is done.** Every symbol, file and path
+      named in a task's `**Files:**` and `**Interfaces:**` blocks MUST be resolved against
+      the tree before `plan.md` is marked done, and the command used to resolve them MUST be
+      stated. In the measured session apply's equivalent scan took four minutes and found
+      five real plan defects — the highest-yield four minutes of the change. That is an
+      argument for running it earlier, not for deleting it.
+
+      **A hardware smoke pass belongs to the group that lands the write path.** A change
+      touching a device write path puts its smoke pass inside that task group, not in a
+      single verification task at the end. As one task at the end it surfaced four defects
+      that became a third day of work, because each was found after the code causing it had
+      been reviewed and merged. A change touching no write path needs no smoke pass.
+
+      **A task that narrows a contract owns both sides of it.** A task making the server
+      reject a payload it previously accepted lists among its files the callers that
+      construct those payloads, and its review confirms that sweep. A narrowing whose
+      callers are somebody else's task is a break shipped in two halves. Widening a
+      contract does not trigger this — no existing caller breaks.
 
       **Risk reconciliation — required before plan.md is done.** If this
       change's `design.md` has a Risks/Trade-offs section, plan.md is not
@@ -292,8 +333,8 @@ artifacts:
          directory — the record's own commit always lands inside
          `openspec/changes/<name>/`, so a pathspec scoped to that directory would
          always find at least one commit, and the commits that actually
-         invalidate a test result usually land outside it (e.g. under
-         `apps/server/`, `apps/client/`, `packages/shared/`):
+         invalidate a test result usually land outside it (e.g. under this
+         repository's other top-level packages):
          `git log --oneline <that SHA>..HEAD -- . ':(exclude)openspec/changes/<name>/.apply-test-record.md' ':(exclude)openspec/changes/<name>/verify.md'`
          (excluding only the record file and verify.md itself, since writing them
          is not implementation work). If this finds no commits, cite the record's
@@ -366,10 +407,30 @@ artifacts:
          caught the literal, because the check covers the declaration sites named above
          rather than every mention.
 
+      10. **Out-Of-Plan Commits**: Collect every task's `**Files:**` paths from
+          plan.md, then compare the branch's commits (`git log --name-only
+          --format='%H' origin/develop..HEAD`) against that set. Allowlisted:
+          `openspec/changes/**`, `.claude-reports/**`. Report any commit touching a
+          file matching no task and no allowlist entry, naming the sha, the file
+          and why it has no task. This is a blocking FAIL: without it, an edit
+          belonging to no task is reviewed by nothing until the whole-branch
+          review, which is how a deleted credential-scrub line became a change's
+          single CRITICAL finding twenty-three hours after it was made.
+
+      11. **Flow Regression Set**: Run `runRegressionSet` from
+          `.claude/scripts/adf-regression/index.mjs` over that directory's sibling
+          scripts — one deterministic script per confirmed flow defect. This is one
+          check reporting per item, not one check per script, so the set growing by
+          one script per incident does not move the check count. An empty directory
+          reports zero items and is a PASS, not a skipped check.
+
       Verify MAY be re-run multiple times as the implementation is
       refined — each run overwrites verify.md with current state.
 
-      If `/opsx:verify` cannot be run, STOP and report it. Do NOT run the nine
+      A check that cannot be run is recorded as not run, with the reason. It is never
+      recorded as passed.
+
+      If `/opsx:verify` cannot be run, STOP and report it. Do NOT run the eleven
       checks by hand — an unverified change must not reach archive on the strength
       of an improvised check.
     requires:
@@ -402,9 +463,10 @@ artifacts:
       action. It MUST be put to the developer, and silence MUST NOT be treated as
       approval — the same rule verify's check 8 applies to stale-skill findings, for
       the same reason: an automatic dismissal is indistinguishable from a missed bug.
-      An approved dismissal places a `// review-ignore: CWE-XXX — reason` marker on the
-      line, which both the prompt and the CI review honour, so the suppression travels
-      with the code rather than with the session.
+      An approved dismissal places a `// review-ignore:` marker on the line, as
+      specified in `infra/claude/review-prompt.md`'s Suppression Markers section,
+      which both the prompt and the CI review honour, so the suppression travels with
+      the code rather than with the session.
 
       Rounds after the first re-review only the diff of the fixes, not the whole branch
       diff. The cap is three rounds; beyond that the record is BLOCKED and the
@@ -414,6 +476,11 @@ artifacts:
       reviewed. `/opsx:archive` refuses to archive without a PASS record whose commit is
       still HEAD.
 
+      `/opsx:archive`'s staleness
+      scan excludes only `review.md` from its `git log` range; a record commit that also
+      touches source files defeats that exclusion and blocks every future archive of this
+      change.
+
       Review MAY be re-run as the implementation changes — each run overwrites
       review.md with current state.
 
@@ -422,6 +489,81 @@ artifacts:
     requires:
       - verify
 
+resolve:
+  instruction: |
+    How `/opsx:apply`, `/opsx:verify` and `/opsx:archive` resolve which change they are
+    acting on. Each of those command files carries the step order, the shell and the
+    imperative of each step; the rules below are stated here in full and all three point
+    at them.
+
+    **Both sources are read, because neither is complete on its own.**
+
+    `openspec list` reads `openspec/changes/` from the repository root of the current
+    working directory, and this session most likely starts in the main checkout, whose
+    branch is `develop` or an unrelated feature branch. `origin/develop` carries no
+    `openspec/changes/` directory at all — a change directory is committed only on its own
+    feature branch, by `/opsx:propose` — so a change that has a worktree is usually
+    invisible from here. And a change the developer chose to author in place has no
+    worktree at all, so it is invisible to `git worktree list`. Read both, always:
+
+    ```bash
+    git worktree list
+    openspec list --json
+    ```
+
+    **A name derived from a branch is a guess, checked against what the worktree holds.**
+
+    Every `.claude/worktrees/<TASK-ID>` entry is a change in flight. Its branch name
+    usually carries the change's short description — `<type>/<TASK-ID>/<short-description>`
+    — but `/opsx:propose` lets the developer edit the name at the confirmation prompt and
+    forbids validating it, so treat a name derived from a branch as a guess to be checked,
+    never as the change. Check it against the change the worktree actually holds:
+
+    ```bash
+    git -C <worktree path> ls-tree --name-only HEAD openspec/changes/ \
+      | sed 's|.*/||' | grep -v '^archive$'
+    ```
+
+    Each remaining line is a change name. `openspec/changes/archive/` is excluded because it
+    holds past changes rather than being one: `openspec status --change archive` answers
+    without error, so nothing downstream would reject it, and every branch cut from
+    `origin/develop` carries it once any change has been archived.
+
+    **The change is announced before the first `openspec status --change` call.**
+
+    Announce `Using change: <name>` before the first
+    `openspec status --change` call, and never pass a name derived only from a branch: a
+    branch renamed at the propose prompt yields a name no change answers to, and the
+    status call would fail on an unknown change with the answer sitting in this directory.
+
+propose:
+  instruction: |
+    The procedure `/opsx:propose` executes. `.claude/commands/opsx/propose.md` carries the
+    step order and the imperative of each step; the rules below are stated here in full and
+    the command file points at them.
+
+    **The confirmed branch name.**
+
+    Do NOT validate the name with a regular expression — a confirmed name is a
+    decision, and convention compliance is the developer's responsibility.
+
+    **Uncommitted tracked work stops the proposal.**
+
+    Never run `git stash`, never commit on their
+    behalf, and never pass `--force` to anything. Uncommitted work is theirs to
+    decide about.
+
+    **Spec validation gates `tasks` and `plan`.**
+
+    Every item MUST report `"valid": true`. If any item is invalid, fix the
+    requirement text in place (the requirement's `SHALL`/`MUST` MUST be on the
+    first line of its body — the validator does not scan past it) and re-run
+    validation. Do NOT continue to `tasks`/`plan` on an invalid spec.
+
+    **Context and rules blocks guide the author and never reach the artifact.**
+    - Do NOT copy `<context>`, `<rules>`, `<project_context>` blocks into the artifact
+    - These guide what you write, but should never appear in the output
+
 apply:
   requires: [plan]
   tracks: tasks.md
@@ -429,6 +571,20 @@ apply:
     The change directory is already committed on the feature branch and the
     worktree already exists — both were established by `/opsx:propose`. Apply
     therefore starts by confirming isolation, not by creating it.
+
+    Place every normative sentence you add or move on the one surface the four-surface
+    map assigns it — a rule stated in full on two surfaces drifts apart and readers
+    follow whichever copy they reach first — and the map itself is stated in full in
+    `.claude/CLAUDE.md` §5. Two mechanics the map relies on are stated here, and they
+    bind any task whose diff edits flow text:
+
+    - **A pointer is one sentence**: the imperative, its one-line consequence, and the
+      surface that states the rule in full. Mechanics live behind the pointer; the
+      consequence never does, so an agent that does not follow the pointer still does
+      not do the wrong thing.
+    - **A relocation preserves meaning exactly.** Moving a rule from one surface to
+      another is motion only. A rule whose wording must change is recorded as a finding
+      and deferred, never rewritten inside a motion diff.
 
     0. **Pre-flight — Superpowers must be available**:
 
@@ -465,9 +621,30 @@ apply:
 
        Provisioning is decided and performed once, by `/opsx:apply` step 4: `npm ci`
        only when the change touches `prisma/`, `package.json` or `package-lock.json`;
-       otherwise symlink `node_modules`, the three workspace `node_modules` directories
+       otherwise symlink the root `node_modules`, each workspace package's `node_modules`
        and the root `.env` from the main checkout. `npm install` and `npm ci` are never
        run inside a worktree outside that one case.
+
+       **Provisioning is decided from `plan.md`, not from a diff.**
+
+       Do NOT decide from `git diff --name-only origin/develop`. At apply time nothing
+       is implemented yet, so that diff holds only the change's own markdown and would
+       route every change to the symlink branch — including the ones that must not take
+       it.
+
+    **Apply is blocked without `plan.md`.** `openspec instructions apply` reports the
+    state; a blocked one is handled before anything else:
+
+    - If `state` is `"blocked"`, the change is missing a required artifact — in this
+      workflow that is nearly always `plan.md`. Name the missing artifact and stop.
+
+      The way forward is to write it: `plan.md` comes from
+      `superpowers:writing-plans`, run against this change's `tasks.md`. Re-running
+      `/opsx:apply` will not create it.
+
+      The CLI may print advice naming `openspec-continue-change`. Ignore it — that
+      skill is not installed in this project by design. Do not surface it to the user
+      as a suggestion.
 
     2. **Executor** — on Claude Code you should **always use 2a**.
        2b exists only as a fallback for platforms without subagent
@@ -479,8 +656,7 @@ apply:
        **superpowers:subagent-driven-development** to execute
        the plan.md micro-tasks with fresh subagents per task.
 
-       If `plan.md` has an `## Execution Graph` section, dispatch by wave instead of
-       running the whole plan as one sequential pass:
+       Read the plan's `## Execution Graph` section and dispatch by wave:
 
        - Read the Execution Graph's wave assignments before dispatching Task 1.
        - For wave 1, create one worktree per group at
@@ -512,13 +688,9 @@ apply:
          identically whether groups ran serially or in parallel waves. The push is a
          backup and a progress signal; the draft merge request runs no pipeline, so it
          gates nothing.
-       - A group with no `## Execution Graph` entry runs exactly as today: one
-         sequential subagent-driven-development pass in the main worktree, no group
-         worktrees created.
-
-       A plan with no `## Execution Graph` section at all runs exactly as today too:
-       one sequential subagent-driven-development pass in the main worktree, no group
-       worktrees created.
+       - A graph naming exactly one wave-1 group runs as a single sequential
+         subagent-driven-development pass in the main worktree, no group worktrees
+         created.
        - Once every wave-1 group this wave-2 group depends on (by the graph's stated
          dependency, or by having been kept out of wave 1 on coupling grounds) is
          merged and re-reviewed clean, start that wave-2 group the same way — its own
@@ -539,6 +711,60 @@ apply:
        level that can execute it, a middle level for integration and debugging, and
        the highest available for architecture, adjudication and whole-branch review.
        Name the chosen level in the dispatch. Never name a model or vendor.
+
+       **Recite before solving.** An implementer states its task's `**Files:**`,
+       `**Interfaces:**` and acceptance criteria before its first edit, and solves from that
+       statement rather than from the plan as a whole. This is aimed at accuracy, not brevity:
+       input length alone costs reasoning accuracy even when retrieval is perfect, so an
+       implementer that has restated its own scope works against a short correct context
+       instead of a long one. The token saving is a side effect of less wandering.
+
+       **The execution ledger.** Before invoking `subagent-driven-development`, state the
+       ledger path: `.superpowers/sdd/<change-name>/progress.md`, with `<change-name>` resolved
+       for this change. Never `.superpowers/sdd/plan/` — that basename is shared by every
+       change's plan file, and the collision has been recorded three times. Create the file
+       with its identity as the FIRST line — `# SDD ledger — plan: <plan file path>` — followed
+       by five headings: `## Sessions`, `## Dispatches`, `## Deviations`, `## Debt`,
+       `## Handoff`. `subagent-driven-development` treats a ledger whose first line names a
+       different plan as another plan's progress, and `.claude/scripts/check-sdd-workspace.mjs`
+       parses exactly that first line and fails closed without it — a ledger missing it is
+       unidentifiable to both.
+
+       Record one `## Dispatches` line per dispatch: task id, role, declared level, turn count
+       the dispatch returned after. Never copy a dispatch's output into the ledger.
+
+       The ledger is untracked scratch and the transcript outranks it: where the two disagree
+       about a number, the transcript is the fact. The ledger's unique contribution is the
+       deviation and debt lines, which no transcript can yield, because a rule departed from
+       and a rule that never applied look identical from outside. What a `## Deviations` line
+       records, and what does not count as one, is defined in `.claude/commands/opsx/apply.md`:
+       the rules a deviation departs from are that command's own.
+
+       **The session list.** Append one `## Sessions` line on entry, never replacing the list:
+       `<session-id> | <window> | <phase>`, where `<session-id>` is the value of the
+       `CLAUDE_CODE_SESSION_ID` environment variable — read it, do not infer it from a
+       transcript filename. A change spanning several sessions is otherwise analysable only in
+       fragments, and the measured change spanned 45 hours.
+
+       **The debt lines.** One `## Debt` line per code compromise taken during implementation —
+       a stub, an accepted duplication, a deferred refactor — stating what was compromised and
+       why. Implementers and reviewers write these; they share this file with the deviation
+       lines and get no file of their own. A change that took no compromise leaves the section
+       present and empty, so "none taken" is distinguishable from "nobody recorded any".
+
+       **Handoff instead of mid-apply compaction.** At the threshold, finish the current task
+       group, write `## Handoff` to the ledger — merged, remaining, blocked, next dispatch, open
+       deviations — and stop for a fresh session. Never mid-group, never mid-dispatch. The
+       acceptance criterion is that the resumed session comes up from the ledger, `tasks.md` and
+       `git log` with no transcript.
+
+       The threshold is observable proxies, not a context-size number: a group boundary reached
+       with several groups already merged this session, a harness compaction signal, or a
+       dispatch returning after an anomalous turn count. An agent cannot reliably read its own
+       context size, so an estimate alone does not trigger it. The numeric calibration comes
+       from `.claude/scripts/adf-metrics.mjs` once several changes exist; there is one data point
+       today. If this proves not to be load-bearing for the current model generation, it is the
+       first candidate the removal rule should propose deleting.
 
        Tell the executor:
        - Read plan.md in this change directory for micro-tasks
@@ -566,8 +792,86 @@ apply:
        groups merged, its own final whole-implementation review already run —
        apply first ticks every completed checkbox in `tasks.md`. Control left this
        command while that skill ran, so this return is where the ticking gets done;
-       `/opsx:verify` check 2 fails on an unticked box otherwise. Apply then runs
-       the whole suite (`npm test -- --force`; `--force` is not optional,
+       `/opsx:verify` check 2 fails on an unticked box otherwise.
+
+       Apply next issues the code reuse sweep — exactly one per change, at this
+       point and nowhere else. Never per task group: a duplicate introduced by two
+       groups is invisible to either group's own sweep, and that is the case most
+       worth catching. It is one read-only dispatch carrying one question, not a
+       second code review. Issue it at a judgement-capable level — the integration
+       level or above, never the cheapest level that can run a dispatch — because a
+       cheap dispatch's honest answer to "does this behaviour already exist" is
+       `CLEAN` almost always, which leaves the gate green forever and
+       indistinguishable from a working one. It may read the branch diff against the
+       integration branch and the working tree; it holds no write access, no fix
+       authority, and may not dispatch further agents. Its tree access widens nothing else: the
+       filtered diff `ai-review-flow-stage` requires of the `/opsx:review` reviewer
+       and the diff-only rule in `infra/claude/review-prompt.md` are unchanged, and
+       the sweep MUST NOT be cited as precedent for changing either.
+
+       Its question: does the branch introduce a symbol, helper, validator, mapper,
+       constant set or pattern whose behaviour the repository already has. Out of
+       scope, explicitly — naming, function length, nesting depth, formatting,
+       comment density, test coverage, correctness, performance, security. Each of
+       those already has a home in `infra/claude/review-prompt.md`, and a sweep that
+       drifts into them becomes a second unbounded review.
+
+       Its verdict is `CLEAN` when it has no findings, and otherwise one finding per
+       line, each carrying `introduced: <path>:<line-or-symbol>`, then
+       `existing: <path>:<line-or-symbol>`, then one sentence stating what the two
+       share. A finding that cannot name a pre-existing location is dropped rather
+       than reported at lower confidence, and a response carrying no recognisable
+       verdict is not recorded as `CLEAN`. A pair whose introduced location already
+       carries a `DUP` marker naming that duplication is not reported.
+
+       The sweep is not a workflow phase and adds no artifact, no verify check and no
+       command; no count moves because of it.
+
+       A finding naming both locations blocks apply from concluding, and it is the
+       only maintainability class in this workflow that blocks. Every other
+       maintainability finding keeps the severity and the advisory standing
+       `infra/claude/review-prompt.md` gives it; MEDIUM and LOW findings still never
+       block.
+
+       Resolution is one of exactly two things: the duplication is removed by
+       consolidating on the existing code, or the developer dismisses the finding.
+       Re-running the sweep does not clear a finding — a second verdict of `CLEAN` on an
+       unchanged branch leaves the first finding exactly as unresolved as it was — and
+       apply MUST NOT conclude while a finding is unresolved.
+
+       The sweep MUST NOT dismiss its own finding, and apply MUST NOT dismiss one on the
+       developer's behalf. A finding believed to be a false positive is put to the
+       developer with its reasoning, and silence MUST NOT be read as approval — the rule
+       `/opsx:review` already applies to a false-positive claim and `/opsx:verify`'s
+       stale-skill check already applies to a skill finding, for the same reason: an
+       automatic dismissal is indistinguishable from a missed finding.
+
+       On the developer's approval, apply does two things and both are required. It
+       places a suppression marker carrying the `DUP` key on the introduced location, in
+       the form `infra/claude/review-prompt.md` defines — that file owns the marker
+       syntax; read the form there rather than from any copy. And it writes a code-debt
+       line carrying the developer's reason to the change's apply ledger,
+       `.superpowers/sdd/<change-name>/progress.md`. The marker is what stops a later
+       change's sweep re-reporting an acceptance already made; the ledger line is what
+       stops the acceptance being forgotten, because `/opsx:archive` already refuses to
+       leave a ledger debt line unresolved. That refusal is not a deadlock: the
+       `apply-execution-ledger` capability resolves a debt line recorded for a duplicate
+       the developer accepted by recording it as accepted at archive, not by requiring it
+       cleared beforehand — see that capability for the mechanism.
+
+       The sweep carries a second question, asked only when the change's delta specs carry a
+       `REMOVED` or `RENAMED` operation: is the `**Code Disposition:**` field the delta states
+       true of the code, and is the old path still reachable. A change with neither operation is
+       not asked and pays nothing. A missing `**Code Disposition:**` is itself the finding. This
+       question rides the sweep's existing dispatch rather than becoming a twelfth verify check:
+       the dispatch already has the tree access the question needs, and a check would cost every
+       change an N/A line plus an edit at every site stating the check count.
+
+       This finding is recorded as a code-debt line in the apply ledger,
+       `.superpowers/sdd/<change-name>/progress.md`, carrying its reason, and it never blocks
+       apply from concluding.
+
+       Apply then runs the whole suite (`npm test -- --force`; `--force` is not optional,
        since a cached answer is a replay of an earlier run, not evidence about this
        one — confirm the output's `Cached:` line reads `0 cached`). This is the whole
        suite, not the packages this change touched, because it is the only point in
@@ -580,9 +884,10 @@ apply:
        `origin/develop`, filtered to the failing package, then removed. Without that
        exception the gate fails on work this change does not own. Apply records the
        commit SHA, packages, and real pass/fail output to
-       `<changeRoot>/.apply-test-record.md`, committed alongside the
-       implementation. `/opsx:verify` check 6 consumes this record so a change
-       whose code has not moved since does not pay for a second test run. A
+       `<changeRoot>/.apply-test-record.md`, committed as apply's final
+       commit, after every checkbox is ticked and after any
+       documentation commit. `/opsx:verify` check 6 consumes this record so a
+       change whose code has not moved since does not pay for a second test run. A
        failure here pauses apply exactly as any other implementation issue would.
        See `.claude/commands/opsx/apply.md` for the full procedure.
 
@@ -631,3 +936,58 @@ apply:
     This governs a skill that is missing. It does not govern section 2b, where
     the skills are present and the runtime lacks subagent support — that path
     stays as written.
+
+archive:
+  instruction: |
+    The procedure `/opsx:archive` executes. `.claude/commands/opsx/archive.md` carries the
+    step order, the shell and the imperative of each step; the rules below are stated here
+    in full and the command file points at them.
+
+    **A malformed review record is no record, and is caught before any `git log` runs.**
+
+    If `recorded` is empty, the record is malformed — the commit could not be read. Treat
+    it as no record at all: STOP and require the review to be re-run, before running any
+    `git log`. A range with an empty left side (`git log --oneline "..HEAD"`) defaults to
+    `HEAD..HEAD` and prints nothing, which would misread as "review covers HEAD" — the
+    corrupt record this check exists to catch must never reach that log.
+
+    **The review-staleness scan is anchored to the repository root.**
+
+    The scan covers the whole repository and excludes only `review.md` itself. Scoping it
+    to `<changeRoot>` cannot work — the record's own commit always lands inside that
+    directory, so such a scan always finds at least one commit and can never
+    short-circuit. That is the defect this project already shipped once, in the staleness
+    check for `.apply-test-record.md`, and it is recorded in
+    `.claude/memory/concepts/opsx-workflow.md`. Running it with `git -C "$repo_root"`
+    rather than a bare `git log` is what keeps it repository-wide in fact, not only in
+    this description — a bare `git log` run from any subdirectory silently narrows the
+    scan instead.
+
+    If this check refuses immediately after a clean review, compare `changeRoot` (absolute,
+    from `openspec status --json`) against `repo_root` (from `git rev-parse
+    --show-toplevel`) before assuming the review is actually stale — if the two disagree on
+    what the repository root is, the `:(exclude)` above never matches the record's own
+    commit, and every archive is refused. The failure is fail-closed but total, so this is
+    worth checking before re-running the review a second time for nothing.
+
+    **The delta spec sync assessment runs before the prompt.**
+
+    If delta specs exist, always run the sync assessment and show the combined summary before prompting
+
+    **State the interval.** Print one line naming how many changes have been archived since
+    the last retrospective report under `.claude-reports/adf-retro/`. Count only retrospective
+    reports (`<change-name-or-session-id>.md` and its `-improvements.md` companion, written by
+    `adf-retro`) — this run's own `<change-name>-metrics.md` output, and every other
+    `-metrics.md` file in that directory, MUST be excluded from the count, since archive writes
+    one on every run and counting it would always report zero. This is a reminder and MUST NOT
+    invoke `adf-retro`: the prohibition on automatic invocation is unchanged. The ordinary way a
+    manual instrument dies is being forgotten, and the ordinary way an automatic one distorts
+    its subject is by measuring it from inside.
+
+    **Removing the worktree.** `cd` to the main checkout and remove the worktree by the path
+    `git worktree list` reports for it — do not reconstruct the path from a task ID
+    you were never given.
+
+    If the worktree is still dirty, `git worktree remove` refuses. That is correct —
+    report the refusal, show `git status --porcelain`, and stop. Never pass `--force`,
+    and never delete the directory by hand.

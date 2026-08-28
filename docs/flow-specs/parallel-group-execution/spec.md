@@ -19,7 +19,12 @@ blocks isolates only its own dependents.
 `writing-plans` SHALL partition a plan's tasks into groups and compute a two-tier
 execution graph — wave 1 (parallel-eligible) and wave 2 (depends on one or more wave-1
 groups) — written into `plan.md` as an `## Execution Graph` section, at plan-authoring
-time. No group SHALL depend on another wave-2 group; the graph MUST NOT nest beyond two
+time. The section SHALL be present in every `plan.md` without exception: a plan whose
+tasks do not partition MUST state that it is a single group and why, rather than omitting
+the section. An omitted section is indistinguishable from a partition never attempted,
+which is how a plan of 22 tasks came to run serially with nothing out of order.
+
+No group SHALL depend on another wave-2 group; the graph MUST NOT nest beyond two
 tiers. The graph MUST NOT be recomputed at apply time — apply reads the graph `plan.md`
 already carries.
 
@@ -36,6 +41,13 @@ already carries.
   wires a service which a wave-1 group creates)
 - **THEN** the dependent group is assigned to wave 2, and the graph names which wave-1
   group(s) it waits on
+
+#### Scenario: Plan whose tasks do not partition
+
+- **WHEN** every task in a plan writes files that every other task also writes, so no
+  independent groups exist
+- **THEN** `plan.md` still carries an `## Execution Graph` section, stating that the plan
+  is one group and naming the shared files that make it one
 
 ### Requirement: Coupling score is a mechanical floor with a judgment ceiling
 
@@ -90,10 +102,27 @@ Apply SHALL run at most 2-3 groups concurrently within a wave. Groups beyond the
 SHALL queue for the next available slot within their wave rather than launching
 unconditionally.
 
+Fan-out within the cap is mandatory, not discretionary: when the execution graph names
+two or more wave-1 groups eligible to share a wave, apply MUST run them in sibling
+worktrees up to the cap, and MUST NOT run them serially by default. Running them serially
+is a deliberate deviation and SHALL be recorded as one, with its reason. No post-hoc
+verification check is added for this, because a gate that fires after the work has already
+run serially reports history rather than preventing it.
+
 #### Scenario: Wave with more groups than the cap
 
 - **WHEN** a wave contains more parallel-eligible groups than the concurrency cap
 - **THEN** only up to the cap run at once, and the remainder start as slots free up
+
+#### Scenario: Wave with two eligible groups
+
+- **WHEN** the execution graph names two wave-1 groups scored `none` against each other
+- **THEN** apply runs both concurrently in sibling worktrees rather than one after the other
+
+#### Scenario: Fan-out is deliberately skipped
+
+- **WHEN** apply runs two eligible wave-1 groups serially because the developer asked it to
+- **THEN** the ledger records one deviation line naming the groups and that reason
 
 ### Requirement: Group worktrees are a scoped, apply-phase-only exception
 

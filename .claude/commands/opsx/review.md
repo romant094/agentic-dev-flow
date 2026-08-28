@@ -43,8 +43,8 @@ record the verdict `/opsx:archive` requires.
    ```
 
    If it is `develop`, STOP. This command commits `review.md` and any fixes, and from
-   `develop` that is a direct commit to the integration branch. All work reaches
-   `develop` through a merge request.
+   `develop` that is a direct commit to the integration branch, bypassing the merge
+   request every change is integrated through. Stated in full in `.claude/CLAUDE.md` §5.
 
 3. **Confirm the change was verified**
 
@@ -105,10 +105,9 @@ record the verdict `/opsx:archive` requires.
 
    `git status --porcelain` should show nothing but `review.md` staged before this commit
    runs. If a fix is still uncommitted at this point, that is a bug in the skill — stop and
-   commit the fix separately first, never mixed into this one. `/opsx:archive`'s staleness
-   scan excludes only `review.md` from its `git log` range; a record commit that also
-   touches source files defeats that exclusion and blocks every future archive of this
-   change.
+   commit the fix separately first, never mixed into this one, because a record commit that
+   also touches source files blocks every future archive of this change. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `review` instruction.
 
 8. **Report**
 

@@ -1,7 +1,7 @@
 # OpenSpec + Superpowers Change Workflow
 
 The mechanics of the cycle — the five commands, the eight artifacts, the branch model —
-live in [`.claude/CLAUDE.md`](../CLAUDE.md) §5 and, in requirement form, in
+live in [`.claude/CLAUDE.md`](../../CLAUDE.md) §5 and, in requirement form, in
 `docs/flow-specs/change-workflow-schema/`, `change-branch-isolation/` and
 `superpowers-availability-gate/` — historical documents, not live specs. This page does not
 restate them.
@@ -16,6 +16,43 @@ the way it is, and which of its parts fail silently.
 | `openspec/specs/**` (permanent capabilities) | `/opsx:archive`, step 6 → step 7 | anything else, ever — not by hand, not backfilled |
 | `openspec/changes/<name>/**` | the five commands, in artifact order | — |
 | `.claude/commands/opsx/*.md` | humans and changes to this workflow | `openspec update` (see below) |
+
+Since `adf-normative-single-source` (archived `2026-08-27`) there is a second, sharper
+question — not *who writes the file* but *which surface owns the rule*. Four surfaces, four
+roles: `openspec/specs/` says what must be true, `schema.yaml` says how a phase executes and
+carries the full procedure, `.claude/commands/opsx/*` carry the operator imperative plus a
+pointer, and `.claude/CLAUDE.md` §5 carries invariants and no mechanics. The map, the pointer
+form, the duplication check that enforces it and the traps it left behind are on their own
+page: [The Four Normative Surfaces](normative-surface-map.md).
+
+## A command file no longer tells you the rule
+
+This is the consequence of the surface map that is stated in **no single file**, and it is the
+first thing to know before editing anything under `.claude/commands/opsx/`.
+
+`apply.md` carries eleven pointers into `openspec/schemas/sdd-plus-superpowers/schema.yaml` and
+no statement anywhere in itself that it is a pointer file. `schema.yaml` carries the procedure
+and no statement that the commands defer to it. So:
+
+- An agent that **reads** only `apply.md` acts **correctly but less informed**. That is by
+  design: a pointer is one sentence carrying the imperative *and* its one-line consequence, so
+  an agent that does not follow the pointer still does not take the wrong action. Mechanics live
+  behind the pointer; the consequence never does.
+- An agent that **edits** only `apply.md` to change a rule changes **nothing** — the rule is
+  stated in `schema.yaml`. The diff reads correct, reviews as correct, and has no effect on how
+  the phase executes.
+
+Practical rule: before editing a workflow rule, grep the sentence across all four surfaces and
+edit the one that states it in full. If two surfaces state it in full, that is a duplication
+finding rather than a choice of where to edit.
+
+The same change gave `schema.yaml` three new **top-level** blocks — `resolve:`, `propose:` and
+`archive:` — because every rule assigned to the schema whose home was `propose.md` or
+`archive.md` previously had no block to move into. Two consequences bite immediately:
+`openspec instructions` returns the artifact instructions and `apply` and **does not retrieve
+those three**, so a pointer naming them means "read that block of the file directly"; and any
+tool walking the schema must resolve a top-level anchor and not only an `- id:` anchor —
+`adf-metrics.mjs` did not, and reported `(no source)` for a 3254-byte block that exists.
 
 ## `openspec update` destroys this repository's adaptations
 
@@ -360,7 +397,7 @@ whole-branch review could see it.
 PASS or BLOCKED" makes prose decide it, and whether `blocked` in a sentence counts depends on
 who is reading. Equality also catches the unfilled template, whose line carries both tokens —
 a rule taking the *first* token would read an untouched template as a pass. Same defect class
-as the CI parser (see [Infra](infra.md)), found on both surfaces, fixed properly on one of them
+as the CI parser, found on both surfaces, fixed properly on one of them
 an hour before the other.
 
 **The stage cannot review markdown.** The filter drops all `.md` because the prompt orders the
@@ -523,14 +560,233 @@ change that paid for catching it late instead:
 - **(c) Apply-time test run with a verify short-circuit** — see the "producer side"
   note above.
 
-`flow-retro` (`.claude/skills/flow-retro/`) is a fourth, independent addition: a
+`adf-retro` (`.claude/skills/adf-retro/`) is a fourth, independent addition: a
 manually-invoked, session-ID-driven skill that reports on a past session's token
 economy and task time — never triggered automatically by any `/opsx:*` command. Its
 own `SKILL.md`/`README.md` are the source of truth; nothing here duplicates them.
 
+## The capability corpus now has a lint too — and it never blocks
+
+`.claude/CLAUDE.md` §4 defines a **Lint Workflow** for `.claude/memory/`: contradictions, stale
+claims, orphan pages, concepts lacking their own page. `openspec/specs/` has no counterpart. Its
+capabilities grow monotonically through delta merges at archive, and nothing ever reads the corpus
+back as a whole to ask whether it still describes one coherent system.
+
+The asymmetry was worth naming because the spec corpus is this flow's answer to comprehension debt —
+the tracked description of what the system does, maintained by a mechanism no single change controls.
+An answer nobody reads back goes stale silently, and the failure mode is exactly the one the memory
+lint hunts, one level up.
+
+**`adf-normative-single-source` closed it** (archived `2026-08-27`): `.claude/skills/spec-corpus-lint/`
+reads `openspec/specs/` whole and reports three classes — contradictions between capabilities,
+requirements no capability owns, and introductory prose that contradicts the requirements below it.
+Its shape is `adf-retro`'s: `SKILL.md` + `README.md`, no script, **manually invoked only**, never
+triggered by `/opsx:propose`, `/opsx:apply`, `/opsx:verify`, `/opsx:archive` or any CI job. It is
+deliberately not a section of `adf-retro`: that skill's input is one session transcript and its
+question is how one execution went; this one's input is the corpus and its question is whether it
+still says one coherent thing. They share a cadence, not a subject.
+
+**It reports and never blocks, and that is a requirement rather than a convenience.** The measured
+disease of this flow is monotonic gate growth, so a coherence report that failed a phase would cost
+more than the incoherence it detects. Cadence: every third to fifth archived change, and
+immediately after any change that hand-edited a capability's introductory prose — that hand edit is
+the event most likely to have created the incoherence.
+
+Note the constraint any such lint works under: `openspec/specs/` is written **only** by
+`/opsx:archive`, with one exception — a capability's introductory prose above `## Requirements` is
+not a requirement, no delta merge can reach it, and a change may edit it by hand on its own branch,
+with `verify.md` recording which capabilities and why. That prose is therefore the only part of the
+corpus a lint's findings can be acted on directly; everything below `## Requirements` has to go
+through a change.
+
+## Every rule this flow makes mandatory has another site still stating the old version
+
+Measured on `adf-flow-improvements` (archived 2026-08-26): **seven instances in one change**, and
+not one was found by a check. The execution graph's optionality survived in `.claude/CLAUDE.md` §5
+and again in `schema.yaml`'s own `apply` instruction after the `plan` instruction had been
+corrected; the required `**Level:**` field was missing from the schema's own enumeration of task
+fields and contradicted by §5's dispatch-time framing; the verification check count survived stale
+in two unguarded literals; and the apply test-record ordering survived in `schema.yaml` after
+`apply.md` was changed.
+
+This generalises the page's own earlier note that adding a verify check means touching three files.
+It is not specific to verify checks: **it is the shape of every rule change in this flow.** The
+detector that exists — `check-workflow-shape.mjs` — compares declarations against a derived shape,
+so it catches a stale *count* and nothing else. Five sites declare the check count; three are
+guarded. A rule that is prose in two places and mandatory in one is invisible to it by
+construction.
+
+`adf-normative-single-source` (archived `2026-08-27`) attacked the cause rather than the symptom:
+a rule is now stated in full on exactly one surface, so there is no second site to leave stale, and
+`.claude/scripts/adf-regression/normative-duplication.mjs` fails when one normalised normative
+sentence appears in two flow-defining files. It is not a complete answer — the check is green only
+because ten sentences are allowlisted, it compares normalised text rather than meaning (so a rule
+worded differently on two surfaces is invisible to it), and duplication *within* one surface is
+outside the map entirely. See [The Four Normative Surfaces](normative-surface-map.md) and
+[ADF Deferred Findings](adf-deferred-findings.md).
+
+Until those gaps close, the mechanical method still applies: after making a rule mandatory, grep the
+repository for the old formulation before considering the task done. Seven for seven says the prior
+probability of a second site is not low, it is high.
+
+## A tool exercised only on empty input passes every gate
+
+Two defects in `adf-metrics.mjs` survived `/opsx:verify` and two rounds of AI review, and both were
+of one kind: code implementing an assumption about real data that had never met real data.
+
+`deriveProjectKey` stripped a leading dash that the real `~/.claude/projects/<key>/` directory
+keeps, so every session was unresolvable. `parseTokens` read `record.usage`, which the real
+transcript never carries — the field is `record.message.usage`, in 506 records of 1447. The token
+column, the change's headline deliverable, was structurally always zero.
+
+Neither was reachable by any reviewer, and calling that a review miss would be wrong. The ledger
+carried no session line, so the extractor correctly printed `(no sessions found)`, every gate saw
+correct behaviour on an empty input, and the tests — real tests, written first — asserted against
+synthetic fixtures that encoded the same wrong assumption as the code. **The empty set is a
+passing input for everything.**
+
+The defect appeared within a minute of the first real session line being written. No stage of this
+flow requires a new tool to be run against a non-empty real input before it is reviewed, and that
+is the gap. It cannot be made a deterministic check — "was this exercised against real data" is a
+judgement — so it is recorded in `.claude/scripts/adf-regression/README.md` under the set's
+non-scriptable heading, with the question a reviewer should ask instead.
+
+## A working-directory instruction does not bind a subagent's later tool calls
+
+A dispatch that says "work in `<path>`" is honoured for as long as the agent remembers to honour
+it. Tool calls do not inherit it; each one starts from the session's own working directory. This is
+not a subagent defect — the orchestrator hit it too, when a `cd` from one `Bash` call leaked into
+the next and a ledger write landed nowhere.
+
+It cost two things in `adf-flow-improvements`. One of three wave-1 groups ignored its worktree
+entirely and committed to the change branch, so its work bypassed the group-branch review gate —
+caught only because the compliance table compared the graph's declared groups against the worktrees
+`git` actually showed. And a dispatched agent ran a repository-wide `git add -A` in the developer's
+shared dirty checkout, unrecoverably destroying two uncommitted files that belonged to neither the
+change nor its plan.
+
+Two rules follow, and the second is now a regression check
+(`.claude/scripts/adf-regression/dispatch-git-safety.mjs`):
+
+- Every path in a dispatch and in a verification command is absolute. Prefer `git -C <repo>` over
+  `cd` for git.
+- No dispatch-facing instruction tells an agent to run an unscoped repository-wide git mutation.
+  `git add -A <path>` is fine; bare `git add -A`, `git add .`, `git checkout --`, `git restore`,
+  `git stash push` and `git clean` are not. `/opsx:propose` already guards its own branch
+  operations by refusing a dirty tree; apply and verify dispatch dozens of writers and had no
+  equivalent.
+
+## A group controller is a third agent layer, and on a small group it costs more than the work
+
+`adf-flow-improvements` fanned three wave-1 groups, each with its own controller agent running
+`subagent-driven-development` for its slice. All three failed the same way: each stopped believing
+a child was still live when that child's work was already committed. One spent ~96k tokens and 35
+tool calls to land four tasks; another ~115k on a two-task group.
+
+The controllers were collapsed mid-apply and the remaining fourteen tasks ran as direct dispatches
+from the orchestrator — implementer plus an independent review per dispatch, the gate preserved and
+the middle layer removed. Nothing in the flow bounds when a group deserves its own controller. A
+group of one or two tasks almost certainly does not.
+
+One caveat learned the hard way: collapsing a controller does not stop the children it already
+dispatched, and a parked controller is not a stopped one. Both landed commits under later
+dispatches. The sharpest single output of the three controllers was one of them noticing the
+collision and declining to kill the intruding dispatch mid-edit.
+
+## Subagent cost is measurable, and the harness is the source — never the agent
+
+The obvious way to attribute cost per actor is to ask each dispatched agent to report its own token
+usage. That is wrong twice over: an agent cannot read its own usage counters, so it would report an
+estimate, and the whole premise of this flow's measurement layer is that a script cannot fabricate
+a figure. Self-reporting makes the measured party its own accountant.
+
+The deterministic source already exists in the orchestrator's transcript. When a dispatched agent
+completes, the harness writes a task notification carrying
+`<usage><subagent_tokens>N</subagent_tokens><tool_uses>N</tool_uses><duration_ms>N</duration_ms></usage>`
+into a `type: "queue-operation"` record. Three cautions, all measured:
+
+- The same notification is written into more than one queue operation (`enqueue` and `remove`). A
+  naive sum over-counts by **22 %**. Deduplicate on task id plus the figures.
+- The same text also appears in `user`, `attachment` and `assistant` records. Restricting the scan
+  to `queue-operation` is a safety property, not tidiness: an agent that pastes a `<usage>` block
+  into its own prose must not be able to inject a number into a measurement.
+- `subagent_tokens` is a **total**, not an output count. The harness does not split it, so reporting
+  it in an output column mislabels it.
+
+`isSidechain` is useless for this: it occurs zero times in a real orchestrator transcript, because
+subagent turns are not in that transcript at all.
+
+## `/opsx:review` reviews a schema-only change — the filter excludes `.md`, not "docs"
+
+Predicted wrong, then measured, during `adf-maintainability-gates` (2026-08-27). The reasoning
+was: this change is normative prose, the review stage excludes documentation, therefore the stage
+will record "nothing to review" and complete without dispatching. It did not. The filter excludes
+`*.md`, `.gitlab-ci*.yml` and the generated/vendored paths — and `schema.yaml` is YAML. Of
+sixteen touched files exactly one reached the reviewer, at 8157 bytes of diff, and the tuned
+review returned `REQUEST CHANGES` on it.
+
+So the rule is about file extensions, not about whether text is documentation:
+
+- A change touching `openspec/schemas/**/*.yaml`, `.lefthook.json` or any non-`.md` config **is**
+  reviewed by this stage.
+- A change touching only `.claude/commands/opsx/*.md`, `openspec/specs/**/*.md`, `.claude/CLAUDE.md`
+  or the change's own artifacts is **not** — the diff is empty and the record is a `PASS` with a
+  `## Not reviewed` section.
+
+The consequence worth holding: for a flow change, `/opsx:review` covers the schema and nothing
+else. The edit with the widest blast radius in `adf-maintainability-gates` —
+`infra/claude/review-prompt.md`, the prompt every merge request in this repository runs — was
+never seen by this stage at all. It was covered twice elsewhere, by its own task review and by the
+whole-branch review, and that is the only reason the gap did not matter.
+
+## A finding against a YAML file cannot be dismissed durably
+
+The suppression marker is `// review-ignore: <key> — reason`, honoured by both the prompt and the
+CI review, and its whole point is that a dismissal travels with the code rather than with the
+session. It is a C-style comment. No YAML or markdown surface can carry it.
+
+`adf-maintainability-gates` hit this for real: the tuned review's single HIGH was raised against
+`schema.yaml`. Had it been dismissed rather than fixed, the reasoning could only have lived in
+`review.md`, and the CI review would have raised it again on the merge request — the
+local-pass-then-CI-block drift the no-local-copy rule exists to prevent, arriving by the other
+door. It was fixed instead, which sidestepped the question rather than answering it.
+
+That change widened the marker's permitted key set (`DUP` beside `CWE-XXX`). It did not widen the
+comment syntaxes the marker can live in, and nothing in the flow currently can.
+
+## The flow now has exactly one blocking maintainability class, and it is local
+
+Added by `adf-maintainability-gates`. A confirmed duplicate found by the code reuse sweep stops
+apply from concluding; every other maintainability finding keeps the advisory standing
+`review-prompt.md` gives it, and the merge-request gate's thresholds did not move. The full shape,
+the invariant that no single file states, and the four requirements nothing has yet exercised are
+on [[code-reuse-sweep]].
+
 ## Related
 
-- [Guidelines](../guidelines.md)
-- [Tech Stack](tech-stack.md) — the workspace packages check 6 maps paths onto
-- [Infra](infra.md) — the CI half of the same review: the verdict gate, the transport/content
+- [The Four Normative Surfaces](normative-surface-map.md) — which surface owns which rule, the
+  pointer form, the duplication check and its allowlist
+- [Normative Surface Size](normative-surface-size-metric.md) — the per-phase byte metric, on
+  probation, and the baseline error that made its number wrong twice
+- [ADF Deferred Findings](adf-deferred-findings.md) — open defects, deferred wordings and recorded
+  decisions this flow's own changes left behind
+- [ADF Cost Baseline](adf-cost-baseline.md) — the end-to-end cost measurements of this workflow
+- `infra/claude/` — the CI half of the same review: the verdict gate, the transport/content
   exit split, and the `set -e` exit-status lesson the local stage shares
+
+## Three of seven tasks stopped on a baseline number the plan got wrong
+
+Same change (`adf-maintainability-gates`). Each task's RED step recorded a measurement before
+editing, and three of the seven had a literal that did not match the tree: a suppression-marker
+key count in `review-prompt.md` was off by one; a field-name grep across `openspec/` and
+`.claude/` returned far more hits than expected, because the change's own planning artifacts
+name the field; and a verify step used a CLI flag the installed CLI does not have (the name is
+positional, not a flag).
+
+Two of the three implementers stopped and reported rather than editing, which is what the dispatch
+asked of them and it was right both times. But the cause is one thing: **the plan's greps were
+written from reasoning rather than from execution.** `schema.yaml`'s `plan` instruction already
+requires every symbol, file and path a task names to be resolved against the tree before the plan
+is done. It does not extend that to command output. Extending it — if a RED step states an
+expected number, that number came from running the command while writing the plan — is the
+narrowest fix and is filed on [[adf-deferred-findings]].

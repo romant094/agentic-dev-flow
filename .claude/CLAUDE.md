@@ -14,7 +14,7 @@ bottom.
 
 ### Wiki Memory (Karpathy Method)
 
-**At session start:** read [`.claude/memory/index.md`](.claude/memory/index.md) to load the
+**At session start:** read [`.claude/memory/index.md`](memory/index.md) to load the
 knowledge catalog before any work.
 
 Knowledge base lives in `.claude/memory/`:
@@ -86,6 +86,20 @@ Apply is blocked until `plan.md` exists. Implementation runs through
 unconditionally; TDD is enforced when the task's own text in `plan.md` calls for it, not
 as a guarantee of the skill itself.
 
+The flow's rules live on four surfaces, each normative for one thing:
+
+| Surface | Normative for | Carries |
+|---|---|---|
+| **`openspec/specs/`** | what must be true of the flow | requirements and scenarios only |
+| **`schema.yaml`** | how a phase executes | full procedure, per artifact and for apply |
+| **`.claude/commands/opsx/*`** | what the operator does | the imperative, plus a pointer for anything the schema states in full |
+| **`.claude/CLAUDE.md` §2** | invariants a developer must know | no mechanics |
+
+A rule is stated in full on exactly one surface; every other surface that needs it carries
+a pointer to that surface instead of a second copy. A pointer naming `resolve`, `propose`
+or `archive` names a top-level block of `schema.yaml`, read there directly:
+`openspec instructions` retrieves the artifact instructions and `apply`, not those three.
+
 - **`/opsx:propose` is the single entry point.** There is no `/opsx:explore` — the
   brainstorm artifact covers that stage.
 - Exempt (fix directly): typos, formatting, dependency bumps, bug fixes that restore
@@ -103,7 +117,8 @@ as a guarantee of the skill itself.
   while that branch is not `develop`, which each command refuses outright.
 - **`npm install`/`npm ci` are never run inside a worktree**, except when the change
   itself touches the dependency manifests or the ORM schema. A dependency update is a
-  separate task and a separate merge request.
+  separate task and a separate merge request. Stated in full in
+  `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `apply` instruction.
 - `openspec/specs/` is written **only** by `/opsx:archive`. Never hand-author or backfill it.
   One exception: a capability's introductory prose, above its `## Requirements` heading, is
   not a requirement and no delta merge can reach it. When a change makes that prose
@@ -118,11 +133,27 @@ as a guarantee of the skill itself.
   `develop` is only reached through a merge request the developer merges. The local branch
   survives archiving; the forge deletes the remote branch on merge.
 - Keep `openspec/config.yaml` current when architectural invariants change.
-- **Match the agent to the work.** Every dispatch names the capability level it runs at,
+- **Match the agent to the work.** A task's capability level is declared in `plan.md`,
   chosen to fit the task: mechanical work with a complete spec → cheapest capable level;
   integration and debugging → middle; architecture, adjudication and the whole-branch
-  review → highest available. Never hardcode a model or vendor name — this flow is
-  executed by more than one agent runtime.
+  review → highest available. The orchestrator dispatches at the declared level and
+  still names it. Never hardcode a model or vendor name — this flow is executed by
+  more than one agent runtime.
+- **Exactly one maintainability finding blocks.** A confirmed duplicate of code the repository
+  already carries — found by the reuse sweep apply issues once over the merged branch — stops
+  apply from concluding. It is cleared by consolidating on the existing code, or by an explicit
+  developer dismissal. Every other maintainability finding stays advisory and the
+  merge-request gate's thresholds are unchanged. Stated in full in
+  `docs/flow-specs/code-reuse-sweep/spec.md`.
+- **The orchestrator delegates rather than reads.** Any question whose answer needs
+  more than one file opened goes to a short-lived read-only agent that returns a verdict; the
+  orchestrator does not open those files itself. Raw suite or script output is never pasted
+  into the orchestrator's context where a pass/fail line answers the question. A verdict too
+  narrow to act on is answered by a second dispatch with a wider required shape, never by
+  the orchestrator opening the files. One named file is still read directly — delegation
+  buys nothing at that size. This is the largest single cost lever measured on this flow,
+  and input length alone degrades reasoning independently of retrieval, so it is a quality
+  rule as much as a cost one.
 - **Group tasks before dispatching, don't default to one subagent per checkbox.** When
   writing `tasks.md`, merge checkboxes into one when either holds: (1) *cascading* — items
   touch the same file/test suite and fixing one likely reveals the next (a stale-mock
@@ -134,13 +165,24 @@ as a guarantee of the skill itself.
   when a task is risky, large, or needs isolated review attention — grouping trades review
   granularity for round trips, so only spend that trade where granularity wasn't buying
   anything.
-- **Independent task-groups can run in parallel, in their own worktrees.** When `plan.md`
-  groups its tasks and the groups are independent or weakly coupled, `writing-plans` may
-  lay out a two-tier execution graph and `subagent-driven-development` fans wave-1 groups
-  into sibling worktrees, capped at 2-3 at once — full mechanics in the
-  `parallel-group-execution` capability (`docs/flow-specs/parallel-group-execution/spec.md`)
-  and `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `apply` instruction. Additive:
-  a plan with no independent groups behaves exactly as before.
+  The bound in the other direction is structural, not a token number: split a task before
+  dispatch when its `**Files:**` block spans more than one top-level package of a
+  multi-package repository **and** it changes a failure or rollback path. Only the
+  conjunction triggers it. Stated in full in
+  `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `tasks` instruction.
+- **Independent task-groups can run in parallel, in their own worktrees.** Three rules
+  meet here, and each has its own surface.
+  - *The execution graph*: when `plan.md` groups its tasks and the groups are independent
+    or weakly coupled, `writing-plans` lays out a two-tier execution graph. Stated in full
+    in the `parallel-group-execution` capability
+    (`docs/flow-specs/parallel-group-execution/spec.md`).
+  - *The fan-out*: `subagent-driven-development` fans wave-1 groups into sibling
+    worktrees, capped at 2-3 at once. Stated in full in
+    `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `apply` instruction.
+  - *The single-group case*: a plan whose tasks do not partition states that it is a
+    single group and names the shared files that make it one; the section itself is never
+    omitted. Stated in full in
+    `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `plan` instruction.
 - Section 1 workflows still apply: the archive stage ingests what was learned into
   `.claude/memory/` — that replaces a per-change retrospective.
 - **Never run `openspec update`.** It rewrites `.claude/commands/opsx/` and
@@ -152,7 +194,7 @@ as a guarantee of the skill itself.
 
 ## 3. Flow Documentation
 
-`docs/flow-specs/` describes what the flow does — nine capabilities, listed in
+`docs/flow-specs/` describes what the flow does — fourteen capabilities, listed in
 `docs/flow-specs/README.md`. These are **historical documents**: the archived specs the
 flow wrote about itself while it was being built. Nothing reads them at runtime, and they
 are never merged into a host project's `openspec/specs/`, which stays that project's own.
@@ -165,6 +207,13 @@ dropped. Read alongside `docs/flow-specs/`, not as a substitute for it.
 
 Both are documentation of this flow. A host project's own live specifications go in
 `openspec/specs/`, written only by `/opsx:archive`, as described in Section 2.
+
+The change directories those documents were produced in — the flow's own
+`openspec/changes/**` history, with its `design.md`, `plan.md`, `verify.md` and `notes/` —
+are **not carried in this repository**; `openspec/changes/` here is empty and belongs to
+the host project. Memory pages and skill READMEs cite paths under
+`openspec/changes/archive/<date>-<change-name>/` as provenance for a decision. Those are
+citations of the origin project, not files to open here.
 
 ## 4. Adopting This In A Host Project
 

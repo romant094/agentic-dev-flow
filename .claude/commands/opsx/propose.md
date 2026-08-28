@@ -71,8 +71,9 @@ When ready to implement, run /opsx:apply
    for example `feat/PROJ-123/add-licensing`.
 
    Show the proposed name and wait for confirmation. The developer may edit it.
-   Do NOT validate the name with a regular expression — a confirmed name is a
-   decision, and convention compliance is the developer's responsibility.
+   Do NOT validate the name with a regular expression — rejecting a name the developer
+   confirmed overrides their decision. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `propose` instruction.
 
    Never proceed silently. No branch operation happens without an explicit answer.
 
@@ -81,8 +82,9 @@ When ready to implement, run /opsx:apply
 
    - Check the current branch first: `git branch --show-current`. If it is
      `develop`, do NOT proceed with staying on it — say so plainly, ask for a
-     task ID, and take the branch-creation path above instead. All work
-     reaches `develop` through a merge request, never a direct commit.
+     task ID, and take the branch-creation path above instead. Never commit to
+     `develop` directly; every change reaches it through a merge request.
+     Stated in full in `.claude/CLAUDE.md` §5.
    - Create no branch and no worktree. The branch is already checked out, and a
      second branch per change was rejected by design.
    - Do not validate the current branch name.
@@ -97,9 +99,9 @@ When ready to implement, run /opsx:apply
    ```
 
    If the output is non-empty, STOP. Show `git status` in full and ask the
-   developer to deal with it. Never run `git stash`, never commit on their
-   behalf, and never pass `--force` to anything. Uncommitted work is theirs to
-   decide about.
+   developer to deal with it. Never stash, commit or force on the developer's
+   behalf — uncommitted work is theirs to lose. Stated in full in
+   `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `propose` instruction.
 
    Untracked files are excluded deliberately. The operation this guards is
    `git worktree add`, which reads a commit and writes a new directory without
@@ -117,8 +119,9 @@ When ready to implement, run /opsx:apply
 
    `git worktree add` does not touch the main checkout — no switch, no merge, no
    clean-tree requirement of its own. Never run `git checkout` or `git switch`
-   here, and never commit to `develop` directly: all work reaches `develop`
-   through a merge request.
+   here, and never commit to `develop` directly — a direct commit bypasses the
+   merge request every change is integrated through. Stated in full in
+   `.claude/CLAUDE.md` §5.
 
    Every later step in this command runs **inside the worktree**. Change into it
    now and stay there:
@@ -180,10 +183,10 @@ When ready to implement, run /opsx:apply
         ```bash
         openspec validate --all --json
         ```
-        Every item MUST report `"valid": true`. If any item is invalid, fix the
-        requirement text in place (the requirement's `SHALL`/`MUST` MUST be on the
-        first line of its body — the validator does not scan past it) and re-run
-        validation. Do NOT continue to `tasks`/`plan` on an invalid spec.
+        Every item MUST report `"valid": true`, and an invalid spec is fixed before
+        `tasks` or `plan` is written — those artifacts are built on top of it. Stated
+        in full in `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `propose`
+        instruction.
       - Stop when all `applyRequires` artifacts are done
 
    c. **If an artifact requires user input** (unclear context):
@@ -255,9 +258,9 @@ After completing all artifacts, summarize:
 - The schema defines what each artifact should contain - follow it
 - Read dependency artifacts for context before creating new ones
 - Use `template` as the structure for your output file - fill in its sections
-- **IMPORTANT**: `context` and `rules` are constraints for YOU, not content for the file
-  - Do NOT copy `<context>`, `<rules>`, `<project_context>` blocks into the artifact
-  - These guide what you write, but should never appear in the output
+- **IMPORTANT**: `context` and `rules` are constraints for YOU, not content for the file —
+  copying them in ships the instructions as if they were the deliverable. Stated in full in
+  `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `propose` instruction.
 
 **Guardrails**
 - Create ALL artifacts needed for implementation (as defined by schema's `apply.requires`)

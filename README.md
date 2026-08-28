@@ -40,7 +40,8 @@ path in, and a developer merges it.
 .claude/skills/
   ai-code-review/                       runs the CI review prompt locally, before the MR does
   openspec-sync-specs/                  archive's delta-spec merge subroutine
-  flow-retro/                           token/time retrospective over a past session
+  adf-retro/                            token/time retrospective over a past session
+  spec-corpus-lint/                     manual, non-blocking lint over the whole spec corpus
   log-rotation/                         monthly rotation of the memory log
 .claude/scripts/
   check-superpowers.mjs                 the availability gate every command runs first
@@ -48,11 +49,13 @@ path in, and a developer merges it.
   check-sdd-workspace.mjs               worktree/workspace state guard
   check-workflow-shape.mjs              design-vs-reality coherence check used by verify
   check-english.mjs                     pre-commit guard: repository artifacts stay English
+  adf-metrics.mjs                       deterministic cost/maintainability extractor for adf-retro
+  adf-regression/                       one script per confirmed flow defect, run by verify check 11
   mr.mjs                                merge request create/update/undraft plumbing
   *.test.mjs                            node:test unit tests for all of the above
 
-docs/flow-specs/                        HISTORICAL — the nine capabilities that define the
-                                        flow, as archived specs. Documentation only.
+docs/flow-specs/                        HISTORICAL — the fourteen capabilities that define
+                                        the flow, as archived specs. Documentation only.
 
 openspec/
   specs/                                EMPTY — your project's own capabilities land here,
@@ -72,13 +75,18 @@ infra/claude/
 .lefthook.json                          pre-commit: the English guard
 ```
 
-The nine capabilities under `docs/flow-specs/`: `change-workflow-schema` (the cycle and its
-artifacts), `change-branch-isolation` (branch and worktree lifecycle),
+The fourteen capabilities under `docs/flow-specs/`: `change-workflow-schema` (the cycle and
+its artifacts), `change-branch-isolation` (branch and worktree lifecycle),
 `merge-request-lifecycle` (who pushes and undrafts, and when), `ci-unit-testing` (which
 stage runs which tests), `ai-review-flow-stage` (the local review stage),
 `ai-review-ci-gate` (the merge request gate), `superpowers-availability-gate` (why every
 command stops without the plugin), `parallel-group-execution` (independent task groups in
-sibling worktrees), `flow-retrospective` (the retro).
+sibling worktrees), `flow-retrospective` (the retro, `adf-retro`), `apply-execution-ledger`
+(the durable record apply keeps of groups, sessions and dispatches), `code-reuse-sweep`
+(the one gate with repository read access, and the blocking maintainability class),
+`flow-regression-checks` (the regression set behind verify check 11),
+`normative-text-single-source` (the four surfaces a flow rule can live on), `spec-corpus-lint`
+(the manual, non-blocking corpus lint).
 
 ## Prerequisites
 

@@ -85,13 +85,20 @@ copied verbatim into generated artifacts.
 
 The schema SHALL reference only skills this project can resolve: Superpowers skills from
 `claude-plugins-official` and OpenSpec built-in workflows. References to
-`openspec-continue-change` and `workflow-retrospective` MUST NOT appear.
+`openspec-continue-change`, `workflow-retrospective` and `flow-retro` MUST NOT appear. The
+last of the three is the pre-rename name of `adf-retro`; naming it here is what stops the old
+name returning, because a name that is merely no longer used is a name nothing objects to.
 
 #### Scenario: Every named skill resolves
 
 - **WHEN** the schema's instruction text is searched for skill names
 - **THEN** each name is either a Superpowers skill present in the installed plugin or an
   OpenSpec built-in workflow shipped with the CLI
+
+#### Scenario: The pre-rename retrospective name reappears
+
+- **WHEN** any instruction text names `flow-retro`
+- **THEN** the stale-skill check reports it, because the skill is `adf-retro`
 
 ### Requirement: Retrospective replaced by a memory ingest
 
@@ -102,11 +109,28 @@ schema format has no archive stage — its stages are the artifacts plus `apply`
 requirement placed there would have no home, and inventing one would pass schema validation
 while instructing nobody.
 
+The ingest MUST additionally answer two fixed questions: the invariant this change introduced
+that is not visible in any single file, and what a future implementer would most plausibly get
+wrong. A general instruction to "write or update the relevant pages" does not recover either,
+and they are the whole content of comprehension debt in a change where dozens of subagents
+each saw one task and no participant saw the whole.
+
 #### Scenario: Archive completes
 
 - **WHEN** `/opsx:archive` finishes for a change
 - **THEN** the knowledge gained is recorded in `.claude/memory/` and no
   `retrospective.md` is produced
+
+#### Scenario: The ingest names a cross-file invariant
+
+- **WHEN** a change establishes a rule that holds across several files and is stated in none
+  of them
+- **THEN** the ingest states that invariant explicitly, as one of its two required answers
+
+#### Scenario: The ingest names the likely misreading
+
+- **WHEN** a change leaves a structure whose purpose is not evident from any one file
+- **THEN** the ingest states what a future implementer would most plausibly get wrong about it
 
 ### Requirement: Task and plan granularity are separated by axis
 
@@ -114,7 +138,8 @@ while instructing nobody.
 independently reviewable deliverable, in domain terms, ordered shared → server → client,
 carrying no file paths and no test commands. `plan.md` SHALL state *how* each item is
 executed — one `### Task N` per `tasks.md` item, each carrying an explicit back-reference
-to the item it implements, plus files, interfaces, and RED→GREEN→REFACTOR→commit steps.
+to the item it implements, plus files, interfaces, a `**Level:**` of `mechanical`,
+`integration` or `architecture`, and RED→GREEN→REFACTOR→commit steps.
 `plan.md` MUST NOT introduce a deliverable that is absent from `tasks.md`.
 
 #### Scenario: Plan item without a back-reference
@@ -127,6 +152,12 @@ to the item it implements, plus files, interfaces, and RED→GREEN→REFACTOR→
 
 - **WHEN** `tasks.md` is reviewed
 - **THEN** it contains no source file paths — those live in `plan.md`
+
+#### Scenario: Plan task without a declared level
+
+- **WHEN** a `### Task N` in `plan.md` carries files and steps but no `**Level:**`
+- **THEN** the plan is incomplete, because the level is a scope judgement and scope is known
+  while the plan is being written
 
 ### Requirement: Single command entry point
 
@@ -370,6 +401,11 @@ is executed by more than one agent runtime and each names its levels differently
 runtime exposes no such choice, the rule is satisfied by that runtime's own equivalent
 control, or noted as unavailable.
 
+For a plan task, the level SHALL be the one `plan.md` declares rather than one chosen at
+dispatch time; the orchestrator still names the level in the dispatch. An agent whose fix
+loop reaches a second round SHALL be re-dispatched one tier higher, because a tier set too
+low is otherwise paid for twice.
+
 #### Scenario: Mechanical task with a complete specification
 
 - **WHEN** a task's instructions already carry the exact content to write
@@ -387,6 +423,17 @@ control, or noted as unavailable.
 - **WHEN** the workflow runs on an agent runtime that does not expose model selection
 - **THEN** the requirement is met by that runtime's nearest equivalent control, and no
   named model appears in any project artifact
+
+#### Scenario: A plan task declares its level
+
+- **WHEN** a `### Task N` declares `**Level:** integration`
+- **THEN** the dispatch runs at that level and names it, rather than the orchestrator
+  re-deciding from the checkbox text
+
+#### Scenario: A fix loop reaches a second round
+
+- **WHEN** an implementer's fix loop for one task enters round 2
+- **THEN** the next dispatch for that task runs one tier above the declared level
 
 ### Requirement: In-flight changes use the new schema
 
@@ -648,3 +695,205 @@ contradict either MUST be rewritten before the artifact is marked done.
   section lists one or more risks
 - **THEN** each listed risk has a corresponding line in `plan.md` naming the task that
   addresses it, or an explicit reasoned deferral, before the `plan` artifact is marked done
+
+### Requirement: The orchestrator delegates any question needing more than one file
+
+The orchestrator of `/opsx:apply` and `/opsx:verify` MUST send any question whose answer requires opening more than one file to a short-lived read-only agent that returns a verdict, and MUST NOT open those files itself. Raw output from a test suite or a script MUST NOT be pasted into the orchestrator's context where a pass/fail line answers the question. The normative statement of this rule lives in `.claude/CLAUDE.md` §5; each command SHALL point at it and add only what its own phase requires, rather than restating it, so the rule cannot drift between two copies.
+
+#### Scenario: A question spans several files
+
+- **WHEN** the orchestrator needs to know whether a symbol a plan names exists across three files
+- **THEN** it dispatches a read-only agent and reads that agent's verdict
+
+#### Scenario: A suite passes
+
+- **WHEN** a test suite run answers a yes/no question the orchestrator asked
+- **THEN** only the pass/fail result enters the orchestrator's context, not the suite's output
+
+#### Scenario: One file answers the question
+
+- **WHEN** the answer is in a single named file
+- **THEN** the orchestrator may read it directly, because delegation buys nothing at that size
+
+### Requirement: Verification writes quoted output directly into its report
+
+`/opsx:verify` MUST write test and script output that its report quotes straight into `verify.md`, and MUST NOT route that output through the orchestrator's context first. The report needs the text verbatim; the orchestrator needs only to know the command ran and what it concluded.
+
+#### Scenario: A check quotes a suite run
+
+- **WHEN** a verification check records a suite's output as evidence
+- **THEN** that output is written into `verify.md` directly, and the orchestrator's context carries only the verdict
+
+### Requirement: A dispatch carries its question in full and its answer has a shape
+
+Every dispatch prompt MUST carry the task id, the files in scope, the question, and the shape the answer must take; a continuation sentence MUST NOT stand as a prompt. A continuation of earlier work SHALL be sent to the original agent, which still holds its context, rather than issued as a fresh dispatch. A read-only question about code on the current branch MUST NOT be given worktree isolation, because it writes nothing. A read-only agent's verdict SHALL have a fixed, bounded form; where a verdict is genuinely insufficient, the orchestrator SHALL issue a second dispatch with a wider required shape rather than opening the files itself.
+
+#### Scenario: A dispatch prompt is a continuation sentence
+
+- **WHEN** a fresh agent is dispatched with a prompt that only says to continue prior work
+- **THEN** the dispatch is malformed, because the agent holds none of that prior context and must rediscover it
+
+#### Scenario: Earlier work needs continuing
+
+- **WHEN** an investigation already run by an agent needs one more step
+- **THEN** the message goes to that same agent, which still holds the context, rather than to a new one
+
+#### Scenario: A read-only question about branch code
+
+- **WHEN** an agent is dispatched to answer a question about code on the current branch and will write nothing
+- **THEN** it runs without worktree isolation
+
+#### Scenario: A verdict is too narrow to act on
+
+- **WHEN** a read-only agent's bounded verdict does not answer the question asked
+- **THEN** a second read-only dispatch is issued with a wider required shape, and the orchestrator does not open the files
+
+### Requirement: An implementer recites its task before its first edit
+
+An implementer MUST state its task's `**Files:**`, `**Interfaces:**` and acceptance criteria before making its first edit, and MUST work from that statement rather than from the plan as a whole. The purpose is accuracy, not brevity: input length alone degrades reasoning even when retrieval is perfect, so an implementer that has restated its own scope solves against a short, correct context instead of a long one.
+
+#### Scenario: An implementer begins a task
+
+- **WHEN** an implementer is dispatched for a plan task
+- **THEN** its first output states that task's files, interfaces and acceptance criteria, before any edit
+
+#### Scenario: The plan is long
+
+- **WHEN** the plan carries twenty tasks and the implementer holds one
+- **THEN** it solves from its recited scope rather than re-reading the whole plan as it works
+
+### Requirement: A task spanning packages and touching a failure path is split
+
+A task whose `**Files:**` block spans two or more of the repository's top-level packages **and** which changes a failure or rollback path MUST be split before it is dispatched. The bound is structural rather than a context-size number, because an agent cannot reliably measure its own context at the moment the split decision is made — the same reason the handoff threshold uses observable proxies.
+
+#### Scenario: A task spans two packages and changes a rollback path
+
+- **WHEN** a task's files include two of the repository's top-level packages and its work changes what happens when a write fails part-way
+- **THEN** the task is split before dispatch
+
+#### Scenario: A task spans packages without touching a failure path
+
+- **WHEN** a task's files span two packages but the change is additive and touches no failure or rollback path
+- **THEN** the task is not required to be split, because only the conjunction triggers the rule
+
+### Requirement: Plan authoring resolves every symbol, file and path it names
+
+The `plan` artifact instruction MUST require that every symbol, file and path named in a task's `**Files:**` and `**Interfaces:**` blocks is resolved against the tree before `plan.md` is marked done, and that the command used to resolve them is stated. Apply's equivalent scan SHALL be retained as a backstop expected to report zero rather than removed: in the measured session it found five real plan defects in four minutes, which argues for running it earlier, not for deleting it.
+
+#### Scenario: A plan names a symbol that does not exist
+
+- **WHEN** a drafted task's `**Interfaces:**` block names a function absent from the tree
+- **THEN** plan authoring catches it and the plan is corrected before the artifact is marked done
+
+#### Scenario: Apply's backstop scan finds a defect
+
+- **WHEN** apply's pre-flight scan reports an unresolved symbol
+- **THEN** that is a finding against plan authoring, because the scan was expected to report zero
+
+### Requirement: A hardware smoke pass lands in the group that lands the write path
+
+A change touching a device write path MUST place its hardware smoke pass inside the task group that lands that path, and MUST NOT defer it to a single verification task at the end of the change. As one task at the end it surfaced four defects that became a third day of work, because every one of them was found after the code that caused it had been reviewed and merged.
+
+#### Scenario: A group lands an SNMP write path
+
+- **WHEN** a task group changes how a configuration write reaches the device
+- **THEN** that group's own tasks include the smoke pass against real hardware
+
+#### Scenario: A change touches no write path
+
+- **WHEN** no task in the change writes to a device
+- **THEN** no smoke pass is required
+
+### Requirement: A task that narrows a contract owns its callers
+
+A task that makes the server reject a payload it previously accepted MUST list among its files the callers that construct those payloads, and its review MUST confirm that sweep. When a task narrows a contract, the task owns both sides of it; a narrowing whose callers are somebody else's task is a break shipped in two halves.
+
+#### Scenario: A validator gains a stricter bound
+
+- **WHEN** a task tightens a validation rule so a previously valid request is rejected
+- **THEN** the task's files include the client and server call sites building those requests, and the review confirms each was checked
+
+#### Scenario: A contract is widened
+
+- **WHEN** a task makes the server accept something it previously rejected
+- **THEN** the rule does not apply, because no existing caller breaks
+
+### Requirement: The apply test record is apply's final commit
+
+`/opsx:apply` MUST write and commit `.apply-test-record.md` as its final commit, after every task checkbox is ticked and after any documentation commit. Verification's staleness scan looks at the commits after that record; writing it earlier leaves a non-empty range that the scan reports as a finding about work the record was meant to cover.
+
+#### Scenario: Apply completes with a documentation commit
+
+- **WHEN** apply ticks its checkboxes, commits documentation, and records its suite run
+- **THEN** the test record is the last of the three commits
+
+#### Scenario: Verification checks the range after the record
+
+- **WHEN** verification scans the commits made after `.apply-test-record.md` was written
+- **THEN** that range is empty for a change whose apply completed normally
+
+### Requirement: Commits outside every task's file set are a verification finding
+
+`/opsx:verify` MUST report as a finding any commit on the change branch whose files lie outside every task's `**Files:**` block in `plan.md`, allowlisting `openspec/changes/**` and `.claude-reports/**`. Without the allowlist the check fires on every documentation and report commit and becomes noise; without the check, an edit belonging to no task is reviewed by nothing until the whole-branch review — which is how a deleted credential-scrub line became a change's single CRITICAL finding twenty-three hours after it was made.
+
+#### Scenario: A commit edits a file no task names
+
+- **WHEN** a commit on the change branch touches a source file absent from every task's `**Files:**` block
+- **THEN** verification reports the commit and the file as a finding
+
+#### Scenario: A commit edits only change artifacts
+
+- **WHEN** a commit touches only files under `openspec/changes/` or `.claude-reports/`
+- **THEN** verification does not report it, because those paths are allowlisted
+
+#### Scenario: Every commit is accounted for
+
+- **WHEN** every commit's files fall within some task's file set or the allowlist
+- **THEN** the check passes and says so
+
+### Requirement: The schema states phase procedure and the commands point at it
+
+`openspec/schemas/sdd-plus-superpowers/schema.yaml` SHALL be the single surface that states each phase's procedure in full. A file under `.claude/commands/opsx/` MUST carry the operator-facing imperative and a pointer for anything the schema states in full, and MUST NOT restate that procedure in its own words. The command files are the surface `openspec update` regenerates from upstream templates, so procedure held only there is the procedure most easily lost.
+
+#### Scenario: A phase's procedure changes
+
+- **WHEN** a change alters how a phase executes
+- **THEN** the full procedure is edited in `schema.yaml` and the command file's pointer is left unchanged unless the imperative or its consequence changed
+
+#### Scenario: A command file restates the schema
+
+- **WHEN** a command file describes a schema-stated procedure step by step
+- **THEN** the description is replaced by a pointer that carries the imperative and its consequence
+
+### Requirement: A removed or renamed requirement states where its code went
+
+The schema's `specs` instruction SHALL require a `**Code Disposition:**` field on every
+`REMOVED` and `RENAMED` delta operation, beside the `**Reason:**` and `**Migration:**` fields
+it already mandates. The field SHALL state where the removed or renamed behaviour's code went
+— deleted, superseded by a named path, or deliberately left in place with a reason — and
+whether the old path is still reachable.
+
+`.claude/CLAUDE.md` §1 correctly tells each change to remove only what its own edits made
+unused and to mention rather than delete pre-existing dead code. That is right per change and
+means a superseded path survives across changes with no owner and no record. The disposition
+is authored where the removal is authored, by the change that knows the answer, rather than
+reconstructed later by a reader who does not.
+
+The field is a claim, and the claim is checked against the code by the code reuse sweep's
+second question rather than by a verify check. That placement is stated in full in the
+`code-reuse-sweep` capability.
+
+#### Scenario: A change removes a requirement
+
+- **WHEN** a delta spec carries a `REMOVED` operation
+- **THEN** it carries `**Code Disposition:**` alongside `**Reason:**` and `**Migration:**`
+
+#### Scenario: A change renames a requirement without touching code
+
+- **WHEN** a delta spec carries a `RENAMED` operation and no code moved
+- **THEN** the disposition states that, which is a complete answer
+
+#### Scenario: A change carries no removal or rename
+
+- **WHEN** a delta spec carries only `ADDED` and `MODIFIED` operations
+- **THEN** no disposition field is required anywhere in it
