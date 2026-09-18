@@ -183,6 +183,12 @@ or `archive` names a top-level block of `schema.yaml`, read there directly:
     single group and names the shared files that make it one; the section itself is never
     omitted. Stated in full in
     `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `plan` instruction.
+- **A finding recorded as non-blocking or accepted keeps its body.** `review.md` carries it
+  in a `## Recorded findings` section, and archive turns it into an entry in the technical
+  debt ledger under `.claude/memory/tech-debt/` — or, when the debt is in the flow itself,
+  in `.claude/memory/concepts/adf-deferred-findings.md` — or into a task in a follow-up
+  change; otherwise it dies with the reviewer's transcript. Stated in full in
+  `openspec/schemas/sdd-plus-superpowers/schema.yaml`'s `review` and `archive` instructions.
 - Section 1 workflows still apply: the archive stage ingests what was learned into
   `.claude/memory/` — that replaces a per-change retrospective.
 - **Never run `openspec update`.** It rewrites `.claude/commands/opsx/` and
@@ -194,7 +200,7 @@ or `archive` names a top-level block of `schema.yaml`, read there directly:
 
 ## 3. Flow Documentation
 
-`docs/flow-specs/` describes what the flow does — fourteen capabilities, listed in
+`docs/flow-specs/` describes what the flow does — fifteen capabilities, listed in
 `docs/flow-specs/README.md`. These are **historical documents**: the archived specs the
 flow wrote about itself while it was being built. Nothing reads them at runtime, and they
 are never merged into a host project's `openspec/specs/`, which stays that project's own.

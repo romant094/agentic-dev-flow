@@ -93,6 +93,11 @@ record the verdict `/opsx:archive` requires.
    `Reviewed commit` names the current HEAD before committing — if fixes landed after
    the SHA was captured, correct it.
 
+   Check too that every finding dispositioned `recorded, non-blocking` or `accepted` carries
+   its body in the record's `## Recorded findings` section, because that body survives nowhere
+   else once the review session ends — stated in full in `schema.yaml`'s `review` artifact
+   instruction.
+
    The skill commits its fixes as it applies them, each its own commit touching only the
    file the finding named. This step's commit is separate and comes after: it stages and
    commits `review.md` alone, containing nothing but the record.

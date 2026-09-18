@@ -184,9 +184,11 @@ Only when a change directory was given. Use
 This step is reached only when step 2a passed. A response that failed validation never gets
 here — the stage stopped, and no record exists to be trusted.
 
-The record carries dispositions, not finding bodies. What was fixed is in the fix
-commits; what was dismissed is marked in the code. The disposition is the only part
-that lives nowhere else in decided form.
+Every finding gets a disposition row. A fixed finding points at the fix commit and a
+dismissed finding is marked in the code, so neither needs its body restated here. A
+finding that is neither — `recorded, non-blocking` or `accepted — <reason>` — has no
+home anywhere else: write its body in `## Recorded findings`, or it is lost when the
+reviewer's transcript is discarded.
 
 **The `**Verdict**` line carries one token and nothing else** — `PASS` or `BLOCKED`.
 `/opsx:archive` extracts that line and compares it for equality, so `PASS — nothing

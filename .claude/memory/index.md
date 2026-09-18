@@ -24,6 +24,12 @@ directory.
 - [concepts/adf-deferred-findings.md](concepts/adf-deferred-findings.md) — open findings from
   the flow's own changes: defects, deferred wordings and recorded decisions not yet proposed
   as follow-up work.
+- [concepts/technical-debt-ledger.md](concepts/technical-debt-ledger.md) — why the technical
+  debt ledger is shaped as it is: the loss it closed, the tracker key as an entry's identity,
+  collapse versus group, why it carries no status or counters, and which half of it ships
+  unexercised.
+- [tech-debt/index.md](tech-debt/index.md) — the ledger itself, shipped as a scaffold: the
+  entry format and the block layout, with no blocks until a host project needs one.
 - [concepts/adf-cost-baseline.md](concepts/adf-cost-baseline.md) — the end-to-end token/time
   measurements of this workflow, and the pitfalls that made two of the three runs unreliable.
 

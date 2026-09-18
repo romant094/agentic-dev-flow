@@ -1,6 +1,6 @@
 # Flow Specifications (historical reference)
 
-These fourteen documents describe how the agentic dev flow itself works. They were written
+These fifteen documents describe how the agentic dev flow itself works. They were written
 by the flow, about the flow, while it was being built in the project it grew in — each one
 is the archived output of a real `propose → apply → verify → review → archive` cycle.
 
@@ -32,7 +32,7 @@ Because they are historical, they can drift from what the commands actually do. 
 document here and the behaviour of `.claude/commands/opsx/` disagree, **the commands are
 right** — the reverse of the rule that applied while these were live specs.
 
-## The fourteen capabilities
+## The fifteen capabilities
 
 | Capability | What it describes |
 |---|---|
@@ -50,3 +50,4 @@ right** — the reverse of the rule that applied while these were live specs.
 | [`flow-regression-checks`](flow-regression-checks/spec.md) | The regression set behind verify check 11, one script per confirmed flow defect |
 | [`normative-text-single-source`](normative-text-single-source/spec.md) | The four surfaces a flow rule can live on, and the duplication check that enforces it |
 | [`spec-corpus-lint`](spec-corpus-lint/spec.md) | The manual, non-blocking lint over the whole `openspec/specs/` corpus |
+| [`technical-debt-ledger`](technical-debt-ledger/spec.md) | The one store for open product debt, and the obligation that the flow's recorded findings reach it |

@@ -402,12 +402,13 @@ Archive a completed change in the experimental workflow.
    would most plausibly get wrong. "Write or update the relevant pages" recovers neither,
    and these two answers are the whole content of comprehension debt — in the measured
    change, 61 subagents produced 9 287 insertions and no participant saw the whole, while
-   review.md records dispositions rather than finding bodies.
+   review.md carries a disposition per finding rather than a narrative of the branch.
 
-   Turn every unresolved `## Debt` line into a page in `.claude/memory/` or a task in a
-   follow-up change. A change is not archived leaving a debt line whose only home is a
-   commit message. A compromise the developer accepts permanently is recorded as accepted,
-   with that decision stated.
+   Carry every entry of `review.md`'s `## Recorded findings` section and every unresolved
+   `## Debt` line into the store that `schema.yaml`'s `archive` block names for it, or into a
+   follow-up change, before archiving — a change closed with either of them living only in a
+   commit message loses it, and that block states in full which store takes which item, the
+   anchor rule and the accepted case.
 
    Commit what the ingest wrote:
 

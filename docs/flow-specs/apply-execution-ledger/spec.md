@@ -145,14 +145,29 @@ The handoff threshold MUST be expressed in signals the orchestrator can observe 
 
 ### Requirement: Archiving resolves every remaining debt line
 
-`/opsx:archive` MUST turn each unresolved `## Debt` line into either a page in `.claude/memory/` or a task in a follow-up change, and MUST NOT close a change leaving a debt line addressed only by a commit message. A line the developer decides to accept permanently is recorded as accepted, with that decision stated.
+`/opsx:archive` MUST turn each unresolved `## Debt` line into either an entry in the
+technical debt ledger at `.claude/memory/tech-debt/` or a task in a follow-up change, and
+MUST NOT close a change leaving a debt line addressed only by a commit message. A line whose
+action a ledger entry already covers MUST become an additional anchor on that entry rather
+than a second entry. A line the developer decides to accept permanently is recorded as
+accepted, with that decision stated.
+
+Naming the ledger as the memory destination is what makes the obligation checkable: a page
+chosen freely satisfies the requirement and still leaves the line where nothing looks for it.
 
 #### Scenario: A deferred refactor is still open at archive
 
 - **WHEN** archiving a change whose ledger records a deferred refactor
-- **THEN** the refactor becomes a memory page or a follow-up task before the change is archived
+- **THEN** the refactor becomes an entry in the technical debt ledger or a follow-up task
+  before the change is archived
 
 #### Scenario: A compromise is accepted permanently
 
 - **WHEN** the developer decides a recorded duplication is acceptable and will not be revisited
 - **THEN** the line is recorded as accepted with that decision stated, rather than silently dropped
+
+#### Scenario: The debt line repeats work already tracked
+
+- **WHEN** a debt line names the same action as an existing ledger entry at a new code site
+- **THEN** that entry gains an anchor and no second entry is created
+

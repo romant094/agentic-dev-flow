@@ -472,9 +472,18 @@ artifacts:
       diff. The cap is three rounds; beyond that the record is BLOCKED and the
       outstanding findings are handed to the developer.
 
-      review.md records dispositions, not finding bodies, and it records the SHA it
-      reviewed. `/opsx:archive` refuses to archive without a PASS record whose commit is
-      still HEAD.
+      review.md records the SHA it reviewed and one disposition row per finding. It MUST
+      NOT restate the body of a finding that was fixed or dismissed: the fix commits carry
+      the first and a `// review-ignore` marker carries the second, so for those two classes
+      the disposition is the only part that lives nowhere else in decided form. A finding
+      that was neither fixed nor dismissed — `recorded, non-blocking`, or `accepted —
+      <reason>` after a developer decision — SHALL have its body written into the record's
+      `## Recorded findings` section, stating what is wrong and why it was left, in enough
+      detail that a reader who never saw the review can act on it without rediscovering the
+      finding; for that class no commit and no marker in the code carries the body at all.
+      That section MUST be omitted when there are none, so that "none recorded" stays
+      distinguishable from "nobody wrote any down". `/opsx:archive` refuses to archive
+      without a PASS record whose commit is still HEAD.
 
       `/opsx:archive`'s staleness
       scan excludes only `review.md` from its `git log` range; a record commit that also
@@ -983,6 +992,24 @@ archive:
     invoke `adf-retro`: the prohibition on automatic invocation is unchanged. The ordinary way a
     manual instrument dies is being forgotten, and the ordinary way an automatic one distorts
     its subject is by measuring it from inside.
+
+    **Recorded findings and debt lines reach the ledger.**
+
+    Each entry of `review.md`'s `## Recorded findings` section and each unresolved `## Debt`
+    line of the apply ledger MUST become either an entry in the technical debt ledger under
+    `.claude/memory/tech-debt/` or a task in a follow-up change, and a change MUST NOT be
+    archived leaving either of them addressed only by a commit message. An item whose action
+    an existing ledger entry already covers becomes an additional anchor on that entry rather
+    than a second entry. An item the developer decides to accept permanently is recorded as
+    accepted, with that decision stated. Naming the ledger as the destination is what makes
+    the obligation checkable: a page chosen freely satisfies it and still leaves the item
+    where nothing looks for it.
+
+    Debt in the change workflow itself — a defect in a flow command, in this schema, in an
+    `.claude/scripts/` check or in a skill the flow dispatches — is not product work and MUST
+    NOT be filed in that tree. It belongs where flow debt is already tracked,
+    `.claude/memory/concepts/adf-deferred-findings.md`, and the same anchor and accepted rules
+    apply to it there.
 
     **Removing the worktree.** `cd` to the main checkout and remove the worktree by the path
     `git worktree list` reports for it — do not reconstruct the path from a task ID

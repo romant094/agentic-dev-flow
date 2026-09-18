@@ -224,20 +224,41 @@ The stage SHALL write `review.md` in the change directory recording the reviewed
 SHA, the finding counts by severity, and one row per finding giving its disposition —
 fixed in a named commit, dismissed with the recorded reason, or non-blocking.
 
-The record MUST NOT restate the bodies of the findings. What was fixed is in the fix
-commits and what was dismissed is marked in the code; the disposition is the only part that
-lives nowhere else in decided form, which is why it is what the record carries.
+The record MUST NOT restate the body of a finding that was fixed or dismissed. What was
+fixed is in the fix commits and what was dismissed is marked in the code, so for those two
+classes the disposition is the only part that lives nowhere else in decided form.
+
+A finding that was neither fixed nor dismissed — recorded non-blocking, or accepted by the
+developer — SHALL have its body recorded, because for that class the body lives nowhere
+else at all: no commit carries it and no marker in the code names it. The body MUST state
+what is wrong and why it was left, in enough detail that a reader who never saw the review
+can act on it without rediscovering the finding. The record MUST distinguish these findings
+from the fixed and dismissed ones, and the section carrying them MUST be omitted when there
+are none, so that "none recorded" is distinguishable from "nobody wrote any down".
 
 #### Scenario: Review passes with findings fixed
 
 - **WHEN** two HIGH findings are fixed and the re-review is clean
 - **THEN** `review.md` records a passing verdict, the reviewed commit SHA, and one row per
-  finding naming the commit that fixed it
+  finding naming the commit that fixed it, and neither body is restated
 
 #### Scenario: Review passes with nothing found
 
 - **WHEN** the reviewer reports no findings
-- **THEN** `review.md` records a passing verdict, the reviewed commit SHA, and zero counts
+- **THEN** `review.md` records a passing verdict, the reviewed commit SHA, and zero counts,
+  and carries no section for recorded bodies
+
+#### Scenario: A MEDIUM finding is recorded and not fixed
+
+- **WHEN** the reviewer reports a MEDIUM finding that no fix round addresses
+- **THEN** `review.md` carries its disposition row and its body, stating what is wrong and
+  why it was left
+
+#### Scenario: The developer accepts a finding rather than fixing it
+
+- **WHEN** the developer decides a finding is acceptable and will not be fixed on this branch
+- **THEN** `review.md` records it as accepted and carries its body with the reasoning that
+  decided it
 
 ### Requirement: Archiving refuses a change that was not reviewed at its current commit
 

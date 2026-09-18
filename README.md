@@ -54,7 +54,7 @@ path in, and a developer merges it.
   mr.mjs                                merge request create/update/undraft plumbing
   *.test.mjs                            node:test unit tests for all of the above
 
-docs/flow-specs/                        HISTORICAL — the fourteen capabilities that define
+docs/flow-specs/                        HISTORICAL — the fifteen capabilities that define
                                         the flow, as archived specs. Documentation only.
 
 openspec/
@@ -75,7 +75,7 @@ infra/claude/
 .lefthook.json                          pre-commit: the English guard
 ```
 
-The fourteen capabilities under `docs/flow-specs/`: `change-workflow-schema` (the cycle and
+The fifteen capabilities under `docs/flow-specs/`: `change-workflow-schema` (the cycle and
 its artifacts), `change-branch-isolation` (branch and worktree lifecycle),
 `merge-request-lifecycle` (who pushes and undrafts, and when), `ci-unit-testing` (which
 stage runs which tests), `ai-review-flow-stage` (the local review stage),
@@ -86,7 +86,8 @@ sibling worktrees), `flow-retrospective` (the retro, `adf-retro`), `apply-execut
 (the one gate with repository read access, and the blocking maintainability class),
 `flow-regression-checks` (the regression set behind verify check 11),
 `normative-text-single-source` (the four surfaces a flow rule can live on), `spec-corpus-lint`
-(the manual, non-blocking corpus lint).
+(the manual, non-blocking corpus lint), `technical-debt-ledger` (the one store for open
+product debt, and how the flow's recorded findings reach it).
 
 ## Prerequisites
 

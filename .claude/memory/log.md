@@ -2,20 +2,27 @@
 
 > Rotated monthly. Entries older than the current month live in `.claude/memory/log-archive/YYYY-MM.md`. New entries prepend directly below this note.
 
-## [2026-08-20 15:20] task | Flow specs moved to docs/flow-specs as historical documentation | Anton Romankov
-- The nine capability specs moved from `openspec/specs/` to `docs/flow-specs/`, which now
-  ships only a `.gitkeep`. Reason: a host project adopting this flow got nine foreign
-  capabilities dropped into its own spec directory, where `/opsx:archive` would later merge
-  its deltas alongside them.
-- The move splits one path into two roles that were previously conflated: `openspec/specs/`
-  is now purely the host project's live spec directory (archive-written, starts empty), and
-  `docs/flow-specs/` is read-only documentation nothing resolves at runtime.
-- Precedence inverted for the moved documents: while they were live specs, the spec won
-  against the commands. As historical documents they can drift, so the commands now win.
-  Recorded in `docs/flow-specs/README.md` and `.claude/CLAUDE.md` §3.
-- Only references pointing at these nine documents were repointed (README.md,
-  `.claude/CLAUDE.md`, `.gitlab-ci.flow.yml`, the two memory pages). Every mechanism
-  reference — archive.md, sync.md, verify.md, `openspec-sync-specs`, the schema templates,
-  `check-opsx-commands.mjs` — still says `openspec/specs/` and must, because it means the
-  host's directory. Confusing the two is the failure mode to watch for here.
-- 98/98 tests pass; `check-opsx-commands.mjs` and `check-english.mjs` both exit 0.
+## [2026-09-18 11:17] ingest | Ported the deferred-findings-ledger change from the origin project | Anton Romankov
+- Carried the origin project's archived `deferred-findings-ledger` change into this repository:
+  the review record now keeps the body of a finding that was neither fixed nor dismissed, and
+  archive carries it, plus every unresolved apply-ledger `## Debt` line, into a technical debt
+  ledger. Five surfaces took the change unmodified (`schema.yaml`'s `review` instruction and
+  `archive` block, `templates/review.md`, `commands/opsx/review.md` and `archive.md`,
+  `skills/ai-code-review/SKILL.md`), which is why the port is byte-identical to the origin
+  there — those files had not drifted.
+- New capability document `docs/flow-specs/technical-debt-ledger/spec.md`; `ai-review-flow-stage`
+  and `apply-execution-ledger` took the narrowing and the named destination. The capability count
+  went from fourteen to fifteen in README.md, `.claude/CLAUDE.md` §3 and the flow-specs README.
+- `.claude/memory/tech-debt/` ships as a **scaffold**: the entry format and the block layout,
+  with an empty Blocks table. The origin project's eight domain blocks and 94 entries are its
+  own and were deliberately not carried. The change's own artifacts were not carried either —
+  `openspec/changes/archive/` here belongs to the host project.
+- Genericized against this repository's conventions: the `Jira` column is `Tracker`, the origin's
+  package paths and file names are described rather than named, and the concept page keeps the
+  reasoning without the migration's numbers.
+- The tech-debt half was agreed with the session holding `chore/tech-debt-jira-sync` in the
+  origin project before it was written. Two format changes visible in that session's history —
+  several rows sharing one tracker key, and a marker for "deliberately never mirrored" — were
+  proposals that got **rejected** there, so this port carries neither. What came back as new is
+  in `concepts/technical-debt-ledger.md`: one key per row, and the empty-cell rule holding only
+  while every open entry is mirrorable work.

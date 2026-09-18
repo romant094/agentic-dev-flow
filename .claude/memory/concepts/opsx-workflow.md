@@ -790,3 +790,52 @@ requires every symbol, file and path a task names to be resolved against the tre
 is done. It does not extend that to command output. Extending it — if a RED step states an
 expected number, that number came from running the command while writing the plan — is the
 narrowest fix and is filed on [[adf-deferred-findings]].
+
+## A markdown-only change cannot exercise the mechanism it defines
+
+From `deferred-findings-ledger` (2026-09-17). The empty-input lesson above has a second form,
+and this change hit it in a way no gate reported.
+
+The change defined a new `## Recorded findings` section that `/opsx:review` fills and
+`/opsx:archive` drains into the technical debt ledger. Exercising it needs a review that
+produces a finding. But `.claude/skills/ai-code-review/SKILL.md` excludes `*.md` from the diff
+the tuned review reads — correctly, since `infra/claude/review-prompt.md` orders the reviewer
+to skip markdown — and this change is markdown: the ledger, the memory pages, the command
+files, the record template and the skill itself. Forty of its forty-two files were filtered
+out. The two survivors were YAML carrying prose. The review returned APPROVE with zero findings
+at every severity, which is a true statement about what it could see and no statement at all
+about the change.
+
+**So a change to the flow cannot be reviewed by the flow's own tuned gate, and a mechanism
+defined by such a change cannot be given a non-empty input by it.** The archive-side half was
+proven instead, on a real pre-existing defect found while running the change. That is the
+honest half-measure; the alternative — constructing a fake finding to claim the path ran — is
+the behaviour the empty-input lesson exists to prevent, so it was refused and the gap recorded
+in `verify.md` and in the review record rather than papered over.
+
+The detector gap itself is on [[adf-deferred-findings]]. The rule that follows for any future
+flow change: **state in `verify.md` which halves of a new mechanism were exercised and which
+were not, and never let "the gate was green" stand in for "the path ran".**
+
+## The whole-branch review is where between-task defects surface
+
+Same change. Eight per-task reviews ran, five of them produced fix rounds, and every one was
+scoped to its own task's diff. The whole-branch review that `subagent-driven-development` runs
+at the end found what none of them could: a capability spec carried a requirement whose scope
+clause named a memory file one task had deleted, and the next task's repoint sweep never
+reached it, because that sweep was scoped to `.claude/memory/`. One task saw the deletion,
+another saw the memory tree, and the broken reference lived in neither.
+
+It could not be fixed by hand either — everything below a capability's `## Requirements`
+heading is written only by `/opsx:archive` — so it needed a fourth delta spec added after
+apply had already concluded. **A change that deletes a file should sweep the whole repository
+for references to it, not the subtree the deletion happened in.**
+
+## A flattened sweep dies on locale, silently
+
+Same change. The wrapping-tolerant sweep this flow prescribes — flattening each file with `tr`
+before matching, so a sentence broken across two lines is still found — aborts with
+`Illegal byte sequence` on roughly 150 files of the origin repository under the default locale,
+and says nothing. It skips them. `LC_ALL=C` is the fix, and that change's plan carries it on
+all three pipeline stages. It hid nothing that time; a sweep that stops reading part of the
+tree without saying so is exactly the failure the sweep exists to catch.

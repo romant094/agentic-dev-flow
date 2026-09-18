@@ -198,3 +198,21 @@ One decision, recorded as accepted:
   advisory class accumulates. Accepted knowingly in that change's `design.md` D-8: it differs
   from the accumulating case in producing a ledger debt line `/opsx:archive` must resolve rather
   than a note in a review comment. If it accumulates anyway, the evidence will be in the ledgers.
+
+## Carried forward from `deferred-findings-ledger` (archived `2026-09-17`)
+
+Two items. Both are about the flow's own tooling; that change's product debt went into the
+[technical debt ledger](../tech-debt/index.md) it created, which is the destination
+`schema.yaml`'s `archive` block names for product debt and explicitly excludes flow debt from.
+
+| # | Item | Class |
+|---|---|---|
+| 1 | **`.claude/scripts/adf-regression/index.mjs` has no CLI entry**, so `node <that file>` exits 0 having run no check at all — it only exports `runRegressionSet({read, list})`. Any site invoking it that way is a gate giving false assurance. `/opsx:verify` check 11 invokes it correctly, through the driver form at `.claude/commands/opsx/verify.md:357`, and is unaffected. Two sites are not: that change's own `plan.md` prescribed the dead form in two verification steps (corrected on its branch), and `openspec/schemas/sdd-plus-superpowers/schema.yaml:421` names the file in prose that reads as though running it were enough. Candidate fix: give the file a CLI entry that runs the set and exits non-zero on a failure, so the obvious invocation is also the correct one. Found by an implementer, not by any gate. | defect |
+| 2 | **The tuned review cannot see a markdown-only change.** `.claude/skills/ai-code-review/SKILL.md:30` excludes `':(exclude)*.md'` from the diff it reviews, mirroring `infra/claude/review-prompt.md`'s own instruction to skip markdown, and `infra/claude/review.sh` applies the same filter in CI. A workflow change, a spec change or a documentation change is therefore reviewed only insofar as it touches non-markdown files. That change reached `/opsx:review` with 40 of its 42 files filtered out, the two survivors being YAML carrying prose, and the stage returned zero findings at every severity — a true result about what it could see, and no result at all about the change. Whether the exclusion should stand is a question about the review's scope; what is certain is that the flow currently has **no tuned gate for changes to itself**. | defect |
+
+Item 2 has a consequence worth stating separately, because it bit that very change. Its
+`## Recorded findings` section — the mechanism it exists to introduce — could not be exercised
+by its own review, since a review that sees no findings produces no body to record. The
+archive-side half was proven on a real input instead. The general lesson is on
+[[opsx-workflow]] and the specifics on [[technical-debt-ledger]]: a mechanism defined by a
+markdown-only change cannot be given a non-empty input by that change.
