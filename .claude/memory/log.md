@@ -20,6 +20,11 @@
 - Genericized against this repository's conventions: the `Jira` column is `Tracker`, the origin's
   package paths and file names are described rather than named, and the concept page keeps the
   reasoning without the migration's numbers.
+- Follow-up from the same coordination: the id/mirror trap. An id may change and the tracker
+  key is the identity — which is exactly what lets a renumbering pass leave tracker issues
+  pointing at a neighbour's entry, with every content field still matching. The scaffold and
+  the concept page now say a renumbering pass repoints the mirrors in the same pass, and that
+  an issue predating the ledger (no back-pointer) is never regenerated from a row.
 - The tech-debt half was agreed with the session holding `chore/tech-debt-jira-sync` in the
   origin project before it was written. Two format changes visible in that session's history —
   several rows sharing one tracker key, and a marker for "deliberately never mirrored" — were

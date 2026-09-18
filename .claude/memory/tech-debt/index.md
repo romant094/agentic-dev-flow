@@ -15,7 +15,9 @@ Each block is a directory whose `index.md` is a table:
 |---|---|---|---|---|---|
 | `<block>-00` | One line naming the action, not the symptom | `service.ts:663`, `service.ts:718`, `other.service.ts` | debt | `<change-name>` | |
 
-- **ID** is a handle for cross-reference. It may change if an entry is re-filed.
+- **ID** is a handle for cross-reference. It may change if an entry is re-filed — and a pass
+  that renumbers ids owes a repoint, in the same pass, to everything that names one: the
+  other entries, and any tracker issue whose description points back at an entry.
 - **Anchors** are the code sites this entry covers.
 - **Class** is `defect` (the code is wrong), `debt` (a compromise taken knowingly) or
   `decision` (accepted, with the condition that would reopen it).

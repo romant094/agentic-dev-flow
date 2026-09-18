@@ -56,6 +56,21 @@ Two consequences, both established against real proposals to do otherwise:
   and an entry that is merely unscoped is still work, because a scoping task is a task and is
   estimable. Admit one unmirrorable entry and every later sync pass files duplicates.
 
+**What makes ids safe to change is also what makes renumbering dangerous.** Dropping one
+entry and renumbering a block's remaining ids down by one was done in the origin project
+within an hour of the identity rule being written down, and it left five tracker issues whose
+descriptions named the id their neighbour now carries, the last pointing at an id that no
+longer existed. Nothing caught it: title, anchors and class all still matched, and the only
+field that had moved was the back-pointer. That is worse than a dangling reference — a reader
+who follows it lands on a real entry describing different work. **A renumbering pass owes the
+mirrors a repoint in the same pass**, and a sync that compares only content fields will never
+find the breakage.
+
+The milder sibling: an issue that predates the ledger can carry more than a ledger row ever
+held — acceptance criteria, a test stand — and regenerating its description from the row
+destroys what the ledger never had. The tell is the missing back-pointer, and a sync must
+leave those issues alone.
+
 Most repositories adopting this flow have no artifact-to-issue mapping of any kind; the only
 link between a repository object and a tracker issue is a branch name.
 
