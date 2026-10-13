@@ -32,7 +32,9 @@ rules and their reasons are in `docs/lessons/schema-and-engine.md`.
 
 ## Result
 
-- `npm test`: 70 tests, 0 failures.
+- `npm test`: 70 tests, 0 failures; `check-lessons.mjs`: 50 rules, every one with a decision
+  and evidence or a pending iteration.
+- `npm run parity`: both tools PASS.
 - `openspec-status.mjs` on the origin project, every change including the archived ones: 72
   compared, 0 differences in `status`, `instructions apply` and `list`; one change on the old
   `spec-driven` schema skipped.
