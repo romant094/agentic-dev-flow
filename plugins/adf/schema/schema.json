@@ -1,0 +1,64 @@
+{
+  "name": "adf",
+  "version": 1,
+  "description": "Spec-driven change workflow on Superpowers skills: brainstorm, proposal, specs, tasks, plan, verify, review. design is optional: produced from brainstorm, required by nothing.",
+  "artifacts": [
+    {
+      "id": "brainstorm",
+      "generates": "brainstorm.md",
+      "description": "Collaborative design exploration using Superpowers brainstorming",
+      "template": "brainstorm.md",
+      "requires": []
+    },
+    {
+      "id": "proposal",
+      "generates": "proposal.md",
+      "description": "Initial proposal document outlining the change",
+      "template": "proposal.md",
+      "requires": ["brainstorm"]
+    },
+    {
+      "id": "design",
+      "generates": "design.md",
+      "description": "Technical design document with implementation details",
+      "template": "design.md",
+      "requires": ["brainstorm"]
+    },
+    {
+      "id": "specs",
+      "generates": "specs/**/*.md",
+      "description": "Detailed specifications for the change",
+      "template": "spec.md",
+      "requires": ["proposal"]
+    },
+    {
+      "id": "tasks",
+      "generates": "tasks.md",
+      "description": "Implementation checklist with trackable tasks",
+      "template": "tasks.md",
+      "requires": ["specs"]
+    },
+    {
+      "id": "plan",
+      "generates": "plan.md",
+      "description": "Step-by-step execution plan from Superpowers writing-plans",
+      "requires": ["tasks"]
+    },
+    {
+      "id": "verify",
+      "generates": "verify.md",
+      "description": "Verification report: was the change actually built",
+      "requires": ["plan"]
+    },
+    {
+      "id": "review",
+      "generates": "review.md",
+      "description": "Code review record and the disposition of every finding",
+      "requires": ["verify"]
+    }
+  ],
+  "apply": {
+    "requires": ["plan"],
+    "tracks": "tasks.md"
+  }
+}
