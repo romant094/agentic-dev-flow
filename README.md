@@ -14,6 +14,7 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Part | State |
 |---|---|
 | Extension contract `1.0`, registry, `/adf:init`, `/adf:add`, `/adf:remove` | done (iteration 01) |
+| Superpowers as a dependency, the availability gate | done (iteration 02) |
 | The change cycle (propose, apply, verify, review, archive) | not ported |
 | Ledger, metrics, retrospective | not ported |
 | Wiki memory and technical debt | not ported |
@@ -39,6 +40,9 @@ This repository is a Claude Code marketplace:
 /plugin install adf@agentic-dev-flow
 ```
 
+Installing `adf` also installs and enables its dependency, Superpowers
+(`superpowers@claude-plugins-official`). Node 20 or later is the only other prerequisite.
+
 Then, in the host project:
 
 ```
@@ -54,7 +58,7 @@ Then, in the host project:
 plugins/adf/                      the core
   commands/                       /adf:init, /adf:add, /adf:remove
   contract/                       the extension contract and its version
-  scripts/                        extensions.mjs and its library, with tests
+  scripts/                        extensions.mjs, superpowers.mjs and their library, with tests
 test/fixtures/                    a host project and a plugin for end-to-end tests
 docs/roadmap.md                   the porting order
 docs/lessons/                     the origin project's rules per capability, with reasons
