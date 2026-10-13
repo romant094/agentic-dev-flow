@@ -26,3 +26,8 @@ rules and their reasons are in `docs/lessons/superpowers-gate.md`.
 ## Result
 
 `npm test`: 30 tests, 0 failures. `claude plugin validate .`: passed.
+
+Parity, added after the iteration closed: `scripts/parity/origin-superpowers.mjs` compares the
+gate with the origin's on 243 generated cases and on this machine's real state for the origin
+and each of its worktrees. Every difference disappears when one of the two deliberate changes
+is undone (the local settings layer; a record of another project), and none is unexplained.
