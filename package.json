@@ -1,22 +1,13 @@
 {
 	"name": "agentic-dev-flow",
-	"version": "1.0.0",
+	"version": "0.1.0",
 	"private": true,
-	"description": "OpenSpec + Superpowers change workflow: commands, specs, schema and CI plumbing",
+	"description": "Agentic Dev Flow: a spec-driven change workflow core and the plugins that extend it",
 	"license": "MIT",
 	"scripts": {
-		"test": "node --test .claude/scripts/*.test.mjs && bash infra/claude/review-verdict.test.sh",
-		"test:scripts": "node --test .claude/scripts/*.test.mjs",
-		"test:review": "bash infra/claude/review-verdict.test.sh",
-		"check:opsx": "node .claude/scripts/check-opsx-commands.mjs",
-		"check:workflow-shape": "node .claude/scripts/check-workflow-shape.mjs",
-		"check:superpowers": "node .claude/scripts/check-superpowers.mjs",
-		"postinstall": "lefthook install"
-	},
-	"devDependencies": {
-		"lefthook": "^1.10.0"
+		"test": "node --test plugins/*/scripts/__tests__/*.spec.mjs"
 	},
 	"engines": {
-		"node": ">=22"
+		"node": ">=20"
 	}
 }
