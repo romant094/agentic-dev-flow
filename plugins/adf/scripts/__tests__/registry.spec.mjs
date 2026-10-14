@@ -38,8 +38,8 @@ test('parseVersion reads major.minor and refuses anything else', () => {
 
 test('isCompatible needs the same major and a minor the core already has', () => {
   assert.equal(isCompatible('1.0', '1.0'), true)
-  assert.equal(isCompatible('1.3', '1.1'), true)
-  assert.equal(isCompatible('1.0', '1.1'), false)
+  assert.equal(isCompatible('1.3', '1.2'), true)
+  assert.equal(isCompatible('1.0', '1.2'), false)
   assert.equal(isCompatible('2.0', '1.0'), false)
 })
 
@@ -147,20 +147,20 @@ test('checkRegistry reports a registry written for another contract major', () =
   assert.match(report.errors[0], /2\.0/)
 })
 
-const FORGE = { forge: { kind: 'role', operations: ['check', 'open', 'finalize'] } }
+const FORGE = { forge: { kind: 'role', operations: ['check', 'open', 'push', 'finalize'] } }
 
 test('validateDeclaration needs a script inside the plugin and every operation of the point', () => {
-  const ok = { name: 'gl', contract: '1.1', provides: { forge: { script: 'scripts/forge.mjs', operations: ['check', 'open', 'finalize'] } } }
+  const ok = { name: 'gl', contract: '1.2', provides: { forge: { script: 'scripts/forge.mjs', operations: ['check', 'open', 'push', 'finalize'] } } }
   assert.deepEqual(validateDeclaration(ok, FORGE), [])
-  const bad = { name: 'gl', contract: '1.1', provides: { forge: { script: '../x.mjs', operations: ['check'] } }, hostFiles: [{ from: 'a', to: '/etc/x' }] }
+  const bad = { name: 'gl', contract: '1.2', provides: { forge: { script: '../x.mjs', operations: ['check'] } }, hostFiles: [{ from: 'a', to: '/etc/x' }] }
   assert.deepEqual(validateDeclaration(bad, FORGE), [
     'forge: script must be a path inside the plugin',
-    'forge: operations open, finalize are missing',
+    'forge: operations open, push, finalize are missing',
     'hostFiles must be a list of { from, to } paths inside the plugin and the host'
   ])
 })
 
 test('validateRegistry needs exactly one of plugin or path per entry', () => {
-  const errors = validateRegistry({ contract: '1.1', extensions: [{ plugin: 'a@b', path: 'x' }, { plugin: 'Not An Id' }, { plugin: 'a@b' }] })
+  const errors = validateRegistry({ contract: '1.2', extensions: [{ plugin: 'a@b', path: 'x' }, { plugin: 'Not An Id' }, { plugin: 'a@b' }] })
   assert.equal(errors.length, 2)
 })

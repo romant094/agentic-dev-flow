@@ -35,7 +35,7 @@ test('init, add, check, remove on a fresh host', () => {
   assert.equal(adf(root, 'check').code, 1)
   const init = adf(root, 'init').out
   assert.equal(init.created, true)
-  assert.equal(init.contract, '1.1')
+  assert.equal(init.contract, '1.2')
   assert.deepEqual(init.settings.added, ['enabledPlugins.adf@agentic-dev-flow'])
   assert.deepEqual(init.planningGuide, { path: 'openspec/planning.md', created: true })
   assert.equal(init.branches, null)
@@ -84,8 +84,8 @@ function installedForge(root, name = 'forge-a') {
       join(dir, 'adf-extension.json'),
       JSON.stringify({
         name: n,
-        contract: '1.1',
-        provides: { forge: { script: 'scripts/forge.mjs', operations: ['check', 'open', 'finalize'] } },
+        contract: '1.2',
+        provides: { forge: { script: 'scripts/forge.mjs', operations: ['check', 'open', 'push', 'finalize'] } },
         hostFiles: [{ from: 'templates/mr.md', to: '.forge/mr.md' }]
       })
     )

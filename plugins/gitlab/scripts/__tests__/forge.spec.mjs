@@ -205,7 +205,7 @@ test('the template carries an adf marker pair for description scoping', () => {
 test('the declaration installs the shipped template where the validator reads it', () => {
   const declaration = JSON.parse(readFileSync(join(pluginDir, 'adf-extension.json'), 'utf8'))
   assert.deepEqual(declaration.hostFiles, [{ from: 'templates/merge_request.md', to: HOST_TEMPLATE }])
-  assert.deepEqual(declaration.provides.forge.operations, ['check', 'open', 'finalize'])
+  assert.deepEqual(declaration.provides.forge.operations, ['check', 'open', 'push', 'finalize'])
   assert.ok(existsSync(join(pluginDir, declaration.provides.forge.script)))
 })
 
@@ -490,4 +490,78 @@ test('the CLI refuses invalid JSON and stray arguments', () => {
   assert.equal(cliRun(['check'], 'not json').code, 1)
   assert.equal(cliRun(['check', '--force'], '{}').code, 1)
   assert.match(cliRun(['check', '--input-file', '/nonexistent/adf.json'], '').out.error, /nothing was pushed/)
+})
+
+// ---------------------------------------------------------------- push
+
+const pushInput = { change: 'my-change', branch: 'feat/x', protected: ['develop', 'main'] }
+const onBranch = (name) => ['git -C /work/host branch --show-current', yes(`${name}\n`)]
+
+test('push pushes the checked-out change branch, never forced, and calls no glab', () => {
+  const { code, result, calls } = op('push', pushInput, [onBranch('feat/x'), ['git -C /work/host push', yes()]])
+  assert.equal(code, 0)
+  assert.deepEqual(result, { state: 'done' })
+  assert.deepEqual(calls, ['git -C /work/host branch --show-current', 'git -C /work/host push --set-upstream origin feat/x'])
+})
+
+test('push never degrades on glab: it needs only git', () => {
+  const handlers = [['glab', no('not found')], onBranch('feat/x'), ['git -C /work/host push', yes()]]
+  const { result, calls } = op('push', pushInput, handlers)
+  assert.equal(result.state, 'done')
+  assert.equal(calls.some((c) => c.startsWith('glab')), false)
+})
+
+test('push refuses an empty branch, a missing or invalid protected list, and a protected branch', () => {
+  const cases = [
+    [{ ...pushInput, branch: '' }, /input\.branch is required/],
+    [{ ...pushInput, change: ' ' }, /input\.change is required/],
+    [{ change: 'my-change', branch: 'feat/x' }, /input\.protected must be a list/],
+    [{ ...pushInput, protected: 'develop' }, /input\.protected must be a list/],
+    [{ ...pushInput, protected: [1] }, /input\.protected must be a list/],
+    [{ ...pushInput, branch: 'develop' }, /protected branch "develop"/]
+  ]
+  for (const [input, error] of cases) {
+    const { code, result, calls } = op('push', input, [])
+    assert.equal(code, 1)
+    assert.equal(result.state, 'refused')
+    assert.match(result.error, error)
+    assert.match(result.error, /nothing was pushed and nothing else changed/)
+    assert.deepEqual(calls, [])
+  }
+})
+
+test('push refuses from a group worktree, where another branch is checked out', () => {
+  const { code, result, calls } = op('push', pushInput, [onBranch('feat/x--group-2'), ['git -C /work/host push', yes()]])
+  assert.equal(code, 1)
+  assert.equal(result.state, 'refused')
+  assert.match(result.error, /"feat\/x--group-2" checked out, not the change branch "feat\/x"/)
+  assert.match(result.error, /a push from a group worktree pushes the group branch instead of the change branch/)
+  assert.equal(calls.some((c) => c.includes(' push')), false)
+})
+
+test('push refuses on a detached HEAD and when the branch cannot be read', () => {
+  const detached = op('push', pushInput, [['git -C /work/host branch --show-current', yes('')]])
+  assert.equal(detached.code, 1)
+  assert.match(detached.result.error, /\(detached HEAD\)/)
+  const unreadable = op('push', pushInput, [['git -C /work/host branch --show-current', no('not a git repository')]])
+  assert.equal(unreadable.code, 1)
+  assert.match(unreadable.result.error, /not a git repository; nothing was pushed/)
+  assert.equal(unreadable.calls.some((c) => c.includes(' push')), false)
+})
+
+test("a failed push is refused with git's output and nothing else changed", () => {
+  const { code, result } = op('push', pushInput, [onBranch('feat/x'), ['git -C /work/host push', no('rejected: non-fast-forward')]])
+  assert.equal(code, 1)
+  assert.deepEqual(result, { state: 'refused', error: 'git push failed: rejected: non-fast-forward; nothing else changed.' })
+})
+
+test('the declaration names contract 1.2, which defines push', () => {
+  const declared = JSON.parse(readFileSync(join(pluginDir, 'adf-extension.json'), 'utf8'))
+  assert.equal(declared.contract, '1.2')
+})
+
+test('the CLI dispatches push', () => {
+  const { code, out } = cliRun(['push'], JSON.stringify({ root: ROOT, input: { ...pushInput, branch: 'main' } }))
+  assert.equal(code, 1)
+  assert.match(out.error, /protected branch "main"/)
 })

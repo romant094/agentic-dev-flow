@@ -1,6 +1,6 @@
 # GitLab forge for the Agentic Dev Flow
 
-This plugin provides the `forge` role of the ADF extension contract (version 1.1) on GitLab,
+This plugin provides the `forge` role of the ADF extension contract (version 1.2) on GitLab,
 through the [`glab`](https://gitlab.com/gitlab-org/cli) CLI. The ADF core calls it; you do not
 run it by hand, except to rerun a degraded `finalize`.
 
@@ -10,12 +10,13 @@ run it by hand, except to rerun a degraded `finalize`.
 |---|---|
 | `check` | Reports whether `glab` is installed and logged in, with the install or login command when it is not. |
 | `open` | Pushes the change branch (`git push --set-upstream origin <branch>`, never forced) and opens a merge request into the change's base, as a Draft by default. An open merge request for the branch is reused. The first description is a placeholder inside the change's marker block. Returns the merge request's number and URL. |
+| `push` | Pushes the change branch (`git push --set-upstream origin <branch>`, never forced) and changes nothing else; refuses when the root has another branch checked out, such as a group worktree. Needs only git, so it never degrades on `glab`. |
 | `finalize` | Validates the description against the template's sections, merges it into the existing description inside the change's marker block (`<!-- adf:<change> -->` ... `<!-- /adf:<change> -->`), takes the merge request out of draft in the same call, and only then pushes the last commit. When no merge request exists, it pushes the branch and opens a ready one with the description. |
 
 The plugin never merges and never sets a reviewer, label or milestone: integration is the
 developer's action. The target branch is always the change's base; nothing is hard-coded.
 
-When `glab` is missing or not logged in, every operation degrades: nothing is pushed or sent,
+When `glab` is missing or not logged in, every operation but `push` degrades: nothing is pushed or sent,
 and the result carries a `hint` (the install or login command) and a `fallback` to run later.
 A degraded `finalize` saves its input to a file outside the repository and its fallback reruns
 `finalize` on that file, so the merge with other changes' blocks still happens.

@@ -1,6 +1,14 @@
 {
-  "version": "1.1",
+  "version": "1.2",
   "points": {
-    "forge": { "kind": "role", "operations": ["check", "open", "finalize"] }
+    "forge": {
+      "kind": "role",
+      "operations": [
+        "check",
+        "open",
+        "push",
+        "finalize"
+      ]
+    }
   }
 }

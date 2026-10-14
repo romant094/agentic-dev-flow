@@ -24,7 +24,7 @@ A plugin declares, per point, the `script` that runs it (deterministic, runs und
 runtime) and the `operations` it implements: every operation the point defines.
 
 Each point arrives with the first plugin that needs it. Version `1.0` defined none; `1.1` adds
-the `forge` role.
+the `forge` role; `1.2` adds its `push` operation.
 
 ## Calling convention
 
@@ -48,7 +48,7 @@ core gets `{ "state": "none" }` and applies the role's default.
 
 ## Points
 
-### `forge` (role, since 1.1)
+### `forge` (role, since 1.1; `push` since 1.2)
 
 Pushes the change branch and keeps its merge request. The core never names a forge.
 
@@ -56,6 +56,7 @@ Pushes the change branch and keeps its merge request. The core never names a for
 |---|---|---|
 | `check` | `{}` | `tool: "ready"`; degraded: `tool` is `missing` or `unauthenticated`, with `hint` |
 | `open` | `change`, `branch`, `base`, `title`, `draft` (default true), `protected` | the branch pushed, never forced; a merge request into `base`, reused when one is open: `number`, `url`, `reused` |
+| `push` (since 1.2) | `change`, `branch`, `protected` | the branch pushed, never forced; nothing else changes |
 | `finalize` | `change`, `branch`, `base`, `title`, `body`, `protected` | the description holds `body` in this change's block, other text kept; the merge request leaves draft, then the branch is pushed: `number`, `url` |
 
 A provider refuses a branch that is empty or in `protected`. `body` holds the sections of the
@@ -81,7 +82,7 @@ plugin and name both versions.
 
 ```json
 {
-  "contract": "1.1",
+  "contract": "1.2",
   "branches": { "integration": "develop", "protected": ["develop", "main"] },
   "extensions": [
     { "plugin": "gitlab@agentic-dev-flow", "config": { "host": "gitlab.example.com" } },
@@ -105,7 +106,7 @@ passed to the plugin's operations.
   "name": "gitlab",
   "contract": "1.1",
   "provides": {
-    "forge": { "script": "scripts/forge.mjs", "operations": ["check", "open", "finalize"] }
+    "forge": { "script": "scripts/forge.mjs", "operations": ["check", "open", "push", "finalize"] }
   },
   "hostFiles": [
     { "from": "templates/merge_request.md", "to": ".gitlab/merge_request_templates/adf.md" }

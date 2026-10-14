@@ -1,6 +1,7 @@
 // The `forge` role on GitLab, through the `glab` CLI: `check` reports whether glab can be used,
-// `open` pushes a change branch and opens (or reuses) its merge request, `finalize` writes the
-// change's description, takes the merge request out of draft and pushes the last commit.
+// `open` pushes a change branch and opens (or reuses) its merge request, `push` pushes the
+// branch alone, `finalize` writes the change's description, takes the merge request out of
+// draft and pushes the last commit.
 //
 // Every operation returns one result object with `state`: `done`, `degraded` (glab is missing
 // or not logged in: nothing was sent, and `fallback` says what to run later) or `refused`
@@ -297,7 +298,29 @@ export function finalize(ctx) {
   return { state: 'done', number: view?.iid ?? null, url: view?.web_url ?? null, created: false }
 }
 
-export const OPERATIONS = { check, open, finalize }
+// Pushes the change branch and changes nothing else. It needs only git, so it never degrades
+// on glab. A Draft runs no pipeline, so this push is a backup and a progress signal; it gates
+// nothing.
+export function push(ctx) {
+  const { run, root, input } = ctx
+  const problem = validate(input, ['change', 'branch'])
+  if (problem) return refused(`${problem}; nothing was pushed and nothing else changed.`)
+  const current = run('git', ['-C', root, 'branch', '--show-current'])
+  if (!ok(current)) return refused(`could not read the current branch of ${root}: ${output(current)}; nothing was pushed and nothing else changed.`)
+  const checkedOut = current.stdout.trim()
+  if (checkedOut !== input.branch) {
+    // A group worktree has its group branch checked out: a push from it pushes the group
+    // branch, not the change branch. Push from the main change worktree.
+    return refused(
+      `${root} has "${checkedOut || '(detached HEAD)'}" checked out, not the change branch "${input.branch}"; a push from a group worktree pushes the group branch instead of the change branch, so run it from the main change worktree. Nothing was pushed and nothing else changed.`
+    )
+  }
+  const pushed = run('git', pushArgs(root, input.branch))
+  if (!ok(pushed)) return refused(`git push failed: ${output(pushed)}; nothing else changed.`)
+  return { state: 'done' }
+}
+
+export const OPERATIONS = { check, open, push, finalize }
 
 // Runs one operation on the payload the core writes: { root, config, input }. Returns the exit
 // code and the result object. An unexpected error is a refusal that says what was already sent.

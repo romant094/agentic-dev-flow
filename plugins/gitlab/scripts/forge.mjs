@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // CLI over lib/forge.mjs: the `forge` role of the ADF contract on GitLab.
 //
-//   forge.mjs check|open|finalize                      (payload on stdin)
+//   forge.mjs check|open|push|finalize                 (payload on stdin)
 //   forge.mjs finalize --input-file <path>             (payload from a file)
 //
 // The payload is one JSON object, { root, config, input }; the result is one JSON object on
@@ -15,7 +15,7 @@ import { runOperation } from './lib/forge.mjs'
 import { isMain } from './lib/main.mjs'
 
 const pluginDir = join(dirname(fileURLToPath(import.meta.url)), '..')
-const USAGE = 'usage: forge.mjs check|open|finalize [--input-file <path>]  (payload on stdin otherwise)'
+const USAGE = 'usage: forge.mjs check|open|push|finalize [--input-file <path>]  (payload on stdin otherwise)'
 const NOTHING_SENT = 'nothing was pushed and no merge request was touched'
 
 const run = (cmd, args, opts = {}) => {

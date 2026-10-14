@@ -12,13 +12,13 @@ const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
 
 function host(script) {
   const root = mkdtempSync(join(tmpdir(), 'adf-role-'))
-  initRegistry(root, '1.1')
+  initRegistry(root, '1.2')
   if (script !== undefined) {
     const dir = join(root, 'plugins', 'fake')
     mkdirSync(join(dir, 'scripts'), { recursive: true })
     writeFileSync(
       join(dir, 'adf-extension.json'),
-      JSON.stringify({ name: 'fake', contract: '1.1', provides: { forge: { script: 'scripts/f.mjs', operations: ['check', 'open', 'finalize'] } } })
+      JSON.stringify({ name: 'fake', contract: '1.2', provides: { forge: { script: 'scripts/f.mjs', operations: ['check', 'open', 'push', 'finalize'] } } })
     )
     writeFileSync(join(dir, 'scripts', 'f.mjs'), script)
     writeRegistry(root, { ...readRegistry(root), extensions: [{ path: 'plugins/fake', config: { host: 'h' } }] })
