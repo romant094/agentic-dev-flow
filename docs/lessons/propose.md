@@ -165,8 +165,11 @@ Decisions settled with the developer on 2026-10-14; the answers to the questions
   against the first path's directory (a root `package.json` beside a nested path is a false
   positive); no test for `Revert:` on an earlier-created file; a trailing `--phase` with no value
   runs propose instead of a usage error. Done: the third is fixed and the missing test added; the
-  first is kept for parity here and fixed at the start of iteration 05: a bare filename resolves
-  against the repository root.
+  first is fixed in iteration 05: a bare filename still names a sibling of the first path (the
+  origin's plans use that shorthand 24 times), and falls back to the repository root only when
+  no sibling exists and the root file does (`plugins/adf/scripts/lib/plan-symbols.mjs`, the test
+  "a bare filename missing beside the first path falls back to the repository root"; parity
+  reason `bare-root-fallback`).
 - **K1 — a plan can put a device-write bench step inside an implementer task, which no
   implementer can run** (consent is needed at the time). Seen twice. Addressed by the plan
   instruction and the project's planning guide (decision 7).

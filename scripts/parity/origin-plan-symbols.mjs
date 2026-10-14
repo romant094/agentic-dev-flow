@@ -12,12 +12,12 @@
 // the two sets of findings and the exit codes must agree. A difference is explained only when
 // it is one the lessons file records as deliberate:
 //   phase-without-value  a trailing `--phase` is a usage error (the origin ran propose)
-// Kept for parity, so never a difference: a bare filename in a multi-path bullet resolves
-// against the first path's directory.
+//   bare-root-fallback   a bare filename missing beside the first path but present at the
+//                        repository root names the root file (the origin reported it missing)
 import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const origin = process.argv[2]
@@ -93,7 +93,7 @@ const GENERATED = {
   'parity-gen-multipath': {
     plan: task(
       1,
-      `- Modify: \`${F}/a/x.ts\`, \`y.ts\` and \`${F}/b/z.ts\` (the vi.mock path of \`ledger.md\`)\n- Modify: \`${F}/b/z.ts\` + \`${F}/missing/w.ts\` & \`${F}/a/x.ts:1-9\``
+      `- Modify: \`${F}/a/x.ts\`, \`y.ts\` and \`${F}/b/z.ts\` (the vi.mock path of \`ledger.md\`)\n- Modify: \`${F}/b/z.ts\` + \`${F}/missing/w.ts\` & \`${F}/a/x.ts:1-9\`\n- Modify: \`${F}/a/x.ts\`, \`package.json\``
     )
   },
   'parity-gen-deferrals': {
@@ -242,9 +242,14 @@ const diffSets = (a, b) => {
   return { onlyOrigin: minus(left, right).map(JSON.parse), onlyOurs: minus(right, left).map(JSON.parse) }
 }
 
-function explain(c, theirs, ours) {
+function explain(c, theirs, ours, onlyOrigin, onlyOurs) {
   if (c.extra.at(-1) === '--phase' && ours.code === 2 && /^usage:/.test(ours.error ?? '') && theirs.code !== 2) {
     return 'phase-without-value'
+  }
+  // Differences are FIELDS tuples: kind at 1, path at 3.
+  const atRoot = ([, kind, , path]) => kind === 'path-missing' && path.includes('/') && existsSync(join(tmp, basename(path)))
+  if (onlyOrigin.length && !onlyOurs.length && onlyOrigin.every(atRoot) && (ours.code === theirs.code || ours.findings.length === 0)) {
+    return 'bare-root-fallback'
   }
   return null
 }
@@ -279,7 +284,7 @@ try {
       onlyOrigin,
       onlyOurs,
       errors: { origin: theirs.error, ours: ours.error },
-      explained: explain(c, theirs, ours)
+      explained: explain(c, theirs, ours, onlyOrigin, onlyOurs)
     })
   }
 

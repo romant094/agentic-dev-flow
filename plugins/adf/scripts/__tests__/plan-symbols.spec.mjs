@@ -349,6 +349,14 @@ test("every backticked path of a Files bullet is checked, a bare name beside the
   ])
 })
 
+test('a bare filename missing beside the first path falls back to the repository root', async () => {
+  const plan = task(1, '- Modify: `src/a/x.ts`, `package.json` and `y.ts`')
+  assert.deepEqual(await checkPlanSymbols(world({ plan, fs: { 'src/a/x.ts': '', 'package.json': '', 'src/a/y.ts': '', 'y.ts': '' } })), [])
+  assert.deepEqual(await checkPlanSymbols(world({ plan, fs: { 'src/a/x.ts': '', 'src/a/y.ts': '' } })), [
+    'Task 1: Modify src/a/package.json — path does not exist'
+  ])
+})
+
 test('bullets separated by a blank line are all read, and stray prose in the block is unparsed', async () => {
   const plan = task(1, '- Modify: `src/ok.ts`\n\n- Modify: `src/bad.ts`\n\nsome prose\n- Test: `src/ok.ts`')
   const [t] = parsePlanTasks(plan)

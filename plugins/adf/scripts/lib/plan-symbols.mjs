@@ -66,14 +66,14 @@ const parseFileBullet = (text) => {
     if (!isPathLike(t.text) || !/^[\s,+&]*(?:and\s+)?$/.test(gap)) break
     listed.push(t)
   }
-  // Known, deliberate parity-kept behaviour: a bare filename (no directory) in a multi-path
-  // bullet resolves against the first path's directory, even when that is not where the file
-  // lives. Kept as the origin does it, so both tools report the same findings.
+  // A bare filename (no directory) beside other paths is shorthand for a sibling of the first
+  // path. `bare` keeps the name, so the check can fall back to the repository root.
   const dir = first.path.includes('/') ? first.path.slice(0, first.path.lastIndexOf('/') + 1) : ''
   const paren = parenRange(body.slice(listed.at(-1).end))
   const files = listed.map((t) => {
     const { path, range } = splitSuffix(t.text)
     const file = { verb, path: path.includes('/') ? path : dir + path }
+    if (!path.includes('/') && dir) file.bare = path
     const found = range ?? paren
     if (found) file.range = found
     return file
@@ -217,6 +217,11 @@ export async function checkPlanSymbols({ read, exists, lineCount, grep, branchCh
   }
 
   const findings = []
+  // A bare filename that is not in the first path's directory but is at the repository root
+  // names the root file: a root `package.json` beside a nested path is not a missing file.
+  for (const t of tasks)
+    for (const f of t.files)
+      if (f.bare && f.verb !== 'Create' && !(await exists(f.path)) && (await exists(f.bare))) f.path = f.bare
   const created = new Map() // path -> lowest task number that creates it
   for (const t of tasks)
     for (const f of t.files) if (f.verb === 'Create' && !created.has(f.path)) created.set(f.path, t.number)
