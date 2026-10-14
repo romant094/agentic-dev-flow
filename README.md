@@ -18,7 +18,8 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | The schema and the change engine (`new`, `list`, `status`, `instructions`, spec validation) in place of the openspec CLI | done (iteration 03) |
 | Propose: one branch and worktree per change, the branch policy, the planning guide, the artifact instructions, the plan symbol check, the execution ledger | done (iteration 04) |
 | Contract `1.1`: the `forge` role, plugins named by their installed id, host files a plugin declares; the GitLab forge plugin; the English check plugin | done (iteration 05) |
-| The rest of the cycle (apply, verify, review, archive) | not ported |
+| Apply: one orchestrator, task groups in parallel worktrees, the capability-level agents, the dispatch guard, reply checks, push through the forge | done (iteration 07) |
+| The rest of the cycle (verify, review, archive) | not ported |
 | Metrics, retrospective | not ported |
 | Wiki memory and technical debt | not ported |
 | Plugins: tracker (Jira), project stack | not started |
@@ -54,6 +55,7 @@ Then, in the host project:
 ```
 /adf:init
 /adf:propose <change>
+/adf:apply [change]
 /adf:add <plugin id or path>
 /adf:remove <plugin name>
 ```
@@ -76,12 +78,14 @@ scope (`plugins/english-check/README.md`).
 ```
 .claude-plugin/marketplace.json   the marketplace: the core and every plugin
 plugins/adf/                      the core
-  commands/                       /adf:init, /adf:add, /adf:remove, /adf:propose
+  commands/                       /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply
+  agents/                         the capability-level subagents apply dispatches
   contract/                       the extension contract and its version
   schema/                         the artifact graph (schema.json), templates, instructions
   host/                           templates of files /adf:init adds to the host (planning guide)
   scripts/                        extensions, superpowers, workspace, changes, specs,
-                                  plan-symbols, ledger, forge, with their library and tests
+                                  plan-symbols, ledger, forge, reply, sdd, tasks, guard, with
+                                  their library and tests
 plugins/gitlab/                   the forge role for GitLab, through glab; the merge request template
 plugins/english-check/            a PreToolUse hook that blocks a commit with non-English text
 scripts/parity/                   dev tools: compare the ported scripts with the origin's and the
