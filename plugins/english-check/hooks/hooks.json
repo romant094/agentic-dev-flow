@@ -1,0 +1,16 @@
+{
+  "description": "Stops a git commit that takes non-English text in the files in scope",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/hook.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}
