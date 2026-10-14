@@ -16,7 +16,7 @@ export function claudeHome(env = process.env) {
   return env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
 }
 
-function readJson(path) {
+export function readJson(path) {
   try {
     return JSON.parse(readFileSync(path, 'utf8'))
   } catch {
@@ -31,7 +31,7 @@ export function mergeSettings(...layers) {
 
 // A user-scope record counts everywhere. A project- or local-scope record counts only in the
 // project it was installed for: Claude Code records one per checkout, worktrees included.
-function countsHere(record, root) {
+export function countsHere(record, root) {
   if (record.scope === 'user' || record.scope === undefined) return true
   return typeof record.projectPath === 'string' && resolve(record.projectPath) === resolve(root)
 }

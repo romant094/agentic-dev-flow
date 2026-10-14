@@ -1,9 +1,10 @@
 // The project registry and the plugin declarations: the whole extension contract the core
 // has today. The contract is versioned major.minor (see contract/README.md); this file
 // knows the format, never a plugin by name.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, normalize } from 'node:path'
 import { validateBranches } from './branches.mjs'
+import { installedPath, PLUGIN_ID } from './installed.mjs'
 
 export const REGISTRY_PATH = '.claude/adf-extensions.json'
 export const DECLARATION_FILE = 'adf-extension.json'
@@ -22,6 +23,12 @@ export function isCompatible(core, plugin) {
   return Boolean(c && p && c.major === p.major && c.minor >= p.minor)
 }
 
+// A path inside the plugin or the host: relative, and never climbing out with `..`.
+const inside = (path) => typeof path === 'string' && path !== '' && !isAbsolute(path) && !normalize(path).startsWith('..')
+
+// `points` is the contract's map of point name to { kind, operations }. A plugin that
+// provides a point names the script that runs it and implements every operation the point
+// defines: the core calls any of them.
 export function validateDeclaration(declaration, points) {
   const errors = []
   if (!NAME.test(declaration?.name ?? '')) errors.push(`name "${declaration?.name}" is not kebab-case`)
@@ -31,8 +38,18 @@ export function validateDeclaration(declaration, points) {
     errors.push('provides must be an object')
     return errors
   }
-  for (const point of Object.keys(provides)) {
-    if (!points.includes(point)) errors.push(`point "${point}" is not defined by the contract`)
+  for (const [point, given] of Object.entries(provides)) {
+    if (!Object.hasOwn(points, point)) {
+      errors.push(`point "${point}" is not defined by the contract`)
+      continue
+    }
+    if (!inside(given?.script)) errors.push(`${point}: script must be a path inside the plugin`)
+    const missing = points[point].operations.filter((op) => !given?.operations?.includes(op))
+    if (missing.length) errors.push(`${point}: operations ${missing.join(', ')} are missing`)
+  }
+  const hostFiles = declaration.hostFiles ?? []
+  if (!Array.isArray(hostFiles) || !hostFiles.every((f) => inside(f?.from) && inside(f?.to))) {
+    errors.push('hostFiles must be a list of { from, to } paths inside the plugin and the host')
   }
   return errors
 }
@@ -43,11 +60,13 @@ export function validateRegistry(registry) {
   if (!Array.isArray(registry?.extensions)) return [...errors, 'extensions must be an array']
   const seen = new Set()
   for (const [i, entry] of registry.extensions.entries()) {
-    if (typeof entry?.path !== 'string' || entry.path === '') {
-      errors.push(`extensions[${i}] has no path`)
+    const byPath = typeof entry?.path === 'string' && entry.path !== ''
+    const byId = typeof entry?.plugin === 'string' && PLUGIN_ID.test(entry.plugin)
+    if (byPath === byId) {
+      errors.push(`extensions[${i}] needs exactly one of plugin (name@marketplace) or path`)
       continue
     }
-    const key = normalize(entry.path)
+    const key = byId ? entry.plugin : normalize(entry.path)
     if (seen.has(key)) errors.push(`extensions[${i}] repeats ${entry.path}`)
     seen.add(key)
   }
@@ -72,16 +91,24 @@ export function initRegistry(root, coreContract) {
   return { created: true }
 }
 
-function readDeclaration(root, path) {
-  const file = join(isAbsolute(path) ? path : join(root, path), DECLARATION_FILE)
-  if (!existsSync(file)) throw new Error(`${path}: no ${DECLARATION_FILE}`)
+// The plugin's directory: a path as written, or an installed plugin's recorded location.
+export function pluginDir(root, entry, { home } = {}) {
+  if (entry.plugin) return installedPath(entry.plugin, root, { home })
+  return isAbsolute(entry.path) ? entry.path : join(root, entry.path)
+}
+
+const label = (entry) => entry.plugin ?? entry.path
+
+function readDeclaration(root, entry, opts) {
+  const file = join(pluginDir(root, entry, opts), DECLARATION_FILE)
+  if (!existsSync(file)) throw new Error(`${label(entry)}: no ${DECLARATION_FILE}`)
   return JSON.parse(readFileSync(file, 'utf8'))
 }
 
-function loadPlugin(root, path, { coreContract, points }) {
-  const declaration = readDeclaration(root, path)
+function loadPlugin(root, entry, { coreContract, points, home }) {
+  const declaration = readDeclaration(root, entry, { home })
   const errors = validateDeclaration(declaration, points)
-  if (errors.length) throw new Error(`${path}: ${errors.join('; ')}`)
+  if (errors.length) throw new Error(`${label(entry)}: ${errors.join('; ')}`)
   if (!isCompatible(coreContract, declaration.contract)) {
     throw new Error(
       `${declaration.name} needs contract ${declaration.contract}; this core runs ${coreContract}`,
@@ -96,27 +123,59 @@ function requireRegistry(root) {
   return registry
 }
 
-export function addExtension(root, path, { config, coreContract, points }) {
-  const registry = requireRegistry(root)
-  const declaration = loadPlugin(root, path, { coreContract, points })
-  for (const entry of registry.extensions) {
-    if (normalize(entry.path) === normalize(path)) throw new Error(`${path} is already enabled`)
-    if (readDeclaration(root, entry.path).name === declaration.name) {
-      throw new Error(`a plugin named ${declaration.name} is already enabled (${entry.path})`)
+const roleOf = (points, point) => points[point]?.kind === 'role'
+
+// A file the plugin asks the host to hold, such as a template a forge's own interface reads.
+// Copied only when missing: a host that edited its copy keeps it.
+function copyHostFiles(root, entry, declaration, opts) {
+  const dir = pluginDir(root, entry, opts)
+  const copied = []
+  const kept = []
+  for (const { from, to } of declaration.hostFiles ?? []) {
+    const target = join(root, to)
+    if (existsSync(target)) {
+      kept.push(to)
+      continue
     }
+    mkdirSync(dirname(target), { recursive: true })
+    copyFileSync(join(dir, from), target)
+    copied.push(to)
   }
-  const entry = config === undefined ? { path } : { path, config }
-  writeRegistry(root, { ...registry, extensions: [...registry.extensions, entry] })
-  return { name: declaration.name, points: Object.keys(declaration.provides) }
+  return { copied, kept }
 }
 
-export function removeExtension(root, name) {
+// `target` is an installed plugin's id (`name@marketplace`) or a path to a plugin directory.
+export function addExtension(root, target, { config, coreContract, points, home }) {
+  const registry = requireRegistry(root)
+  const entry = PLUGIN_ID.test(target) ? { plugin: target } : { path: target }
+  const declaration = loadPlugin(root, entry, { coreContract, points, home })
+  for (const other of registry.extensions) {
+    if (label(other) === label(entry) || (other.path && entry.path && normalize(other.path) === normalize(entry.path))) {
+      throw new Error(`${target} is already enabled`)
+    }
+    const theirs = readDeclaration(root, other, { home })
+    if (theirs.name === declaration.name) {
+      throw new Error(`a plugin named ${declaration.name} is already enabled (${label(other)})`)
+    }
+    for (const point of Object.keys(declaration.provides)) {
+      if (roleOf(points, point) && Object.hasOwn(theirs.provides ?? {}, point)) {
+        throw new Error(`the role ${point} is already provided by ${theirs.name}; remove it first`)
+      }
+    }
+  }
+  if (config !== undefined) entry.config = config
+  writeRegistry(root, { ...registry, extensions: [...registry.extensions, entry] })
+  const hostFiles = copyHostFiles(root, entry, declaration, { home })
+  return { name: declaration.name, points: Object.keys(declaration.provides), hostFiles }
+}
+
+export function removeExtension(root, name, { home } = {}) {
   const registry = requireRegistry(root)
   const index = registry.extensions.findIndex((entry) => {
     try {
-      return readDeclaration(root, entry.path).name === name
+      return readDeclaration(root, entry, { home }).name === name
     } catch {
-      return false
+      return entry.plugin?.split('@')[0] === name
     }
   })
   if (index === -1) throw new Error(`${name} is not enabled`)
@@ -125,7 +184,17 @@ export function removeExtension(root, name) {
   return removed
 }
 
-export function checkRegistry(root, { coreContract, points }) {
+// The enabled plugins with their directories, for the core to call. Throws on a broken entry.
+export function enabledPlugins(root, { coreContract, points, home }) {
+  const registry = requireRegistry(root)
+  return registry.extensions.map((entry) => ({
+    entry,
+    dir: pluginDir(root, entry, { home }),
+    declaration: loadPlugin(root, entry, { coreContract, points, home })
+  }))
+}
+
+export function checkRegistry(root, { coreContract, points, home }) {
   const registry = readRegistry(root)
   if (!registry) return { ok: false, errors: ['no registry; run /adf:init'], plugins: [] }
   const errors = validateRegistry(registry)
@@ -133,10 +202,16 @@ export function checkRegistry(root, { coreContract, points }) {
     errors.push(`registry is written for contract ${registry.contract}; this core runs ${coreContract}`)
   }
   const plugins = []
+  const providers = {}
   for (const entry of registry.extensions ?? []) {
     try {
-      const declaration = loadPlugin(root, entry.path, { coreContract, points })
-      plugins.push({ name: declaration.name, path: entry.path, points: Object.keys(declaration.provides) })
+      const declaration = loadPlugin(root, entry, { coreContract, points, home })
+      plugins.push({ name: declaration.name, ...(entry.plugin ? { plugin: entry.plugin } : { path: entry.path }), points: Object.keys(declaration.provides) })
+      for (const point of Object.keys(declaration.provides)) {
+        if (!roleOf(points, point)) continue
+        if (providers[point]) errors.push(`the role ${point} is provided by both ${providers[point]} and ${declaration.name}`)
+        providers[point] = declaration.name
+      }
     } catch (error) {
       errors.push(error.message)
     }

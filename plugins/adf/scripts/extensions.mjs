@@ -7,7 +7,9 @@
 //                                            the flow's local state; add the planning guide
 //   extensions.mjs branches --integration B [--protected B1,B2]
 //                                            set the branch policy in the registry
-//   extensions.mjs add <path> [--config J]   enable a plugin
+//   extensions.mjs add <id|path> [--config J]
+//                                            enable a plugin, installed (name@marketplace)
+//                                            or at a path; copy the host files it declares
 //   extensions.mjs remove <name>             disable a plugin
 //   extensions.mjs check                     validate the registry and every plugin
 //
@@ -56,13 +58,13 @@ export function run(argv) {
       if (!integration) throw new Error('usage: branches --integration <branch> [--protected <b1,b2>]')
       return setBranches(root, { integration, protected: protectedList ? protectedList.split(',').map((b) => b.trim()) : [] })
     case 'add':
-      if (!target) throw new Error('usage: add <plugin path> [--config <json>]')
-      return addExtension(root, target, { ...core, config: config && JSON.parse(config) })
+      if (!target) throw new Error('usage: add <plugin id or path> [--config <json>]')
+      return addExtension(root, target, { ...core, home, config: config && JSON.parse(config) })
     case 'remove':
       if (!target) throw new Error('usage: remove <plugin name>')
-      return removeExtension(root, target)
+      return removeExtension(root, target, { home })
     case 'check':
-      return checkRegistry(root, core)
+      return checkRegistry(root, { ...core, home })
     default:
       throw new Error('usage: extensions.mjs init|branches|add|remove|check [--root <dir>]')
   }

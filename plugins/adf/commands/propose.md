@@ -108,8 +108,22 @@ verdict, named `investigate <topic>` with a one-word topic. Read one named file 
    git -C <root> commit -m "docs(openspec): propose <name>"
    ```
 
-8. **Report.** Run `status` once more, then report:
+8. **Open the merge request.** Write the title in Conventional Commits form from the branch
+   type and the change, with no draft prefix: `<type>(<scope>): <description>`. Run:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/forge.mjs" open --root <root> --input '{"change":"<name>","branch":"<branch>","base":"<base>","title":"<title>","draft":true,"protected":<protected list from suggest>}'
+   ```
+
+   Read `state` (see the propose instruction):
+   - `none`: no forge plugin is enabled. Nothing is pushed.
+   - `done`: note `url`, and whether it was `reused`.
+   - `degraded`: show `hint` and every `fallback` command.
+   - `refused`: show `error`. The artifacts stay committed; do not retry with other input.
+
+9. **Report.** Run `status` once more, then report:
    - the change name, the branch, the worktree and the base;
    - each artifact created, in one line;
-   - that no merge request was opened (no forge plugin is enabled);
+   - the merge request: its URL; or that none was opened because no forge plugin is enabled;
+     or, when degraded or refused, that none exists yet and what to run;
    - the next step: `/adf:apply`.

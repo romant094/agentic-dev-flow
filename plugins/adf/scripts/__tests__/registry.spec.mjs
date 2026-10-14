@@ -146,3 +146,21 @@ test('checkRegistry reports a registry written for another contract major', () =
   assert.equal(report.ok, false)
   assert.match(report.errors[0], /2\.0/)
 })
+
+const FORGE = { forge: { kind: 'role', operations: ['check', 'open', 'finalize'] } }
+
+test('validateDeclaration needs a script inside the plugin and every operation of the point', () => {
+  const ok = { name: 'gl', contract: '1.1', provides: { forge: { script: 'scripts/forge.mjs', operations: ['check', 'open', 'finalize'] } } }
+  assert.deepEqual(validateDeclaration(ok, FORGE), [])
+  const bad = { name: 'gl', contract: '1.1', provides: { forge: { script: '../x.mjs', operations: ['check'] } }, hostFiles: [{ from: 'a', to: '/etc/x' }] }
+  assert.deepEqual(validateDeclaration(bad, FORGE), [
+    'forge: script must be a path inside the plugin',
+    'forge: operations open, finalize are missing',
+    'hostFiles must be a list of { from, to } paths inside the plugin and the host'
+  ])
+})
+
+test('validateRegistry needs exactly one of plugin or path per entry', () => {
+  const errors = validateRegistry({ contract: '1.1', extensions: [{ plugin: 'a@b', path: 'x' }, { plugin: 'Not An Id' }, { plugin: 'a@b' }] })
+  assert.equal(errors.length, 2)
+})

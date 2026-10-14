@@ -74,3 +74,12 @@ Stage only `openspec/changes/<change>/`, then read `git status --porcelain` befo
 If anything else is staged, stop and show it: that is the developer's work, not yours to commit.
 The commit message is `docs(openspec): propose <change>`. Formatting and linting are not run:
 the commit holds only markdown the change generated.
+
+**The merge request is the forge's, and only after the commit.**
+
+When the artifacts are committed, the `forge` role pushes the branch and opens a Draft merge
+request into the change's base. The title follows Conventional Commits and carries no draft
+prefix: the forge marks the draft itself. With no forge plugin enabled nothing is pushed and the
+report says that no merge request exists. A degraded forge (its tool missing or not logged in)
+does not stop the proposal: report its `hint` and `fallback` commands and do not claim a merge
+request exists. A refusal is reported as it is; the committed artifacts stay.
