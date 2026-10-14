@@ -25,7 +25,10 @@ branch name at propose, and a name read off a branch may match no change.
   list, and stop.
 - One entry and no name given: name it and ask the developer to confirm.
 - Several entries: show them (name, branch, task progress) and ask which one.
-- No entry: say that no change is in flight and stop.
+- A worktree in `unresolved` holds no change directory the script could read: show it as
+  `change name unresolved`, with its root and branch, beside the entries, and let the developer
+  name the change it holds. Never guess the name from the branch.
+- No entry and nothing unresolved: say that no change is in flight and stop.
 
 The same name in two checkouts is two copies of one change: show both and ask which root to
 use.

@@ -24,12 +24,22 @@ export function checkouts(root) {
   return list
 }
 
+// A change worktree whose change directory cannot be read is still a change in flight: it is
+// listed with no name, for the developer to identify, never dropped.
 export function findChanges(root, schema) {
   const changes = []
+  const unresolved = []
   for (const checkout of checkouts(root)) {
-    for (const change of listChanges(checkout.root, schema).changes) {
+    let found
+    try {
+      found = listChanges(checkout.root, schema).changes
+    } catch {
+      found = []
+    }
+    for (const change of found) {
       changes.push({ ...change, root: checkout.root, branch: checkout.branch, main: checkout.main })
     }
+    if (found.length === 0 && !checkout.main) unresolved.push({ root: checkout.root, branch: checkout.branch })
   }
-  return { changes }
+  return { changes, unresolved }
 }

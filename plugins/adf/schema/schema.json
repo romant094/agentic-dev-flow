@@ -72,6 +72,7 @@
   "apply": {
     "requires": ["plan"],
     "tracks": "tasks.md",
+    "instruction": "apply.md",
     "guides": ["planning.md"]
   }
 }

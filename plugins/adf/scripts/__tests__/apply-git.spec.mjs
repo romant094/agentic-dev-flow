@@ -53,6 +53,7 @@ test('find reads every checkout and reports the change where it lives', () => {
   assert.equal(changes[0].branch, 'feat/add-x')
   assert.equal(changes[0].main, false)
   assert.equal(changes[0].completedTasks, 1)
+  assert.deepEqual(findChanges(root, schema).unresolved, [])
   addGroup(change, { change: 'add-x', group: 1 })
   assert.equal(findChanges(change, schema).changes.length, 1, 'a group worktree is not a change of its own')
 })
@@ -98,4 +99,24 @@ test('the guard passes a dispatch that wrote only in its target, and names any o
   assert.deepEqual(after.changed.map((c) => c.root), [root])
   assert.throws(() => compare(change, { change: 'other' }), /no snapshot/)
   assert.throws(() => snapshot(change, { change: 'add-x', targets: [] }), /dispatch targets/)
+})
+
+test('a worktree with no readable change is listed as unresolved, never dropped', () => {
+  const { root } = host()
+  create(root, { change: 'fix-y', branch: 'fix/fix-y', base: 'integration' })
+  assert.deepEqual(findChanges(root, schema).unresolved, [{ root: join(root, '.claude/worktrees/fix-y'), branch: 'fix/fix-y' }])
+})
+
+test('a failed git read stops the group scripts and is reported by the guard', () => {
+  const { root, change } = host()
+  git(change, 'checkout', '-q', '--detach')
+  assert.throws(() => addGroup(change, { change: 'add-x', group: 1 }), /no current branch/)
+  git(change, 'checkout', '-q', 'feat/add-x')
+  const group = addGroup(change, { change: 'add-x', group: 1 })
+  snapshot(change, { change: 'add-x', targets: [change] })
+  execFileSync('git', ['-C', change, 'worktree', 'remove', '--force', group.root])
+  const after = compare(change, { change: 'add-x' })
+  assert.equal(after.ok, false)
+  assert.deepEqual(after.changed.map((c) => [c.root, c.after.status]), [[group.root, 'the checkout is gone']])
+  assert.equal(root.length > 0, true)
 })

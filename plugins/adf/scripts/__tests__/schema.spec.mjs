@@ -2,7 +2,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { buildOrder, loadSchema, SCHEMA_DIR, validateSchema } from '../lib/schema.mjs'
 
 const artifact = (id, requires = [], extra = {}) => ({ id, generates: `${id}.md`, description: id, requires, ...extra })
@@ -66,5 +67,19 @@ test('the core text an agent copies from is written in English', () => {
   assert.ok(files.length > 10)
   for (const file of files) {
     assert.doesNotMatch(readFileSync(file, 'utf8'), /[Ѐ-ӿ　-〿一-鿿＀-￯]/, file)
+  }
+})
+
+test('no dispatch-facing text asks for a repository-wide git mutation', () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+  const files = [
+    'schema/instructions/apply.md',
+    'commands/apply.md',
+    ...readdirSync(join(root, 'agents')).map((f) => `agents/${f}`)
+  ]
+  const unsafe = [/git add (-A|--all|\.)(\s|$|`)/, /git checkout -- /, /git restore\b/, /git stash push/, /git clean\b/]
+  for (const file of files) {
+    const text = readFileSync(join(root, file), 'utf8')
+    for (const pattern of unsafe) assert.doesNotMatch(text, pattern, `${file} asks for ${pattern}`)
   }
 })

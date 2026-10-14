@@ -85,6 +85,17 @@ call, so its contract is the one the plan assumes; check every name in `**Interf
 the `**Files:**` that define it; and check each invariant `design.md` relies on against the code
 that holds it today.
 
+**A task that deletes a file sweeps for its references.** Its acceptance includes a search of the
+whole repository for the deleted file's path and exported names, and its `**Files:**` lists every
+file that still names it. A reference left in another task's file breaks between tasks, where no
+task's own review looks.
+
+**Groups that converge on one shared file write fragments.** When two or more groups must each
+add to the same file (a registry, a translation table, an index), each wave-1 group writes its own
+fragment file, and one wave-2 task merges the fragments into the shared file, checking that every
+key path exists once and no value is duplicated. Without it the groups score `strong` against
+each other and lose the parallel run, or collide at merge.
+
 **A task that narrows a contract owns both sides of it.** A task making a component reject a
 payload it previously accepted lists among its files the callers that construct those payloads,
 and its review confirms that sweep. A narrowing whose callers are another task's is a break
