@@ -5,6 +5,8 @@
 //   changes.mjs new <name> [--base <branch>]         create a change; --base records the
 //                                                    branch it forked from
 //   changes.mjs list                                 active changes with task progress
+//   changes.mjs find                                 the active changes of every checkout of
+//                                                    the repository (main and change worktrees)
 //   changes.mjs status --change <name>               each artifact: done, ready or blocked
 //   changes.mjs instructions <artifact|apply> --change <name>
 //                                                    what to write next, or how to apply
@@ -14,6 +16,7 @@
 import { applyInstructions, artifactInstructions, changeStatus, listChanges, newChange } from './lib/changes.mjs'
 import { buildOrder, loadSchema } from './lib/schema.mjs'
 import { isMain } from './lib/main.mjs'
+import { findChanges } from './lib/resolve.mjs'
 
 function option(args, name) {
   const i = args.indexOf(name)
@@ -39,6 +42,8 @@ export function run(argv, { schemaDir } = {}) {
       return newChange(root, target, schema, { base })
     case 'list':
       return listChanges(root, schema)
+    case 'find':
+      return findChanges(root, schema)
     case 'status':
       return changeStatus(root, needChange(), schema)
     case 'instructions':
@@ -49,7 +54,7 @@ export function run(argv, { schemaDir } = {}) {
     case 'schema':
       return { name: schema.name, version: schema.version, order: buildOrder(schema), apply: schema.apply ?? null }
     default:
-      throw new Error('usage: changes.mjs new|list|status|instructions|schema [--root <dir>]')
+      throw new Error('usage: changes.mjs new|list|find|status|instructions|schema [--root <dir>]')
   }
 }
 
