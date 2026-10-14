@@ -1,0 +1,11 @@
+{
+  "name": "gitlab",
+  "contract": "1.1",
+  "provides": {
+    "forge": {
+      "script": "scripts/forge.mjs",
+      "operations": ["check", "open", "finalize"]
+    }
+  },
+  "hostFiles": [{ "from": "templates/merge_request.md", "to": ".gitlab/merge_request_templates/adf.md" }]
+}
