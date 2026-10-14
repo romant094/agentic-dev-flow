@@ -59,6 +59,6 @@ worktree, without the openspec CLI or any origin script. The rules and their rea
   `create`, `changes new --base`, `ledger session`, `instructions plan` delivering the planning
   guide; the main checkout stayed on its branch.
 - Not run: `/adf:propose` itself by an agent end to end. That is the behaviour check,
-  iteration 14.
+  iteration 15.
 - Also found: the origin ignores `.superpowers/` and `docs/superpowers/`; `/adf:init` now adds
   both with `.claude/worktrees/`.
