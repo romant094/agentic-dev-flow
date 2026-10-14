@@ -17,3 +17,11 @@
 ## Risks / Trade-offs
 
 <!-- Known risks and trade-offs -->
+
+## Migration Plan
+
+<!-- If applicable: steps to deploy and the rollback strategy -->
+
+## Open Questions
+
+<!-- If applicable: outstanding decisions or unknowns to resolve -->
