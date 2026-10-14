@@ -1,14 +1,30 @@
 {
   "name": "agentic-dev-flow",
   "description": "The Agentic Dev Flow core and its plugins",
-  "owner": { "name": "Anton Romankov" },
-  "allowCrossMarketplaceDependenciesOn": ["claude-plugins-official"],
+  "owner": {
+    "name": "Anton Romankov"
+  },
+  "allowCrossMarketplaceDependenciesOn": [
+    "claude-plugins-official"
+  ],
   "plugins": [
     {
       "name": "adf",
       "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "source": "./plugins/adf"
+    },
+    {
+      "name": "gitlab",
+      "description": "ADF forge plugin for GitLab: pushes a change branch and keeps its merge request through glab",
+      "version": "0.1.0",
+      "source": "./plugins/gitlab"
+    },
+    {
+      "name": "english-check",
+      "description": "Blocks an agent's git commit when a file in scope holds non-English prose",
+      "version": "0.1.0",
+      "source": "./plugins/english-check"
     }
   ]
 }

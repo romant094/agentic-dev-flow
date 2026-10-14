@@ -13,14 +13,16 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 
 | Part | State |
 |---|---|
-| Extension contract `1.0`, registry, `/adf:init`, `/adf:add`, `/adf:remove` | done (iteration 01) |
+| Extension contract, registry, `/adf:init`, `/adf:add`, `/adf:remove` | done (iteration 01) |
 | Superpowers as a dependency, the availability gate | done (iteration 02) |
 | The schema and the change engine (`new`, `list`, `status`, `instructions`, spec validation) in place of the openspec CLI | done (iteration 03) |
 | Propose: one branch and worktree per change, the branch policy, the planning guide, the artifact instructions, the plan symbol check, the execution ledger | done (iteration 04) |
+| Contract `1.1`: the `forge` role, plugins named by their installed id, host files a plugin declares; the GitLab forge plugin; the English check plugin | done (iteration 05) |
 | The rest of the cycle (apply, verify, review, archive) | not ported |
 | Metrics, retrospective | not ported |
 | Wiki memory and technical debt | not ported |
-| Plugins: forge (GitLab), English check, tracker (Jira), project stack | not started |
+| Plugins: tracker (Jira), project stack | not started |
+| `/adf:quick`, a small fix or feature without the full artifact set | not started |
 | `/adf:update` | not started |
 
 The order is in `docs/roadmap.md`.
@@ -52,9 +54,22 @@ Then, in the host project:
 ```
 /adf:init
 /adf:propose <change>
-/adf:add <plugin path>
+/adf:add <plugin id or path>
 /adf:remove <plugin name>
 ```
+
+A plugin is installed for the project, then enabled by its id. For example, GitLab merge
+requests and the English check:
+
+```
+claude plugin install gitlab@agentic-dev-flow --scope project
+/adf:add gitlab@agentic-dev-flow
+claude plugin install english-check@agentic-dev-flow --scope project
+```
+
+The English check works as soon as it is installed: it is a Claude Code hook on every agent's
+`git commit`. `/adf:add english-check@agentic-dev-flow '{"include":[...]}'` only changes its
+scope (`plugins/english-check/README.md`).
 
 ## Layout
 
@@ -66,7 +81,9 @@ plugins/adf/                      the core
   schema/                         the artifact graph (schema.json), templates, instructions
   host/                           templates of files /adf:init adds to the host (planning guide)
   scripts/                        extensions, superpowers, workspace, changes, specs,
-                                  plan-symbols, ledger, with their library and tests
+                                  plan-symbols, ledger, forge, with their library and tests
+plugins/gitlab/                   the forge role for GitLab, through glab; the merge request template
+plugins/english-check/            a PreToolUse hook that blocks a commit with non-English text
 scripts/parity/                   dev tools: compare the ported scripts with the origin's and the
                                   openspec CLI on the origin project (npm run parity -- <root>)
 test/fixtures/                    a host project and a plugin for end-to-end tests
