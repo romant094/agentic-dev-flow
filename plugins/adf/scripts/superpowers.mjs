@@ -6,15 +6,15 @@
 //
 // --root <dir> names the host project (default: the current directory); --home <dir> the
 // Claude Code home (default: $CLAUDE_CONFIG_DIR, else ~/.claude).
-import { fileURLToPath } from 'node:url'
 import { checkSuperpowers } from './lib/superpowers.mjs'
+import { isMain } from './lib/main.mjs'
 
 function option(args, name) {
   const i = args.indexOf(name)
   return i === -1 ? undefined : args[i + 1]
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   const args = process.argv.slice(2)
   const home = option(args, '--home')
   const result = checkSuperpowers(option(args, '--root') ?? process.cwd(), home ? { home } : {})

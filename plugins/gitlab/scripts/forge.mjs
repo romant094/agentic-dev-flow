@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runOperation } from './lib/forge.mjs'
+import { isMain } from './lib/main.mjs'
 
 const pluginDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 const USAGE = 'usage: forge.mjs check|open|finalize [--input-file <path>]  (payload on stdin otherwise)'
@@ -52,7 +53,7 @@ export function main(argv, readStdin) {
   })
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   let outcome
   try {
     outcome = main(process.argv.slice(2), () => readFileSync(0, 'utf8'))

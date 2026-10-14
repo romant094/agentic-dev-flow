@@ -7,8 +7,8 @@
 //
 // --root <dir> names the host project (default: the current directory); --repo <dir> is
 // kept as its older spelling. The session id is read from CLAUDE_CODE_SESSION_ID.
-import { fileURLToPath } from 'node:url'
 import { appendRecord, KINDS, listRecords, parseFlags } from './lib/ledger.mjs'
+import { isMain } from './lib/main.mjs'
 
 export const USAGE = `Usage:
   ledger.mjs <kind> --change <name> [--field value ...] [--root <dir>]
@@ -32,7 +32,7 @@ export function run(argv, { env = process.env, cwd = process.cwd() } = {}) {
   return { ok: true, record, path }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   try {
     process.stdout.write(`${JSON.stringify(run(process.argv.slice(2)), null, 2)}\n`)
   } catch (error) {

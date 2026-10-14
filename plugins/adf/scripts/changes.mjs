@@ -11,9 +11,9 @@
 //   changes.mjs schema                               validate the schema and print its graph
 //
 // --root <dir> names the host project (default: the current directory).
-import { fileURLToPath } from 'node:url'
 import { applyInstructions, artifactInstructions, changeStatus, listChanges, newChange } from './lib/changes.mjs'
 import { buildOrder, loadSchema } from './lib/schema.mjs'
+import { isMain } from './lib/main.mjs'
 
 function option(args, name) {
   const i = args.indexOf(name)
@@ -53,7 +53,7 @@ export function run(argv, { schemaDir } = {}) {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   try {
     process.stdout.write(`${JSON.stringify(run(process.argv.slice(2)), null, 2)}\n`)
   } catch (error) {

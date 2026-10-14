@@ -12,9 +12,9 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { META_FILE } from './lib/changes.mjs'
 import { baseRef, checkPlanSymbols, parseArgs, parseNameStatus } from './lib/plan-symbols.mjs'
+import { isMain } from './lib/main.mjs'
 
 const USAGE = 'usage: plan-symbols.mjs <change-name> [--root <dir>] [--phase propose|apply]  (outside a git repository, --root is required)'
 
@@ -85,7 +85,7 @@ export async function run(argv) {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   const { code, result } = await run(process.argv.slice(2))
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
   process.exitCode = code

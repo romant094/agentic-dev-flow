@@ -12,6 +12,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { isMain } from './lib/main.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const lessons = join(root, 'docs', 'lessons')
@@ -99,7 +100,7 @@ export function checkLessons() {
   return { ok: errors.length === 0, rows, pending, errors }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   const result = checkLessons()
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
   process.exitCode = result.ok ? 0 : 1

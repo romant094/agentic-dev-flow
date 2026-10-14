@@ -10,8 +10,8 @@
 // --strict also fails an item on a WARNING, as the CLI's --strict does. --root <dir> names the
 // project holding openspec/ (default: the current directory).
 import { resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { validateProject } from './lib/specs.mjs'
+import { isMain } from './lib/main.mjs'
 
 function option(args, name) {
   const i = args.indexOf(name)
@@ -44,7 +44,7 @@ export function run(argv) {
   return { ...result, root: { path: root, source: rootOption ? 'option' : 'cwd' } }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   try {
     const result = run(process.argv.slice(2))
     process.stdout.write(`${JSON.stringify(result)}\n`)

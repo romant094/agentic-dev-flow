@@ -8,8 +8,8 @@
 //       make the branch and its worktree; prints the worktree root and the base branch
 //
 // --root <dir> names the host project's main checkout (default: the current directory).
-import { fileURLToPath } from 'node:url'
 import { create, suggest } from './lib/workspace.mjs'
+import { isMain } from './lib/main.mjs'
 
 function option(args, name) {
   const i = args.indexOf(name)
@@ -36,7 +36,7 @@ export function run(argv) {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   try {
     process.stdout.write(`${JSON.stringify(run(process.argv.slice(2)), null, 2)}\n`)
   } catch (error) {

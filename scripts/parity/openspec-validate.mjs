@@ -13,8 +13,8 @@ import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { validateProject } from '../../plugins/adf/scripts/lib/specs.mjs'
+import { isMain } from '../lib/main.mjs'
 
 const dirs = (dir) => readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort()
 
@@ -364,7 +364,7 @@ export function parity(project, { keep = false } = {}) {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   const args = process.argv.slice(2)
   const keep = args.includes('--keep')
   const [project] = args.filter((a) => a !== '--keep')

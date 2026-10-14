@@ -23,6 +23,7 @@ import { detectIntegration, readBranches, setBranches } from './lib/branches.mjs
 import { createPlanningGuide, ignoreLocalDirs } from './lib/host-files.mjs'
 import { addExtension, checkRegistry, initRegistry, removeExtension } from './lib/registry.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
+import { isMain } from './lib/main.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const contract = JSON.parse(readFileSync(join(here, '..', 'contract', 'contract.json'), 'utf8'))
@@ -70,7 +71,7 @@ export function run(argv) {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   try {
     const result = run(process.argv.slice(2))
     process.stdout.write(`${JSON.stringify(result)}\n`)

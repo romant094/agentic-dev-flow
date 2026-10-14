@@ -11,6 +11,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { callRole } from './lib/roles.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
+import { isMain } from './lib/main.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const contract = JSON.parse(readFileSync(join(here, '..', 'contract', 'contract.json'), 'utf8'))
@@ -35,7 +36,7 @@ export function run(argv) {
   return callRole(root, 'forge', operation, input, { coreContract: contract.version, points: contract.points, home })
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   let result
   try {
     result = run(process.argv.slice(2))

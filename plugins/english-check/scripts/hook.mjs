@@ -6,8 +6,8 @@
 // stderr, one `path:line: text` per finding, goes to the agent; 1 the check itself failed,
 // a non-blocking error: the call runs and stderr says the commit was not checked.
 import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { checkHookInput, PLUGIN_NAME } from './lib/english.mjs'
+import { isMain } from './lib/main.mjs'
 
 export function run(stdin) {
   try {
@@ -18,7 +18,7 @@ export function run(stdin) {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
   let stdin = ''
   try {
     stdin = readFileSync(0, 'utf8')
