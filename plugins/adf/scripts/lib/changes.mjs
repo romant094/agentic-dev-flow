@@ -234,6 +234,7 @@ export function applyInstructions(root, name, schema) {
     tasks: tasks ?? [],
     state,
     ...(missingArtifacts.length > 0 ? { missingArtifacts } : {}),
+    ...(apply.guides ? { guides: projectGuidance(root, { id: 'apply', guides: apply.guides }).guides } : {}),
     instruction
   }
 }

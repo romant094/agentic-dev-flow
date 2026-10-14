@@ -1,0 +1,101 @@
+// Group worktrees, change resolution and the dispatch guard, against real git repositories.
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { setBranches } from '../lib/branches.mjs'
+import { addGroup, listGroups, mergeGroup, removeGroup } from '../lib/groups.mjs'
+import { compare, snapshot } from '../lib/guard.mjs'
+import { ignoreLocalDirs } from '../lib/host-files.mjs'
+import { initRegistry } from '../lib/registry.mjs'
+import { findChanges } from '../lib/resolve.mjs'
+import { loadSchema } from '../lib/schema.mjs'
+import { create } from '../lib/workspace.mjs'
+
+const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+const schema = loadSchema()
+
+// A host on develop with one change in its own worktree, holding a tasks file.
+function host() {
+  const root = join(realpathSync(mkdtempSync(join(tmpdir(), 'adf-apply-'))), 'host')
+  execFileSync('git', ['init', '-q', '-b', 'develop', root])
+  git(root, 'config', 'user.email', 't@example.com')
+  git(root, 'config', 'user.name', 'T')
+  writeFileSync(join(root, 'a.txt'), 'a\n')
+  initRegistry(root, '1.2')
+  setBranches(root, { integration: 'develop', protected: [] })
+  ignoreLocalDirs(root)
+  git(root, 'add', '.')
+  git(root, 'commit', '-q', '-m', 'init')
+  const made = create(root, { change: 'add-x', branch: 'feat/add-x', base: 'integration' })
+  const dir = join(made.root, 'openspec', 'changes', 'add-x')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'tasks.md'), '- [x] 1.1 a\n- [ ] 1.2 b\n')
+  git(made.root, 'add', '.')
+  git(made.root, 'commit', '-q', '-m', 'propose')
+  return { root, change: made.root }
+}
+
+function commitIn(dir, file, text) {
+  writeFileSync(join(dir, file), text)
+  git(dir, 'add', file)
+  git(dir, 'commit', '-q', '-m', file)
+}
+
+test('find reads every checkout and reports the change where it lives', () => {
+  const { root, change } = host()
+  const { changes } = findChanges(root, schema)
+  assert.equal(changes.length, 1)
+  assert.equal(changes[0].name, 'add-x')
+  assert.equal(changes[0].root, change)
+  assert.equal(changes[0].branch, 'feat/add-x')
+  assert.equal(changes[0].main, false)
+  assert.equal(changes[0].completedTasks, 1)
+  addGroup(change, { change: 'add-x', group: 1 })
+  assert.equal(findChanges(change, schema).changes.length, 1, 'a group worktree is not a change of its own')
+})
+
+test('a group is made from the change branch at the main checkout, merged and removed', () => {
+  const { root, change } = host()
+  const made = addGroup(change, { change: 'add-x', group: 1 })
+  assert.deepEqual(made, { root: join(root, '.claude/worktrees/add-x--group-1'), branch: 'feat/add-x--group-1', from: 'feat/add-x' })
+  assert.deepEqual(listGroups(change, 'add-x'), [{ group: 1, root: made.root }])
+  assert.throws(() => addGroup(change, { change: 'add-x', group: 1 }), /already has a worktree/)
+  commitIn(made.root, 'g1.txt', 'one\n')
+  assert.throws(() => removeGroup(change, { change: 'add-x', group: 1 }), /not merged/)
+  const merged = mergeGroup(change, { change: 'add-x', group: 1 })
+  assert.equal(merged.merged, true)
+  assert.equal(existsSync(join(change, 'g1.txt')), true)
+  assert.deepEqual(removeGroup(change, { change: 'add-x', group: 1 }), { removed: made.root, branch: 'feat/add-x--group-1' })
+  assert.deepEqual(listGroups(change, 'add-x'), [])
+  assert.throws(() => addGroup(change, { change: 'add-x', group: 0 }), /not a positive number/)
+})
+
+test('a conflicting merge lists the files and stays in progress for the resolver', () => {
+  const { change } = host()
+  const one = addGroup(change, { change: 'add-x', group: 1 })
+  const two = addGroup(change, { change: 'add-x', group: 2 })
+  commitIn(one.root, 'a.txt', 'one\n')
+  commitIn(two.root, 'a.txt', 'two\n')
+  assert.equal(mergeGroup(change, { change: 'add-x', group: 1 }).merged, true)
+  const second = mergeGroup(change, { change: 'add-x', group: 2 })
+  assert.deepEqual({ merged: second.merged, conflicts: second.conflicts }, { merged: false, conflicts: ['a.txt'] })
+  assert.equal(existsSync(join(change, '.git')) && git(change, 'rev-parse', '-q', '--verify', 'MERGE_HEAD') !== '', true)
+})
+
+test('the guard passes a dispatch that wrote only in its target, and names any other checkout it touched', () => {
+  const { root, change } = host()
+  const group = addGroup(change, { change: 'add-x', group: 1 })
+  const watched = snapshot(change, { change: 'add-x', targets: [group.root] }).watched.sort()
+  assert.deepEqual(watched, [change, root].sort())
+  commitIn(group.root, 'g.txt', 'g\n')
+  assert.deepEqual(compare(change, { change: 'add-x' }), { ok: true, targets: [group.root], changed: [] })
+  writeFileSync(join(root, 'stray.txt'), 'x\n')
+  const after = compare(change, { change: 'add-x' })
+  assert.equal(after.ok, false)
+  assert.deepEqual(after.changed.map((c) => c.root), [root])
+  assert.throws(() => compare(change, { change: 'other' }), /no snapshot/)
+  assert.throws(() => snapshot(change, { change: 'add-x', targets: [] }), /dispatch targets/)
+})

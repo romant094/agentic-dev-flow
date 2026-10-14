@@ -52,6 +52,9 @@ export function validateSchema(schema, dir) {
     for (const required of apply.requires ?? []) {
       if (!ids.has(required)) errors.push(`apply requires unknown artifact "${required}"`)
     }
+    if (apply.guides !== undefined && !(Array.isArray(apply.guides) && apply.guides.every((g) => GUIDE.test(g)))) {
+      errors.push('apply: guides must list file names such as planning.md')
+    }
     if (apply.instruction !== undefined && !existsSync(join(dir, 'instructions', apply.instruction))) {
       errors.push(`apply: instruction instructions/${apply.instruction} does not exist`)
     }

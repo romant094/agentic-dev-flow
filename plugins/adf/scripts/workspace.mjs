@@ -6,9 +6,16 @@
 //       name to propose, the worktree path, and any uncommitted tracked changes
 //   workspace.mjs create --change <name> --branch <branch> --base integration|current
 //       make the branch and its worktree; prints the worktree root and the base branch
+//   workspace.mjs group-add|group-merge|group-remove --change <name> --group <n>
+//       from the change worktree: make a task group's worktree from the change branch, merge
+//       it back (conflicts are listed and the merge left in progress), remove a merged one
+//   workspace.mjs groups --change <name>
+//       the change's group worktrees
 //
-// --root <dir> names the host project's main checkout (default: the current directory).
+// --root <dir> names the host project's main checkout, or for a group command the change
+// worktree (default: the current directory).
 import { create, suggest } from './lib/workspace.mjs'
+import { addGroup, listGroups, mergeGroup, removeGroup } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
 
 function option(args, name) {
@@ -24,15 +31,24 @@ export function run(argv) {
   const change = option(args, '--change')
   const branch = option(args, '--branch')
   const base = option(args, '--base')
+  const group = option(args, '--group')
   const [command] = args
-  if (!change) throw new Error('usage: workspace.mjs suggest|create --change <name>')
+  if (!change) throw new Error('usage: workspace.mjs <command> --change <name>')
   switch (command) {
     case 'suggest':
       return suggest(root, change)
     case 'create':
       return create(root, { change, branch, base })
+    case 'group-add':
+      return addGroup(root, { change, group })
+    case 'group-merge':
+      return mergeGroup(root, { change, group })
+    case 'group-remove':
+      return removeGroup(root, { change, group })
+    case 'groups':
+      return { groups: listGroups(root, change) }
     default:
-      throw new Error('usage: workspace.mjs suggest|create --change <name> [--root <dir>]')
+      throw new Error('usage: workspace.mjs suggest|create|group-add|group-merge|group-remove|groups --change <name> [--root <dir>]')
   }
 }
 

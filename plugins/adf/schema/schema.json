@@ -66,10 +66,12 @@
     }
   ],
   "blocks": {
-    "propose": "propose.md"
+    "propose": "propose.md",
+    "resolve": "resolve.md"
   },
   "apply": {
     "requires": ["plan"],
-    "tracks": "tasks.md"
+    "tracks": "tasks.md",
+    "guides": ["planning.md"]
   }
 }

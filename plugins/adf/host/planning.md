@@ -22,6 +22,13 @@ lands in them, if one depends on another. -->
 <!-- The commands that build, test and lint the project, and which of them a task's
 verification runs. -->
 
+## Whole-suite command
+
+<!-- The one command that runs every test of the project with no cache, so a pass proves the
+current code. Apply runs it once, at the end. When this section is empty, apply finds the
+command in the project's own files, proposes it, and writes it here once the developer
+confirms. -->
+
 ## Checks that need the developer
 
 <!-- Checks an implementer cannot run on its own, such as a pass against a live environment or
