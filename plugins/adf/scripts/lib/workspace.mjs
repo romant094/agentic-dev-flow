@@ -4,8 +4,8 @@
 //
 // A change forks from the integration branch (fetched first when the host has a remote), or
 // from the developer's current branch when they are mid-feature. That branch is the change's
-// base: the merge request targets it, or, with no forge plugin, the change is merged back into
-// it.
+// base: the merge request targets it, or, with no forge plugin, archive offers to merge the
+// change back into it.
 import { execFileSync } from 'node:child_process'
 import { existsSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'

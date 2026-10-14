@@ -32,7 +32,7 @@ that needs it, under the version rule in `plugins/adf/contract/README.md`.
 | 07 | Apply | task groups, subagent dispatch, capability levels, the execution ledger | none |
 | 08 | Verify | the verification checks | adds `verify-check` if a plugin needs it |
 | 09 | Review | the review stage; the CI review reuses it | none |
-| 10 | Archive and wiki memory | spec merge, memory ingest, technical debt ledger, log; the worktree removed; with no forge plugin, the change merged into its base branch | none |
+| 10 | Archive and wiki memory | spec merge, memory ingest, technical debt ledger, log; the worktree removed; with no forge plugin, archive offers to merge the change into its base branch and merges only on the developer's yes; on a no the developer merges it | none |
 | 11 | Metrics and retrospective | `adf-metrics`, `adf-retro` | none |
 | 12 | Project stack plugin (origin project) | worktree provisioning, per-worktree database, test runner, package map | adds the hooks it needs |
 | 13 | Tracker plugin: Jira | gather context at propose and at a quick task, start, hand off to QA after merge, `/opsx:land` | adds `context-source`, `on-start`, `post-merge`, `forge.state` |

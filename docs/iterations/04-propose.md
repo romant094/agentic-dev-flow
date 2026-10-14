@@ -27,7 +27,7 @@ worktree, without the openspec CLI or any origin script. The rules and their rea
   branch (new work) or the current branch (mid-feature, not offered on a protected branch).
   The origin's "stay on the current branch without a worktree" path is replaced by the second
   base. The base is the merge target: through the forge plugin when one is enabled, otherwise a
-  merge into the base at archive (iteration 10).
+  merge into the base, which archive offers and makes only on the developer's yes (iteration 10).
 - The branch policy lives in the registry: one integration branch, and a list of other
   protected branches such as a release branch. The plan symbol check's apply phase reads the
   change's base from `.adf.json`, not a literal `origin/develop`.

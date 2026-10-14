@@ -20,7 +20,7 @@ The change forks from one of two bases, and the developer chooses:
   offered when the current branch is protected or HEAD is detached.
 
 The base is recorded in the change's metadata. The merge request targets it; with no forge
-plugin, the change is merged back into it at the end.
+plugin, archive offers to merge the change back into it, and merges only on the developer's yes.
 
 **The developer confirms the branch name.**
 

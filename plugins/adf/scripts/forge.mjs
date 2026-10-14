@@ -4,7 +4,7 @@
 //   forge.mjs check|open|finalize [--input <json> | --input-file <path>] [--root <dir>] [--home <dir>]
 //
 // Prints one JSON object. With no forge plugin enabled the state is `none`: nothing is pushed
-// and no merge request exists; the change is merged into its base at archive. Exit 1 only for
+// and no merge request exists; archive offers to merge the change into its base. Exit 1 only for
 // `refused`.
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'

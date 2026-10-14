@@ -60,7 +60,7 @@ Pushes the change branch and keeps its merge request. The core never names a for
 
 A provider refuses a branch that is empty or in `protected`. `body` holds the sections of the
 plugin's merge request template. Default with no provider: nothing is pushed, no merge request
-exists, and the change is merged into its base at archive.
+exists; archive offers to merge the change into its base, and merges only on the developer's yes.
 
 ## Versioning
 
