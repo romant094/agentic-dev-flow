@@ -37,9 +37,18 @@ test('init, add, check, remove on a fresh host', () => {
   assert.equal(init.created, true)
   assert.equal(init.contract, '1.0')
   assert.deepEqual(init.settings.added, ['enabledPlugins.adf@agentic-dev-flow'])
+  assert.deepEqual(init.planningGuide, { path: 'openspec/planning.md', created: true })
+  assert.equal(init.branches, null)
+  assert.equal(adf(root, 'check').code, 1)
+  assert.deepEqual(adf(root, 'branches', '--integration', 'develop', '--protected', 'main, develop').out, {
+    integration: 'develop',
+    protected: ['develop', 'main']
+  })
   const again = adf(root, 'init').out
   assert.equal(again.created, false)
   assert.deepEqual(again.settings.added, [])
+  assert.equal(again.planningGuide.created, false)
+  assert.deepEqual(again.branches.protected, ['develop', 'main'])
 
   const added = adf(root, 'add', 'plugins/sample', '--config', '{"greeting":"hi"}')
   assert.equal(added.code, 0)

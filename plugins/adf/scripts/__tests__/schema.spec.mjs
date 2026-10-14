@@ -1,9 +1,9 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildOrder, loadSchema, validateSchema } from '../lib/schema.mjs'
+import { buildOrder, loadSchema, SCHEMA_DIR, validateSchema } from '../lib/schema.mjs'
 
 const artifact = (id, requires = [], extra = {}) => ({ id, generates: `${id}.md`, description: id, requires, ...extra })
 const graph = (...artifacts) => ({ name: 'test', version: 1, artifacts })
@@ -50,4 +50,21 @@ test('loadSchema throws with every error', () => {
   writeFileSync(join(bad, 'templates', 'a.md'), 'x')
   writeFileSync(join(bad, 'schema.json'), JSON.stringify(graph(artifact('a', [], { template: 'a.md' }))))
   assert.equal(loadSchema(bad).name, 'test')
+})
+
+test('guides must name markdown files', () => {
+  const bad = { ...artifact('a'), guides: ['../escape.md'] }
+  assert.ok(validateSchema(graph(bad), dir).some((e) => /guides must list file names/.test(e)))
+  assert.deepEqual(validateSchema(graph({ ...artifact('a'), guides: ['planning.md'] }), dir), [])
+})
+
+test('the core text an agent copies from is written in English', () => {
+  const root = join(SCHEMA_DIR, '..')
+  const files = ['schema', 'commands', 'host'].flatMap((folder) =>
+    readdirSync(join(root, folder), { recursive: true }).map((f) => join(root, folder, f)).filter((f) => f.endsWith('.md') || f.endsWith('.json'))
+  )
+  assert.ok(files.length > 10)
+  for (const file of files) {
+    assert.doesNotMatch(readFileSync(file, 'utf8'), /[Ѐ-ӿ　-〿一-鿿＀-￯]/, file)
+  }
 })

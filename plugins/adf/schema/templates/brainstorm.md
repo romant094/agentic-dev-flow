@@ -4,7 +4,7 @@
 
 ## What was read first
 
-- Memory pages: <the pages, or "none applied — say why">
+- Knowledge base pages: <the pages, or "none applied — say why">
 - Code: <the files and what they showed>
 - The developer's stated approach, checked against the above: <agreed / revised, and why>
 

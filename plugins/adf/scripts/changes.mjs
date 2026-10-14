@@ -2,7 +2,8 @@
 // CLI over lib/changes.mjs. Every subcommand prints one JSON object on stdout and exits 1 on
 // a refusal.
 //
-//   changes.mjs new <name>                           create a change
+//   changes.mjs new <name> [--base <branch>]         create a change; --base records the
+//                                                    branch it forked from
 //   changes.mjs list                                 active changes with task progress
 //   changes.mjs status --change <name>               each artifact: done, ready or blocked
 //   changes.mjs instructions <artifact|apply> --change <name>
@@ -25,6 +26,7 @@ export function run(argv, { schemaDir } = {}) {
   const args = [...argv]
   const root = option(args, '--root') ?? process.cwd()
   const change = option(args, '--change')
+  const base = option(args, '--base')
   const [command, target] = args
   const schema = loadSchema(schemaDir)
   const needChange = () => {
@@ -34,7 +36,7 @@ export function run(argv, { schemaDir } = {}) {
   switch (command) {
     case 'new':
       if (!target) throw new Error('usage: new <name>')
-      return newChange(root, target, schema)
+      return newChange(root, target, schema, { base })
     case 'list':
       return listChanges(root, schema)
     case 'status':

@@ -3,7 +3,10 @@
 // on a refusal, so a command file reads the result instead of parsing prose.
 //
 //   extensions.mjs init                      create the registry if missing; declare ADF
-//                                            in the host's .claude/settings.json
+//                                            in the host's .claude/settings.json; ignore
+//                                            the flow's local state; add the planning guide
+//   extensions.mjs branches --integration B [--protected B1,B2]
+//                                            set the branch policy in the registry
 //   extensions.mjs add <path> [--config J]   enable a plugin
 //   extensions.mjs remove <name>             disable a plugin
 //   extensions.mjs check                     validate the registry and every plugin
@@ -14,6 +17,8 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { declareInHost, marketplaceSource } from './lib/host-settings.mjs'
+import { detectIntegration, readBranches, setBranches } from './lib/branches.mjs'
+import { createPlanningGuide, ignoreLocalDirs } from './lib/host-files.mjs'
 import { addExtension, checkRegistry, initRegistry, removeExtension } from './lib/registry.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
 
@@ -33,14 +38,23 @@ export function run(argv) {
   const root = option(args, '--root') ?? process.cwd()
   const config = option(args, '--config')
   const home = option(args, '--home') ?? claudeHome()
+  const integration = option(args, '--integration')
+  const protectedList = option(args, '--protected')
   const [command, target] = args
   switch (command) {
     case 'init':
       return {
         ...initRegistry(root, contract.version),
         contract: contract.version,
-        settings: declareInHost(root, { source: marketplaceSource(home) })
+        settings: declareInHost(root, { source: marketplaceSource(home) }),
+        gitignore: ignoreLocalDirs(root),
+        planningGuide: createPlanningGuide(root),
+        branches: readBranches(root),
+        detectedIntegration: detectIntegration(root)
       }
+    case 'branches':
+      if (!integration) throw new Error('usage: branches --integration <branch> [--protected <b1,b2>]')
+      return setBranches(root, { integration, protected: protectedList ? protectedList.split(',').map((b) => b.trim()) : [] })
     case 'add':
       if (!target) throw new Error('usage: add <plugin path> [--config <json>]')
       return addExtension(root, target, { ...core, config: config && JSON.parse(config) })
@@ -50,7 +64,7 @@ export function run(argv) {
     case 'check':
       return checkRegistry(root, core)
     default:
-      throw new Error('usage: extensions.mjs init|add|remove|check [--root <dir>]')
+      throw new Error('usage: extensions.mjs init|branches|add|remove|check [--root <dir>]')
   }
 }
 

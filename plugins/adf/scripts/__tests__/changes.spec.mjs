@@ -82,7 +82,7 @@ test('instructions carry the template, the project guidance and the graph neighb
   assert.deepEqual(result.rules, ['Name the capability.', 'Keep it short.'])
   assert.deepEqual(result.dependencies, [{ id: 'brainstorm', done: true, path: 'brainstorm.md', description: schema.artifacts[0].description }])
   assert.deepEqual(result.unlocks, ['specs'])
-  assert.equal(result.instruction, null)
+  assert.match(result.instruction, /^Create the proposal document from the brainstorming output\./)
   assert.throws(() => artifactInstructions(root, 'c', 'nope', schema), /no artifact "nope"/)
 })
 
@@ -137,4 +137,24 @@ test('the CLI prints JSON and exits 1 on a refusal', () => {
   assert.equal(refused.code, 1)
   assert.match(refused.out.error, /already exists/)
   assert.equal(run('schema').out.name, 'adf')
+})
+
+test('new records the base branch when given one', () => {
+  const root = host()
+  newChange(root, 'add-thing', schema, { base: 'develop', today: '2026-10-14' })
+  const meta = JSON.parse(readFileSync(join(root, 'openspec/changes/add-thing/.adf.json'), 'utf8'))
+  assert.equal(meta.base, 'develop')
+})
+
+test('instructions deliver the project guides the artifact names, or null text when missing', () => {
+  const root = host()
+  newChange(root, 'add-thing', schema)
+  assert.deepEqual(artifactInstructions(root, 'add-thing', 'plan', schema).guides, [
+    { path: 'openspec/planning.md', text: null }
+  ])
+  write(root, 'openspec/planning.md', '# Planning Guide\n\nRun the bench.\n')
+  assert.deepEqual(artifactInstructions(root, 'add-thing', 'plan', schema).guides, [
+    { path: 'openspec/planning.md', text: '# Planning Guide\n\nRun the bench.' }
+  ])
+  assert.deepEqual(artifactInstructions(root, 'add-thing', 'tasks', schema).guides, [])
 })

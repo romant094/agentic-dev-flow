@@ -8,6 +8,7 @@
       "generates": "brainstorm.md",
       "description": "Collaborative design exploration using Superpowers brainstorming",
       "template": "brainstorm.md",
+      "instruction": "brainstorm.md",
       "requires": []
     },
     {
@@ -15,6 +16,7 @@
       "generates": "proposal.md",
       "description": "Initial proposal document outlining the change",
       "template": "proposal.md",
+      "instruction": "proposal.md",
       "requires": ["brainstorm"]
     },
     {
@@ -22,6 +24,7 @@
       "generates": "design.md",
       "description": "Technical design document with implementation details",
       "template": "design.md",
+      "instruction": "design.md",
       "requires": ["brainstorm"]
     },
     {
@@ -29,6 +32,7 @@
       "generates": "specs/**/*.md",
       "description": "Detailed specifications for the change",
       "template": "spec.md",
+      "instruction": "specs.md",
       "requires": ["proposal"]
     },
     {
@@ -36,12 +40,16 @@
       "generates": "tasks.md",
       "description": "Implementation checklist with trackable tasks",
       "template": "tasks.md",
+      "instruction": "tasks.md",
       "requires": ["specs"]
     },
     {
       "id": "plan",
       "generates": "plan.md",
       "description": "Step-by-step execution plan from Superpowers writing-plans",
+      "template": "plan.md",
+      "instruction": "plan.md",
+      "guides": ["planning.md"],
       "requires": ["tasks"]
     },
     {
@@ -57,6 +65,9 @@
       "requires": ["verify"]
     }
   ],
+  "blocks": {
+    "propose": "propose.md"
+  },
   "apply": {
     "requires": ["plan"],
     "tracks": "tasks.md"

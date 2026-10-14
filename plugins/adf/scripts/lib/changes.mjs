@@ -5,7 +5,8 @@
 //
 // Host layout: `openspec/changes/<name>/` per change, `openspec/changes/archive/` for the
 // archived ones, and the project's own guidance in `openspec/context.md` (the project, for
-// every artifact) and `openspec/rules/<artifact>.md` (one rule per `- ` line).
+// every artifact), `openspec/rules/<artifact>.md` (one rule per `- ` line) and the project
+// guides an artifact names in the schema (`guides`), such as `openspec/planning.md`.
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { buildOrder, readSchemaFile } from './schema.mjs'
@@ -60,12 +61,13 @@ function requireChange(root, name) {
   return changeDir(root, name)
 }
 
-export function newChange(root, name, schema, { today = new Date().toISOString().slice(0, 10) } = {}) {
+// `base` is the branch the change forked from and is merged back into (lib/workspace.mjs).
+export function newChange(root, name, schema, { base, today = new Date().toISOString().slice(0, 10) } = {}) {
   if (!NAME.test(name ?? '') || name === ARCHIVE) throw new Error(`change name "${name}" is not kebab-case`)
   const dir = changeDir(root, name)
   if (existsSync(dir)) throw new Error(`change "${name}" already exists`)
   mkdirSync(dir, { recursive: true })
-  const meta = { schema: schema.name, schemaVersion: schema.version, created: today }
+  const meta = { schema: schema.name, schemaVersion: schema.version, created: today, ...(base ? { base } : {}) }
   writeFileSync(join(dir, META_FILE), `${JSON.stringify(meta, null, 2)}\n`)
   return { name, changeRoot: dir, ...meta }
 }
@@ -153,12 +155,13 @@ export function changeStatus(root, name, schema) {
   }
 }
 
-function projectGuidance(root, artifactId) {
+function projectGuidance(root, artifact) {
   const read = (path) => (existsSync(join(root, path)) ? readFileSync(join(root, path), 'utf8') : null)
-  const rules = read(`openspec/rules/${artifactId}.md`)
+  const rules = read(`openspec/rules/${artifact.id}.md`)
   return {
     context: read('openspec/context.md')?.trim() || null,
-    rules: rules === null ? [] : rules.split('\n').filter((l) => l.startsWith('- ')).map((l) => l.slice(2).trim())
+    rules: rules === null ? [] : rules.split('\n').filter((l) => l.startsWith('- ')).map((l) => l.slice(2).trim()),
+    guides: (artifact.guides ?? []).map((file) => ({ path: `openspec/${file}`, text: read(`openspec/${file}`)?.trim() || null }))
   }
 }
 
@@ -180,7 +183,7 @@ export function artifactInstructions(root, name, artifactId, schema) {
     existingOutputPaths: resolveOutputs(dir, artifact.generates),
     description: artifact.description,
     instruction: readSchemaFile(schema, 'instructions', artifact.instruction),
-    ...projectGuidance(root, artifactId),
+    ...projectGuidance(root, artifact),
     template: readSchemaFile(schema, 'templates', artifact.template),
     dependencies: artifact.requires.map((id) => ({
       id,

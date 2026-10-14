@@ -24,8 +24,27 @@ const done = new Set(
     .map((file) => Number.parseInt(file, 10))
 )
 
-function cells(line) {
-  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split(' | ').map((cell) => cell.trim())
+// A cell ends at a `|` that is neither escaped (`\|`) nor inside a code span, as in GitHub
+// tables.
+export function cells(line) {
+  const row = line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '')
+  const out = []
+  let cell = ''
+  let code = false
+  for (let i = 0; i < row.length; i++) {
+    const c = row[i]
+    if (c === '\\' && row[i + 1] === '|') {
+      cell += '|'
+      i++
+    } else if (c === '`') {
+      code = !code
+      cell += c
+    } else if (c === '|' && !code) {
+      out.push(cell.trim())
+      cell = ''
+    } else cell += c
+  }
+  return [...out, cell.trim()]
 }
 
 function checkEvidence(cell, decision) {

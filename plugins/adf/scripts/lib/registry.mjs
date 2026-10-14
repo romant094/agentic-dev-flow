@@ -3,6 +3,7 @@
 // knows the format, never a plugin by name.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, normalize } from 'node:path'
+import { validateBranches } from './branches.mjs'
 
 export const REGISTRY_PATH = '.claude/adf-extensions.json'
 export const DECLARATION_FILE = 'adf-extension.json'
@@ -50,6 +51,7 @@ export function validateRegistry(registry) {
     if (seen.has(key)) errors.push(`extensions[${i}] repeats ${entry.path}`)
     seen.add(key)
   }
+  if (registry.branches !== undefined) errors.push(...validateBranches(registry.branches))
   return errors
 }
 
@@ -58,7 +60,7 @@ export function readRegistry(root) {
   return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null
 }
 
-function writeRegistry(root, registry) {
+export function writeRegistry(root, registry) {
   const file = join(root, REGISTRY_PATH)
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, `${JSON.stringify(registry, null, 2)}\n`)
@@ -139,5 +141,6 @@ export function checkRegistry(root, { coreContract, points }) {
       errors.push(error.message)
     }
   }
+  if (registry.branches === undefined) errors.push('no branches are set; run /adf:init')
   return { ok: errors.length === 0, errors, plugins }
 }

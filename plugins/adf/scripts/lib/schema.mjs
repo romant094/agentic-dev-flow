@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 export const SCHEMA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema')
 const ID = /^[a-z][a-z0-9-]*$/
+const GUIDE = /^[a-z0-9][a-z0-9-]*\.md$/
 
 const isText = (value) => typeof value === 'string' && value.length > 0
 
@@ -31,6 +32,9 @@ export function validateSchema(schema, dir) {
       if (artifact[field] !== undefined && !existsSync(join(dir, folder, artifact[field]))) {
         errors.push(`artifact "${id}": ${field} ${folder}/${artifact[field]} does not exist`)
       }
+    }
+    if (artifact.guides !== undefined && !(Array.isArray(artifact.guides) && artifact.guides.every((g) => GUIDE.test(g)))) {
+      errors.push(`artifact "${id}": guides must list file names such as planning.md`)
     }
   }
   for (const artifact of artifacts) {

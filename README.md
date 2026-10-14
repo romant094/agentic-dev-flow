@@ -16,10 +16,12 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Extension contract `1.0`, registry, `/adf:init`, `/adf:add`, `/adf:remove` | done (iteration 01) |
 | Superpowers as a dependency, the availability gate | done (iteration 02) |
 | The schema and the change engine (`new`, `list`, `status`, `instructions`, spec validation) in place of the openspec CLI | done (iteration 03) |
-| The change cycle (propose, apply, verify, review, archive) | not ported |
-| Ledger, metrics, retrospective | not ported |
+| Propose: one branch and worktree per change, the branch policy, the planning guide, the artifact instructions, the plan symbol check, the execution ledger | done (iteration 04) |
+| The rest of the cycle (apply, verify, review, archive) | not ported |
+| Metrics, retrospective | not ported |
 | Wiki memory and technical debt | not ported |
-| Plugins: forge (GitLab), worktree, tracker (Jira), project stack | not started |
+| Plugins: forge (GitLab), English check, tracker (Jira), project stack | not started |
+| `/adf:update` | not started |
 
 The order is in `docs/roadmap.md`.
 
@@ -49,6 +51,7 @@ Then, in the host project:
 
 ```
 /adf:init
+/adf:propose <change>
 /adf:add <plugin path>
 /adf:remove <plugin name>
 ```
@@ -58,11 +61,14 @@ Then, in the host project:
 ```
 .claude-plugin/marketplace.json   the marketplace: the core and every plugin
 plugins/adf/                      the core
-  commands/                       /adf:init, /adf:add, /adf:remove
+  commands/                       /adf:init, /adf:add, /adf:remove, /adf:propose
   contract/                       the extension contract and its version
   schema/                         the artifact graph (schema.json), templates, instructions
-  scripts/                        extensions, superpowers, changes, specs, with their library and tests
-scripts/parity/                   dev tools: compare the engine with the openspec CLI on a project
+  host/                           templates of files /adf:init adds to the host (planning guide)
+  scripts/                        extensions, superpowers, workspace, changes, specs,
+                                  plan-symbols, ledger, with their library and tests
+scripts/parity/                   dev tools: compare the ported scripts with the origin's and the
+                                  openspec CLI on the origin project (npm run parity -- <root>)
 test/fixtures/                    a host project and a plugin for end-to-end tests
 docs/roadmap.md                   the porting order
 docs/lessons/                     the origin project's rules per capability, with reasons
