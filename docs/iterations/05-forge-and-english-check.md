@@ -57,5 +57,9 @@ its pre-commit hook. The rules and their reasons are in `docs/lessons/forge-gitl
 - `claude plugin validate`: the marketplace and both new plugins pass.
 - Not run: a smoke run of the hook in a temporary repository from this session (not permitted
   here); the hook's tests run it against real temporary repositories. Not run: `glab` against a
-  real GitLab; the plugin's tests inject every git and `glab` call. Both are part of the
-  behaviour check, iteration 14.
+  real GitLab; the plugin's tests inject every git and `glab` call. Both are part of the live
+  check, iteration 18.
+- Fixed after the result: every script's entry guard compared `argv[1]` with the module path
+  as written, so a script started through a symbolic link (or in another letter case on
+  Windows and macOS) did nothing. `isMain` compares the system-resolved paths; a test starts a
+  CLI through a link.

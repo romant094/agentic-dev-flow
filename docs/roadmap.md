@@ -40,6 +40,7 @@ that needs it, under the version rule in `plugins/adf/contract/README.md`.
 | 15 | Switch the origin project | `/adf:init` and `/adf:add` in the origin project; its changes move to the new schema | none |
 | 16 | Update | `/adf:update`: after a new version of the core or a plugin is published from its own repository, bring a host up to date: update the installed plugins, migrate the registry and the host files `/adf:init` wrote, and report what changed | none |
 | 17 | Quick task | `/adf:quick`: a small fix or feature without the full artifact set, after the model of `/gsd:quick` in `open-gsd/gsd-core` (studied first). Its own branch and worktree from the base; a short plan and a summary as the change's only artifacts; atomic commits; optional steps by flag (discuss, research, verify); the merge request through the forge plugin or the local merge into the base; the same gates as propose; its own behaviour check, since iteration 14 runs before it | none |
+| 18 | Live check | after the switch and the quick task, on real systems: the whole cycle from `/adf:propose` in the switched origin project; the English check hook in a scratch repository (a blocked and a clean commit, from the main agent and a subagent); the GitLab plugin against a test GitLab project (Draft at propose, push at apply, `finalize` at archive, the degraded paths with `glab` missing and logged out); on macOS, Linux and Windows | none |
 
 Inputs kept in the origin project (local, not in this repository): the decomposition analysis
 and the drafts of the contract and the Jira integration.
