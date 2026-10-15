@@ -74,7 +74,7 @@ task's `**Files:**` and `**Interfaces:**` blocks MUST be resolved against the tr
 change on a baseline the plan got wrong. A `**Files:**` bullet starts with one of the verbs
 `Create:`, `Modify:`, `Test:`, `Move:`, `Delete:`, `Revert:`, or reads `<Verb>: none` for a task
 that touches no file under that verb; such a bullet is a no-op, and `Revert: commits …` names no
-path. A line the script cannot parse is reported, never dropped. The script reports a missing
+path. A line the script cannot parse is reported, never dropped. Every file a task touches is named by its own backticked path; a prose reference such as "the same files for X" names nothing, and verify reports those files as outside the plan. The script reports a missing
 path, an existing `Create:` path, a line range past its file's end, and a `Consumes:` symbol
 found neither in its named path nor in the tracked tree outside the change records; it never
 checks `Produces:`, which excuses a later task's `Consumes:`. In the measured session the

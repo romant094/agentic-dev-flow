@@ -12,7 +12,7 @@ import { addGroup, baseCheckPath } from '../lib/groups.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { appendRecord, buildRecord } from '../lib/ledger.mjs'
 import { initRegistry, readRegistry, validateRegistry, writeRegistry } from '../lib/registry.mjs'
-import { computeVerdict, countsIn, deltaState, runChecks, verifyDir } from '../lib/verify.mjs'
+import { computeVerdict, countsIn, deltaState, pathMatcher, plannedPaths, runChecks, verifyDir } from '../lib/verify.mjs'
 import { create } from '../lib/workspace.mjs'
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'verify.mjs')
@@ -303,6 +303,49 @@ test('out-of-plan warns naming an unparsed Files bullet', () => {
   const check = runIn(root)['out-of-plan']
   assert.equal(check.verdict, 'warn')
   assert.equal(check.summary, 'every file is in the plan; unparsed Files bullets: Task 1: - Modify: lib/ without backticks')
+})
+
+test('plannedPaths takes every backticked path of a Files bullet, past prose and parentheses', () => {
+  const plan = `### Task 1: t
+
+**Files:**
+- Test: \`src/a/__tests__/x.spec.ts\` (per-model cases), \`src/b/y.spec.ts\`, \`src/c/\`
+- Modify: \`src/m/ry-lgso38-10.ts\`, \`src/m/base.ts:12-30\` — seeds (lines 4-9)
+- Create: \`forms/a/poe-ports.json\`, \`poe-common.json\`
+- Move: \`old/dir/\` → \`new/dir/\` (via \`git mv\`)
+- Delete: none.
+- Modify: lib/ without backticks
+
+### Task 2: u
+
+**Files:**
+- Revert: commits of task 1
+`
+  const { tasks, paths, unparsed } = plannedPaths(plan)
+  assert.equal(tasks, 2)
+  assert.deepEqual(paths, [
+    'src/a/__tests__/x.spec.ts', 'src/b/y.spec.ts', 'src/c/', 'src/m/ry-lgso38-10.ts', 'src/m/base.ts',
+    'forms/a/poe-ports.json', 'forms/a/poe-common.json', 'poe-common.json', 'old/dir/', 'new/dir/'
+  ])
+  assert.deepEqual(unparsed, [{ task: 1, line: '- Modify: lib/ without backticks' }])
+})
+
+test('a placeholder segment of a planned path matches any name in that segment', () => {
+  for (const entry of ['prisma/migrations/<timestamp>_add_x/migration.sql', 'prisma/migrations/YYYYMMDDHHMMSS_add_x/migration.sql']) {
+    const covers = pathMatcher(entry)
+    assert.equal(covers('prisma/migrations/20261007120209_add_x/migration.sql'), true, entry)
+    assert.equal(covers('prisma/migrations/20261007120209_add_y/migration.sql'), false, entry)
+    assert.equal(covers('prisma/migrations/2026/10_add_x/migration.sql'), false, entry)
+  }
+  assert.equal(pathMatcher('src/MMIO/a.ts')('src/x/a.ts'), false)
+  assert.equal(pathMatcher('lib/')('lib/inner/b.mjs'), true)
+})
+
+test('out-of-plan covers a path listed after a parenthesis and a placeholder path', () => {
+  const plan = PLAN.replace('- Modify: `lib/`', '- Modify: `lib/` (helpers), `docs/notes.md`\n- Create: `db/<timestamp>_init/up.sql`')
+  const { root } = host({ plan })
+  commit(root, { 'docs/notes.md': 'n\n', 'db/20261015_init/up.sql': 's\n' })
+  assert.equal(runIn(root)['out-of-plan'].verdict, 'pass')
 })
 
 test('verdict: warnings, agent sections, and the refusals', () => {

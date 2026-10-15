@@ -13,7 +13,7 @@ import { join, resolve } from 'node:path'
 import { changeDir, globToRegExp, META_FILE, parseTasks } from './changes.mjs'
 import { baseCheckPath, listGroups } from './groups.mjs'
 import { readRecords } from './ledger.mjs'
-import { baseRef, parsePlanTasks } from './plan-symbols.mjs'
+import { baseRef, EXTENSIONS } from './plan-symbols.mjs'
 import { readRegistry } from './registry.mjs'
 import { extractRequirementsSection, parseDeltaSpec, validateProject } from './specs.mjs'
 import { gitIn } from './workspace.mjs'
@@ -260,27 +260,83 @@ function checkWorktrees(root, change, git) {
 
 const stripDot = (p) => p.replace(/^\.\//, '')
 
-function planCovers(entries, file) {
-  return entries.some((entry) => {
-    if (/[*?]/.test(entry)) return globToRegExp(entry).test(file)
-    const dir = entry.endsWith('/') ? entry : `${entry}/`
-    return file === entry || file.startsWith(dir)
+// Every path a plan's `**Files:**` blocks name, for the out-of-plan check. plan-symbols reads a
+// bullet's path list only up to the first prose, which suits its existence check; here every
+// backticked path-like token of the bullet counts: "`a.ts` (note), `b.ts`" names both, and so do
+// a Move's two ends or any other verb's. A `:12-30` suffix is dropped. A bare file name is a
+// sibling of the bullet's first path, and may also be the file at the repository root. A
+// bullet or line naming no backticked path is unparsed, unless it is a no-op (`<Verb>: none`,
+// `Revert: commits …`).
+const PATH_TOKEN = new RegExp(`^[^\\s()\`]+$`)
+const PATH_EXT = new RegExp(`\\.(?:${EXTENSIONS})$`)
+const isPlanPath = (t) => PATH_TOKEN.test(t) && (t.includes('/') || PATH_EXT.test(t))
+
+function filesBlock(lines, from) {
+  const out = []
+  for (let i = from; i < lines.length; i++) {
+    const line = lines[i]
+    if (/^\s*<!--.*-->\s*$/.test(line) || !line.trim()) continue
+    if (/^(?:\*\*|#|---|- \[[ xX]\])/.test(line)) break
+    if (/^\s+\S/.test(line) && out.length && out.at(-1).bullet) out.at(-1).text += `\n${line.trim()}`
+    else out.push({ text: line.trim(), bullet: /^-\s/.test(line) })
+  }
+  return out
+}
+
+export function plannedPaths(planText) {
+  const lines = planText.split('\n')
+  const starts = []
+  lines.forEach((line, i) => {
+    const m = /^###\s+Task\s+(\d+)\b/.exec(line)
+    if (m) starts.push({ number: Number(m[1]), i })
   })
+  const paths = []
+  const unparsed = []
+  starts.forEach(({ number, i }, k) => {
+    const body = lines.slice(i + 1, k + 1 < starts.length ? starts[k + 1].i : lines.length)
+    const at = body.findIndex((l) => /^\*\*Files:\*\*/.test(l))
+    if (at < 0) return
+    for (const { text } of filesBlock(body, at + 1)) {
+      const tokens = [...text.matchAll(/`([^`]+)`/g)].map((m) => stripDot(m[1].replace(/:\d+(?:-\d+)?$/, ''))).filter(isPlanPath)
+      if (tokens.length === 0) {
+        if (!/^-\s+\w+:\s*none\.?\s*$/i.test(text) && !/^-\s+Revert:\s*commits?\b/i.test(text)) unparsed.push({ task: number, line: text.split('\n')[0] })
+        continue
+      }
+      const first = tokens.find((t) => t.includes('/'))
+      const dir = first ? first.slice(0, first.lastIndexOf('/') + 1) : ''
+      for (const t of tokens) {
+        if (t.includes('/') || !dir) paths.push(t)
+        else paths.push(dir + t, t)
+      }
+    }
+  })
+  return { tasks: starts.length, paths: [...new Set(paths)], unparsed }
+}
+
+// A planned path segment holding a placeholder (`<timestamp>`, `YYYYMMDDHHMMSS`) matches any
+// run of characters within that segment; a glob is a glob; a directory covers what is under it.
+const PLACEHOLDER = /<[^<>/]+>|(?<![A-Za-z0-9])(?:YYYY|YY|MM|DD|HH|mm|SS|ss){2,}(?![A-Za-z])/g
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+export function pathMatcher(entry) {
+  if (/[*?]/.test(entry)) return (file) => globToRegExp(entry).test(file)
+  if (PLACEHOLDER.test(entry)) {
+    PLACEHOLDER.lastIndex = 0
+    const dir = entry.endsWith('/')
+    const source = entry.split(PLACEHOLDER).map(escapeRe).join('[^/]+')
+    const re = new RegExp(`^${source}${dir ? '' : '(?:/|$)'}`)
+    return (file) => re.test(file)
+  }
+  const dir = entry.endsWith('/') ? entry : `${entry}/`
+  return (file) => file === entry || file.startsWith(dir)
 }
 
 function checkOutOfPlan(root, change, git, base, skillEdits) {
   if (base.error) return { verdict: 'not-run', summary: `no commit range: ${base.error}`, text: base.error }
   const planPath = join(changeDir(root, change), 'plan.md')
   if (!existsSync(planPath)) return { verdict: 'fail', summary: `${change} has no plan.md`, text: `${planPath} is missing` }
-  const tasks = parsePlanTasks(readFileSync(planPath, 'utf8'))
-  const entries = []
-  for (const t of tasks) {
-    for (const f of t.files) {
-      entries.push(stripDot(f.path))
-      if (f.bare) entries.push(f.bare)
-      if (f.to) entries.push(stripDot(f.to))
-    }
-  }
+  const planned = plannedPaths(readFileSync(planPath, 'utf8'))
+  const entries = planned.paths
+  const matchers = entries.map(pathMatcher)
   const allowed = (readRegistry(root)?.outsidePlan ?? []).map((g) => globToRegExp(g))
   const prefix = changePrefix(change)
   const exempt = skillEdits.map((sha) => {
@@ -295,13 +351,13 @@ function checkOutOfPlan(root, change, git, base, skillEdits) {
       if (file.startsWith(prefix)) continue
       if (skillEdit && file.startsWith('.claude/skills/')) continue
       if (allowed.some((re) => re.test(file))) continue
-      if (planCovers(entries, file)) continue
+      if (matchers.some((covers) => covers(file))) continue
       findings.push({ sha, file, why: skillEdit ? 'an approved skill edit touched a file outside .claude/skills/' : 'no task names it' })
     }
   }
-  const unparsed = tasks.flatMap((t) => t.unparsed.map((line) => ({ task: t.number, line })))
+  const { unparsed } = planned
   const lines = [
-    `range ${base.ref}..HEAD; plan tasks: ${tasks.length}; plan paths: ${entries.length}; outsidePlan globs: ${allowed.length}; skill-edit commits: ${exempt.length}`,
+    `range ${base.ref}..HEAD; plan tasks: ${planned.tasks}; plan paths: ${entries.length}; outsidePlan globs: ${allowed.length}; skill-edit commits: ${exempt.length}`,
     `out of plan: ${findings.length === 0 ? 'none' : ''}`,
     ...findings.map((f) => `  ${f.sha} ${f.file} (${f.why})`),
     `unparsed Files bullets: ${unparsed.length === 0 ? 'none' : ''}`,
