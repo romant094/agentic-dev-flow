@@ -24,14 +24,18 @@ function walk(dir) {
   })
 }
 
-// `**/` matches zero or more directories, `*` and `?` stay within one path segment.
-function globToRegExp(glob) {
+// `**/` matches zero or more directories, any other `**` anything at all (`dir/**` is every
+// file under dir), `*` and `?` stay within one path segment.
+export function globToRegExp(glob) {
   let source = ''
   for (let i = 0; i < glob.length; i++) {
     const c = glob[i]
     if (glob.startsWith('**/', i)) {
       source += '(?:.*/)?'
       i += 2
+    } else if (glob.startsWith('**', i)) {
+      source += '.*'
+      i += 1
     } else if (c === '*') source += '[^/]*'
     else if (c === '?') source += '[^/]'
     else source += c.replace(/[.+^${}()|[\]\\]/g, '\\$&')

@@ -71,6 +71,12 @@ export function validateRegistry(registry) {
     seen.add(key)
   }
   if (registry.branches !== undefined) errors.push(...validateBranches(registry.branches))
+  // Paths verify's out-of-plan check never reports: globs relative to the project root, such
+  // as a reports folder no plan names. Optional and empty by default.
+  const outside = registry.outsidePlan
+  if (outside !== undefined && (!Array.isArray(outside) || !outside.every((glob) => inside(glob) && glob.trim() === glob))) {
+    errors.push('outsidePlan must be a list of glob patterns relative to the project root')
+  }
   return errors
 }
 
