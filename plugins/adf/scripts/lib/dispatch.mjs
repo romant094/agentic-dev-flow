@@ -1,0 +1,304 @@
+// Every subagent dispatch of a change has a fixed name, a fixed agent level, a fixed reply or
+// section file and a fixed worktree, and its prompt carries fixed fields and fixed clauses. The
+// apply and verify instructions state the rules; this module applies them, so a dispatch does
+// not depend on the orchestrator remembering them. The metrics read the role, the task and the
+// round from the name: 17 of 39 dispatches of one origin change missed the form.
+//
+// Names (schema/instructions/apply.md, "Name every dispatch in the fixed form"):
+//   T<n> <role>, T<n> <role> r<k>          role impl | review | re-review | fix
+//   final-review, sweep, investigate <topic>, merge-review <G>, fix [<G>], re-review [<G>]
+//   verify c4 | verify c6 | verify c8 | verify assemble   (schema/instructions/verify.md)
+//
+// Pure: every read of the tree is done by the caller and passed in.
+import { join } from 'node:path'
+
+export const LEVELS = ['mechanical', 'integration', 'architecture']
+export const TASK_ROLES = ['impl', 'review', 're-review', 'fix']
+// Task-less roles: the level each takes and whether it names a group (`required`, `optional`
+// or `none`). fix, re-review and investigate have no level in the instruction's table: they go at
+// integration, the level the agent definitions give integration, debugging and investigation.
+export const TASKLESS = {
+  'final-review': { level: 'architecture', group: 'none' },
+  'merge-review': { level: 'architecture', group: 'required' },
+  fix: { level: 'integration', group: 'optional' },
+  're-review': { level: 'integration', group: 'optional' },
+  sweep: { level: 'integration', group: 'none' },
+  investigate: { level: 'integration', group: 'none' }
+}
+// schema/instructions/verify.md, the dispatch table.
+export const VERIFY_CHECKS = {
+  c4: { section: 'c4', level: 'architecture' },
+  c8: { section: 'c8', level: 'integration' },
+  c6: { section: 'test-record', level: 'integration' },
+  assemble: { section: null, level: 'mechanical' }
+}
+export const ROLES = [...new Set([...TASK_ROLES, ...Object.keys(TASKLESS), 'verify'])]
+// Roles whose question the orchestrator must write: the prompt refuses an empty slot.
+export const QUESTION_REQUIRED = ['review', 're-review', 'fix', 'final-review', 'merge-review', 'investigate']
+export const MAX_ATTEMPTS = 2
+
+const TOPIC = /^[A-Za-z0-9]+$/
+const GROUP = /^[A-Z]$/
+
+export class DispatchError extends Error {}
+const refuse = (message) => {
+  throw new DispatchError(message)
+}
+
+const levelAt = (i) => LEVELS[Math.min(Math.max(i, 0), LEVELS.length - 1)]
+const atLeast = (level, floor) => levelAt(Math.max(LEVELS.indexOf(level), LEVELS.indexOf(floor)))
+
+// ---------------------------------------------------------------- the plan
+
+// The `**Level:**` of `### Task <n>`, or null when the plan has no such task.
+export function taskBody(planText, n) {
+  const lines = planText.split('\n')
+  const start = lines.findIndex((l) => new RegExp(`^###\\s+Task\\s+${n}\\b`).test(l))
+  if (start === -1) return null
+  const end = lines.findIndex((l, i) => i > start && /^###\s+Task\s+\d+\b/.test(l))
+  return lines.slice(start + 1, end === -1 ? lines.length : end).join('\n')
+}
+
+export function levelOf(body) {
+  const m = /^\*\*Level:\*\*\s*([a-z]+)/m.exec(body)
+  return m && LEVELS.includes(m[1]) ? m[1] : null
+}
+
+const taskList = (cell) =>
+  cell
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .flatMap((part) => {
+      const m = /^(\d+)\s*[-–]\s*(\d+)$/.exec(part)
+      if (!m) return /^\d+$/.test(part) ? [Number(part)] : []
+      const out = []
+      for (let i = Number(m[1]); i <= Number(m[2]); i++) out.push(i)
+      return out
+    })
+
+// The group table of `## Execution Graph`: [{ letter, number, tasks, wave }], numbered by row.
+export function parseGraph(planText) {
+  const lines = planText.split('\n')
+  const at = lines.findIndex((l) => /^##\s+Execution Graph\s*$/.test(l))
+  if (at === -1) return []
+  const groups = []
+  let inTable = false
+  for (const line of lines.slice(at + 1)) {
+    if (/^#{1,3}\s/.test(line)) break
+    const cells = line.trim().startsWith('|') ? line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim()) : null
+    if (!cells) {
+      if (inTable) break
+      continue
+    }
+    if (!inTable) {
+      inTable = /^group$/i.test(cells[0]) && /^tasks$/i.test(cells[1] ?? '')
+      continue
+    }
+    if (/^-+$/.test(cells[0])) continue
+    const letter = cells[0].replace(/^(?:group\s+)?/i, '').replace(/[`*]/g, '').trim()
+    if (!GROUP.test(letter)) continue
+    groups.push({ letter, number: groups.length + 1, tasks: taskList(cells[1] ?? ''), wave: Number(/\d+/.exec(cells.at(-1))?.[0] ?? 0) })
+  }
+  return groups
+}
+
+// ---------------------------------------------------------------- names
+
+export function dispatchName({ role, task, group, round, topic, check }) {
+  if (!ROLES.includes(role)) refuse(`unknown role "${role}"; known: ${ROLES.join(', ')}`)
+  if (round !== undefined && !(Number.isInteger(round) && round >= 1)) refuse(`round "${round}" is not a positive integer`)
+  if (topic !== undefined && role !== 'investigate') refuse('--topic belongs to investigate')
+  if (check !== undefined && role !== 'verify') refuse('--check belongs to verify')
+  if (role === 'verify') {
+    if (task !== undefined || group !== undefined || round !== undefined) refuse('verify takes only --check')
+    if (!Object.hasOwn(VERIFY_CHECKS, check ?? '')) refuse(`verify needs --check, one of ${Object.keys(VERIFY_CHECKS).join(', ')}`)
+    return `verify ${check}`
+  }
+  if (task !== undefined) {
+    if (!TASK_ROLES.includes(role)) refuse(`${role} serves no single task; drop --task`)
+    if (!(Number.isInteger(task) && task >= 1)) refuse(`task "${task}" is not a positive integer`)
+    if (group !== undefined) refuse('a task dispatch takes its group from the plan; drop --group')
+    return round === undefined ? `T${task} ${role}` : `T${task} ${role} r${round}`
+  }
+  if (!Object.hasOwn(TASKLESS, role)) refuse(`${role} needs --task`)
+  if (round !== undefined) refuse('--round belongs to a task dispatch')
+  if (role === 'investigate') {
+    if (!TOPIC.test(topic ?? '')) refuse(`investigate needs --topic, one word of letters and digits, not "${topic ?? ''}"`)
+    return `investigate ${topic}`
+  }
+  const rule = TASKLESS[role].group
+  if (group !== undefined && !GROUP.test(group)) refuse(`group "${group}" is not a group letter`)
+  if (rule === 'required' && group === undefined) refuse(`${role} needs --group <letter>`)
+  if (rule === 'none' && group !== undefined) refuse(`${role} takes no --group`)
+  return group === undefined ? role : `${role} ${group}`
+}
+
+// The parts of a fixed-form name, or null when the name is not in the form.
+export function parseName(name) {
+  const text = String(name ?? '')
+  let m = /^T([1-9]\d*) (impl|review|re-review|fix)(?: r([1-9]\d*))?$/.exec(text)
+  if (m) return { role: m[2], task: Number(m[1]), ...(m[3] ? { round: Number(m[3]) } : {}) }
+  m = /^verify (c4|c6|c8|assemble)$/.exec(text)
+  if (m) return { role: 'verify', check: m[1] }
+  m = /^investigate ([A-Za-z0-9]+)$/.exec(text)
+  if (m) return { role: 'investigate', topic: m[1] }
+  m = /^(final-review|sweep)$/.exec(text)
+  if (m) return { role: m[1] }
+  m = /^(merge-review) ([A-Z])$/.exec(text) ?? /^(fix|re-review)(?: ([A-Z]))?$/.exec(text)
+  if (m) return { role: m[1], ...(m[2] ? { group: m[2] } : {}) }
+  return null
+}
+
+export const sddDir = (root, change) => join(root, '.superpowers', 'sdd', change)
+export const verifyDirOf = (root, change) => join(sddDir(root, change), 'verify')
+
+// `<root>/.superpowers/sdd/<change>/replies/<name, spaces as hyphens>.json`, or `-2`, `-3`
+// before `.json` when the name is taken.
+export function replyFile(root, change, name, exists) {
+  const base = join(sddDir(root, change), 'replies', name.replace(/ /g, '-'))
+  if (!exists(`${base}.json`)) return `${base}.json`
+  for (let k = 2; ; k++) if (!exists(`${base}-${k}.json`)) return `${base}-${k}.json`
+}
+
+// ---------------------------------------------------------------- the plan of one dispatch
+
+// inputs: { change, role, task?, group?, round?, topic?, check? }
+// tree:   { root, main, planText (null when absent), exists(path) }
+export function planDispatch(inputs, { root, main, planText, exists }) {
+  const name = dispatchName(inputs)
+  const { change, role, task, group, round, check } = inputs
+  const out = { name, role }
+
+  if (role === 'verify') {
+    const { section, level } = VERIFY_CHECKS[check]
+    const dir = verifyDirOf(root, change)
+    out.check = check
+    out.agent = `adf:${level}`
+    out.worktree = root
+    if (section) {
+      out.section = section
+      out.sectionFiles = [join(dir, `${section}-agent.txt`), join(dir, `${section}.json`)]
+    } else out.recordFile = join(root, 'openspec', 'changes', change, 'verify.md')
+    return out
+  }
+
+  if (role === 'investigate' || role === 'final-review' || role === 'sweep' || (task === undefined && group === undefined)) {
+    out.agent = `adf:${TASKLESS[role].level}`
+    out.worktree = root
+    out.replyFile = replyFile(root, change, name, exists)
+    return out
+  }
+
+  if (planText == null) refuse(`openspec/changes/${change}/plan.md does not exist`)
+  const graph = parseGraph(planText)
+  if (task === undefined) {
+    // merge-review <G>, fix <G>, re-review <G>: in the change worktree, over the group's tasks.
+    const row = graph.find((g) => g.letter === group)
+    if (!row) refuse(`group ${group} is not in the plan's Execution Graph`)
+    out.agent = `adf:${TASKLESS[role].level}`
+    out.worktree = root
+    out.group = group
+    out.tasks = row.tasks
+    out.replyFile = replyFile(root, change, name, exists)
+    return out
+  }
+
+  const body = taskBody(planText, task)
+  if (body === null) refuse(`Task ${task} is not in the plan`)
+  const level = levelOf(body)
+  if (!level) refuse(`Task ${task} carries no **Level:** of ${LEVELS.join(' | ')}`)
+  const row = graph.find((g) => g.tasks.includes(task))
+  if (!row) refuse(`Task ${task} is in no group of the plan's Execution Graph`)
+  let agentLevel = level
+  if (role === 'review' || role === 're-review') agentLevel = atLeast(level, 'integration')
+  if (role === 'fix' && round >= 2) agentLevel = levelAt(LEVELS.indexOf(level) + 1)
+  const single = graph.filter((g) => g.wave === 1).length === 1
+  out.agent = `adf:${agentLevel}`
+  out.taskLevel = level
+  out.group = row.letter
+  out.worktree = single ? root : join(main, '.claude', 'worktrees', `${change}--group-${row.number}`)
+  out.replyFile = replyFile(root, change, name, exists)
+  return out
+}
+
+// ---------------------------------------------------------------- the prompt
+
+const COMMENT = /^\s*<!--.*-->\s*$/
+
+// The verbatim blocks of a skeleton: [{ source, text }].
+export function verbatimBlocks(skeleton) {
+  return [...skeleton.matchAll(/<!-- verbatim (\S+) -->\n([\s\S]*?)<!-- \/verbatim -->/g)].map((m) => ({ source: m[1], text: m[2] }))
+}
+
+export const normalize = (text) => text.replace(/\s+/g, ' ').trim()
+
+// Fill a skeleton: drop full-line comments, then replace every {{field}} and every instruction
+// token (`<change>`, `<root>`, ...) the dispatch knows.
+export function fill(skeleton, values, tokens) {
+  let text = skeleton
+    .split('\n')
+    .filter((l) => !COMMENT.test(l))
+    .join('\n')
+  text = text.replace(/\{\{(\w+)\}\}/g, (all, key) => (Object.hasOwn(values, key) ? String(values[key]) : all))
+  for (const [token, value] of Object.entries(tokens)) if (value !== undefined) text = text.split(token).join(String(value))
+  return text.trim()
+}
+
+// Which skeletons, in order, make up the rules of a dispatch.
+export function ruleSkeletons({ role, check }, { testFirst = false } = {}) {
+  if (role === 'verify') return check === 'assemble' ? ['verify-assemble'] : ['verify', `verify-${check}`]
+  const parts = []
+  if (role === 'impl' || role === 'fix') parts.push('implementer')
+  if (['review', 're-review', 'final-review', 'merge-review'].includes(role)) parts.push('reviewer')
+  if (role === 'review' && testFirst) parts.push('test-first')
+  if (role === 'sweep') parts.push('read-only', 'sweep')
+  if (role === 'investigate') parts.push('read-only')
+  parts.push('git', 'reply')
+  return parts
+}
+
+// skeletons: { name: text }; fields: [[label, value]] in display order (empty values dropped).
+export function renderPrompt({ plan, change, skeletons, fields, question, tokens, testFirst }) {
+  if (question === undefined && QUESTION_REQUIRED.includes(plan.role)) {
+    refuse(`${plan.role} needs --question-file: the question is the part the orchestrator writes`)
+  }
+  const values = {
+    name: plan.name,
+    level: plan.agent.replace(/^adf:/, ''),
+    change,
+    role: plan.role,
+    replyFile: plan.replyFile ?? '',
+    base: tokens['<base>'] ?? ''
+  }
+  const rules = ruleSkeletons(plan, { testFirst }).map((n) => fill(skeletons[n], values, tokens))
+  const fieldText = fields
+    .filter(([, v]) => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0))
+    .map(([label, v]) => (Array.isArray(v) ? `${label}:\n${v.map((x) => `  - ${x}`).join('\n')}` : `${label}: ${v}`))
+    .map((l) => `- ${l}`)
+    .join('\n')
+  return fill(
+    skeletons.frame,
+    { ...values, fields: fieldText, question: question === undefined ? 'None beyond the rules below.' : question.trim(), rules: rules.join('\n\n') },
+    {}
+  )
+}
+
+// ---------------------------------------------------------------- attempts
+
+// apply.md: a refused reply goes back once, to the same agent, resumed; a second refusal is
+// BLOCKED. The n-th recorded attempt of one dispatch name: 1 dispatches, 2 retries, 3 stops.
+export const nextFor = (attempt) => (attempt === 1 ? 'dispatch' : attempt <= MAX_ATTEMPTS ? 'retry' : 'stop')
+
+export function countAttempts(text, name) {
+  return text
+    .split('\n')
+    .filter(Boolean)
+    .filter((line) => {
+      try {
+        return JSON.parse(line).name === name
+      } catch {
+        return false
+      }
+    }).length
+}

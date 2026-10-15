@@ -78,7 +78,8 @@ test('no dispatch-facing text asks for a repository-wide git mutation', () => {
     'commands/apply.md',
     'schema/instructions/verify.md',
     'commands/verify.md',
-    ...readdirSync(join(root, 'agents')).map((f) => `agents/${f}`)
+    ...readdirSync(join(root, 'agents')).map((f) => `agents/${f}`),
+    ...readdirSync(join(root, 'schema', 'prompts')).map((f) => `schema/prompts/${f}`)
   ]
   const unsafe = [/git add (-A|--all|\.)(\s|$|`)/, /git checkout -- /, /git restore\b/, /git stash push/, /git clean\b/]
   for (const file of files) {
