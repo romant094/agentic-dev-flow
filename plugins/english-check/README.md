@@ -33,7 +33,11 @@ command line's sight, when they are run with `node <path>/<script>` or directly:
 | `tasks.mjs tick ... --change <name> --commit` | with `--commit` | `openspec/changes/<name>/tasks.md` and its `plan.md` |
 | `propose.mjs commit [--change <name>]` | always | `openspec/changes/<name>/`; without `--change`, every change directory |
 | `verify.mjs assemble --change <name> --commit` | with `--commit` | `openspec/changes/<name>/verify.md` |
-| `verify.mjs skill-edit ...` | always | `.claude/skills/`, in scope only when the registry includes it |
+| `verify.mjs skill-edit ...` | always | `.claude/skills/`, in scope only when the registry includes it; with `--diff-file`, also the lines the diff adds, which are not in the files yet |
+| `suite.mjs run --change <name> --record --commit` | with `--commit` | `openspec/changes/<name>/.apply-test-record.md` |
+| `suite.mjs set --command <c> --commit` | with `--commit` | `openspec/planning.md` |
+| `dup.mjs mark --file <path> ... --commit` | with `--commit` | the `--file` path |
+| `plan.mjs added [--change <name>] ... --commit` | with `--commit` | `openspec/changes/<name>/plan.md`; without `--change`, every change directory |
 
 Paths resolve against `--root`, or the command's directory without it. The list is
 `CORE_COMMIT_SCRIPTS` in `scripts/lib/english.mjs`: a future core script that commits must be

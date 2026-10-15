@@ -9,14 +9,16 @@
 // blocked group holds no slot under the cap; a group depending on it never starts. A graph with
 // one wave-1 group runs in the change worktree, and its groups are `done` or `pending` by ticks.
 //
-// Which group is blocked, and when to hand off, are the orchestrator's judgements: it records
-// them with `ledger.mjs handoff`, and this module only reads them back.
+// Which group is blocked, and when to hand off, are the orchestrator's judgements; the records
+// are this module's (`recordHandoff`): the handoff takes the merged groups, the remaining items
+// and every group still blocked from the state itself, so a later handoff cannot drop a blocked
+// group by leaving it out, and a blocked group carries its reason in the handoff.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { changeDir } from './changes.mjs'
 import { groupState, pushPath } from './groups.mjs'
-import { readRecords, unresolvedDebt } from './ledger.mjs'
-import { DEFAULT_CAP, parseTaskItems, schedule } from './plan.mjs'
+import { appendRecord, readRecords, unresolvedDebt } from './ledger.mjs'
+import { DEFAULT_CAP, parsePlan, parseTaskItems, schedule, testFirst } from './plan.mjs'
 import { tickMessage } from './tasks.mjs'
 import { gitIn } from './workspace.mjs'
 
@@ -124,6 +126,7 @@ export function applyStatus(root, change, { tracks = 'tasks.md', cap = DEFAULT_C
     ticked,
     remaining,
     progress: { done: ticked.length, total: items.length },
+    testFirst: testFirst(parsePlan(planText).tasks),
     completedThisSession: ticksSince(gitIn(root), change, lastSession?.at ?? null),
     openDebt: { count: debt.length, ids: debt.map((d) => d.id) },
     lastHandoff,
@@ -131,6 +134,35 @@ export function applyStatus(root, change, { tracks = 'tasks.md', cap = DEFAULT_C
     suite: suiteOf(read(join(dir, TEST_RECORD))),
     complete
   }
+}
+
+// A handoff record written from the state: `merged` and `remaining` as they are, `blocked` every
+// group still blocked plus `block` when given, `next` the orchestrator's. Blocking a group records
+// its reason in the handoff's `blockedReason`: a ruling is the developer's, and blocking is the
+// orchestrator's call. Only a started, unmerged group of a multi-group graph can be blocked.
+// Returns { handoff, blocked } (blocked as group letters).
+export function recordHandoff(root, change, { next, block, reason, tracks, env = process.env } = {}) {
+  if (typeof next !== 'string' || !next.trim()) throw new Error('name the next dispatch (--next)')
+  if ((block === undefined) !== (reason === undefined)) throw new Error('--block and --reason go together')
+  const status = applyStatus(root, change, { tracks })
+  if (!status.ok) throw new Error(status.error)
+  const letterOf = (n) => status.groups.find((g) => g.n === n).letter
+  const blocked = status.blocked.map(letterOf)
+  let blockedReason
+  if (block !== undefined) {
+    if (status.single) throw new Error('a single-group pass has no group to block; report the pause instead')
+    const group = status.groups.find((g) => g.letter === block || String(g.n) === String(block))
+    if (!group) throw new Error(`group ${block} is not in the plan's Execution Graph`)
+    if (group.state === 'merged') throw new Error(`group ${group.letter} is merged; a merged group is not blocked`)
+    if (group.state === 'pending') throw new Error(`group ${group.letter} has not started; only a group with a kept worktree is blocked`)
+    if (!reason.trim()) throw new Error('--reason is empty')
+    if (!blocked.includes(group.letter)) blocked.push(group.letter)
+    blockedReason = `group ${group.letter}: ${reason.trim()}`
+  }
+  const list = (values) => (values.length ? values.join(', ') : 'none')
+  const fields = { merged: list(status.merged.map(letterOf)), remaining: list(status.remaining), next: next.trim(), ...(blocked.length ? { blocked: blocked.join(', ') } : {}), ...(blockedReason ? { blockedReason } : {}) }
+  const handoff = appendRecord(root, change, 'handoff', fields, { env }).record
+  return { handoff, blocked }
 }
 
 const SUITE_LINE = {

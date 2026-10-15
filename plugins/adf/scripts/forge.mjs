@@ -10,13 +10,14 @@
 //       what no state holds (finalize's body); a value it repeats must agree. The main checkout
 //       is refused. Without --change the input is passed as given, as before.
 //
-// Prints one JSON object. With no forge plugin enabled the state is `none`: nothing is pushed
+// Prints one JSON object, with `report`: the line(s) the command shows as they are
+// (lib/roles.mjs forgeReport). With no forge plugin enabled the state is `none`: nothing is pushed
 // and no merge request exists; archive offers to merge the change into its base. Exit 1 only for
 // `refused`.
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { callRole, forgeInput } from './lib/roles.mjs'
+import { callRole, forgeInput, forgeReport } from './lib/roles.mjs'
 import { changeDir, inferChange, META_FILE, refuseMainCheckout } from './lib/changes.mjs'
 import { readBranches } from './lib/branches.mjs'
 import { loadSchema } from './lib/schema.mjs'
@@ -71,7 +72,8 @@ export function run(argv) {
     const name = inferChange(root, change, loadSchema())
     input = forgeInput(operation, readState(root, name), { input, title, summary, draft: draft === undefined ? undefined : draft === 'true' })
   }
-  return callRole(root, 'forge', operation, input, { coreContract: contract.version, points: contract.points, home })
+  const result = callRole(root, 'forge', operation, input, { coreContract: contract.version, points: contract.points, home })
+  return { ...result, report: forgeReport(operation, result) }
 }
 
 if (isMain(import.meta.url)) {
@@ -80,6 +82,7 @@ if (isMain(import.meta.url)) {
     result = run(process.argv.slice(2))
   } catch (error) {
     result = { state: 'refused', error: error.message }
+    result.report = forgeReport(process.argv[2], result)
   }
   process.stdout.write(`${JSON.stringify(result)}\n`)
   process.exitCode = result.state === 'refused' ? 1 : 0

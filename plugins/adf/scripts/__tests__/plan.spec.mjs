@@ -406,3 +406,18 @@ test('plan.mjs unplanned proposes an owner and added records the file against it
   const orphan = await run(['added', '--change', 'c', '--root', root, '--path', 'docs/none.md', '--why', 'w'])
   assert.equal(orphan.code, 1)
 })
+
+test('plan.mjs added --commit commits plan.md alone with the fixed message; nothing new commits nothing', async () => {
+  const { host, commitIn, git: gitOut } = await import('./git-host.mjs')
+  const { change, dir } = host({ 'plan.md': plan(), 'tasks.md': TASKS })
+  commitIn(change, 'src/new-helper.ts', 'x\n', 'fix')
+  writeFileSync(join(change, 'stray.txt'), 'x\n')
+  const args = ['added', '--change', 'add-x', '--root', change, '--path', 'src/new-helper.ts', '--why', 'the fix needed a helper', '--task', '3', '--date', '2026-10-15', '--commit']
+  const out = await run(args)
+  assert.equal(out.code, 0, out.result.error)
+  assert.equal(out.result.commit, gitOut(change, 'rev-parse', 'HEAD'))
+  assert.equal(gitOut(change, 'log', '-1', '--format=%s'), 'docs(openspec): record work added during apply to add-x')
+  assert.equal(gitOut(change, 'show', '--name-only', '--format=', 'HEAD'), 'openspec/changes/add-x/plan.md')
+  assert.match(readFileSync(join(dir, 'plan.md'), 'utf8'), /Added during apply, 2026-10-15/)
+  assert.equal((await run(args)).result.commit, null)
+})

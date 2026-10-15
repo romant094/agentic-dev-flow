@@ -31,7 +31,7 @@ branch.
 **The script runs the mechanical checks; the orchestrator reads verdicts, not output.**
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" run --change <change> --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" run --change <change> --root <root> --suite
 ```
 
 A run in a session other than the one that wrote `<verify>run.json` clears `<verify>` first:
@@ -74,13 +74,12 @@ directory, which no test reads.
   not in the branch: the record is stale, and citing it would accept a cached result. The
   `test-record` check fails, and the whole suite runs as if no record existed.
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" run --change <change> --root <root> --section test-record --base-check
-```
-
-It runs the whole-suite command of the planning guide with `<root>` as its working directory,
-exactly as the apply instruction's whole-suite rule describes, uncached, and writes
-`<verify>test-record.json` with its output file. A failure is checked on the base: a failure
+`--suite` makes that re-run part of the same `verify.mjs run` call: on a failing `test-record`
+check it runs the whole-suite command of the planning guide with `<root>` as its working
+directory, exactly as the apply instruction's whole-suite rule describes, uncached, with the base
+check, and writes `<verify>test-record.json` with its output file; the result carries the run as
+`suite`, and its `ok` reads that section in place of the check. On a current record it removes a
+`test-record` section an earlier re-run left, so the record is cited. A failure is checked on the base: a failure
 that also fails on the base is pre-existing, named as separate work, and does not fail the
 check; one that does not reproduce there fails it. On `comparison: "whole-run"`, compare the two
 output files before relying on the result. A suite that cannot run at all in this workspace (a
@@ -115,16 +114,21 @@ Name each dispatch in the fixed form the metrics read, and choose its level by t
 | Dispatch | Section id | Level | Runs |
 |---|---|---|---|
 | `verify c4` | `c4` | `adf:architecture` | always |
-| `verify c8` | `c8` | `adf:integration` | always, after `verify.mjs skill-candidates` |
-| none: `suite.mjs run --section test-record` | `test-record` | script | when `test-record` fails |
+| `verify c8` | `c8` | `adf:integration` | always, after the candidates `verify.mjs prompts` lists |
+| none: `verify.mjs run --suite` | `test-record` | script | when `test-record` fails |
 
-The number in a name is a fixed identifier, not a position or a count. One call writes each
-prompt, with every fixed field filled (the change, `<root>` as an absolute path, the base and
-range from `run.json`, the files in scope, the two file paths to write), and names the agent:
+The number in a name is a fixed identifier, not a position or a count. One call lists the stale
+skill candidates and writes both prompts, each with every fixed field filled (the change, `<root>`
+as an absolute path, the base and range from `run.json`, the files in scope, the two file paths
+to write), and names each agent:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role verify --check <c4|c8> --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" prompts --change <change> --root <root>
 ```
+
+Each entry of its `dispatches` carries `name`, `agent` and `prompt`; dispatch the prompt as it
+is. A single section is written again from its own prompt, the `dispatch.mjs prompt` command
+the verdict's `redispatchCommands` names.
 
 git runs as `git -C <root>`. No dispatch text asks for a repository-wide git mutation.
 `verify c4` and `verify c8` run in parallel, in one response.
@@ -157,20 +161,17 @@ git runs as `git -C <root>`. No dispatch text asks for a repository-wide git mut
 
 **`verify c8`: stale skills.**
 
-Before the dispatch, list the candidates:
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" skill-candidates --change <change> --root <root>
-```
-
-It reads every `<root>/.claude/skills/*/SKILL.md` and the `README.md` beside it, and writes to
+`verify.mjs prompts` lists the candidates before it writes the prompt. It reads every `<root>/.claude/skills/*/SKILL.md` and the `README.md` beside it, and writes to
 `<verify>c8-candidates.txt` each line that names a path, symbol, command or route the range's
 diff changed. Only the host's own skills are read, never an installed plugin's. The dispatch
 judges each candidate line, reading the skill around it and the diff: does the skill state, as
 current fact, a behaviour the diff changed?
 
 - **CONFIRMED**: a skill's stated fact is contradicted by the diff. The check fails. The
-  dispatch writes the proposed edit, as a diff, into its output file and edits nothing.
+  dispatch ends its output file with the proposed edit of every CONFIRMED finding as one
+  unified diff that `git apply` accepts in `<root>`: `diff --git a/<path> b/<path>` headers with
+  paths relative to `<root>`, context lines copied exactly, nothing after the last hunk. It
+  edits nothing.
 - **PLAUSIBLE**: the skill may be affected but is not clearly contradicted. A warning.
 - **None**: no candidate line, or none that the diff contradicts. A pass.
 
@@ -178,16 +179,20 @@ Show each CONFIRMED finding's proposed edit to the developer and ask whether to 
 skill file is edited without an explicit approval; silence is not approval, and an automatic
 dismissal looks exactly like a missed defect.
 
-- **Approved**: apply the edit to the skill files, and nothing else, then commit it on its own:
+- **Approved**: apply the diff and commit it on its own, in one call. Pass the c8 output file;
+  when the developer approved only part of it, or changed it, write that diff to a file and
+  pass that instead:
 
   ```bash
-  node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" skill-edit --change <change> --message "<type(scope): description>" --root <root>
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" skill-edit --change <change> --message "<type(scope): description>" --diff-file <file> --root <root>
   ```
 
-  It refuses any changed path outside `<root>/.claude/skills/`, commits, records the sha in the
+  It applies the diff with `git apply` from its first `diff --git` line, and refuses, changing
+  nothing, a diff with a path outside `<root>/.claude/skills/`, a tree that already holds a
+  change, and a diff that does not apply cleanly. Then it commits, records the sha in the
   ledger, where every later run reads it, and runs the checks again. No plan task is
-  back-filled for it. Then list the candidates and dispatch `verify c8` again, so the section
-  shows the finding resolved.
+  back-filled for it. Then run `verify.mjs prompts` and dispatch `verify c8` again, so the
+  section shows the finding resolved.
 - **Declined with a reason**: record the decline as a ruling on `c8`. It resolves the finding.
 
 **A developer ruling turns a failing check into a warning; nothing else does.**
@@ -234,10 +239,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" verdict --change <change> --root
 It reads `run.json`, every section file and the rulings, and computes `PASS`, `PASS WITH
 WARNINGS` or `FAIL`: any failing check without a ruling makes it FAIL. An `error` with
 `refusals` means the record cannot be given a verdict yet, and the result names what resolves
-it: each section in `redispatch` is written again by its writer (`test-record` by the suite
-run, `developer` by the developer call, the others by their dispatch), each check in
-`needsRuling` waits for the developer's ruling, and `rerun` asks for `verify.mjs run` again.
-Then compute again.
+it, each with its exact command: `redispatchCommands`, one per section to write again (the
+`dispatch.mjs prompt` call of a dispatch, whose prompt you dispatch; the suite run; the
+developer call; `null` for a stray section file, which you remove); `rulingCommands`, one per
+check that waits for the developer's ruling, with the reason left for their words; and
+`rerunCommand`. Run them, then compute again.
 
 **The record is rendered and committed by script, alone, and verify pushes nothing.**
 

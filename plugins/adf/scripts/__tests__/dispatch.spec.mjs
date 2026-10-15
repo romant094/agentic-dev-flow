@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFil
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { dispatchName, normalize, parseGraph, parseName, planDispatch, verbatimBlocks } from '../lib/dispatch.mjs'
+import { dispatchName, MAX_ROUNDS, normalize, parseGraph, parseName, planDispatch, roundOf, verbatimBlocks } from '../lib/dispatch.mjs'
 import { PLUGIN_ROOT, PROMPTS_DIR, run } from '../dispatch.mjs'
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'dispatch.mjs')
@@ -276,6 +276,48 @@ test('attempts per name: the first dispatches, the second retries, the third sto
   assert.deepEqual(attempt('T3 fix r1'), { ok: true, name: 'T3 fix r1', attempt: 1, next: 'dispatch', file: join(root, '.superpowers', 'sdd', CHANGE, 'attempts.jsonl') })
   const bad = cli(root, 'attempt', '--change', CHANGE, '--name', 'T3 implement')
   assert.equal(bad.status, 1)
+})
+
+test('a fix loop counts its rounds by the re-reviews attempted and trips the breaker at the cap', () => {
+  const lines = (...names) => names.map((name) => JSON.stringify({ name })).join('\n')
+  assert.deepEqual(roundOf('', { task: 3 }), { subject: 'T3', completed: 0, max: MAX_ROUNDS, next: 'fix', round: 1, fix: 'T3 fix r1', reReview: 'T3 re-review r1' })
+  // A fix without its re-review is the round still running; another subject's rounds do not count.
+  const text = lines('T3 review', 'T3 fix r1', 'T3 re-review r1', 'T3 re-review r1', 'T3 fix r2', 'T4 re-review r4', 're-review B r2', 'not json')
+  assert.deepEqual([roundOf(text, { task: 3 }).completed, roundOf(text, { task: 3 }).round, roundOf(text, { task: 3 }).fix], [1, 2, 'T3 fix r2'])
+  assert.deepEqual([roundOf(text, { group: 'B' }).reReview, roundOf(text, {}).fix], ['re-review B r3', 'fix r1'])
+  const full = lines(...[1, 2, 3, 4, 5].map((k) => `T3 re-review r${k}`), ...[1, 2, 3, 4, 5].map((k) => `re-review B r${k}`), ...[1, 2, 3, 4, 5].map((k) => `re-review r${k}`))
+  assert.deepEqual(roundOf(full, { task: 3 }), { subject: 'T3', completed: 5, max: 5, next: 'adjudicate' })
+  assert.equal(roundOf(full, { group: 'B' }).next, 'escalate-to-developer')
+  assert.equal(roundOf(full, {}).next, 'escalate-to-developer')
+  assert.throws(() => roundOf('', { task: 3, group: 'B' }), /not both/)
+  const root = host()
+  for (const name of ['fix A r1', 're-review A r1']) call(root, 'attempt', '--name', name)
+  assert.deepEqual(call(root, 'round', '--group', 'A'), { ok: true, subject: 'A', completed: 1, max: 5, next: 'fix', round: 2, fix: 'fix A r2', reReview: 're-review A r2' })
+  assert.equal(cli(root, 'round', '--change', CHANGE, '--role', 'fix').status, 2)
+})
+
+test('a re-review over a fix range names the files no task covers, owned by the task under review', () => {
+  const root = host()
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
+  git('init', '-q', '-b', 'develop')
+  const commit = (file) => {
+    mkdirSync(dirname(join(root, file)), { recursive: true })
+    writeFileSync(join(root, file), `${file}\n`)
+    git('add', file)
+    git('-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '-m', file)
+    return git('rev-parse', 'HEAD')
+  }
+  const base = commit('src/t1.mjs')
+  commit('src/t3.mjs')
+  const head = commit('src/extra.mjs')
+  const q = join(root, 'q.txt')
+  writeFileSync(q, 'Check the fix.')
+  const task = call(root, 'prompt', '--role', 're-review', '--task', '1', '--round', '1', '--base', base, '--head', head, '--question-file', q)
+  assert.deepEqual(task.unplanned, [{ file: 'src/extra.mjs', verb: 'Create', owner: 1 }])
+  const group = call(root, 'prompt', '--role', 're-review', '--group', 'B', '--round', '1', '--base', base, '--head', head, '--question-file', q)
+  assert.deepEqual(group.unplanned, [{ file: 'src/extra.mjs', verb: 'Create', owner: null }])
+  assert.equal(call(root, 'prompt', '--role', 're-review', '--task', '1', '--question-file', q).unplanned, undefined)
+  assert.equal(cli(root, 'prompt', '--change', CHANGE, '--role', 're-review', '--task', '1', '--base', 'nope', '--head', head, '--question-file', q).status, 1)
 })
 
 test('the CLI separates a usage error from a refusal', () => {

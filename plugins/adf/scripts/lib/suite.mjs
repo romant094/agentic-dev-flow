@@ -52,6 +52,9 @@ export const TAIL_LINES = 40
 export const QUOTE_LINES = 60
 export const CANNOT_RUN = [126, 127]
 export const DEFAULT_TIMEOUT_MINUTES = 30
+// The messages of the commits `suite.mjs set --commit` and `suite.mjs run --record --commit` make.
+export const SET_MESSAGE = 'docs(openspec): record the whole-suite command'
+export const recordMessage = (change) => `docs(openspec): record the whole-suite run of ${change}`
 
 const toPosix = (p) => p.split('\\').join('/')
 const rel = (root, file) => toPosix(relative(root, file))

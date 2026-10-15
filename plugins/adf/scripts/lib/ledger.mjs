@@ -28,6 +28,9 @@ const CHECK_ID = /^[a-z][a-z0-9-]*$/
 // is exempt from the out-of-plan check for its files under `.claude/skills/` on every later
 // verify run. Kept out of KINDS for the same reason as CHECK_RULING.
 export const SKILL_EDIT = { required: ['sha'], optional: ['message'] }
+// A handoff that blocks a group carries the orchestrator's reason (`apply-status.mjs handoff
+// --block`). The field is the port's own, so it is kept out of KINDS as well.
+export const HANDOFF_EXTRA = ['blockedReason']
 const SHA = /^[0-9a-f]{7,40}$/
 export const SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 
@@ -47,10 +50,11 @@ export function buildRecord(kind, fields, { existing = [], sessionId = null, now
   const checkRuling = kind === 'ruling' && ('check' in fields || 'reason' in fields)
   const spec = checkRuling ? CHECK_RULING : kind === 'skill-edit' ? SKILL_EDIT : KINDS[kind]
   if (!spec) throw new Error(`unknown kind "${kind}"; one of: ${Object.keys(KINDS).join(', ')}`)
-  const allowed = new Set([...spec.required, ...spec.optional])
+  const allowed = new Set([...spec.required, ...spec.optional, ...(kind === 'handoff' && !checkRuling ? HANDOFF_EXTRA : [])])
   for (const key of Object.keys(fields)) {
     if (!allowed.has(key)) {
-      throw new Error(`${kind} takes no --${key}; it takes ${[...allowed].map((k) => `--${k}`).join(', ')}`)
+      // The message names the shape's own fields: HANDOFF_EXTRA is written by apply-status, not typed.
+      throw new Error(`${kind} takes no --${key}; it takes ${[...spec.required, ...spec.optional].map((k) => `--${k}`).join(', ')}`)
     }
   }
   for (const key of spec.required) {
@@ -115,4 +119,17 @@ export function appendRecord(root, change, kind, fields, { env = process.env, no
   mkdirSync(dirname(path), { recursive: true })
   appendFileSync(path, `${JSON.stringify(record)}\n`, 'utf8')
   return { record, path }
+}
+
+// The session record of a phase, written once per harness session: a second call in the session
+// that already holds a `session` record of this phase writes nothing. propose records its session
+// when it makes the change and again whenever it continues one, so both routes call this. The
+// result says why nothing was written; a missing session id is not an error of the caller's.
+export function recordSessionOnce(root, change, phase, { env = process.env, now } = {}) {
+  const sessionId = env[SESSION_ENV] ?? null
+  if (!sessionId) return { recorded: false, error: `session needs ${SESSION_ENV} in the environment; it is read, never typed` }
+  const existing = readRecords(root, change).find((r) => r.kind === 'session' && r.phase === phase && r.sessionId === sessionId)
+  if (existing) return { recorded: false, id: existing.id, already: true }
+  const { record, path } = appendRecord(root, change, 'session', { phase }, { env, ...(now ? { now } : {}) })
+  return { recorded: true, id: record.id, path }
 }

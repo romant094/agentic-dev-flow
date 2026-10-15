@@ -91,11 +91,12 @@ for the completion notices instead of polling. Within one worktree the skill's r
 implementer at a time. Before a round:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs" snapshot --change <change> --targets <worktree1,worktree2> --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs" snapshot --change <change> --dispatch "<name>" [--dispatch "<name>" ...] --root <root>
 ```
 
-`--targets` lists the `worktree` of every dispatch in the round. When every dispatch of the
-round has returned, and before acting on any reply:
+Pass one `--dispatch` per dispatch of the round, its `name` from `dispatch.mjs prompt`; the
+script places each dispatch as `dispatch.mjs` does and watches every other checkout. When every
+dispatch of the round has returned, and before acting on any reply:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs" compare --change <change> --root <root>
@@ -146,6 +147,24 @@ that holds that context, by resuming it, not to a new dispatch. A read-only ques
 branch gets no worktree isolation of its own: it writes nothing. A read-only verdict that does
 not answer gets a second, wider read-only dispatch, never the orchestrator opening the files.
 
+**A fix loop's round comes from `dispatch.mjs round`.** When a review, a re-review, a merge
+review or the final review returns a load-bearing finding, ask where its loop stands:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" round --change <change> [--task <N> | --group <G>] --root <root>
+```
+
+`--task` for a task's loop, `--group` for the loop after a merge review, neither after the final
+review. It counts the rounds from the recorded attempts, a round being one `fix` and its scoped
+`re-review`, so the count survives a handoff and never rests on memory. `next` is one of:
+
+- `fix`: dispatch `fix`, then `reReview`, the round's two names, with `--round` set to `round`;
+- `adjudicate`: a task at the breaker. Rule on each open finding as the skill's breaker does and
+  record each as a `ruling`; a load-bearing finding you cannot rule on blocks the task's group,
+  or pauses a single-group pass;
+- `escalate-to-developer`: a group's loop or the final review's at the breaker. Stop and put
+  the open findings to the developer.
+
 **The reply is a file of its role's shape.**
 
 The prompt names the reply file, an absolute path into the change worktree, never a group
@@ -181,7 +200,7 @@ load beside `subagent-driven-development`:
 
 **Test-first only where the task says so.** The skill's implementer writes a failing test
 first only "if task says to". Before Task 1, say which tasks are test-driven: `testFirst` of
-`plan.mjs lint --change <change> --root <root>`. A task that should be (a behaviour change whose
+`apply-status.mjs`, the plan's tasks carrying both a RED and a GREEN step. A task that should be (a behaviour change whose
 failing test can be written before the code) and is not listed is corrected in the plan text
 before it is dispatched. The `review` prompt of a test-first task carries the `test-first`
 skeleton; pass `--base` and `--head` so it names the task's commit.
@@ -207,18 +226,21 @@ change worktree clean for the next merge.
 
 **Work added during apply is recorded against the plan.**
 
-After a fix round, a merge fix, the final-review fix or the sweep's consolidation, run
-`plan.mjs unplanned --change <change> --root <root>`. For each file it lists, give the reason:
+Every fix (a task's fix round, a merge fix, the final-review fix, the sweep's consolidation) is
+followed by its scoped `re-review`, and that is where the files it added are found: the `prompt`
+call of a `re-review` given the fix's range as `--base` and `--head` also returns `unplanned`,
+each file the range touched that no task names, with its `owner`, the task itself in a task's
+round. For each file it lists, give the reason:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" added --change <change> --path <path> --why "<why>" [--task <N>] --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" added --change <change> --path <path> --why "<why>" [--task <N>] --root <root> [--commit]
 ```
 
 It writes the dated "Added during apply" bullet into the owning task's Files block, the owner
-`unplanned` proposed unless `--task` names another. Verify reads only a backticked path. It
-compares the branch with the plan's file blocks: without the line, a correct apply fails there.
-The next tick commits the plan; with no tick left, commit it with `commit.mjs --only` on
-`openspec/changes/<change>/plan.md`.
+`unplanned` proposed unless `--task` names another; with no owner, `--task` names one. Verify
+reads only a backticked path. It compares the branch with the plan's file blocks: without the
+line, a correct apply fails there. The next tick commits the plan; with no tick left, pass
+`--commit` on the last `added` call, which commits `plan.md` alone.
 
 **Merge a group as soon as every task of it is complete.**
 
@@ -238,7 +260,7 @@ Either way, the merge is done only when a scoped `merge-review` with `--group` o
 package passes. A load-bearing finding is fixed forward in the change branch, one `fix` and one
 scoped `re-review` per round, both with `--group` and `--round`, the mechanism of a task's own
 fix loop; the merge is never reverted, since a rollback discards the other groups' merged work.
-The round-5 breaker escalates to the developer. Then:
+At the breaker, `round --group` says `escalate-to-developer`. Then:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" group-finish --change <change> --group <N> --root <root>
@@ -261,8 +283,16 @@ passed; it then runs like a wave-1 group, from the change branch's new HEAD, und
 Nothing depends on a wave-2 group: there is no wave 3.
 
 A group whose fix loop reaches the round-5 breaker with a load-bearing finding stays `BLOCKED`:
-keep its worktree, do not merge its branch, and report it; record it in the next `handoff`'s
-`--blocked`, which `apply-status.mjs` reads. Every independent group, running or queued,
+keep its worktree, do not merge its branch, and report it. Whether it is blocked, and why, is
+your judgement; the record is the script's:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/apply-status.mjs" handoff --change <change> --next "<dispatch>" --block <G> --reason "<why>" --root <root>
+```
+
+It writes a `handoff` with the reason, whose merged groups, remaining items and
+blocked groups come from the state, so the group stays blocked in every later handoff until it
+is merged. Every independent group, running or queued,
 continues and merges. Only the wave-2 groups that depend on it wait. Apply concludes only when
 every group worktree is merged and removed; a blocked group pauses apply, with its worktree
 kept for the developer.
@@ -283,13 +313,13 @@ scope.
 Read the reply through the filter, not `reply.mjs`:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/sweep.mjs" filter <reply file> --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/sweep.mjs" filter <reply file> --record --change <change> --root <root>
 ```
 
 It validates the reply and drops every finding whose introduced location carries a `DUP`
 marker naming that existing location. A sweep with no accepted reply after its retry is no
-verdict, never `CLEAN`. Record each finding in `dispositions` as a `debt` carrying the finding's
-reason; it never blocks apply.
+verdict, never `CLEAN`. `--record` writes each entry of an accepted reply's `dispositions` as a
+`debt` carrying the sweep's answer as its reason; it never blocks apply.
 
 **A sweep finding naming both locations blocks apply from concluding.** It is the only
 maintainability finding that blocks; every other stays advisory. Resolution is one of two
@@ -304,11 +334,11 @@ reasoning; silence is not approval, because an automatic dismissal is indistingu
 missed finding. On the developer's dismissal:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/dup.mjs" mark --change <change> --file <introduced file> [--line <n>] --existing "<existing>" --why "<the finding's why>" --reason "<the developer's reason>" --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dup.mjs" mark --change <change> --file <introduced file> [--line <n>] --existing "<existing>" --why "<the finding's why>" --reason "<the developer's reason>" --root <root> --commit
 ```
 
-It places the `DUP` marker on the introduced location and records the accepted debt, which
-archive resolves as `accepted`; commit the marked file with `commit.mjs`. The marker stops a
+It places the `DUP` marker on the introduced location, records the accepted debt, which
+archive resolves as `accepted`, and commits the marked file alone. The marker stops a
 later sweep re-reporting an acceptance already made; the debt record stops the acceptance being
 forgotten. A format with no comment syntax is refused before anything is written: consolidate
 instead, or the debt record alone carries the acceptance (`ledger.mjs debt ... --accepted`), and
@@ -330,7 +360,7 @@ config/base.yaml:4 -- kept per environment`.
 **The whole suite, once, at the end.**
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" run --change <change> --root <root> --base-check --record
+node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" run --change <change> --root <root> --base-check --record --commit
 ```
 
 It runs the `## Whole-suite command` of the project's planning guide, `openspec/planning.md`,
@@ -350,16 +380,15 @@ package manifest's scripts, a build file, its continuous-integration configurati
 to the developer, and on their confirmation record it and run again:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" set --command "<command>" --root <root>
-node "${CLAUDE_PLUGIN_ROOT}/scripts/commit.mjs" --root <root> --only openspec/planning.md --message "docs(openspec): record the whole-suite command"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" set --command "<command>" --root <root> --commit
 ```
 
 On a decline, run nothing and report that the whole suite was not run; never a silent pass.
 
 `--record` writes `openspec/changes/<change>/.apply-test-record.md`, whose `**Commit:**` line
-verify reads. Commit it as apply's final commit, after every tick and any documentation commit,
-with `commit.mjs --only` on that file: verify reads the commits after this record, and a record
-written earlier leaves work it does not cover.
+verify reads, and `--commit` commits that file alone. Run it as apply's final commit, after
+every tick and any documentation commit: verify reads the commits after this record, and a
+record written earlier leaves work it does not cover.
 
 **The execution ledger records what only the executing agent knows.**
 
@@ -374,8 +403,9 @@ whatever worktree the writer works in.
 - `debt --what <compromise> --reason <why> [--task <n>] [--accepted <reason>]` for every code
   compromise; archive refuses to leave one unresolved.
 - `ruling --finding <finding> --decision <what and why> [--task <n>]` for every adjudication.
-- `handoff --merged <groups> --remaining <tasks> --next <dispatch> [--blocked <groups>]` at a
-  handoff.
+- a `handoff` at a handoff, written by `apply-status.mjs handoff --change <change> --next
+  "<dispatch>" --root <root>`, which takes the merged groups, the remaining items and the
+  blocked groups from the state.
 
 Dispatches, tokens, models, effort and timings are not recorded: the transcripts hold them, and
 the transcript outranks the ledger on any number. Record entries at a group boundary, not one

@@ -466,6 +466,28 @@ export function checkRulings(records) {
 // writer) must run again, `needsRuling` the checks that were not run and wait for the
 // developer's ruling, and `rerun` is true when a script check's output is gone and
 // `verify.mjs run` must run again.
+const PLUGIN_SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), '..')
+const script = (name) => `node "${join(PLUGIN_SCRIPTS, name)}"`
+
+// The exact command that resolves each id of a refusal: the call that writes a section again
+// (the prompt of a dispatch, the suite run, the developer's record), the ledger ruling with the
+// developer's reason left to fill, and the run. `null` for a section id no writer owns: a stray
+// file to remove.
+export function resolutionCommands(root, change, { redispatch = [], needsRuling = [], rerun = false }) {
+  const at = `--change ${change} --root "${root}"`
+  const writer = (id) => {
+    if (REQUIRED_SECTIONS.includes(id)) return `${script('dispatch.mjs')} prompt --role verify --check ${id} ${at}`
+    if (id === 'test-record') return `${script('verify.mjs')} run --suite ${at}`
+    if (id === DEVELOPER_ID) return `${script('verify.mjs')} developer --text-file <file> --verdict <pass|warn|fail|not-run> --summary "<text>" ${at}`
+    return null
+  }
+  return {
+    redispatchCommands: redispatch.map((id) => ({ id, command: writer(id) })),
+    rulingCommands: needsRuling.map((id) => ({ id, command: `${script('ledger.mjs')} ruling --check ${id} --reason "<the developer's reason, in their words>" ${at}` })),
+    rerunCommand: rerun ? `${script('verify.mjs')} run ${at}` : null
+  }
+}
+
 export function computeVerdict(rootArg, { change }) {
   const root = resolve(rootArg)
   const dir = verifyDir(root, change)
@@ -527,7 +549,8 @@ export function computeVerdict(rootArg, { change }) {
     }
   }
   if (refusals.length > 0) {
-    return { ok: false, error: 'the record cannot be given a verdict', refusals, redispatch: [...redispatch], needsRuling, rerun, checks, ignoredRulings }
+    const ids = { redispatch: [...redispatch], needsRuling, rerun }
+    return { ok: false, error: 'the record cannot be given a verdict', refusals, ...ids, ...resolutionCommands(root, change, ids), checks, ignoredRulings }
   }
   const failing = checks.filter((c) => c.verdict === 'fail' && !c.accepted)
   const warned = checks.some((c) => c.verdict === 'warn' || c.accepted)
@@ -550,11 +573,11 @@ export function renderReport(result, { change, commit = null } = {}) {
       `**Change:** ${change}`,
       '',
       `Refusals:${listOrNone(result.refusals)}`,
-      `Re-dispatch:${result.redispatch.length ? ` ${result.redispatch.join(', ')}` : ' none'}`,
-      `Needs a ruling:${result.needsRuling.length ? ` ${result.needsRuling.join(', ')}` : ' none'}`,
-      ...(result.rerun ? ['Re-run: verify.mjs run (a check output file is gone)'] : []),
+      `Re-dispatch:${listOrNone((result.redispatchCommands ?? []).map((c) => `${c.id}: ${c.command ?? `no writer owns it; remove its section file from .superpowers/sdd/${change}/verify/`}`))}`,
+      `Needs a ruling:${listOrNone((result.rulingCommands ?? []).map((c) => `${c.id}: ${c.command}`))}`,
+      ...(result.rerunCommand ? [`Re-run (a check output file is gone): ${result.rerunCommand}`] : []),
       '',
-      'Next step: re-dispatch each named section, ask the developer for each ruling, then compute the verdict again.'
+      'Next step: run each re-dispatch command and dispatch the prompt it writes, ask the developer for each ruling, then compute the verdict again.'
     ].join('\n')
   }
   const failing = result.checks.filter((c) => c.verdict === 'fail' && !c.accepted)
@@ -739,12 +762,63 @@ function changedPaths(root) {
   return paths
 }
 
+// The patch of a c8 output file: from its first `diff --git` line to the end, the place the c8
+// rule puts it, so the output file itself can be passed.
+export function patchOf(text) {
+  const at = String(text ?? '').search(/^diff --git /m)
+  if (at < 0) throw new Error('the diff file holds no `diff --git` patch; pass the c8 output file or a file holding the approved part of its diff')
+  const patch = text.slice(at)
+  return patch.endsWith('\n') ? patch : `${patch}\n`
+}
+
+const gitApply = (root, args, patch) => execFileSync('git', ['apply', ...args, '-'], { cwd: root, input: patch, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] })
+
+// The paths a patch touches, both ends of a rename, from `git apply --numstat -z`.
+function patchPaths(root, patch) {
+  const parts = gitApply(root, ['--numstat', '-z'], patch).split('\0')
+  const paths = []
+  for (let i = 0; i < parts.length; i++) {
+    if (!parts[i]) continue
+    const [, , path] = parts[i].split('\t')
+    if (path) paths.push(path)
+    else paths.push(parts[++i], parts[++i])
+  }
+  return paths.filter(Boolean)
+}
+
+// Applies the approved diff with `git apply`: refused when a path of it lies outside
+// `.claude/skills/`, when the tree already holds a change (the commit would take it too), and
+// when the patch does not apply cleanly; nothing is written then.
+function applySkillDiff(root, diffText) {
+  const patch = patchOf(diffText)
+  let paths
+  try {
+    paths = patchPaths(root, patch)
+  } catch (error) {
+    throw new Error(`git apply cannot read the diff: ${String(error.stderr || error.message).trim()}`)
+  }
+  const outside = paths.filter((p) => !p.startsWith(SKILLS_DIR))
+  if (outside.length > 0) throw new Error(`the diff touches paths outside ${SKILLS_DIR}: ${outside.join(', ')}; a skill edit changes only skill files`)
+  if (paths.length === 0) throw new Error('the diff changes no file')
+  const dirty = changedPaths(root)
+  if (dirty.length > 0) throw new Error(`the tree already holds changes (${dirty.join(', ')}); commit or remove them before applying the skill edit`)
+  try {
+    gitApply(root, ['--check'], patch)
+  } catch (error) {
+    throw new Error(`the diff does not apply cleanly, and nothing was changed: ${String(error.stderr || error.message).trim()}`)
+  }
+  gitApply(root, [], patch)
+}
+
 // Commits an approved skill edit on its own, records its sha in the ledger and runs the checks
-// again. Refused when any staged, changed or untracked path lies outside `.claude/skills/`.
-export function skillEdit(rootArg, { change, message, tracks = 'tasks.md', env = process.env, now }) {
+// again. With `diff`, the text of the c8 agent's proposed diff, it is applied first
+// (applySkillDiff). Refused when any staged, changed or untracked path lies outside
+// `.claude/skills/`.
+export function skillEdit(rootArg, { change, message, diff = null, tracks = 'tasks.md', env = process.env, now }) {
   const root = resolve(rootArg)
   if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
   if (typeof message !== 'string' || !CONVENTIONAL.test(message)) throw new Error('the message must be a Conventional Commit: type(scope): description')
+  if (diff !== null) applySkillDiff(root, diff)
   const paths = changedPaths(root)
   const outside = paths.filter((p) => !p.startsWith(SKILLS_DIR))
   if (outside.length > 0) throw new Error(`paths outside ${SKILLS_DIR} are changed: ${outside.join(', ')}; a skill edit commits only skill files`)
@@ -773,7 +847,7 @@ const HEADING_IDS = {
   'Out-of-plan commits': 'out-of-plan'
 }
 const OTHER_HEADINGS = ['Checks run with the developer', 'Exercised and not exercised', 'Rulings', 'Next step']
-const DISPATCHED_BY = { c4: 'verify c4', c8: 'verify c8', 'test-record': 'suite.mjs run --section test-record', developer: 'verify.mjs developer' }
+const DISPATCHED_BY = { c4: 'verify c4', c8: 'verify c8', 'test-record': 'verify.mjs run --suite', developer: 'verify.mjs developer' }
 
 function fenced(text) {
   const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((m) => m[0].length))

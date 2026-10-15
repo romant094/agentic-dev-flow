@@ -121,3 +121,35 @@ test('the parts: blocked names, the test record, a refusal', () => {
   assert.deepEqual(s.findings.map((f) => f.kind), ['graph-missing'])
   assert.throws(() => run(['--root', change]), /usage/)
 })
+
+test('a handoff is written from the state, blocks a started group with its reason, and keeps it blocked', () => {
+  const { change } = host({ 'plan.md': PLAN, 'tasks.md': TASKS })
+  const handoff = (...args) => run(['handoff', '--change', 'add-x', '--root', change, ...args], { env })
+  assert.throws(() => handoff('--next', 'fix B', '--block', 'B', '--reason', 'r'), /has not started/)
+  const a = addGroup(change, { change: 'add-x', group: 1 })
+  addGroup(change, { change: 'add-x', group: 2 })
+  commitIn(a.root, 'src/t1.ts', 'one\n')
+  tick(change, '1.1')
+  mergeGroup(change, { change: 'add-x', group: 1 })
+  finishGroup(change, { change: 'add-x', group: 1 }, core)
+  assert.throws(() => handoff('--next', 'x', '--block', 'A', '--reason', 'r'), /is merged/)
+  assert.throws(() => handoff('--next', 'x', '--block', 'Z', '--reason', 'r'), /not in the plan/)
+  assert.throws(() => handoff('--next', 'x', '--block', 'B'), /go together/)
+  assert.throws(() => run(['handoff', '--change', 'add-x', '--root', change], { env }), /--next/)
+
+  const blocked = handoff('--next', 'developer rules on B', '--block', 'B', '--reason', 'round 5 left a load-bearing finding')
+  assert.deepEqual([blocked.blocked, blocked.handoff.merged, blocked.handoff.remaining, blocked.handoff.blocked], [['B'], 'A', '1.2, 2.1', 'B'])
+  assert.equal(blocked.handoff.blockedReason, 'group B: round 5 left a load-bearing finding')
+  assert.equal(blocked.ruling, undefined, 'blocking is not a developer ruling')
+  assert.deepEqual(run(['--change', 'add-x', '--root', change]).blocked, [2])
+  // A later handoff that names no group still carries the blocked one.
+  const later = handoff('--next', 'fresh session')
+  assert.deepEqual([later.handoff.blocked, later.handoff.blockedReason], ['B', undefined])
+  assert.deepEqual(run(['--change', 'add-x', '--root', change]).blocked, [2])
+})
+
+test('the status names the test-first tasks, as plan lint does', () => {
+  const red = PLAN.replace('**Level:** integration\n\n---\n\n### Task 2', '**Level:** integration\n\n- [ ] **Step 1: RED** — fail\n- [ ] **Step 2: GREEN** — pass\n\n---\n\n### Task 2')
+  const { change } = host({ 'plan.md': red, 'tasks.md': TASKS })
+  assert.deepEqual(run(['--change', 'add-x', '--root', change]).testFirst, [1])
+})

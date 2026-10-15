@@ -13,9 +13,10 @@ import { findChoices, inferChange, statusReport } from '../lib/changes.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { createChange, GATE_RUNNERS, markDone, nextArtifact, redirectTarget } from '../lib/propose.mjs'
 import { initRegistry, readRegistry, writeRegistry } from '../lib/registry.mjs'
-import { forgeInput, titleFrom } from '../lib/roles.mjs'
+import { forgeInput, forgeReport, titleFrom } from '../lib/roles.mjs'
 import { GATES, loadSchema } from '../lib/schema.mjs'
 import { deltaAgainstMain, parseProposalCapabilities } from '../lib/specs.mjs'
+import { run as changesCli } from '../changes.mjs'
 import { run as proposeCli } from '../propose.mjs'
 import { run as specsCli } from '../specs.mjs'
 
@@ -193,11 +194,12 @@ test('next hands out each artifact in order, done gates it, and commit takes onl
   assert.ok(commit.result.files.every((f) => f.startsWith('openspec/changes/add-thing/')))
   assert.equal(git(root, 'status', '--porcelain'), '?? stray.txt')
 
-  const report = node('changes.mjs', ['status', '--report', '--root', root, '--forge', '{"state":"none"}'], root).out.report
+  const report = node('changes.mjs', ['status', '--report', '--root', root], root).out.report
   assert.match(report, /^Change: add-thing\nBranch: feat\/add-thing\n/)
   assert.match(report, /Base: develop\n/)
   assert.match(report, /- plan: done\n/)
-  assert.match(report, /Merge request: none; no forge plugin is enabled/)
+  assert.doesNotMatch(report, /Merge request/, 'the merge request is the forge call\'s own report')
+  assert.match(node('changes.mjs', ['status', '--report', '--root', root, '--forge', '{"state":"none"}'], root).out.error, /status takes no "--forge"/)
   assert.match(report, /Next: \/adf:apply$/)
 })
 
@@ -321,13 +323,31 @@ test('find choices label every change and unresolved worktree, and name duplicat
   assert.match(choices[0].label, /1\/3 tasks.*one of two copies/)
 })
 
-test('the report renders each forge state', () => {
+test('forge.mjs renders its own report for each forge state', () => {
+  assert.equal(forgeReport('open', { state: 'done', url: 'https://mr/1', reused: true }), 'Merge request: https://mr/1 (reused)')
+  assert.equal(forgeReport('open', { state: 'done', url: 'https://mr/1', reused: false }), 'Merge request: https://mr/1 (opened as a draft)')
+  assert.equal(forgeReport('finalize', { state: 'done', number: 7 }), 'Merge request: !7 (out of draft)')
+  assert.equal(forgeReport('push', { state: 'done' }), 'Push: done')
+  assert.equal(forgeReport('open', { state: 'degraded', hint: 'log in', fallback: ['git push'] }), 'Merge request: not done yet. log in\n  git push')
+  assert.equal(forgeReport('open', { state: 'refused', error: 'boom' }), 'Merge request: refused; boom')
+  assert.match(forgeReport('push', { state: 'none' }), /^Push: none; no forge plugin is enabled/)
   const status = { changeName: 'x', applyRequires: ['plan'], artifacts: [{ id: 'plan', status: 'ready' }] }
-  const r = (forge) => statusReport(status, { root: '/w', branch: 'feat/x', base: 'develop', forge })
-  assert.match(r({ state: 'done', url: 'https://mr/1', reused: true }), /Merge request: https:\/\/mr\/1 \(reused\)/)
-  assert.match(r({ state: 'degraded', hint: 'log in', fallback: ['git push'] }), /none yet\. log in\n {2}git push/)
-  assert.match(r({ state: 'refused', error: 'boom' }), /the forge refused: boom/)
-  assert.match(r(null), /Next: \/adf:propose x to finish its artifacts$/)
+  assert.match(statusReport(status, { root: '/w', branch: 'feat/x', base: 'develop' }), /Next: \/adf:propose x to finish its artifacts$/)
+})
+
+test('next records the propose session of a continued change once per session', async () => {
+  const { root } = started()
+  const ledger = () => readFileSync(join(root, '.superpowers', 'sdd', 'add-thing', 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+  assert.deepEqual((await changesCli(['next', '--root', root], { env })).ledger, { recorded: false, id: 'session-1', already: true }, 'create recorded this session')
+  const later = { CLAUDE_CODE_SESSION_ID: 'session-2' }
+  const first = await changesCli(['next', '--root', root], { env: later })
+  assert.equal(first.artifact, 'brainstorm')
+  assert.deepEqual([first.ledger.recorded, first.ledger.id], [true, 'session-2'])
+  assert.deepEqual((await changesCli(['next', '--root', root], { env: later })).ledger, { recorded: false, id: 'session-2', already: true })
+  assert.deepEqual(ledger().map((r) => [r.kind, r.phase, r.sessionId]), [['session', 'propose', 'session-1'], ['session', 'propose', 'session-2']])
+  assert.match((await changesCli(['next', '--root', root], { env: {} })).ledger.error, /CLAUDE_CODE_SESSION_ID/)
+  await assert.rejects(changesCli(['next', '--change', 'no-such', '--root', root], { env: later }))
+  assert.equal(existsSync(join(root, '.superpowers', 'sdd', 'no-such')), false, 'no ledger for a change that does not exist')
 })
 
 test('the forge input comes from state: branch, base, protected, and the title type from the branch', () => {
@@ -354,4 +374,26 @@ test('forge.mjs open --change sends what the core read, and refuses the main che
   const opened = node('forge.mjs', ['open', '--summary', 'core: add thing', '--root', root, '--home', home], root)
   assert.deepEqual(opened.out.input, { change: 'add-thing', branch: 'feat/add-thing', base: 'develop', protected: ['develop', 'main'], title: 'feat(core): add thing', draft: true })
   assert.match(node('forge.mjs', ['push', '--change', 'add-thing', '--root', main, '--home', home], main).out.error, /is the main checkout/)
+  assert.equal(opened.out.report, 'Merge request: no link returned (opened as a draft)')
+})
+
+test('forge.mjs --summary on a branch the developer named without a type prefix refuses and asks for --title', () => {
+  const { root } = started()
+  mkdirSync(join(root, 'plugins', 'fake', 'scripts'), { recursive: true })
+  writeFileSync(join(root, 'plugins', 'fake', 'adf-extension.json'), JSON.stringify({ name: 'fake', contract: '1.2', provides: { forge: { script: 'scripts/f.mjs', operations: ['check', 'open', 'push', 'finalize'] } } }))
+  writeFileSync(join(root, 'plugins', 'fake', 'scripts', 'f.mjs'), `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(join(root, 'called'))}, 'x')\n${ECHO}`)
+  writeRegistry(root, { ...readRegistry(root), extensions: [{ path: 'plugins/fake' }] })
+  const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
+  for (const branch of ['add-thing-edited', 'anton/add-thing']) {
+    git(root, 'branch', '-m', branch)
+    const refused = node('forge.mjs', ['open', '--change', 'add-thing', '--summary', 'core: add thing', '--root', root, '--home', home], root)
+    assert.equal(refused.code, 1)
+    assert.equal(refused.out.state, 'refused')
+    assert.match(refused.out.error, new RegExp(`the branch "${branch}" has no Conventional Commits type prefix .*pass --title "<type>\\(<scope>\\): <description>" in full`))
+    assert.match(refused.out.report, /^Merge request: refused; /)
+    assert.equal(existsSync(join(root, 'called')), false, 'nothing reached the forge')
+  }
+  const titled = node('forge.mjs', ['open', '--change', 'add-thing', '--title', 'feat(core): add thing', '--root', root, '--home', home], root)
+  assert.equal(titled.out.input.title, 'feat(core): add thing')
+  assert.equal(existsSync(join(root, 'called')), true, 'the full title reaches the forge')
 })

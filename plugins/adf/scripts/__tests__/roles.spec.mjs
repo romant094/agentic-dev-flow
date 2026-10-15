@@ -38,20 +38,26 @@ function forge(root, ...args) {
 const ECHO = `let t='';process.stdin.on('data',(d)=>t+=d).on('end',()=>{const j=JSON.parse(t);console.log(JSON.stringify({state:'done',op:process.argv[2],config:j.config,input:j.input,cwd:process.cwd()===j.root}))})`
 
 test('with no forge enabled the state is none and nothing runs', () => {
-  assert.deepEqual(forge(host(), 'check'), { code: 0, out: { state: 'none', point: 'forge' } })
+  assert.deepEqual(forge(host(), 'check'), {
+    code: 0,
+    out: { state: 'none', point: 'forge', report: 'Forge: none; no forge plugin is enabled, so nothing was pushed and no merge request exists.' }
+  })
 })
 
 test('the provider gets the operation, its config and the input, in the host root', () => {
   const out = forge(host(ECHO), 'open', '--input', '{"change":"x"}').out
-  assert.deepEqual(out, { state: 'done', op: 'open', config: { host: 'h' }, input: { change: 'x' }, cwd: true, plugin: 'fake' })
+  assert.deepEqual(out, { state: 'done', op: 'open', config: { host: 'h' }, input: { change: 'x' }, cwd: true, plugin: 'fake', report: 'Merge request: no link returned (opened as a draft)' })
 })
 
 test('a provider that prints no result, or an unknown operation, is refused with exit 1', () => {
   const broken = forge(host('console.log("hello")'), 'check')
   assert.equal(broken.code, 1)
   assert.match(broken.out.error, /fake check returned no result: hello/)
+  assert.match(broken.out.report, /^Forge: refused; fake check returned no result/)
   assert.match(forge(host(ECHO), 'merge').out.error, /forge has no operation merge/)
-  assert.match(forge(host(ECHO), 'open', '--input').out.error, /--input needs a value/)
+  const usage = forge(host(ECHO), 'open', '--input').out
+  assert.match(usage.error, /--input needs a value/)
+  assert.match(usage.report, /^Merge request: refused; --input needs a value/)
 })
 
 test('callRole refuses an operation the point does not declare, before looking for a provider', () => {

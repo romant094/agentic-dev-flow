@@ -8,8 +8,13 @@
 // a medium pair, and the reason text.
 //
 // Everything here is pure over text, except the functions that take an injected `grep` or `git`.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { changeDir, globToRegExp, META_FILE } from './changes.mjs'
 import { pathMatcher, plannedPaths } from './verify.mjs'
-import { EXTENSIONS, parsePlanTasks } from './plan-symbols.mjs'
+import { baseRef, EXTENSIONS, parseNameStatus, parsePlanTasks } from './plan-symbols.mjs'
+import { readRegistry } from './registry.mjs'
+import { gitIn } from './workspace.mjs'
 
 export const LEVELS = ['mechanical', 'integration', 'architecture']
 export const COUPLINGS = ['none', 'weak', 'medium', 'strong']
@@ -776,6 +781,67 @@ export function unplannedFiles(planText, commits, { exempt = () => false, status
     return { file, verb: status[file] ?? 'Modify', commits: shas, owner: ranked[0]?.[0] ?? null, votes: Object.fromEntries(ranked) }
   })
 }
+
+// The commits of a range with the files each touched, and the verb of each file over the whole
+// range: Create for an added file, Delete for a removed one. The range is `<from>..<to>`; without
+// it, the change's base (its .adf.json, `origin/<base>` when that ref exists) to HEAD.
+export function rangeCommits(root, change, { range, git = gitIn(root) } = {}) {
+  let from
+  let to
+  let base
+  if (range !== undefined) {
+    const m = /^([^.\s]+)\.\.([^.\s]+)$/.exec(range)
+    if (!m) throw new Error(`range "${range}" is not <from>..<to>`)
+    ;[, from, to] = m
+    base = from
+  } else {
+    let meta = null
+    try {
+      meta = JSON.parse(readFileSync(join(changeDir(root, change), META_FILE), 'utf8'))
+    } catch {
+      // baseRef names the missing base
+    }
+    base = baseRef(meta, (name) => {
+      try {
+        git('rev-parse', '--verify', '--quiet', name)
+        return true
+      } catch {
+        return false
+      }
+    })
+    from = git('merge-base', base, 'HEAD')
+    to = 'HEAD'
+  }
+  const commits = git('log', '--no-renames', '--name-only', '--format=%x1e%H', `${from}..${to}`)
+    .split('\x1e')
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .map((c) => {
+      const [sha, ...files] = c.split('\n').map((l) => l.trim())
+      return { sha, files: files.filter(Boolean) }
+    })
+  const changes = parseNameStatus(git('diff', '--no-renames', '--name-status', `${from}..${to}`))
+  const status = {}
+  for (const f of changes.added) status[f] = 'Create'
+  for (const f of changes.removed) status[f] = 'Delete'
+  return { base, commits, status }
+}
+
+// The files a range touched that no task of the plan names, the change records and the
+// registry's outsidePlan globs exempt: { base, files: [{ file, verb, commits, owner, votes }] }.
+// `owner` forces the owning task (a task's own fix round); otherwise the task whose files the
+// same commits touched most.
+export function unplannedIn(root, change, planText, { range, owner, git = gitIn(root) } = {}) {
+  const { base, commits, status } = rangeCommits(root, change, { range, git })
+  const prefix = `openspec/changes/${change}/`
+  const allowed = (readRegistry(root)?.outsidePlan ?? []).map((g) => globToRegExp(g))
+  const exempt = (file) => file.startsWith(prefix) || allowed.some((re) => re.test(file))
+  const files = unplannedFiles(planText, commits, { exempt, status })
+  return { base, files: owner === undefined ? files : files.map((f) => ({ ...f, owner })) }
+}
+
+// The message of the commit `plan.mjs added --commit` makes.
+export const addedMessage = (change) => `docs(openspec): record work added during apply to ${change}`
 
 // plan.md with ``- <Verb>: `<path>` — Added during apply, <date>: <why>`` appended to Task N's
 // Files block. A path the task already names is left alone.

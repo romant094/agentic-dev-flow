@@ -303,3 +303,46 @@ test('verify.mjs skill-edit checks the host skills when the registry puts them i
   assert.equal(out.code, 2)
   assert.match(out.stderr, /\.claude\/skills\/deploy\/SKILL\.md:1: /)
 })
+
+test('verify.mjs skill-edit --diff-file checks the lines the diff adds, by their new line number', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'english-check', contract: '1.1', provides: {} }))
+  r.write('.claude/adf-extensions.json', JSON.stringify({ contract: '1.1', extensions: [{ path: 'vendor/ec', config: { include: ['.claude/skills/**'] } }] }))
+  r.write('.claude/skills/deploy/SKILL.md', 'one\ntwo\nthree\n')
+  const diff = (added) =>
+    ['--- a/.claude/skills/deploy/SKILL.md', '+++ b/.claude/skills/deploy/SKILL.md', '@@ -1,3 +1,4 @@', ' one', ' two', `+${added}`, ' three', ''].join('\n')
+  r.write('edit.diff', diff(RU))
+  r.write('clean.diff', diff('plain English'))
+  const cmd = (file) => `node /p/scripts/verify.mjs skill-edit --change x --message 'docs(skills): x' --diff-file ${file} --root ${r.root}`
+  const blocked = hook(cmd('edit.diff'), r.root)
+  assert.equal(blocked.code, 2)
+  assert.match(blocked.stderr, /\.claude\/skills\/deploy\/SKILL\.md:3: /)
+  assert.equal(hook(cmd('clean.diff'), r.root).code, 0)
+})
+
+test('suite.mjs, dup.mjs and plan.mjs check what they commit only with --commit', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  // planning.md is out of the default scope and plan.md is in the default exclusion.
+  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'english-check', contract: '1.1', provides: {} }))
+  r.write('.claude/adf-extensions.json', JSON.stringify({ contract: '1.1', extensions: [{ path: 'vendor/ec', config: { include: ['openspec/**'], exclude: [] } }] }))
+  r.write('openspec/changes/x/.apply-test-record.md', `${RU}\n`)
+  r.write('openspec/planning.md', `${RU}\n`)
+  r.write('openspec/changes/x/plan.md', `${RU}\n`)
+  r.write('openspec/changes/x/notes.md', `${RU}\n`)
+  const run = `node /p/scripts/suite.mjs run --change x --record --root ${r.root}`
+  assert.match(hook(`${run} --commit`, '/').stderr, /openspec\/changes\/x\/\.apply-test-record\.md:1: /)
+  assert.equal(hook(run, '/').code, 0)
+  const set = `node /p/scripts/suite.mjs set --command 'npm test' --root ${r.root}`
+  assert.match(hook(`${set} --commit`, '/').stderr, /openspec\/planning\.md:1: /)
+  assert.equal(hook(set, '/').code, 0)
+  const mark = `node /p/scripts/dup.mjs mark --change x --file openspec/changes/x/notes.md --existing a --why b --reason c --root ${r.root}`
+  assert.match(hook(`${mark} --commit`, '/').stderr, /openspec\/changes\/x\/notes\.md:1: /)
+  assert.equal(hook(mark, '/').code, 0)
+  const added = `node /p/scripts/plan.mjs added --change x --path a.ts --why b --root ${r.root}`
+  const blocked = hook(`${added} --commit`, '/')
+  assert.match(blocked.stderr, /openspec\/changes\/x\/plan\.md:1: /)
+  assert.doesNotMatch(blocked.stderr, /notes\.md/)
+  assert.equal(hook(added, '/').code, 0)
+})

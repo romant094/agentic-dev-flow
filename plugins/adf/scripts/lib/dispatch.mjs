@@ -310,3 +310,39 @@ export function countAttempts(text, name) {
       }
     }).length
 }
+
+// ---------------------------------------------------------------- fix rounds
+
+// apply.md: a fix round is one `fix` dispatch and one scoped `re-review`; the loop has at most
+// MAX_ROUNDS of them per task, per group after its merge review, and after the final review.
+export const MAX_ROUNDS = 5
+
+// Where a fix loop stands, from the attempts recorded so far. A round is complete once its
+// re-review was dispatched. Below the breaker the next round is dispatched (`fix`); at it, a
+// task's open findings are adjudicated by the orchestrator (`adjudicate`), and a group's or the
+// final review's go to the developer (`escalate-to-developer`).
+//   subject: { task } | { group } | {} (after the final review)
+export function roundOf(attemptsText, { task, group } = {}) {
+  if (task !== undefined && group !== undefined) refuse('a fix loop is a task\'s or a group\'s, not both')
+  if (task !== undefined && !(Number.isInteger(task) && task >= 1)) refuse(`task "${task}" is not a positive integer`)
+  if (group !== undefined && !GROUP.test(group)) refuse(`group "${group}" is not a group letter`)
+  let completed = 0
+  for (const line of String(attemptsText ?? '').split('\n')) {
+    let parsed
+    try {
+      parsed = parseName(JSON.parse(line).name)
+    } catch {
+      continue
+    }
+    if (parsed?.role !== 're-review' || parsed.round === undefined) continue
+    if (parsed.task !== task || parsed.group !== group) continue
+    completed = Math.max(completed, parsed.round)
+  }
+  const subject = task !== undefined ? `T${task}` : group !== undefined ? group : 'final'
+  if (completed >= MAX_ROUNDS) {
+    return { subject, completed, max: MAX_ROUNDS, next: task !== undefined ? 'adjudicate' : 'escalate-to-developer' }
+  }
+  const round = completed + 1
+  const names = (role) => dispatchName({ role, round, ...(task !== undefined ? { task } : {}), ...(group !== undefined ? { group } : {}) })
+  return { subject, completed, max: MAX_ROUNDS, next: 'fix', round, fix: names('fix'), reReview: names('re-review') }
+}

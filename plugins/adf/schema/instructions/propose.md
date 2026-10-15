@@ -39,7 +39,9 @@ work is theirs to decide about.
 
 **Every later step runs in the worktree.**
 
-Pass the worktree root as `--root` to every core script. Install nothing at propose. The change
+Pass the worktree root as `--root` to every core script. The propose session is recorded in the
+change's ledger by script, once per session: by `propose.mjs create` for a new change, by
+`changes.mjs next` for one continued; never record it by hand. Install nothing at propose. The change
 holds only markdown until apply; whether and how the worktree is provisioned is decided there.
 
 **Each artifact's gates bind it.**
@@ -66,8 +68,12 @@ Formatting and linting are not run: the commit holds only markdown the change ge
 **The merge request is the forge's, and only after the commit.**
 
 When the artifacts are committed, the `forge` role pushes the branch and opens a Draft merge
-request into the change's base; the title's type comes from the branch, and the forge marks the
-draft itself. With no forge plugin enabled nothing is pushed and the report says that no merge
-request exists. A degraded forge (its tool missing or not logged in) does not stop the proposal:
-the report carries its `hint` and `fallback` commands, and no merge request is claimed. A refusal
-is reported as it is; the committed artifacts stay.
+request into the change's base; the title's type comes from the branch prefix, and the forge
+marks the draft itself. A branch the developer named without a Conventional Commits type prefix
+gives `--summary` no type: `forge.mjs` refuses it and asks for the title in full, `--title
+"<type>(<scope>): <description>"`, which you agree with the developer. `forge.mjs` renders its
+own `report`; never render the forge's JSON yourself. With no forge plugin enabled nothing is
+pushed and the report says that no merge request exists. A degraded forge (its tool missing or
+not logged in) does not stop the proposal: the report carries its `hint` and `fallback`
+commands, and no merge request is claimed. A refusal is reported as it is; the committed
+artifacts stay.

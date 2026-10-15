@@ -3,16 +3,24 @@
 // check (run, skill-edit) or a FAIL verdict (verdict), exit 2 on a usage error. --root is the
 // change worktree (default: the current directory).
 //
-//   verify.mjs run --change <name> [--root <dir>] [--fresh] [--skill-edit <sha> ...]
+//   verify.mjs run --change <name> [--root <dir>] [--fresh] [--suite] [--skill-edit <sha> ...]
 //       run the mechanical checks; each writes its raw output under
 //       .superpowers/sdd/<change>/verify/ and the list is kept in verify/run.json with the
 //       session id. A run in another session than the one that wrote run.json (read from
 //       CLAUDE_CODE_SESSION_ID) clears that directory first; --fresh forces the clearing.
-//       The approved skill edits are the ledger's skill-edit records; --skill-edit names more
+//       The approved skill edits are the ledger's skill-edit records; --skill-edit names more.
+//       --suite: when the test-record check fails (no record, or a stale one), the whole suite
+//       runs in the same call with the base check and writes verify/test-record.json
+//       (lib/suite.mjs runSuite), returned as `suite`; when the record is current, a
+//       test-record section an earlier re-run left is removed, so the record is cited. `ok`
+//       reads the section's verdict in place of the check's
 //   verify.mjs verdict --change <name> [--root <dir>] [--out <file>] [--report]
 //       read run.json and the verify/<id>.json sections, apply the developer's rulings from the
 //       ledger, and compute the `Verdict:` line. A refusal lists `refusals`, `redispatch` (the
-//       section ids to dispatch again), `needsRuling` (the not-run checks) and `rerun`. --out
+//       section ids to dispatch again), `needsRuling` (the not-run checks) and `rerun`, and the
+//       exact command for each: `redispatchCommands` (the dispatch.mjs prompt call of c4 and c8,
+//       the suite run, the developer call), `rulingCommands` (the ledger ruling, the reason left
+//       to the developer) and `rerunCommand`. --out
 //       also writes the result to a file; --report adds `report`, the text block to show
 //   verify.mjs assemble --change <name> [--root <dir>] [--commit]
 //       render openspec/changes/<change>/verify.md from the template, run.json, the sections,
@@ -20,41 +28,53 @@
 //       `line`. --commit commits the record alone ("docs(openspec): verify <change>").
 //       Refused when the verdict refuses: { ok:false, refusals, redispatch, needsRuling, report }.
 //       Otherwise { ok:true, file, verdict, line, commit, report }, also on a FAIL verdict
-//   verify.mjs skill-edit --change <name> --message "<type(scope): description>" [--root <dir>]
-//       commit the approved skill edit in the working tree, refused when any staged, changed or
+//   verify.mjs skill-edit --change <name> --message "<type(scope): description>"
+//                         [--diff-file <file>] [--root <dir>]
+//       --diff-file: apply the approved diff with `git apply` (from the file's first
+//       `diff --git` line, so the c8 output file itself can be passed), refused when a path of
+//       it lies outside .claude/skills/, when the tree already holds a change, or when it does
+//       not apply cleanly. Then commit the skill edit, refused when any staged, changed or
 //       untracked path lies outside .claude/skills/; record its sha in the ledger; run again
 //   verify.mjs skill-candidates --change <name> [--root <dir>]
 //       the lines of each host .claude/skills/*/SKILL.md and README.md that name a path,
 //       symbol, command or route the range's diff changed; the listing also goes to
 //       verify/c8-candidates.txt, the input of the verify c8 dispatch
+//   verify.mjs prompts --change <name> [--root <dir>]
+//       skill-candidates, then the prompt of the verify c4 and the verify c8 dispatch, each as
+//       dispatch.mjs prompt writes it: { ok, candidates, dispatches: [{ check, name, agent,
+//       sectionFiles, prompt }] }
 //   verify.mjs developer --change <name> --text-file <file> --verdict <pass|warn|fail|not-run>
 //                        [--summary <text>] [--root <dir>]
 //       write verify/developer.txt (the file's text, verbatim) and its section developer.json
-import { readFileSync, writeFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { run as dispatchCli } from './dispatch.mjs'
 import { isMain } from './lib/main.mjs'
 import { loadSchema } from './lib/schema.mjs'
-import { assemble, computeVerdict, renderReport, runChecks, skillCandidates, skillEdit, writeDeveloper } from './lib/verify.mjs'
+import { runSuite, SECTION_ID } from './lib/suite.mjs'
+import { assemble, computeVerdict, REQUIRED_SECTIONS, renderReport, runChecks, skillCandidates, skillEdit, verifyDir, writeDeveloper } from './lib/verify.mjs'
 
 export const USAGE = `usage:
-  verify.mjs run --change <name> [--root <dir>] [--fresh] [--skill-edit <sha> ...]
+  verify.mjs run --change <name> [--root <dir>] [--fresh] [--suite] [--skill-edit <sha> ...]
   verify.mjs verdict --change <name> [--root <dir>] [--out <file>] [--report]
   verify.mjs assemble --change <name> [--root <dir>] [--commit]
-  verify.mjs skill-edit --change <name> --message <message> [--root <dir>]
+  verify.mjs skill-edit --change <name> --message <message> [--diff-file <file>] [--root <dir>]
   verify.mjs skill-candidates --change <name> [--root <dir>]
+  verify.mjs prompts --change <name> [--root <dir>]
   verify.mjs developer --change <name> --text-file <file> --verdict <verdict> [--summary <text>] [--root <dir>]`
 
 export class UsageError extends Error {}
 
-const VALUED = ['--change', '--root', '--skill-edit', '--out', '--message', '--text-file', '--verdict', '--summary']
-const BOOLEAN = ['--fresh', '--report', '--commit']
+const VALUED = ['--change', '--root', '--skill-edit', '--out', '--message', '--diff-file', '--text-file', '--verdict', '--summary']
+const BOOLEAN = ['--fresh', '--suite', '--report', '--commit']
 // The options each subcommand takes, besides --change and --root.
 const TAKES = {
-  run: ['fresh', 'skill-edit'],
+  run: ['fresh', 'suite', 'skill-edit'],
   verdict: ['out', 'report'],
   assemble: ['commit'],
-  'skill-edit': ['message'],
+  'skill-edit': ['message', 'diff-file'],
   'skill-candidates': [],
+  prompts: [],
   developer: ['text-file', 'verdict', 'summary']
 }
 
@@ -82,6 +102,21 @@ function parse(argv) {
   return { values, rest }
 }
 
+// run --suite: a failing test-record check (no record, or a stale one) is answered in the same
+// call by the whole suite with the base check, which writes the test-record section; a current
+// record removes a section an earlier re-run left, so the record is cited.
+function withSuite(root, change, result) {
+  const check = result.checks.find((c) => c.id === SECTION_ID)
+  const dir = verifyDir(resolve(root), change)
+  if (check.verdict !== 'fail') {
+    for (const f of [`${SECTION_ID}.json`, `${SECTION_ID}-suite.txt`]) if (existsSync(join(dir, f))) rmSync(join(dir, f))
+    return { ...result, suite: null }
+  }
+  const suite = runSuite(root, { change, baseCheck: true, section: SECTION_ID })
+  const verdicts = result.checks.map((c) => (c.id === SECTION_ID ? suite.section.verdict : c.verdict))
+  return { ...result, suite, ok: !verdicts.includes('fail') }
+}
+
 export function run(argv, { cwd = process.cwd(), env = process.env } = {}) {
   const { values, rest } = parse(argv)
   const [command, ...extra] = rest
@@ -91,8 +126,10 @@ export function run(argv, { cwd = process.cwd(), env = process.env } = {}) {
   if (stray.length > 0) throw new UsageError(`--${stray.join(', --')} does not belong to ${command}`)
   const tracks = () => loadSchema().apply?.tracks ?? 'tasks.md'
   switch (command) {
-    case 'run':
-      return runChecks(root, { change, skillEdits: values['skill-edit'] ?? [], fresh: Boolean(values.fresh), tracks: tracks(), env })
+    case 'run': {
+      const result = runChecks(root, { change, skillEdits: values['skill-edit'] ?? [], fresh: Boolean(values.fresh), tracks: tracks(), env })
+      return values.suite ? withSuite(root, change, result) : result
+    }
     case 'verdict': {
       const result = computeVerdict(root, { change })
       const out = values.report ? { ...result, report: renderReport(result, { change }) } : result
@@ -103,9 +140,23 @@ export function run(argv, { cwd = process.cwd(), env = process.env } = {}) {
       return assemble(root, { change, commit: Boolean(values.commit) })
     case 'skill-edit':
       if (!values.message) throw new UsageError('skill-edit needs --message')
-      return skillEdit(root, { change, message: values.message, tracks: tracks(), env })
+      return skillEdit(root, {
+        change,
+        message: values.message,
+        diff: values['diff-file'] === undefined ? null : readFileSync(resolve(cwd, values['diff-file']), 'utf8'),
+        tracks: tracks(),
+        env
+      })
     case 'skill-candidates':
       return skillCandidates(root, { change })
+    case 'prompts': {
+      const candidates = skillCandidates(root, { change })
+      const dispatches = REQUIRED_SECTIONS.map((check) => {
+        const { name, agent, sectionFiles, prompt } = dispatchCli(['prompt', '--change', change, '--role', 'verify', '--check', check, '--root', resolve(cwd, root)], { cwd })
+        return { check, name, agent, sectionFiles, prompt }
+      })
+      return { ok: true, candidates, dispatches }
+    }
     case 'developer':
       if (!values['text-file'] || !values.verdict) throw new UsageError('developer needs --text-file and --verdict')
       return writeDeveloper(root, { change, text: readFileSync(resolve(cwd, values['text-file']), 'utf8'), verdict: values.verdict, summary: values.summary })

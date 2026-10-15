@@ -9,17 +9,18 @@
 //                                                    the repository (main and change worktrees),
 //                                                    with `duplicates` and `choices` (a label
 //                                                    per change and per unresolved worktree)
-//   changes.mjs status [--change <name>] [--report [--forge <json>|@<file>]]
-//                                                    each artifact: done, ready or blocked;
-//                                                    --report adds the rendered propose report,
-//                                                    with the merge request from a forge.mjs
-//                                                    result when --forge passes one
+//   changes.mjs status [--change <name>] [--report]  each artifact: done, ready or blocked;
+//                                                    --report adds the rendered propose report
+//                                                    (the merge request is forge.mjs's own report)
 //   changes.mjs instructions <artifact|apply> [--change <name>]
 //                                                    what to write next, or how to apply
 //   changes.mjs next [--change <name>]               the next artifact propose writes, with its
 //                                                    instructions and dependency files, or
 //                                                    {done:true}; refused while a written
-//                                                    artifact fails one of its gates
+//                                                    artifact fails one of its gates. Records the
+//                                                    propose session in the ledger once per
+//                                                    session (`ledger`), so a change continued in
+//                                                    a later session is recorded too
 //   changes.mjs done <artifact> [--change <name>]    moves a Superpowers skill's default-folder
 //                                                    output into the change, reports copied
 //                                                    project guidance, runs the artifact's gates
@@ -31,7 +32,6 @@
 // Without --change the change is the one active change under the root. next, done and skip
 // write, and refuse the main checkout unless --allow-main is given.
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   applyInstructions,
@@ -49,6 +49,7 @@ import {
 import { buildOrder, loadSchema } from './lib/schema.mjs'
 import { isMain } from './lib/main.mjs'
 import { findChanges } from './lib/resolve.mjs'
+import { recordSessionOnce } from './lib/ledger.mjs'
 import { markDone, nextArtifact } from './lib/propose.mjs'
 
 function option(args, name) {
@@ -73,15 +74,12 @@ function branchOf(root) {
   }
 }
 
-const readJsonArg = (value) => JSON.parse(value.startsWith('@') ? readFileSync(value.slice(1), 'utf8') : value)
-
 // Returns the result, or a promise of it for next and done, which run gates.
-export function run(argv, { schemaDir } = {}) {
+export function run(argv, { schemaDir, env = process.env } = {}) {
   const args = [...argv]
   const root = option(args, '--root') ?? process.cwd()
   const given = option(args, '--change')
   const base = option(args, '--base')
-  const forge = option(args, '--forge')
   const report = flag(args, '--report')
   const allowMain = flag(args, '--allow-main')
   const [command, target] = args
@@ -99,15 +97,11 @@ export function run(argv, { schemaDir } = {}) {
       return { ...found, ...findChoices(found) }
     }
     case 'status': {
+      if (target) throw new Error(`status takes no "${target}"; usage: status [--change <name>] [--report]`)
       const name = change()
       const status = changeStatus(root, name, schema)
       if (!report) return status
-      const text = statusReport(status, {
-        root: resolve(root),
-        branch: branchOf(root),
-        base: changeMeta(root, name).base ?? null,
-        forge: forge ? readJsonArg(forge) : null
-      })
+      const text = statusReport(status, { root: resolve(root), branch: branchOf(root), base: changeMeta(root, name).base ?? null })
       return { ...status, report: text }
     }
     case 'instructions':
@@ -115,9 +109,12 @@ export function run(argv, { schemaDir } = {}) {
       return target === 'apply'
         ? applyInstructions(root, change(), schema)
         : artifactInstructions(root, change(), target, schema)
-    case 'next':
+    case 'next': {
       writing()
-      return nextArtifact(resolve(root), change(), schema)
+      const name = change()
+      // Recorded after nextArtifact has found the change, so no ledger is made for a typo.
+      return nextArtifact(resolve(root), name, schema).then((result) => ({ ...result, ledger: recordSessionOnce(resolve(root), name, 'propose', { env }) }))
+    }
     case 'done':
       if (!target) throw new Error('usage: done <artifact> [--change <name>]')
       writing()

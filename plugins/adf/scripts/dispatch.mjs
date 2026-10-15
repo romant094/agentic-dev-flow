@@ -14,6 +14,16 @@
 //   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <change worktree>]
 //       records one attempt of the dispatch and returns { ok, name, attempt, next }, next one of
 //       dispatch (the first), retry (the one retry of a refused reply), stop (BLOCKED)
+//   dispatch.mjs round   --change <name> [--task <N> | --group <G>] [--root <change worktree>]
+//       where a fix loop stands, read from the recorded attempts: a task's, a group's after its
+//       merge review, or, with neither, the final review's. A round is complete once its
+//       re-review was attempted. { ok, subject, completed, max, next, round?, fix?, reReview? }:
+//       next `fix` names the round's two dispatches; at the breaker (MAX_ROUNDS) next is
+//       `adjudicate` for a task and `escalate-to-developer` for a group or the final review
+//
+// prompt for a `re-review` with --base and --head (the fix's range) also returns `unplanned`:
+// the files that range touched which no task of the plan names, each with its owning task
+// (the task itself for a task's round), the files to record with `plan.mjs added`.
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,12 +34,14 @@ import {
   parseName,
   planDispatch,
   renderPrompt,
+  roundOf,
   sddDir,
   taskBody,
   verifyDirOf
 } from './lib/dispatch.mjs'
 import { mainCheckout } from './lib/installed.mjs'
 import { isMain } from './lib/main.mjs'
+import { unplannedIn } from './lib/plan.mjs'
 import { parsePlanTasks } from './lib/plan-symbols.mjs'
 import { sweepInputs } from './lib/sweep.mjs'
 
@@ -39,7 +51,8 @@ export const PROMPTS_DIR = join(PLUGIN_ROOT, 'schema', 'prompts')
 export const USAGE = `usage:
   dispatch.mjs plan --change <name> --role <role> [--task <N>] [--group <G>] [--round <k>] [--topic <word>] [--check c4|c8] [--root <dir>]
   dispatch.mjs prompt (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>]
-  dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <dir>]`
+  dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <dir>]
+  dispatch.mjs round --change <name> [--task <N> | --group <G>] [--root <dir>]`
 
 export class UsageError extends Error {}
 
@@ -160,7 +173,7 @@ function readQuestion(file) {
 export function run(argv, { cwd = process.cwd(), main } = {}) {
   const { values, rest } = parse(argv)
   const [command, ...extra] = rest
-  if (extra.length > 0 || !['plan', 'prompt', 'attempt'].includes(command) || !values.change) throw new UsageError(USAGE)
+  if (extra.length > 0 || !['plan', 'prompt', 'attempt', 'round'].includes(command) || !values.change) throw new UsageError(USAGE)
   const root = resolve(cwd, values.root ?? '.')
   const change = values.change
   if (!/^[a-z0-9][a-z0-9-]*$/.test(change) || !existsSync(join(root, 'openspec', 'changes', change))) {
@@ -178,6 +191,12 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
     return { ok: true, name: values.name, attempt, next: nextFor(attempt), file }
   }
 
+  if (command === 'round') {
+    if (Object.keys(values).some((k) => !['change', 'task', 'group', 'root'].includes(k))) throw new UsageError(USAGE)
+    const file = join(sddDir(root, change), 'attempts.jsonl')
+    return { ok: true, ...roundOf(readOr(file) ?? '', { task: number(values.task), group: values.group }) }
+  }
+
   if (!values.role) throw new UsageError(USAGE)
   if (values.name) throw new UsageError('--name belongs to attempt')
   if (command === 'plan' && (values['question-file'] || values.base || values.head)) throw new UsageError('--question-file, --base and --head belong to prompt')
@@ -193,7 +212,15 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
   const planText = readOr(join(root, 'openspec', 'changes', change, 'plan.md'))
   const plan = planDispatch(inputs, { root, main: main ?? mainCheckout(root), planText, exists: existsSync })
   if (command === 'plan') return { ok: true, ...plan }
-  return { ok: true, ...plan, prompt: promptFor(inputs, plan, values, root, planText) }
+  const prompt = promptFor(inputs, plan, values, root, planText)
+  if (inputs.role !== 're-review' || !values.base) return { ok: true, ...plan, prompt }
+  let found
+  try {
+    found = unplannedIn(root, change, planText, { range: `${values.base}..${values.head}`, owner: inputs.task })
+  } catch (error) {
+    throw new DispatchError(`cannot read the fix's range ${values.base}..${values.head}: ${error.message}`)
+  }
+  return { ok: true, ...plan, prompt, unplanned: found.files.map(({ file, verb, owner }) => ({ file, verb, owner })) }
 }
 
 if (isMain(import.meta.url)) {

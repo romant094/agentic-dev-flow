@@ -105,3 +105,36 @@ test('sweep filter drops a finding a marker accepts and recomputes the verdict; 
   assert.equal(sweep(['filter', 'r/none.json', '--root', change]).ok, false)
   assert.equal(coveringMarker([{ file: 'a.ts', line: 5, existing: 'x', wholeFile: false }], { introduced: 'aSymbol', existing: 'x' }), null)
 })
+
+test('sweep filter --record turns each disposition into a debt record, once', () => {
+  const { change } = host()
+  mkdirSync(join(change, 'r'), { recursive: true })
+  const dispositions = [
+    { requirement: 'Old thing', disposition: 'deleted with its route; the old path is unreachable' },
+    { requirement: 'New name', disposition: 'renamed in code; the old export is still reachable from src/x.ts' }
+  ]
+  writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', verdict: 'CLEAN', findings: [], dispositions }))
+  const out = sweep(['filter', 'r/s.json', '--record', '--change', 'add-x', '--root', change])
+  assert.deepEqual(out.debt, [{ requirement: 'Old thing', id: 'debt-1' }, { requirement: 'New name', id: 'debt-2' }])
+  const debts = listRecords(change, 'add-x')
+  assert.deepEqual(debts.map((d) => [d.what, d.reason]), dispositions.map((d) => [`the Code Disposition of the removed or renamed requirement "${d.requirement}"`, d.disposition]))
+  assert.match(sweep(['filter', 'r/s.json', '--record', '--change', 'add-x', '--root', change]).debt[0].skipped, /debt-1/)
+  assert.equal(listRecords(change, 'add-x').length, 2)
+  assert.equal(sweep(['filter', 'r/s.json', '--root', change]).debt, undefined)
+  assert.throws(() => sweep(['filter', 'r/s.json', '--record', '--root', change]), /usage/)
+  writeFileSync(join(change, 'r/bad.json'), '{"role":"sweep"}')
+  assert.equal(sweep(['filter', 'r/bad.json', '--record', '--change', 'add-x', '--root', change]).ok, false)
+  assert.equal(listRecords(change, 'add-x').length, 2)
+})
+
+test('dup mark --commit commits the marked file alone, with the fixed message', () => {
+  const { change } = host()
+  commitIn(change, 'src/b.ts', 'export function parse() {}\n')
+  writeFileSync(join(change, 'other.txt'), 'untouched\n')
+  const out = mark(change, ['--file', 'src/b.ts', '--line', '1', '--commit'])
+  assert.match(out.commit, /^[0-9a-f]{40}$/)
+  assert.equal(git(change, 'log', '-1', '--format=%s'), 'chore: mark the accepted duplicate in src/b.ts')
+  assert.equal(git(change, 'show', '--name-only', '--format=', 'HEAD'), 'src/b.ts')
+  assert.equal(git(change, 'status', '--porcelain', '--', 'other.txt'), '?? other.txt')
+  assert.equal(mark(change, ['--file', 'src/b.ts', '--line', '2', '--commit']).commit, null)
+})

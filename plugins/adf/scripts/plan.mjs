@@ -19,19 +19,24 @@
 //       { files: [{ file, verb, commits, owner, votes }] }: files base..HEAD touched that no task
 //       names, with the task that owns each. Exit 0 either way; `files` empty is the pass.
 //   plan.mjs added --change <name> --path <p> --why <text> [--task <N>] [--verb <Verb>]
-//                  [--date YYYY-MM-DD] [--root <dir>]
+//                  [--date YYYY-MM-DD] [--root <dir>] [--commit]
 //       Appends the "Added during apply" bullet to the owning task's Files block. Without
-//       --task the owner is the one `unplanned` proposes; none is a refusal.
+//       --task the owner is the one `unplanned` proposes; none is a refusal. --commit then
+//       commits plan.md alone through lib/commit.mjs, with the message
+//       "docs(openspec): record work added during apply to <change>" (`commit`: its sha, or
+//       null when plan.md was already committed); without it the next tick commits the plan.
 //
 // Exit 2 on a usage error.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { changeDir, globToRegExp, inferChange, META_FILE } from './lib/changes.mjs'
+import { changeDir, inferChange } from './lib/changes.mjs'
+import { commitPaths } from './lib/commit.mjs'
 import { PLANNING_GUIDE } from './lib/host-files.mjs'
 import { groupState } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
 import {
   addDuringApply,
+  addedMessage,
   computeGraph,
   DEFAULT_CAP,
   lintPlanText,
@@ -43,11 +48,9 @@ import {
   schedule,
   sweepDeletes,
   testFirst,
-  unplannedFiles,
+  unplannedIn,
   writeGraph
 } from './lib/plan.mjs'
-import { baseRef, parseNameStatus } from './lib/plan-symbols.mjs'
-import { readRegistry } from './lib/registry.mjs'
 import { loadSchema } from './lib/schema.mjs'
 import { gitIn } from './lib/workspace.mjs'
 
@@ -165,44 +168,12 @@ function scheduleCmd(o) {
   return { code: result.ok ? 0 : 1, result: { ...result, branch, root: o.root } }
 }
 
-function rangeCommits(root, change) {
-  const git = gitIn(root)
-  const meta = JSON.parse(read(join(changeDir(root, change), META_FILE)) ?? 'null')
-  let ref
+function unplanned(root, change, planText) {
   try {
-    ref = baseRef(meta, (name) => {
-      try {
-        git('rev-parse', '--verify', '--quiet', name)
-        return true
-      } catch {
-        return false
-      }
-    })
+    return unplannedIn(root, change, planText)
   } catch (error) {
     throw new Refusal(error.message)
   }
-  const base = git('merge-base', ref, 'HEAD')
-  const commits = git('log', '--no-renames', '--name-only', '--format=%x1e%H', `${base}..HEAD`)
-    .split('\x1e')
-    .map((c) => c.trim())
-    .filter(Boolean)
-    .map((c) => {
-      const [sha, ...files] = c.split('\n').map((l) => l.trim())
-      return { sha, files: files.filter(Boolean) }
-    })
-  const changes = parseNameStatus(git('diff', '--no-renames', '--name-status', `${base}..HEAD`))
-  const status = {}
-  for (const f of changes.added) status[f] = 'Create'
-  for (const f of changes.removed) status[f] = 'Delete'
-  return { base: ref, commits, status }
-}
-
-function unplanned(root, change, planText) {
-  const { base, commits, status } = rangeCommits(root, change)
-  const prefix = `openspec/changes/${change}/`
-  const allowed = (readRegistry(root)?.outsidePlan ?? []).map((g) => globToRegExp(g))
-  const exempt = (file) => file.startsWith(prefix) || allowed.some((re) => re.test(file))
-  return { base, files: unplannedFiles(planText, commits, { exempt, status }) }
 }
 
 function unplannedCmd(o) {
@@ -232,7 +203,13 @@ function added(o) {
     throw new Refusal(error.message)
   }
   if (out.added) writeFileSync(planPath, out.text)
-  return { code: 0, result: { ok: true, task, added: out.added, line: out.line, bullet: out.bullet } }
+  const result = { ok: true, task, added: out.added, line: out.line, bullet: out.bullet }
+  if (o.commit) {
+    const path = rel(o.change, 'plan.md')
+    const dirty = gitIn(o.root)('status', '--porcelain', '--', path) !== ''
+    result.commit = dirty ? commitPaths(o.root, { only: [path], message: addedMessage(o.change) }).commit : null
+  }
+  return { code: 0, result }
 }
 
 export async function run(argv) {
@@ -243,7 +220,7 @@ export async function run(argv) {
       graph: [['root', 'groups', 'depends', 'coupling'], ['write']],
       schedule: [['root', 'cap'], []],
       unplanned: [['root'], []],
-      added: [['root', 'path', 'why', 'task', 'verb', 'date'], []]
+      added: [['root', 'path', 'why', 'task', 'verb', 'date'], ['commit']]
     }[command]
     if (!spec) throw new Usage(`unknown command "${command ?? ''}"`)
     const o = options(argv, ['change', ...spec[0]], spec[1])

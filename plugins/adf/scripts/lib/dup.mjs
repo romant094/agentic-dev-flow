@@ -43,6 +43,9 @@ export function commentFor(file) {
   return ext && Object.hasOwn(COMMENTS, ext) ? COMMENTS[ext] : null
 }
 
+// The message of the commit `dup.mjs mark --commit` makes.
+export const markMessage = (file) => `chore: mark the accepted duplicate in ${file}`
+
 export const markerText = (existing, reason) => `ADF DUP ${existing} -- ${reason}`
 
 // The marker on a line, in any comment syntax: { existing, reason } or null.

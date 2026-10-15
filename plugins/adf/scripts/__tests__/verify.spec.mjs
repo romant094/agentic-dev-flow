@@ -14,8 +14,11 @@ import { appendRecord, buildRecord } from '../lib/ledger.mjs'
 import { initRegistry, readRegistry, validateRegistry, writeRegistry } from '../lib/registry.mjs'
 import { assemble, changedTerms, computeVerdict, countsIn, deltaState, pathMatcher, plannedPaths, renderReport, runChecks, skillCandidates, skillEdit, verifyDir, writeDeveloper } from '../lib/verify.mjs'
 import { create } from '../lib/workspace.mjs'
+import { writeCommand } from '../lib/suite.mjs'
+import { run as verifyCli } from '../verify.mjs'
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'verify.mjs')
+const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), '..')
+const CLI = join(SCRIPTS, 'verify.mjs')
 const CHANGE = 'add-x'
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
 
@@ -373,11 +376,16 @@ test('verdict: warnings, agent sections, and the refusals', () => {
   assert.equal(result.ok, false)
   assert.deepEqual(result.refusals, [`c8.json: its output file .superpowers/sdd/${CHANGE}/verify/c8-gone.txt does not exist`])
   assert.deepEqual([result.redispatch, result.needsRuling, result.rerun], [['c8'], [], false])
+  assert.deepEqual(result.redispatchCommands, [{ id: 'c8', command: `node "${SCRIPTS}/dispatch.mjs" prompt --role verify --check c8 --change ${CHANGE} --root "${root}"` }])
+  assert.equal(result.rerunCommand, null)
 
   section(root, 'c8', 'not-run')
   result = computeVerdict(root, { change: CHANGE })
   assert.deepEqual(result.refusals, ['c8 was not run and has no ruling: c8 summary'])
   assert.deepEqual([result.redispatch, result.needsRuling], [[], ['c8']])
+  assert.deepEqual(result.rulingCommands, [
+    { id: 'c8', command: `node "${SCRIPTS}/ledger.mjs" ruling --check c8 --reason "<the developer's reason, in their words>" --change ${CHANGE} --root "${root}"` }
+  ])
 
   section(root, 'c8', 'fail')
   assert.equal(computeVerdict(root, { change: CHANGE }).line, 'Verdict: FAIL')
@@ -385,10 +393,17 @@ test('verdict: warnings, agent sections, and the refusals', () => {
   result = computeVerdict(root, { change: CHANGE })
   assert.match(result.refusals[0], /^tree\.json: tree is a script check/)
   assert.deepEqual(result.redispatch, ['tree'])
+  assert.deepEqual(result.redispatchCommands, [{ id: 'tree', command: null }])
   rmSync(join(verifyDir(root, CHANGE), 'tree.json'))
   rmSync(join(verifyDir(root, CHANGE), 'tasks.txt'))
   result = computeVerdict(root, { change: CHANGE })
   assert.equal(result.rerun, true)
+  assert.equal(result.rerunCommand, `node "${SCRIPTS}/verify.mjs" run --change ${CHANGE} --root "${root}"`)
+  write(root, `.superpowers/sdd/${CHANGE}/verify/test-record.json`, '{')
+  write(root, `.superpowers/sdd/${CHANGE}/verify/developer.json`, '{')
+  const ids = Object.fromEntries(computeVerdict(root, { change: CHANGE }).redispatchCommands.map((c) => [c.id, c.command]))
+  assert.equal(ids['test-record'], `node "${SCRIPTS}/verify.mjs" run --suite --change ${CHANGE} --root "${root}"`)
+  assert.match(ids.developer, /verify\.mjs" developer --text-file <file> --verdict <pass\|warn\|fail\|not-run> --summary "<text>" --change add-x/)
 })
 
 test('verdict: a ruling accepts a failing check; silence and a ruling on tree do not', () => {
@@ -529,6 +544,66 @@ test('skill-edit commits only skill files, records the sha and runs again', () =
   assert.throws(() => skillEdit(root, { change: CHANGE, message: 'docs(skills): s', env: {} }), /nothing is changed under \.claude\/skills\//)
 })
 
+test('skill-edit --diff-file applies the c8 diff with git apply, and refuses one outside the skills or not applying', () => {
+  const { root } = host()
+  commit(root, { '.claude/skills/s/SKILL.md': 'Run old-command.\n', 'src/b.mjs': 'b\n' })
+  write(root, '.claude/skills/s/SKILL.md', 'Run new-command.\n')
+  write(root, 'src/b.mjs', 'c\n')
+  const skillDiff = git(root, 'diff', '--', '.claude/skills')
+  const bothDiff = git(root, 'diff')
+  git(root, 'checkout', '--', '.')
+  const file = join(root, '.superpowers', 'c8-agent.txt')
+  const edit = (text) => {
+    write(root, '.superpowers/c8-agent.txt', text)
+    return verifyCli(['skill-edit', '--change', CHANGE, '--root', root, '--message', 'docs(skills): s', '--diff-file', file], { env: {} })
+  }
+  assert.throws(() => edit('CONFIRMED: line 1\n'), /holds no `diff --git` patch/)
+  assert.throws(() => edit(`CONFIRMED\n\n${bothDiff}\n`), /outside \.claude\/skills\/: src\/b\.mjs/)
+  assert.throws(() => edit(`${skillDiff.replace('old-command', 'gone-command')}\n`), /does not apply cleanly, and nothing was changed/)
+  write(root, 'stray.txt', 'x\n')
+  assert.throws(() => edit(`${skillDiff}\n`), /the tree already holds changes \(stray\.txt\)/)
+  rmSync(join(root, 'stray.txt'))
+  assert.equal(git(root, 'status', '--porcelain'), '', 'a refused diff changes nothing')
+  const result = edit(`CONFIRMED: SKILL.md line 1 names old-command.\n\n${skillDiff}\n`)
+  assert.deepEqual(result.files, ['.claude/skills/s/SKILL.md'])
+  assert.equal(readFileSync(join(root, '.claude/skills/s/SKILL.md'), 'utf8'), 'Run new-command.\n')
+  assert.equal(git(root, 'log', '-1', '--format=%s'), 'docs(skills): s')
+  assert.equal(result.record, 'skill-edit-1')
+})
+
+test('run --suite re-runs a missing or stale record in the same call, and drops the re-run once the record is current', () => {
+  const { root } = host({ record: false, outsidePlan: ['openspec/planning.md'] })
+  writeCommand(root, 'node -e "console.log(\'# tests 1\'); console.log(\'# pass 1\')"')
+  git(root, 'add', '.')
+  git(root, 'commit', '-q', '-m', 'planning')
+  const run = verifyCli(['run', '--change', CHANGE, '--root', root, '--suite'], { env: {} })
+  assert.equal(byId(run)['test-record'].verdict, 'fail')
+  assert.equal(run.suite.status, 'pass')
+  assert.equal(run.suite.section.verdict, 'pass')
+  assert.equal(run.ok, true, 'the section answers the failing check')
+  assert.equal(existsSync(join(verifyDir(root, CHANGE), 'test-record.json')), true)
+  judged(root)
+  assert.equal(computeVerdict(root, { change: CHANGE }).line, 'Verdict: PASS')
+
+  commit(root, { [changeFile('.apply-test-record.md')]: `**Commit:** \`${git(root, 'rev-parse', 'HEAD')}\`\n\n# tests 1\n` }, 'record')
+  const current = verifyCli(['run', '--change', CHANGE, '--root', root, '--suite'], { env: {} })
+  assert.equal(byId(current)['test-record'].verdict, 'pass')
+  assert.equal(current.suite, null)
+  assert.equal(existsSync(join(verifyDir(root, CHANGE), 'test-record.json')), false, 'the current record is cited')
+})
+
+test('prompts lists the skill candidates and writes the c4 and c8 prompts in one call', () => {
+  const { root } = host()
+  runChecks(root, { change: CHANGE })
+  const result = verifyCli(['prompts', '--change', CHANGE, '--root', root])
+  assert.equal(result.ok, true)
+  assert.equal(existsSync(join(root, result.candidates.output)), true)
+  assert.deepEqual(result.dispatches.map((d) => [d.check, d.name, d.agent]), [['c4', 'verify c4', 'adf:architecture'], ['c8', 'verify c8', 'adf:integration']])
+  assert.match(result.dispatches[1].prompt, /c8-candidates\.txt/)
+  assert.match(result.dispatches[1].prompt, /git apply/)
+  assert.ok(result.dispatches.every((d) => d.sectionFiles.length === 2))
+})
+
 test('skill-candidates lists the skill lines naming a changed path, symbol, command or route', () => {
   const { root } = host()
   commit(root, { 'src/a.mjs': "export function greetUser(argv) {\n  if (argv.includes('--loud')) return fetch('/api/v1/greet')\n}\n" })
@@ -591,7 +666,7 @@ test('assemble renders the record from the sections, ends on the verdict line an
   const result = assemble(root, { change: CHANGE })
   assert.equal(result.ok, false)
   assert.deepEqual(result.redispatch, ['c8'])
-  assert.match(result.report, /^## Verification: no verdict yet[\s\S]*Re-dispatch: c8/)
+  assert.match(result.report, /^## Verification: no verdict yet[\s\S]*Re-dispatch:\n- c8: node "[^"]+dispatch\.mjs" prompt --role verify --check c8 --change add-x --root "/)
 })
 
 test('verdict --report renders failing, warnings, accepted and the next step', () => {

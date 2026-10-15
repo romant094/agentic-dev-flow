@@ -176,3 +176,23 @@ test('a dirty base check is never force-removed', () => {
   assert.equal(existsSync(join(path, 'a.txt')), true)
   assert.equal(git(change, 'worktree', 'list', '--porcelain').includes(`worktree ${path}`), true)
 })
+
+test('guard.mjs snapshot computes its targets from the round\'s dispatch names', async () => {
+  const { host: planHost } = await import('./git-host.mjs')
+  const { run } = await import('../guard.mjs')
+  const task = (n) => [`### Task ${n}: t${n}`, '', `> Implements \`tasks.md\` 1.${n}.`, '', '**Files:**', `- Modify: \`src/t${n}.ts\``, '', '**Level:** integration', ''].join('\n')
+  const graph = '## Execution Graph\n\n| Group | Tasks | Files | Wave |\n|---|---|---|---|\n| A | 1 | x | 1 |\n| B | 2 | x | 1 |\n\n---\n'
+  const { root, change } = planHost({ 'plan.md': `# Plan\n\n${graph}\n${task(1)}\n${task(2)}` })
+  const a = addGroup(change, { change: 'add-x', group: 1 })
+  const b = addGroup(change, { change: 'add-x', group: 2 })
+  const snap = run(['snapshot', '--change', 'add-x', '--dispatch', 'T1 impl', '--dispatch', 'T2 review', '--dispatch', 'investigate auth', '--root', change])
+  assert.deepEqual(snap.dispatches, ['T1 impl', 'T2 review', 'investigate auth'])
+  assert.deepEqual(snap.targets.map((t) => realpathSync(t)), [a.root, b.root, change].map((t) => realpathSync(t)))
+  assert.deepEqual(snap.watched, [root])
+  writeFileSync(join(root, 'stray.txt'), 'x\n')
+  const after = run(['compare', '--change', 'add-x', '--root', change])
+  assert.deepEqual([after.ok, after.dispatches, after.changed.map((c) => c.root)], [false, ['T1 impl', 'T2 review', 'investigate auth'], [root]])
+  assert.throws(() => run(['snapshot', '--change', 'add-x', '--root', change]), /--dispatch/)
+  assert.throws(() => run(['snapshot', '--change', 'add-x', '--dispatch', 'T1 implement', '--root', change]), /fixed form/)
+  assert.throws(() => run(['snapshot', '--change', 'add-x', '--dispatch', 'T9 impl', '--root', change]), /Task 9 is not in the plan/)
+})

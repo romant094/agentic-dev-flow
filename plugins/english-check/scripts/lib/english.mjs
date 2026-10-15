@@ -241,6 +241,24 @@ export const CORE_COMMIT_SCRIPTS = {
     if (args[0] === 'assemble' && args.includes('--commit') && change) return [`openspec/changes/${change}/verify.md`]
     if (args[0] === 'skill-edit') return ['.claude/skills']
     return null
+  },
+  // suite.mjs run --change <name> --record --commit: the test record; suite.mjs set --commit:
+  // the planning guide.
+  'suite.mjs': (args) => {
+    if (!args.includes('--commit')) return null
+    const change = optionValues(args, '--change')[0]
+    if (args[0] === 'run' && args.includes('--record') && change) return [`openspec/changes/${change}/.apply-test-record.md`]
+    if (args[0] === 'set') return ['openspec/planning.md']
+    return null
+  },
+  // dup.mjs mark --file <path> --commit: the marked file.
+  'dup.mjs': (args) => (args[0] === 'mark' && args.includes('--commit') ? optionValues(args, '--file') : null),
+  // plan.mjs added [--change <name>] --commit: plan.md; without --change the one active
+  // change, which the hook cannot name, so every change directory.
+  'plan.mjs': (args) => {
+    if (args[0] !== 'added' || !args.includes('--commit')) return null
+    const change = optionValues(args, '--change')[0]
+    return [change ? `openspec/changes/${change}/plan.md` : 'openspec/changes']
   }
 }
 
@@ -250,7 +268,10 @@ function coreCommit(words, dir) {
   const paths = pathsOf?.(call.args)
   if (!paths?.length) return null
   const root = resolve(dir, optionValues(call.args, '--root')[0] ?? '.')
-  return { dir: root, paths: paths.map((p) => (isAbsolute(p) ? relative(root, p) : p)) }
+  // verify.mjs skill-edit --diff-file <f> applies the diff after this hook runs: the text it
+  // adds is in the diff, not yet in the files.
+  const diffFile = call.script === 'verify.mjs' && call.args[0] === 'skill-edit' ? optionValues(call.args, '--diff-file')[0] : undefined
+  return { dir: root, paths: paths.map((p) => (isAbsolute(p) ? relative(root, p) : p)), ...(diffFile ? { diffFile: resolve(dir, diffFile) } : {}) }
 }
 
 // The commits a Bash command line makes: where each runs, and whether it takes more than the
@@ -329,6 +350,38 @@ export function scanFiles(root, files, config) {
   return findings
 }
 
+// Findings for the lines a unified diff adds, by the path and line number they will have. A
+// diff that cannot be read is git apply's to refuse, so it is no finding.
+export function scanDiff(diffFile, config) {
+  let text
+  try {
+    text = readFileSync(diffFile, 'utf8')
+  } catch {
+    return []
+  }
+  const findings = []
+  let path = null
+  let line = 0
+  for (const row of text.split(/\r?\n/)) {
+    const target = /^\+\+\+ (?:b\/)?(.+?)\s*$/.exec(row)
+    if (target) {
+      path = target[1] === '/dev/null' ? null : normalizePath(target[1])
+      continue
+    }
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(row)
+    if (hunk) {
+      line = Number(hunk[1])
+      continue
+    }
+    if (!path || row.startsWith('---')) continue
+    if (row.startsWith('+')) {
+      if (inScope(path, config) && FOREIGN.test(row.slice(1))) findings.push({ path, line, text: row.slice(1) })
+      line++
+    } else if (row.startsWith(' ')) line++
+  }
+  return findings
+}
+
 export function formatFindings(findings) {
   return [
     `${PLUGIN_NAME}: the commit was stopped; these lines are not in English:`,
@@ -348,8 +401,9 @@ export function checkHookInput(input, git = defaultGit) {
     const { root, files } = commitFiles(commit, git)
     if (!root) continue
     const config = loadConfig(root)
+    const scanned = scanFiles(root, files, config).concat(commit.diffFile ? scanDiff(commit.diffFile, config) : [])
     // A line may run two commits in one repository; each finding is reported once.
-    for (const f of scanFiles(root, files, config)) {
+    for (const f of scanned) {
       if (!findings.some((g) => g.root === root && g.path === f.path && g.line === f.line)) findings.push({ root, ...f })
     }
   }

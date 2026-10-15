@@ -85,10 +85,11 @@ verdict, named `investigate <topic>` with a one-word topic. Read one named file 
    node "${CLAUDE_PLUGIN_ROOT}/scripts/forge.mjs" open --change <name> --root <root> --summary "<scope>: <description>"
    ```
 
-   On `refused`, the artifacts stay committed; do not retry with other input.
+   On `refused`, the artifacts stay committed; do not retry with other input. Keep its
+   `report`, the merge request line(s).
 
-7. **Report.** Pass the forge result on, and show `report` as it is:
+7. **Report.** Show the `report` of this call as it is, then step 6's `report` as it is:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" status --change <name> --root <root> --report --forge '<forge result JSON>'
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" status --change <name> --root <root> --report
    ```

@@ -6,13 +6,15 @@
 //   ref exists, else `<base>`, through `git merge-base` with HEAD (as plan-symbols resolves it);
 // - the second question's input: every REMOVED or RENAMED requirement of the change's delta
 //   specs, with its `**Code Disposition:**` text, or null when it has none (itself a finding);
-// - the DUP markers already in the tree, and the filter that drops a finding a marker accepts.
+// - the DUP markers already in the tree, and the filter that drops a finding a marker accepts;
+// - the debt records of the reply's dispositions, one per removed or renamed requirement.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { changeDir, META_FILE } from './changes.mjs'
 import { coveringMarker, findMarkers } from './dup.mjs'
 import { baseRef } from './plan-symbols.mjs'
+import { appendRecord, readRecords } from './ledger.mjs'
 import { checkReplyText } from './reply.mjs'
 import { findSection, parseSections } from './specs.mjs'
 
@@ -135,4 +137,19 @@ export function filterReply(root, text) {
     dropped,
     ...(reply.dispositions ? { dispositions: reply.dispositions } : {})
   }
+}
+
+// One `debt` record per disposition of an accepted sweep reply, carrying the sweep's answer as
+// its reason; it never blocks apply, and archive places it. A disposition already recorded with
+// the same text is skipped, so a repeated call records nothing twice.
+// Returns [{ requirement, id } | { requirement, skipped }].
+export function recordDispositions(root, change, dispositions, { env = process.env } = {}) {
+  const out = []
+  for (const { requirement, disposition } of dispositions ?? []) {
+    const what = `the Code Disposition of the removed or renamed requirement "${requirement}"`
+    const same = readRecords(root, change).find((r) => r.kind === 'debt' && r.what === what && r.reason === disposition)
+    if (same) out.push({ requirement, skipped: `${same.id} already records it` })
+    else out.push({ requirement, id: appendRecord(root, change, 'debt', { what, reason: disposition }, { env }).record.id })
+  }
+  return out
 }

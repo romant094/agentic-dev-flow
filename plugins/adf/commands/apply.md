@@ -53,8 +53,7 @@ conversation; if that is vague or ambiguous, the selection in step 1 asks.
 4. **Show the progress.** Run
    `node "${CLAUDE_PLUGIN_ROOT}/scripts/apply-status.mjs" --change <name> --root <root>` and
    show the schema (`schemaName` from step 3), "N/M tasks complete" from `progress`, the
-   `remaining` tasks, and the test-driven tasks from `testFirst` of
-   `node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" lint --change <name> --root <root>`.
+   `remaining` tasks, and the test-driven tasks from `testFirst`.
 
 5. **Implement.** Follow `instruction` to the end: invoke
    `superpowers:subagent-driven-development`, dispatch by wave into the group worktrees under the

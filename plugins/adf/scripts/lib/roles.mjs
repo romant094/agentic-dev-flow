@@ -47,7 +47,9 @@ export const COMMIT_TYPES = ['feat', 'fix', 'chore', 'docs', 'refactor', 'test',
 // (`feat/add-x` gives feat), and the summary `<scope>: <description>` or `<description>`.
 export function titleFrom(branch, summary) {
   const type = /^([a-z]+)\//.exec(branch ?? '')?.[1]
-  if (!COMMIT_TYPES.includes(type)) throw new Error(`the branch "${branch}" has no Conventional Commits type prefix; pass --title in full`)
+  if (!COMMIT_TYPES.includes(type)) {
+    throw new Error(`the branch "${branch}" has no Conventional Commits type prefix (${COMMIT_TYPES.map((t) => `${t}/`).join(', ')}), so --summary cannot give the title its type; pass --title "<type>(<scope>): <description>" in full instead`)
+  }
   const m = /^\s*([^:\s][^:]*?)\s*:\s*(.+)$/.exec(summary)
   return m ? `${type}(${m[1]}): ${m[2].trim()}` : `${type}: ${summary.trim()}`
 }
@@ -80,4 +82,24 @@ export function forgeInput(operation, state, { input = {}, title, summary, draft
   }
   if (operation === 'open') out.draft = draft ?? input.draft ?? true
   return out
+}
+
+// ---------------------------------------------------------------- the report of a forge call
+
+const LABEL = { check: 'Forge', open: 'Merge request', push: 'Push', finalize: 'Merge request' }
+
+// The lines a command shows for a forge result, so no caller renders the forge's JSON itself:
+// what happened to the merge request (or the push), the hint and fallback commands of a degraded
+// forge, and the refusal's reason. Nothing is claimed that the result does not carry.
+export function forgeReport(operation, result) {
+  const label = LABEL[operation] ?? 'Forge'
+  if (result.state === 'none') return `${label}: none; no forge plugin is enabled, so nothing was pushed and no merge request exists.`
+  if (result.state === 'refused') return `${label}: refused; ${result.error ?? 'no reason given'}`
+  if (result.state === 'degraded') {
+    return [`${label}: not done yet. ${result.hint ?? ''}`.trim(), ...(result.fallback ?? []).map((c) => `  ${c}`)].join('\n')
+  }
+  if (operation === 'check') return `Forge: ${result.tool ?? 'ready'}`
+  if (operation === 'push') return `Push: done${result.url ? `; merge request ${result.url}` : ''}`
+  const what = operation === 'finalize' ? 'out of draft' : result.reused ? 'reused' : 'opened as a draft'
+  return `${label}: ${result.url ?? (result.number ? `!${result.number}` : 'no link returned')} (${what})`
 }

@@ -329,17 +329,11 @@ export function findChoices({ changes, unresolved }) {
   return { duplicates, choices }
 }
 
-// The propose report: the change, its branch, worktree and base, each artifact's status, the
-// merge request from a forge result (forge.mjs output) when given, and the next step.
-export function statusReport(status, { branch = null, root, base = null, forge = null } = {}) {
+// The propose report: the change, its branch, worktree and base, each artifact's status, and the
+// next step. The merge request is the forge call's own `report` (forge.mjs), shown beside it.
+export function statusReport(status, { branch = null, root, base = null } = {}) {
   const lines = [`Change: ${status.changeName}`, `Branch: ${branch ?? 'unknown'}`, `Worktree: ${root}`, `Base: ${base ?? 'not recorded'}`, 'Artifacts:']
   for (const a of status.artifacts) lines.push(`- ${a.id}: ${a.status}${a.missingDeps ? ` (needs ${a.missingDeps.join(', ')})` : ''}`)
-  if (forge) {
-    if (forge.state === 'none') lines.push('Merge request: none; no forge plugin is enabled, so nothing was pushed.')
-    else if (forge.state === 'done') lines.push(`Merge request: ${forge.url ?? 'opened'}${forge.reused ? ' (reused)' : ''}`)
-    else if (forge.state === 'degraded') lines.push(`Merge request: none yet. ${forge.hint ?? ''}`.trim(), ...(forge.fallback ?? []).map((c) => `  ${c}`))
-    else lines.push(`Merge request: none; the forge refused: ${forge.error ?? 'no reason given'}`)
-  }
   const ready = status.applyRequires.every((id) => status.artifacts.find((a) => a.id === id)?.status === 'done')
   lines.push(`Next: ${ready ? '/adf:apply' : `/adf:propose ${status.changeName} to finish its artifacts`}`)
   return lines.join('\n')

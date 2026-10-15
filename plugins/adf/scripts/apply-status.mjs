@@ -8,8 +8,16 @@
 //
 //   { ok, change, single, cap, groups: [{ n, letter, tasks, wave, dependsOn, state }],
 //     merged, running, blocked, startable, waitingOnBlocked, ticked, remaining,
-//     progress: { done, total }, completedThisSession, openDebt: { count, ids }, lastHandoff,
-//     push, suite: { state, commit, reason? }, complete, report? }
+//     progress: { done, total }, testFirst, completedThisSession, openDebt: { count, ids },
+//     lastHandoff, push, suite: { state, commit, reason? }, complete, report? }
+//
+//   apply-status.mjs handoff --change <name> --next "<dispatch>" [--block <G> --reason "<why>"]
+//                    [--root <change worktree>]
+//       writes the `handoff` ledger record from the state: merged groups, remaining items and
+//       every group still blocked, plus --block's group with its reason in `blockedReason`.
+//       { ok, handoff, blocked }
+//
+// `testFirst` lists the plan tasks carrying both a RED and a GREEN step, as plan.mjs lint does.
 //
 // Group numbers are graph rows, the first row 1. `state` is merged, running, blocked or
 // pending (done or pending for a single-group graph). `blocked` is read from the last
@@ -19,25 +27,31 @@
 // Paused with `<the issue>` and `<option>` left for the orchestrator to write.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { applyStatus, renderReport } from './lib/apply-status.mjs'
+import { applyStatus, recordHandoff, renderReport } from './lib/apply-status.mjs'
 import { changeDir } from './lib/changes.mjs'
 import { isMain } from './lib/main.mjs'
 import { parseTaskItems } from './lib/plan.mjs'
 import { loadSchema } from './lib/schema.mjs'
 
-export const USAGE = 'usage: apply-status.mjs --change <name> [--root <change worktree>] [--cap <n>] [--report]'
+export const USAGE =
+  'usage: apply-status.mjs --change <name> [--root <change worktree>] [--cap <n>] [--report] | apply-status.mjs handoff --change <name> --next "<dispatch>" [--block <G> --reason "<why>"] [--root <dir>]'
 
 export class UsageError extends Error {}
 
 function parse(argv) {
   const values = { report: false }
+  if (argv[0] === 'handoff') {
+    values.handoff = true
+    argv = argv.slice(1)
+  }
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    if (arg === '--report') {
+    if (arg === '--report' && !values.handoff) {
       values.report = true
       continue
     }
-    if (!['--change', '--root', '--cap'].includes(arg)) throw new UsageError(`unexpected argument "${arg}"`)
+    const valued = values.handoff ? ['--change', '--root', '--next', '--block', '--reason'] : ['--change', '--root', '--cap']
+    if (!valued.includes(arg)) throw new UsageError(`unexpected argument "${arg}"`)
     const value = argv[i + 1]
     if (value === undefined || value.startsWith('--')) throw new UsageError(`${arg} needs a value`)
     if (values[arg.slice(2)] !== undefined) throw new UsageError(`${arg} is given twice`)
@@ -47,9 +61,14 @@ function parse(argv) {
   return values
 }
 
-export function run(argv, { cwd = process.cwd() } = {}) {
-  const { change, root = cwd, cap: capText, report } = parse(argv)
+export function run(argv, { cwd = process.cwd(), env = process.env } = {}) {
+  const { change, root = cwd, cap: capText, report, handoff, next, block, reason } = parse(argv)
   if (!change) throw new UsageError(USAGE)
+  if (handoff) {
+    if (!next) throw new UsageError('handoff needs --next')
+    const tracks = loadSchema().apply?.tracks ?? 'tasks.md'
+    return { ok: true, ...recordHandoff(root, change, { next, block, reason, tracks, env }) }
+  }
   const cap = capText === undefined ? undefined : Number(capText)
   if (cap !== undefined && (!Number.isInteger(cap) || cap < 1)) throw new UsageError('--cap must be a positive integer')
   const schema = loadSchema()

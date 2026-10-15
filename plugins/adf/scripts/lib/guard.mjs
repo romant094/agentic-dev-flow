@@ -3,8 +3,14 @@
 // checkouts must be unchanged. A subagent that ran `git checkout` in the main checkout, or
 // committed in a sibling's worktree, is caught at the dispatch that did it. Ignored files (the
 // ledger, reply files) do not count.
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+//
+// The targets are computed from the round's dispatch names, by the rule that places each
+// dispatch (lib/dispatch.mjs planDispatch), never listed by hand: a target typed wrong leaves
+// the checkout it should watch unwatched, or watches the one the dispatch writes in.
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { parseName, planDispatch } from './dispatch.mjs'
+import { mainCheckout } from './installed.mjs'
 import { gitIn } from './workspace.mjs'
 import { checkouts } from './resolve.mjs'
 
@@ -19,8 +25,25 @@ function guardFile(root, change) {
   return join(root, '.superpowers', 'sdd', change, 'guard.json')
 }
 
-export function snapshot(root, { change, targets }) {
-  if (!Array.isArray(targets) || targets.length === 0) throw new Error('name the dispatch targets (--targets)')
+// The worktree of each dispatch of a round, from its fixed-form name: [{ name, worktree }].
+export function targetsOf(root, change, names) {
+  if (!Array.isArray(names) || names.length === 0) throw new Error('name the dispatches of the round (--dispatch)')
+  let planText = null
+  try {
+    planText = readFileSync(join(root, 'openspec', 'changes', change, 'plan.md'), 'utf8')
+  } catch {
+    // a task or group dispatch then refuses, naming the missing plan
+  }
+  const main = mainCheckout(root)
+  return names.map((name) => {
+    const parts = parseName(name)
+    if (!parts) throw new Error(`"${name}" is not a dispatch name in the fixed form`)
+    return { name, worktree: planDispatch({ change, ...parts }, { root, main, planText, exists: existsSync }).worktree }
+  })
+}
+
+export function snapshot(root, { change, targets, dispatches }) {
+  if (!Array.isArray(targets) || targets.length === 0) throw new Error('name the dispatch targets (--dispatch)')
   const skip = new Set(targets.map(real))
   const watched = {}
   for (const c of [...checkouts(root), ...groupCheckouts(root)]) {
@@ -28,8 +51,9 @@ export function snapshot(root, { change, targets }) {
   }
   const file = guardFile(root, change)
   mkdirSync(dirname(file), { recursive: true })
-  writeFileSync(file, `${JSON.stringify({ targets, watched }, null, 2)}\n`)
-  return { watched: Object.keys(watched), targets }
+  const names = dispatches ? { dispatches } : {}
+  writeFileSync(file, `${JSON.stringify({ ...names, targets, watched }, null, 2)}\n`)
+  return { ...names, watched: Object.keys(watched), targets }
 }
 
 export function compare(root, { change }) {
@@ -49,7 +73,7 @@ export function compare(root, { change }) {
     }
     if (after.head !== before.head || after.status !== before.status) changed.push({ root: path, before, after })
   }
-  return { ok: changed.length === 0, targets: saved.targets, changed }
+  return { ok: changed.length === 0, ...(saved.dispatches ? { dispatches: saved.dispatches } : {}), targets: saved.targets, changed }
 }
 
 // Group worktrees are skipped when a phase resolves a change, but a dispatch must not touch a

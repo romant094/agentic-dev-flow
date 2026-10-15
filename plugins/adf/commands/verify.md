@@ -29,29 +29,26 @@ conversation; if that is vague or ambiguous, the selection in step 1 asks.
 2. **Run the preflight.** `preflight.mjs --phase verify`, as the instruction states. On
    `ok: false`, stop: show `refusal`, which names the remedy, and write nothing.
 
-3. **Run the mechanical checks.** `verify.mjs run`, as the instruction states. Keep the verdict
-   and the summary of each check; leave the output files unread.
+3. **Run the mechanical checks.** `verify.mjs run --suite`, as the instruction states; a stale
+   test record is re-run in that call. Keep the verdict and the summary of each check, and of
+   `suite` when present; leave the output files unread. No agent runs the suite.
 
-4. **Dispatch `verify c4` and `verify c8`** in one response. First run `verify.mjs
-   skill-candidates`, then write each prompt with `dispatch.mjs prompt --role verify --check
-   <c4|c8>` and dispatch it to the agent the result names.
+4. **Dispatch `verify c4` and `verify c8`** in one response. Run `verify.mjs prompts` and
+   dispatch each entry of `dispatches`: its `prompt` as it is, to its `agent`, named `name`.
 
-5. **Re-run a stale test record.** If `test-record` failed, run `suite.mjs run --section
-   test-record --base-check`, as the instruction states. No agent runs the suite.
+5. **Resolve stale skills.** Show each CONFIRMED finding's proposed edit to the developer and
+   ask. On an approval, run `verify.mjs skill-edit --diff-file`, then step 4 again for `verify
+   c8`; on a decline, record a ruling.
 
-6. **Resolve stale skills.** Show each CONFIRMED finding's proposed edit to the developer and
-   ask. On an approval, apply the edit and run `verify.mjs skill-edit`, then step 4's `verify
-   c8` again; on a decline, record a ruling.
-
-7. **Run the checks that need the developer,** if the plan assigns any to verify, and record
+6. **Run the checks that need the developer,** if the plan assigns any to verify, and record
    each with `verify.mjs developer`.
 
-8. **Compute the verdict.** `verify.mjs verdict --report`. On `refusals`, act on `redispatch`,
-   `needsRuling` and `rerun` as the instruction states, and compute again. Record a ruling only
-   on the developer's explicit words and reason.
+7. **Compute the verdict.** `verify.mjs verdict --report`. On `refusals`, run the commands its
+   `redispatchCommands`, `rulingCommands` and `rerunCommand` name, as the instruction states,
+   and compute again. Record a ruling only on the developer's explicit words and reason.
 
-9. **Assemble and commit the record.** `verify.mjs assemble --commit`. Push nothing.
+8. **Assemble and commit the record.** `verify.mjs assemble --commit`. Push nothing.
 
-10. **Report.** Show the `report` that `assemble` returned. End with what is blocked on the
+9. **Report.** Show the `report` that `assemble` returned. End with what is blocked on the
     developer, if anything; the report carries the next step: the review on `PASS` or `PASS
     WITH WARNINGS`; on `FAIL`, the fix the failing checks name and then `/adf:verify` again.

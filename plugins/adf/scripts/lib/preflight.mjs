@@ -9,7 +9,9 @@
 // propose runs in the main checkout before the change has a worktree: it checks the gate, that
 // the root is the main checkout, and the workspace policy inputs (`workspace.mjs suggest`), and
 // refuses on uncommitted tracked work. The base and the branch name are the developer's answers;
-// the session is recorded after `changes.mjs new`, in the new worktree.
+// the session is recorded in the change worktree, by `propose.mjs create` for a new change and by
+// `changes.mjs next` for one continued (lib/ledger.mjs recordSessionOnce), not here: in the main
+// checkout the developer has not yet chosen to continue the change.
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { applyInstructions, artifactInstructions, changeDir, META_FILE } from './changes.mjs'
