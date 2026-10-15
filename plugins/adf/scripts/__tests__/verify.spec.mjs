@@ -126,6 +126,16 @@ test('a complete change passes every check, and each check leaves its output and
   assert.deepEqual(computeVerdict(root, { change: CHANGE }).line, 'Verdict: PASS')
 })
 
+test('a fresh run deletes the sections of an earlier session; a later run keeps them', () => {
+  const { root } = host()
+  section(root, 'c4', 'fail')
+  runChecks(root, { change: CHANGE, now: 'T' })
+  assert.equal(existsSync(join(verifyDir(root, CHANGE), 'c4.json')), true)
+  runChecks(root, { change: CHANGE, now: 'T', fresh: true })
+  assert.equal(existsSync(join(verifyDir(root, CHANGE), 'c4.json')), false)
+  assert.equal(existsSync(join(verifyDir(root, CHANGE), 'run.json')), true)
+})
+
 test('validation fails on this change only; the corpus is advisory text', () => {
   const { root } = host()
   commit(root, { [changeFile('specs/greeting/spec.md')]: DELTA.replace('SHALL ', '') })
@@ -352,8 +362,11 @@ test('the CLI prints one JSON object: exit 0 on a pass, 1 on a failing check, 2 
   let proc = cli('run', '--change', CHANGE, '--root', root)
   assert.equal(proc.status, 0)
   assert.equal(JSON.parse(proc.stdout).checks.length, 7)
-  proc = cli('verdict', '--change', CHANGE, '--root', root)
+  const out = join(root, '.superpowers', 'sdd', CHANGE, 'verdict.json')
+  proc = cli('verdict', '--change', CHANGE, '--root', root, '--out', out)
   assert.equal(JSON.parse(proc.stdout).line, 'Verdict: PASS')
+  assert.deepEqual(JSON.parse(readFileSync(out, 'utf8')), JSON.parse(proc.stdout))
+  assert.equal(cli('run', '--change', CHANGE, '--root', root, '--out', out).status, 2)
   write(root, 'stray.txt', 'x\n')
   assert.equal(cli('verdict', '--change', CHANGE, '--root', root).status, 0, 'verdict reads the saved run')
   assert.equal(cli('run', '--change', CHANGE, '--root', root).status, 1)

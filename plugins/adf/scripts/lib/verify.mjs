@@ -8,7 +8,7 @@
 // applies the developer's rulings from the ledger, and computes the verdict line.
 //
 // Every git call runs at the root: from a subdirectory a scan silently narrows.
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { changeDir, globToRegExp, META_FILE, parseTasks } from './changes.mjs'
 import { baseCheckPath, listGroups } from './groups.mjs'
@@ -318,12 +318,15 @@ function checkOutOfPlan(root, change, git, base, skillEdits) {
 
 // ---------------------------------------------------------------- run
 
-export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md', now = new Date().toISOString() }) {
+// `fresh` starts a verify session: sections left by an earlier session describe a HEAD that may
+// have moved, so they are deleted before the first run.
+export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md', fresh = false, now = new Date().toISOString() }) {
   const root = resolve(rootArg)
   if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
   const git = gitIn(root)
   const base = resolveBase(root, change, git)
   const outDir = verifyDir(root, change)
+  if (fresh) rmSync(outDir, { recursive: true, force: true })
   mkdirSync(outDir, { recursive: true })
   const guard = (fn) => {
     try {

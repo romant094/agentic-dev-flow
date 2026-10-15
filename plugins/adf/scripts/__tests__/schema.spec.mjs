@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildOrder, loadSchema, SCHEMA_DIR, validateSchema } from '../lib/schema.mjs'
+import { CHECKS, REPLACEABLE } from '../lib/verify.mjs'
 
 const artifact = (id, requires = [], extra = {}) => ({ id, generates: `${id}.md`, description: id, requires, ...extra })
 const graph = (...artifacts) => ({ name: 'test', version: 1, artifacts })
@@ -75,6 +76,8 @@ test('no dispatch-facing text asks for a repository-wide git mutation', () => {
   const files = [
     'schema/instructions/apply.md',
     'commands/apply.md',
+    'schema/instructions/verify.md',
+    'commands/verify.md',
     ...readdirSync(join(root, 'agents')).map((f) => `agents/${f}`)
   ]
   const unsafe = [/git add (-A|--all|\.)(\s|$|`)/, /git checkout -- /, /git restore\b/, /git stash push/, /git clean\b/]
@@ -82,4 +85,23 @@ test('no dispatch-facing text asks for a repository-wide git mutation', () => {
     const text = readFileSync(join(root, file), 'utf8')
     for (const pattern of unsafe) assert.doesNotMatch(text, pattern, `${file} asks for ${pattern}`)
   }
+})
+
+// A check exists only when the instruction states it and the template has its section; the
+// origin added one to the schema alone and the record had nowhere to put it.
+test('the verify instruction and template carry every check, one section each, and the verdict line last', () => {
+  const schema = loadSchema()
+  const verify = schema.artifacts.find((a) => a.id === 'verify')
+  assert.deepEqual([verify.template, verify.instruction, verify.requires], ['verify.md', 'verify.md', ['plan']])
+  const instruction = readFileSync(join(SCHEMA_DIR, 'instructions', 'verify.md'), 'utf8')
+  const template = readFileSync(join(SCHEMA_DIR, 'templates', 'verify.md'), 'utf8')
+  const headings = [...template.matchAll(/^## (.+)$/gm)].map((m) => m[1])
+  const dispatched = { c4: 'Design and specs coherence', c8: 'Stale skills' }
+  for (const [id, title] of [...Object.entries(CHECKS), ...Object.entries(dispatched)]) {
+    assert.equal(headings.filter((h) => h === title).length, 1, `the template has no single section "${title}"`)
+    assert.match(instruction, new RegExp(`\`${id}\``), `the instruction does not name ${id}`)
+  }
+  for (const id of REPLACEABLE) assert.match(instruction, new RegExp(`\| \`${id}\` \|`), `no dispatch writes ${id}`)
+  for (const name of ['verify c4', 'verify c8', 'verify assemble']) assert.match(instruction, new RegExp(`\`${name}\``))
+  assert.match(template.trimEnd().split('\n').at(-1), /^Verdict: /)
 })

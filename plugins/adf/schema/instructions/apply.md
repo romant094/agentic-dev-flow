@@ -428,9 +428,10 @@ that reproduces there is pre-existing: name it as separate work and do not block
 command cannot run in that worktree, say so; the failure then blocks until the developer rules.
 A failure that does not reproduce pauses apply like any other implementation issue.
 
-Write `<root>/openspec/changes/<change>/.apply-test-record.md`: the commit id, the command, the
-real output, and the pre-existing failures named as separate work; or that the suite was not
-run, and why. Commit it as apply's final commit, after every tick and any documentation commit:
+Write `<root>/openspec/changes/<change>/.apply-test-record.md`: a `**Commit:** <sha>` line naming
+the commit the suite ran on, which verify reads; the command; the real output, quoting the
+runner's own pass and fail counts and its file or suite counts; and the pre-existing failures
+named as separate work; or that the suite was not run, and why. Commit it as apply's final commit, after every tick and any documentation commit:
 verify reads the commits after this record, and a record written earlier leaves work it does not
 cover.
 
