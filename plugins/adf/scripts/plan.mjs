@@ -26,7 +26,7 @@
 // Exit 2 on a usage error.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { changeDir, globToRegExp, META_FILE } from './lib/changes.mjs'
+import { changeDir, globToRegExp, inferChange, META_FILE } from './lib/changes.mjs'
 import { PLANNING_GUIDE } from './lib/host-files.mjs'
 import { listGroups } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
@@ -51,7 +51,7 @@ import { readRegistry } from './lib/registry.mjs'
 import { loadSchema } from './lib/schema.mjs'
 import { gitIn } from './lib/workspace.mjs'
 
-const USAGE = 'usage: plan.mjs lint|graph|schedule|unplanned|added --change <name> [--root <dir>] (see the header for each command)'
+const USAGE = 'usage: plan.mjs lint|graph|schedule|unplanned|added [--change <name>] [--root <dir>] (see the header for each command; without --change, the one active change under the root)'
 
 class Usage extends Error {}
 class Refusal extends Error {}
@@ -70,8 +70,10 @@ function options(argv, flags, switches = []) {
       out[name] = value
     } else throw new Usage(`unknown argument ${flag}`)
   }
-  if (!out.change) throw new Usage('--change is required')
-  return { command, ...out, root: resolve(out.root ?? process.cwd()) }
+  const root = resolve(out.root ?? process.cwd())
+  // Without --change: the one active change under the root (lib/changes.mjs inferChange).
+  if (!out.change) out.change = inferChange(root, undefined, loadSchema())
+  return { command, ...out, root }
 }
 
 const read = (path) => (existsSync(path) ? readFileSync(path, 'utf8') : null)

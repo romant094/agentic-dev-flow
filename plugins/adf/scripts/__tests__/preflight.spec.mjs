@@ -208,7 +208,7 @@ test('propose passes in the main checkout and reports the branch policy inputs',
   writeFileSync(join(root, 'a.txt'), 'dirty\n')
   const dirty = await preflight({ phase: 'propose', change: 'add-y', root, env, home: home() })
   assert.equal(dirty.ok, false)
-  assert.deepEqual(dirty.workspace.dirty, ['M a.txt'])
+  assert.deepEqual(dirty.workspace.dirty, [' M a.txt'])
   assert.match(dirty.refusal, /uncommitted changes/)
 })
 

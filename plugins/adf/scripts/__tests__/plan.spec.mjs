@@ -120,7 +120,31 @@ test('every design risk needs a plan line naming a Task or a deferral', () => {
   const lines = ['- Speed mode write rejected by the bench → Task 2 reads back.', '- Byte counts never arrive → deferred: the firmware has no counter yet.', '- Cache races → handled somewhere.']
   assert.deepEqual(reconcileRisks(risks, lines).map((r) => r.text), ['Cache invalidation races with the poller'])
   const { findings } = lintPlanText({ planText: `${plan()}\n${lines.join('\n')}\n`, tasksText: TASKS, designText: design })
-  assert.deepEqual(findings.filter((f) => f.kind === 'risk-unreconciled').map((f) => [f.file, f.line]), [['design.md', 8]])
+  assert.deepEqual(findings.filter((f) => f.kind === 'risk-unreconciled').map((f) => [f.severity, f.file, f.line]), [['warning', 'design.md', 8]])
+})
+
+test('a risk with an id is reconciled by a plan line citing the id with a Task or a deferral', () => {
+  const design = [
+    '## Risks / Trade-offs',
+    '',
+    '- [R1] The bench may reject the speed mode write → read back after every write.',
+    '- [R2] Byte counts never arrive → optional.',
+    '- [R3] Cache races with the poller → a lock.',
+    '- [R3] Twice → no.',
+    ''
+  ].join('\n')
+  assert.deepEqual(parseRisks(design).map((r) => [r.id, r.text]), [['R1', 'The bench may reject the speed mode write'], ['R2', 'Byte counts never arrive'], ['R3', 'Cache races with the poller'], ['R3', 'Twice']])
+  // R1's line shares no word with the risk: the id alone matches. R3's line shares many words but
+  // cites no id, so it does not count. R9 is not defined; Task 7 does not exist.
+  const lines = ['- R1 → Task 2.', '- R2: deferred, the firmware has no counter yet.', '- Cache races with the poller → Task 3.', '- R9 → Task 1.', '- R1 also → Task 7.']
+  const { findings } = lintPlanText({ planText: `${plan()}\n${lines.join('\n')}\n`, tasksText: TASKS, designText: design })
+  const risk = findings.filter((f) => f.kind.startsWith('risk-')).map((f) => [f.severity, f.kind, f.risk, f.file])
+  assert.deepEqual(risk, [
+    ['error', 'risk-duplicate-id', 'R3', 'design.md'],
+    ['error', 'risk-unknown-id', 'R9', 'plan.md'],
+    ['error', 'risk-unknown-task', 'R1', 'design.md'],
+    ['error', 'risk-unreconciled', 'R3', 'design.md']
+  ])
 })
 
 test('the Delete sweep reports each file outside the task that still names the path or an export', async () => {
@@ -335,7 +359,9 @@ test('plan.mjs lint: exit 0 for a clean plan, exit 1 with file:line findings, ex
   assert.equal(bad.code, 1)
   assert.deepEqual(bad.result.findings.map((f) => [f.kind, f.file, f.task]), [['delete-reference', 'openspec/changes/c/plan.md', 1]])
   assert.equal(bad.result.findings[0].message.includes('src/caller.ts'), true)
-  assert.equal((await run(['lint', '--root', root])).code, 2)
+  // Without --change the one active change under the root is used (X3); an unknown option is a usage error.
+  assert.equal((await run(['lint', '--root', root])).result.ok, true)
+  assert.equal((await run(['lint', '--root', root, '--bogus', 'x'])).code, 2)
   assert.equal((await run(['lint', '--change', 'nope', '--root', root])).code, 1)
 })
 

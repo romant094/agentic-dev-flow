@@ -225,3 +225,45 @@ export function checkRegistry(root, { coreContract, points, home }) {
   if (registry.branches === undefined) errors.push('no branches are set; run /adf:init')
   return { ok: errors.length === 0, errors, plugins }
 }
+
+// ---------------------------------------------------------------- reports
+
+const plugins = (check) => (check.plugins.length ? check.plugins.map((p) => `${p.name} (${p.points.length ? p.points.join(', ') : 'no points'})`).join('; ') : 'none')
+const checkLine = (check) => (check.ok ? 'Registry check: ok' : `Registry check: ${check.errors.length} error(s)\n${check.errors.map((e) => `- ${e}`).join('\n')}`)
+const policy = (branches) => `Branch policy: integration ${branches.integration}; protected ${branches.protected.join(', ')}`
+
+// The text /adf:init shows, from the fields of `extensions.mjs init`.
+export function initReport(r) {
+  return [
+    `Registry: ${r.created ? 'created' : 'already existed'} (.claude/adf-extensions.json)`,
+    `Contract: ${r.contract}`,
+    `Settings added: ${r.settings.added.length ? r.settings.added.join(', ') : 'none'}`,
+    ...r.settings.notes.map((n) => `Note: ${n}`),
+    r.branches ? policy(r.branches) : `Branch policy: not set; ask for the integration branch${r.detectedIntegration ? ` (detected: ${r.detectedIntegration})` : ''} and other protected branches, then run extensions.mjs branches`,
+    `.gitignore: ${r.gitignore.added.length ? `added ${r.gitignore.added.join(', ')}` : 'unchanged'}`,
+    `Planning guide: ${r.planningGuide.created ? `created at ${r.planningGuide.path}; the team fills it in` : `${r.planningGuide.path} already exists`}`,
+    `Superpowers: ${r.superpowers.ok ? 'available' : `not available (${r.superpowers.reason}); install it with \`${r.superpowers.install}\``}`,
+    `Enabled plugins: ${plugins(r.check)}`,
+    checkLine(r.check),
+    'Enable a plugin with /adf:add <plugin id or path>.',
+    'Nothing was committed: the developer commits the registry, the settings, .gitignore and the planning guide.'
+  ].join('\n')
+}
+
+export function branchesReport(branches, check) {
+  return [policy(branches), `Enabled plugins: ${plugins(check)}`, checkLine(check)].join('\n')
+}
+
+export function addReport(added, check) {
+  return [
+    `Enabled: ${added.name} (${added.points.length ? added.points.join(', ') : 'no points'})`,
+    `Host files copied: ${added.hostFiles.copied.length ? added.hostFiles.copied.join(', ') : 'none'}`,
+    `Host files already present: ${added.hostFiles.kept.length ? added.hostFiles.kept.join(', ') : 'none'}`,
+    checkLine(check),
+    'Nothing was committed: the developer commits the registry and the copied host files.'
+  ].join('\n')
+}
+
+export function removeReport(removed, check) {
+  return [`Removed: ${removed.plugin ?? removed.path}`, `Enabled plugins: ${plugins(check)}`, checkLine(check), 'Nothing was committed: the developer commits the registry.'].join('\n')
+}

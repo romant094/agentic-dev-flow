@@ -16,7 +16,9 @@
 
 ## Risks / Trade-offs
 
-<!-- Known risks and trade-offs -->
+<!-- One bullet per risk, each with its own id: plan.md cites the id with the Task that
+     addresses it, or with `deferred` and the reason. -->
+- [R1] <!-- risk --> → <!-- mitigation -->
 
 ## Migration Plan
 

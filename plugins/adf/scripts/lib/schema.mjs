@@ -10,6 +10,11 @@ export const SCHEMA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '.
 const ID = /^[a-z][a-z0-9-]*$/
 const GUIDE = /^[a-z0-9][a-z0-9-]*\.md$/
 
+// The checks an artifact may declare in `gates`, run by `changes.mjs done` and by every later
+// `next` (lib/propose.mjs runs them). A gate names a script's check, so the schema states which
+// check guards which artifact and the agent never decides whether to run one.
+export const GATES = ['specs-validate', 'specs-capabilities', 'specs-against-main', 'tasks-lint', 'plan-symbols', 'plan-lint']
+
 const isText = (value) => typeof value === 'string' && value.length > 0
 
 export function validateSchema(schema, dir) {
@@ -35,6 +40,13 @@ export function validateSchema(schema, dir) {
     }
     if (artifact.guides !== undefined && !(Array.isArray(artifact.guides) && artifact.guides.every((g) => GUIDE.test(g)))) {
       errors.push(`artifact "${id}": guides must list file names such as planning.md`)
+    }
+    if (artifact.gates !== undefined) {
+      if (!Array.isArray(artifact.gates)) errors.push(`artifact "${id}": gates must be an array`)
+      else {
+        for (const gate of artifact.gates) if (!GATES.includes(gate)) errors.push(`artifact "${id}": unknown gate "${gate}"; known: ${GATES.join(', ')}`)
+        if (new Set(artifact.gates).size !== artifact.gates.length) errors.push(`artifact "${id}": a gate is listed twice`)
+      }
     }
   }
   for (const artifact of artifacts) {

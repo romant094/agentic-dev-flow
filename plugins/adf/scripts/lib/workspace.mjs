@@ -24,9 +24,11 @@ export function branchType(change) {
   return TYPES.find(([prefix]) => change.startsWith(prefix))?.[1] ?? null
 }
 
+// Only trailing whitespace is cut: a porcelain status line starts with a space (` M a.txt`), and
+// cutting the leading one turned the first dirty entry into `M a.txt`.
 export function gitIn(root) {
   return (...args) =>
-    execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+    execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trimEnd()
 }
 
 function attempt(git, ...args) {

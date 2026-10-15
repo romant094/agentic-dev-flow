@@ -613,3 +613,133 @@ export function validateProject(root, { change, spec, strict = false } = {}) {
   }
   return { items, summary: summarize(items, types), version: '1.0' }
 }
+
+// ---- Propose-time gates: the proposal's capabilities, and the deltas against the main specs ----
+
+const CAPABILITY = /^[a-z0-9]+(-[a-z0-9]+)*$/
+const stripHtmlComments = (text) => text.replace(/<!--[\s\S]*?-->/g, '')
+
+// The capability names of a proposal's `## Capabilities` section, by `### New Capabilities` and
+// `### Modified Capabilities`: the first token of each top-level bullet, backticks and emphasis
+// removed. A template placeholder (`<name>`) is skipped; "None" is no bullet.
+export function parseProposalCapabilities(proposalText) {
+  const out = { new: [], modified: [], section: false }
+  const lines = stripHtmlComments(normalizeLineEndings(proposalText)).split('\n')
+  let part = null
+  let inside = false
+  for (const line of lines) {
+    if (/^##\s+/.test(line)) {
+      inside = /^##\s+Capabilities\s*$/i.test(line)
+      if (inside) out.section = true
+      part = null
+      continue
+    }
+    if (!inside) continue
+    const sub = /^###\s+(New|Modified)\s+Capabilities\s*$/i.exec(line)
+    if (sub) {
+      part = sub[1].toLowerCase()
+      continue
+    }
+    if (/^###\s/.test(line)) {
+      part = null
+      continue
+    }
+    const bullet = /^[-*]\s+(.+)$/.exec(line)
+    if (!part || !bullet) continue
+    const token = /^[`*_]*([^`*_:\s]+)/.exec(bullet[1].trim())?.[1]
+    if (!token || /^<.*>$/.test(token) || /^none\.?$/i.test(token)) continue
+    if (!out[part].includes(token)) out[part].push(token)
+  }
+  return out
+}
+
+// The contract between a change's proposal and its delta specs: every listed capability has
+// `specs/<capability>/spec.md`, every spec folder is listed, a modified capability names an
+// existing main spec, a new one does not, and a new name is kebab-case of at least two words.
+export function checkCapabilities(root, change) {
+  const dir = join(root, 'openspec', 'changes', change)
+  const proposalPath = join(dir, 'proposal.md')
+  if (!existsSync(proposalPath)) {
+    return { ok: false, error: `openspec/changes/${change}/proposal.md does not exist`, new: [], modified: [], missingSpec: [], unlistedSpec: [], modifiedNotFound: [], newCollides: [], badName: [], listedTwice: [] }
+  }
+  const caps = parseProposalCapabilities(readFileSync(proposalPath, 'utf8'))
+  const specsDir = join(dir, 'specs')
+  const specs = listDirs(specsDir, (name) => existsSync(join(specsDir, name, 'spec.md')))
+  const main = new Set(listSpecIds(root))
+  const listed = [...caps.new, ...caps.modified]
+  const result = {
+    new: caps.new,
+    modified: caps.modified,
+    missingSpec: listed.filter((c) => !specs.includes(c)),
+    unlistedSpec: specs.filter((c) => !listed.includes(c)),
+    modifiedNotFound: caps.modified.filter((c) => !main.has(c)),
+    newCollides: caps.new.filter((c) => main.has(c)),
+    badName: listed.filter((c) => !CAPABILITY.test(c) || (caps.new.includes(c) && !c.includes('-'))),
+    listedTwice: caps.new.filter((c) => caps.modified.includes(c))
+  }
+  const problems = ['missingSpec', 'unlistedSpec', 'modifiedNotFound', 'newCollides', 'badName', 'listedTwice'].filter((k) => result[k].length > 0)
+  if (!caps.section) return { ok: false, error: 'proposal.md has no ## Capabilities section', ...result }
+  return { ok: problems.length === 0, ...result }
+}
+
+const FIELD = (label) => new RegExp(`\\*\\*${label}:?\\*\\*`, 'i')
+const sameText = (a, b) => a.split('\n').map((l) => l.trimEnd()).join('\n').trim() === b.split('\n').map((l) => l.trimEnd()).join('\n').trim()
+
+// One delta spec against its capability's main spec (null when there is none yet), as archive
+// will apply it: every MODIFIED, REMOVED and RENAMED-from header names a requirement the main
+// spec holds, exactly; an ADDED or RENAMED-to name is not already there with other text; REMOVED
+// carries Reason, Migration and Code Disposition, RENAMED carries Code Disposition.
+// Findings: { kind, operation, requirement, message }.
+export function deltaAgainstMain(deltaText, mainText) {
+  const content = normalizeLineEndings(deltaText)
+  const delta = parseDeltaSpec(content)
+  const sections = splitTopLevelSections(content)
+  const main = new Map((mainText === null ? [] : extractRequirementsSection(mainText).bodyBlocks).map((b) => [b.name, b.raw]))
+  const findings = []
+  const say = (kind, operation, requirement, message) => findings.push({ kind, operation, requirement, message })
+  const where = mainText === null ? 'the capability has no main spec yet' : 'the main spec has no requirement with this exact header'
+  const renamedTo = new Set(delta.renamed.map((p) => p.to))
+  for (const { from, to } of delta.renamed) {
+    if (!main.has(from)) say('unmatched-header', 'RENAMED', from, `RENAMED FROM "${from}": ${where}`)
+    if (main.has(to)) say('already-in-main', 'RENAMED', to, `RENAMED TO "${to}": the main spec already holds that name`)
+  }
+  for (const block of delta.added) {
+    if (main.has(block.name) && !sameText(main.get(block.name), block.raw)) say('already-in-main', 'ADDED', block.name, `ADDED "${block.name}": the main spec already holds it with other text; use MODIFIED`)
+  }
+  for (const block of delta.modified) {
+    if (!main.has(block.name) && !renamedTo.has(block.name)) say('unmatched-header', 'MODIFIED', block.name, `MODIFIED "${block.name}": ${where}`)
+  }
+  for (const name of delta.removed) {
+    if (!main.has(name)) say('unmatched-header', 'REMOVED', name, `REMOVED "${name}": ${where}`)
+  }
+  const removed = sectionCaseInsensitive(sections, 'REMOVED Requirements')
+  if (removed.found) {
+    const blocks = parseRequirementBlocks(removed.body)
+    const withBody = new Set(blocks.map((b) => b.name))
+    const checks = [...blocks.map((b) => [b.name, b.raw]), ...delta.removed.filter((n) => !withBody.has(n)).map((n) => [n, removed.body])]
+    for (const [name, text] of checks) {
+      for (const label of ['Reason', 'Migration', 'Code Disposition']) {
+        if (!FIELD(label).test(text)) say('missing-field', 'REMOVED', name, `REMOVED "${name}" has no **${label}:**`)
+      }
+    }
+  }
+  const renamed = sectionCaseInsensitive(sections, 'RENAMED Requirements')
+  if (renamed.found) {
+    const froms = (renamed.body.match(/^\s*-?\s*FROM:/gm) ?? []).length
+    if (froms !== delta.renamed.length) say('unparsed-rename', 'RENAMED', null, `RENAMED holds ${froms} FROM line(s) but ${delta.renamed.length} complete FROM/TO pair(s); write each as \`- FROM: \`### Requirement: <old>\`\` then \`- TO: \`### Requirement: <new>\`\``)
+    if (delta.renamed.length > 0 && !FIELD('Code Disposition').test(renamed.body)) say('missing-field', 'RENAMED', delta.renamed[0].from, 'RENAMED has no **Code Disposition:**')
+  }
+  return findings
+}
+
+// Every delta spec of a change against the main specs: { ok, capabilities: [{ capability,
+// mainSpec, findings }] }.
+export function changeAgainstMain(root, change) {
+  const specsDir = join(root, 'openspec', 'changes', change, 'specs')
+  const capabilities = listDirs(specsDir, (name) => existsSync(join(specsDir, name, 'spec.md'))).map((capability) => {
+    const mainPath = join(root, 'openspec', 'specs', capability, 'spec.md')
+    const mainText = existsSync(mainPath) ? readFileSync(mainPath, 'utf8') : null
+    return { capability, mainSpec: mainText !== null, findings: deltaAgainstMain(readFileSync(join(specsDir, capability, 'spec.md'), 'utf8'), mainText) }
+  })
+  return { ok: capabilities.every((c) => c.findings.length === 0), capabilities }
+}

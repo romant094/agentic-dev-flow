@@ -39,11 +39,16 @@ test('init, add, check, remove on a fresh host', () => {
   assert.deepEqual(init.settings.added, ['enabledPlugins.adf@agentic-dev-flow'])
   assert.deepEqual(init.planningGuide, { path: 'openspec/planning.md', created: true })
   assert.equal(init.branches, null)
+  // init runs the gate and the check itself (I1) and renders the report (I2).
+  assert.equal(init.superpowers.ok, false)
+  assert.deepEqual(init.check.errors, ['no branches are set; run /adf:init'])
+  assert.match(init.report, /Branch policy: not set/)
+  assert.match(init.report, /Superpowers: not available/)
   assert.equal(adf(root, 'check').code, 1)
-  assert.deepEqual(adf(root, 'branches', '--integration', 'develop', '--protected', 'main, develop').out, {
-    integration: 'develop',
-    protected: ['develop', 'main']
-  })
+  const set = adf(root, 'branches', '--integration', 'develop', '--protected', 'main, develop').out
+  assert.deepEqual({ integration: set.integration, protected: set.protected }, { integration: 'develop', protected: ['develop', 'main'] })
+  assert.deepEqual(set.check, { ok: true, errors: [], plugins: [] })
+  assert.match(set.report, /^Branch policy: integration develop; protected develop, main\n/)
   const again = adf(root, 'init').out
   assert.equal(again.created, false)
   assert.deepEqual(again.settings.added, [])
@@ -52,7 +57,10 @@ test('init, add, check, remove on a fresh host', () => {
 
   const added = adf(root, 'add', 'plugins/sample', '--config', '{"greeting":"hi"}')
   assert.equal(added.code, 0)
-  assert.deepEqual(added.out, { name: 'sample', points: [], hostFiles: { copied: [], kept: [] } })
+  const { check, report, ...enabled } = added.out
+  assert.deepEqual(enabled, { name: 'sample', points: [], hostFiles: { copied: [], kept: [] } })
+  assert.deepEqual(check.plugins, [{ name: 'sample', path: 'plugins/sample', points: [] }])
+  assert.match(report, /^Enabled: sample \(no points\)\n[\s\S]*Registry check: ok/)
 
   const checked = adf(root, 'check')
   assert.equal(checked.code, 0)
@@ -61,7 +69,9 @@ test('init, add, check, remove on a fresh host', () => {
   const registry = JSON.parse(readFileSync(join(root, '.claude', 'adf-extensions.json'), 'utf8'))
   assert.deepEqual(registry.extensions, [{ path: 'plugins/sample', config: { greeting: 'hi' } }])
 
-  assert.equal(adf(root, 'remove', 'sample').code, 0)
+  const removed = adf(root, 'remove', 'sample')
+  assert.equal(removed.code, 0)
+  assert.match(removed.out.report, /^Removed: plugins\/sample\nEnabled plugins: none\nRegistry check: ok/)
   assert.deepEqual(adf(root, 'check').out.plugins, [])
 })
 
@@ -110,7 +120,8 @@ test('an installed plugin is enabled by id, its host files copied once, and a ro
   adfAt(root, forgeHome, 'branches', '--integration', 'develop')
   const added = adfAt(root, forgeHome, 'add', 'forge-a@mk')
   assert.equal(added.code, 0)
-  assert.deepEqual(added.out, { name: 'forge-a', points: ['forge'], hostFiles: { copied: ['.forge/mr.md'], kept: [] } })
+  assert.deepEqual({ ...added.out, check: undefined, report: undefined }, { name: 'forge-a', points: ['forge'], hostFiles: { copied: ['.forge/mr.md'], kept: [] }, check: undefined, report: undefined })
+  assert.equal(added.out.check.ok, true)
   assert.equal(existsSync(join(root, '.forge', 'mr.md')), true)
   const registry = JSON.parse(readFileSync(join(root, '.claude', 'adf-extensions.json'), 'utf8'))
   assert.deepEqual(registry.extensions, [{ plugin: 'forge-a@mk' }])

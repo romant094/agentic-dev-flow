@@ -4,7 +4,9 @@
 //
 //   extensions.mjs init                      create the registry if missing; declare ADF
 //                                            in the host's .claude/settings.json; ignore
-//                                            the flow's local state; add the planning guide
+//                                            the flow's local state; add the planning guide;
+//                                            then the Superpowers gate (`superpowers`) and
+//                                            the registry check (`check`)
 //   extensions.mjs branches --integration B [--protected B1,B2]
 //                                            set the branch policy in the registry
 //   extensions.mjs add <id|path> [--config J]
@@ -12,6 +14,10 @@
 //                                            or at a path; copy the host files it declares
 //   extensions.mjs remove <name>             disable a plugin
 //   extensions.mjs check                     validate the registry and every plugin
+//
+// init, branches, add and remove also run `check` and return it with `report`, the rendered
+// text the command shows. add and remove change the registry before the check, so a failing
+// check after them is reported, not refused.
 //
 // --root <dir> names the host project (default: the current directory); --home <dir> the
 // Claude Code home (default: $CLAUDE_CONFIG_DIR, else ~/.claude).
@@ -21,8 +27,8 @@ import { fileURLToPath } from 'node:url'
 import { declareInHost, marketplaceSource } from './lib/host-settings.mjs'
 import { detectIntegration, readBranches, setBranches } from './lib/branches.mjs'
 import { createPlanningGuide, ignoreLocalDirs } from './lib/host-files.mjs'
-import { addExtension, checkRegistry, initRegistry, removeExtension } from './lib/registry.mjs'
-import { claudeHome } from './lib/superpowers.mjs'
+import { addExtension, addReport, branchesReport, checkRegistry, initRegistry, initReport, removeExtension, removeReport } from './lib/registry.mjs'
+import { checkSuperpowers, claudeHome } from './lib/superpowers.mjs'
 import { isMain } from './lib/main.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -45,25 +51,38 @@ export function run(argv) {
   const protectedList = option(args, '--protected')
   const [command, target] = args
   switch (command) {
-    case 'init':
-      return {
+    case 'init': {
+      const result = {
         ...initRegistry(root, contract.version),
         contract: contract.version,
         settings: declareInHost(root, { source: marketplaceSource(home) }),
         gitignore: ignoreLocalDirs(root),
         planningGuide: createPlanningGuide(root),
         branches: readBranches(root),
-        detectedIntegration: detectIntegration(root)
+        detectedIntegration: detectIntegration(root),
+        superpowers: checkSuperpowers(root, { home }),
+        check: checkRegistry(root, { ...core, home })
       }
-    case 'branches':
+      return { ...result, report: initReport(result) }
+    }
+    case 'branches': {
       if (!integration) throw new Error('usage: branches --integration <branch> [--protected <b1,b2>]')
-      return setBranches(root, { integration, protected: protectedList ? protectedList.split(',').map((b) => b.trim()) : [] })
-    case 'add':
+      const branches = setBranches(root, { integration, protected: protectedList ? protectedList.split(',').map((b) => b.trim()) : [] })
+      const check = checkRegistry(root, { ...core, home })
+      return { ...branches, check, report: branchesReport(branches, check) }
+    }
+    case 'add': {
       if (!target) throw new Error('usage: add <plugin id or path> [--config <json>]')
-      return addExtension(root, target, { ...core, home, config: config && JSON.parse(config) })
-    case 'remove':
+      const added = addExtension(root, target, { ...core, home, config: config && JSON.parse(config) })
+      const check = checkRegistry(root, { ...core, home })
+      return { ...added, check, report: addReport(added, check) }
+    }
+    case 'remove': {
       if (!target) throw new Error('usage: remove <plugin name>')
-      return removeExtension(root, target, { home })
+      const removed = removeExtension(root, target, { home })
+      const check = checkRegistry(root, { ...core, home })
+      return { ...removed, check, report: removeReport(removed, check) }
+    }
     case 'check':
       return checkRegistry(root, { ...core, home })
     default:

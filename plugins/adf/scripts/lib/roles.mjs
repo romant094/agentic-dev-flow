@@ -38,3 +38,46 @@ export function callRole(root, point, operation, input, core) {
   }
   return { ...result, plugin: found.declaration.name }
 }
+
+// ---------------------------------------------------------------- forge input from state
+
+export const COMMIT_TYPES = ['feat', 'fix', 'chore', 'docs', 'refactor', 'test', 'style', 'perf', 'ci', 'build', 'revert']
+
+// A merge request title in Conventional Commits form: the type from the branch prefix
+// (`feat/add-x` gives feat), and the summary `<scope>: <description>` or `<description>`.
+export function titleFrom(branch, summary) {
+  const type = /^([a-z]+)\//.exec(branch ?? '')?.[1]
+  if (!COMMIT_TYPES.includes(type)) throw new Error(`the branch "${branch}" has no Conventional Commits type prefix; pass --title in full`)
+  const m = /^\s*([^:\s][^:]*?)\s*:\s*(.+)$/.exec(summary)
+  return m ? `${type}(${m[1]}): ${m[2].trim()}` : `${type}: ${summary.trim()}`
+}
+
+const FROM_STATE = { open: ['change', 'branch', 'base', 'protected'], push: ['change', 'branch', 'protected'], finalize: ['change', 'branch', 'base', 'protected'] }
+
+// The input of a forge operation with every value that already lives somewhere read from there:
+// the branch from git in `root`, the base from the change's .adf.json, the protected branches
+// from the registry. A value the caller also passed must agree, or the call is refused: the
+// orchestrator once copied these between scripts by hand. `state` is { change, branch, base,
+// protected } as read; null or empty where it could not be read.
+export function forgeInput(operation, state, { input = {}, title, summary, draft } = {}) {
+  const keys = FROM_STATE[operation]
+  if (!keys) return input
+  const out = { ...input }
+  for (const key of keys) {
+    const value = state[key]
+    if (value === null || value === undefined || value === '') {
+      throw new Error({ branch: 'HEAD is detached or unreadable; run in the change worktree', base: 'the change records no base in its .adf.json', protected: 'the registry sets no branch policy; run /adf:init', change: 'no change' }[key])
+    }
+    if (input[key] !== undefined && JSON.stringify(input[key]) !== JSON.stringify(value)) {
+      throw new Error(`input.${key} is ${JSON.stringify(input[key])}, but the core reads ${JSON.stringify(value)}; leave it out`)
+    }
+    out[key] = value
+  }
+  if (operation !== 'push') {
+    if (title) out.title = title
+    else if (summary) out.title = titleFrom(state.branch, summary)
+    if (!out.title) throw new Error(`${operation} needs a title: pass --summary "<scope>: <description>" or --title`)
+  }
+  if (operation === 'open') out.draft = draft ?? input.draft ?? true
+  return out
+}

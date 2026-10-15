@@ -7,8 +7,9 @@
 // archived ones, and the project's own guidance in `openspec/context.md` (the project, for
 // every artifact), `openspec/rules/<artifact>.md` (one rule per `- ` line) and the project
 // guides an artifact names in the schema (`guides`), such as `openspec/planning.md`.
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join, relative, sep } from 'node:path'
 import { buildOrder, readSchemaFile } from './schema.mjs'
 
 export const CHANGES_DIR = 'openspec/changes'
@@ -241,4 +242,105 @@ export function applyInstructions(root, name, schema) {
     ...(apply.guides ? { guides: projectGuidance(root, { id: 'apply', guides: apply.guides }).guides } : {}),
     instruction
   }
+}
+
+// The change a script acts on when the caller named none: the one active change under `root`.
+// Several or none is a refusal that names what was found, so the caller picks; a change is never
+// guessed from a branch name.
+export function inferChange(root, change, schema) {
+  if (change) return change
+  const names = listChanges(root, schema).changes.map((c) => c.name)
+  if (names.length === 1) return names[0]
+  throw new Error(
+    names.length === 0
+      ? `${root} holds no active change; pass --change <name> and the change worktree as --root`
+      : `${root} holds ${names.length} active changes (${names.sort().join(', ')}); pass --change <name>`
+  )
+}
+
+// Whether `root` is the repository's main checkout rather than a linked worktree. Outside a git
+// repository it is not one.
+export function isMainCheckout(root) {
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  try {
+    const top = git('rev-parse', '--show-toplevel')
+    const common = git('rev-parse', '--path-format=absolute', '--git-common-dir')
+    return realpathSync(dirname(common)) === realpathSync(top)
+  } catch {
+    return false
+  }
+}
+
+// A change-scoped operation that writes is refused in the main checkout: the change lives in its
+// own worktree, and a call without --root ran on the cwd, usually the main checkout.
+export function refuseMainCheckout(root, { allowMain = false } = {}) {
+  if (!allowMain && isMainCheckout(root)) {
+    throw new Error(`${root} is the main checkout; pass the change worktree as --root (changes.mjs find lists it)`)
+  }
+}
+
+// The artifacts propose must write: apply's requirements and everything they require. Any other
+// artifact whose requirements are met is optional at propose (design), or belongs to a later
+// phase (verify, review) when it requires one of these.
+export function requiredArtifacts(schema) {
+  const byId = new Map(schema.artifacts.map((a) => [a.id, a]))
+  const need = new Set()
+  const visit = (id) => {
+    if (need.has(id)) return
+    need.add(id)
+    for (const r of byId.get(id).requires) visit(r)
+  }
+  for (const id of schema.apply?.requires ?? schema.artifacts.map((a) => a.id)) visit(id)
+  return need
+}
+
+// An artifact the change will not have, recorded in its metadata so `next` stops offering it.
+// Only an optional artifact can be skipped.
+export function skipArtifact(root, name, artifactId, schema) {
+  const dir = requireChange(root, name)
+  if (!schema.artifacts.some((a) => a.id === artifactId)) throw new Error(`no artifact "${artifactId}" in schema ${schema.name}`)
+  if (requiredArtifacts(schema).has(artifactId)) throw new Error(`${artifactId} is required before apply and cannot be skipped`)
+  const meta = readMeta(dir) ?? {}
+  const skipped = [...new Set([...(meta.skipped ?? []), artifactId])].sort()
+  writeFileSync(join(dir, META_FILE), `${JSON.stringify({ ...meta, skipped }, null, 2)}\n`)
+  return { changeName: name, skipped }
+}
+
+export function changeMeta(root, name) {
+  return readMeta(requireChange(root, name)) ?? {}
+}
+
+// The resolve step's list, ready to show: one choice per active change and per worktree whose
+// change could not be read, and the names held by more than one checkout.
+export function findChoices({ changes, unresolved }) {
+  const roots = new Map()
+  for (const c of changes) roots.set(c.name, [...(roots.get(c.name) ?? []), c.root])
+  const duplicates = [...roots].filter(([, list]) => list.length > 1).map(([name, list]) => ({ name, roots: list }))
+  const choices = [
+    ...changes.map((c) => ({
+      name: c.name,
+      root: c.root,
+      branch: c.branch,
+      progress: `${c.completedTasks}/${c.totalTasks} tasks`,
+      label: `${c.name} — ${c.branch ?? 'detached'}, ${c.completedTasks}/${c.totalTasks} tasks, in ${c.root}${roots.get(c.name).length > 1 ? ' (one of two copies)' : ''}`
+    })),
+    ...unresolved.map((u) => ({ name: null, root: u.root, branch: u.branch, progress: null, label: `change name unresolved — ${u.branch ?? 'detached'}, in ${u.root}` }))
+  ]
+  return { duplicates, choices }
+}
+
+// The propose report: the change, its branch, worktree and base, each artifact's status, the
+// merge request from a forge result (forge.mjs output) when given, and the next step.
+export function statusReport(status, { branch = null, root, base = null, forge = null } = {}) {
+  const lines = [`Change: ${status.changeName}`, `Branch: ${branch ?? 'unknown'}`, `Worktree: ${root}`, `Base: ${base ?? 'not recorded'}`, 'Artifacts:']
+  for (const a of status.artifacts) lines.push(`- ${a.id}: ${a.status}${a.missingDeps ? ` (needs ${a.missingDeps.join(', ')})` : ''}`)
+  if (forge) {
+    if (forge.state === 'none') lines.push('Merge request: none; no forge plugin is enabled, so nothing was pushed.')
+    else if (forge.state === 'done') lines.push(`Merge request: ${forge.url ?? 'opened'}${forge.reused ? ' (reused)' : ''}`)
+    else if (forge.state === 'degraded') lines.push(`Merge request: none yet. ${forge.hint ?? ''}`.trim(), ...(forge.fallback ?? []).map((c) => `  ${c}`))
+    else lines.push(`Merge request: none; the forge refused: ${forge.error ?? 'no reason given'}`)
+  }
+  const ready = status.applyRequires.every((id) => status.artifacts.find((a) => a.id === id)?.status === 'done')
+  lines.push(`Next: ${ready ? '/adf:apply' : `/adf:propose ${status.changeName} to finish its artifacts`}`)
+  return lines.join('\n')
 }

@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildOrder, loadSchema, SCHEMA_DIR, validateSchema } from '../lib/schema.mjs'
+import { buildOrder, GATES, loadSchema, SCHEMA_DIR, validateSchema } from '../lib/schema.mjs'
 import { CHECKS, REPLACEABLE } from '../lib/verify.mjs'
 
 const artifact = (id, requires = [], extra = {}) => ({ id, generates: `${id}.md`, description: id, requires, ...extra })
@@ -58,6 +58,23 @@ test('guides must name markdown files', () => {
   const bad = { ...artifact('a'), guides: ['../escape.md'] }
   assert.ok(validateSchema(graph(bad), dir).some((e) => /guides must list file names/.test(e)))
   assert.deepEqual(validateSchema(graph({ ...artifact('a'), guides: ['planning.md'] }), dir), [])
+})
+
+test('gates must name known checks, once each', () => {
+  assert.deepEqual(validateSchema(graph(artifact('a', [], { gates: ['tasks-lint'] })), dir), [])
+  assert.ok(validateSchema(graph(artifact('a', [], { gates: ['lint-everything'] })), dir).some((e) => /unknown gate "lint-everything"/.test(e)))
+  assert.ok(validateSchema(graph(artifact('a', [], { gates: ['tasks-lint', 'tasks-lint'] })), dir).some((e) => /listed twice/.test(e)))
+  assert.ok(validateSchema(graph(artifact('a', [], { gates: 'tasks-lint' })), dir).some((e) => /gates must be an array/.test(e)))
+})
+
+test('the shipped schema gates specs, tasks and plan with the checks propose used to run by hand', () => {
+  const gates = Object.fromEntries(loadSchema().artifacts.filter((a) => a.gates).map((a) => [a.id, a.gates]))
+  assert.deepEqual(gates, {
+    specs: ['specs-validate', 'specs-capabilities', 'specs-against-main'],
+    tasks: ['tasks-lint'],
+    plan: ['plan-symbols', 'plan-lint']
+  })
+  assert.deepEqual([...new Set(Object.values(gates).flat())].sort(), [...GATES].sort())
 })
 
 test('the core text an agent copies from is written in English', () => {

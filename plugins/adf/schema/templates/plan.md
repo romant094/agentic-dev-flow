@@ -9,6 +9,12 @@
 
 **Tech Stack:** <!-- Key technologies -->
 
+## Risk Reconciliation
+
+<!-- Only when design.md lists risks: one line per risk id, naming the Task that addresses it,
+     or `deferred` and why. -->
+- R1 → Task <!-- N --> <!-- or: R1 → deferred: <reason> -->
+
 ## Execution Graph
 
 <!-- Required in every plan. A plan whose tasks do not partition states that it is a single

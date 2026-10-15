@@ -65,6 +65,16 @@ test('suggest offers only the integration base on a protected branch', () => {
   assert.deepEqual(s.dirty, [])
 })
 
+test('suggest keeps every dirty line as git prints it, the first one included', () => {
+  const root = host({ remote: false })
+  writeFileSync(join(root, 'README.md'), 'changed\n')
+  writeFileSync(join(root, 'second.txt'), 'x\n')
+  quiet(root, 'add', 'second.txt')
+  quiet(root, 'commit', '-q', '-m', 'second')
+  writeFileSync(join(root, 'second.txt'), 'y\n')
+  assert.deepEqual(suggest(root, 'add-thing').dirty, [' M README.md', ' M second.txt'])
+})
+
 test('suggest offers the current branch when the developer is mid-feature', () => {
   const root = host()
   quiet(root, 'switch', '-q', '-c', 'feat/mine')

@@ -193,7 +193,9 @@ const words = (s) =>
       .map((w) => w.replace(/s$/, ''))
   )
 
-// The `[Risk] → Mitigation` bullets of design.md's Risks section: { text, line }.
+// The risk bullets of design.md's Risks section: { id, text, line }. A risk written
+// `[R1] <risk> → <mitigation>` carries the id R1; one in the older form `[<risk>] → <mitigation>`
+// has the id null.
 export function parseRisks(designText) {
   if (!designText) return []
   const lines = designText.split('\n')
@@ -206,17 +208,21 @@ export function parseRisks(designText) {
   }
   return bullets
     .map(({ body, line }) => {
+      const withId = /^[-*]\s+\[(R\d+)\]\s*(.+?)\s*(?:→|->)/.exec(body)
+      if (withId) return { id: withId[1], text: withId[2].trim(), line }
       const m = /^[-*]\s+\[([^\]]+)\]\s*(?:→|->)/.exec(body)
-      return m ? { text: m[1].trim(), line } : null
+      return m ? { id: null, text: m[1].trim(), line } : null
     })
     .filter(Boolean)
 }
 
-// A plan line names a risk when it names a Task or a deferral and at least half the significant
-// words of the shorter of the two are shared: a short paraphrase of a long risk passes, a line
-// about another risk does not.
+const CITES = /\bTasks?\s+\d+|\bdefer/i
+
+// The fallback for risks with no id: a plan line names a risk when it names a Task or a deferral
+// and at least half the significant words of the shorter of the two are shared. Word overlap
+// guesses, so lint reports what it leaves as a warning, never an error.
 export function reconcileRisks(risks, planLines) {
-  const candidates = planLines.filter((l) => /\bTasks?\s+\d+|\bdefer/i.test(l)).map(words)
+  const candidates = planLines.filter((l) => CITES.test(l)).map(words)
   return risks.filter((risk) => {
     const want = words(risk.text)
     if (want.size === 0) return false
@@ -225,6 +231,38 @@ export function reconcileRisks(risks, planLines) {
       return hits / Math.min(want.size, have.size) >= 0.5 && hits >= Math.min(2, want.size)
     })
   })
+}
+
+// Risks with an id are matched by the id alone: a plan line citing `R1` together with a Task or
+// a deferral reconciles R1. Findings: { kind, id, line, planLine?, task?, message } where `line`
+// is the design line and `planLine` the plan line (1-based).
+export function reconcileRiskIds(risks, planLines, taskNumbers = []) {
+  const findings = []
+  const ids = new Map()
+  for (const risk of risks.filter((r) => r.id)) {
+    if (ids.has(risk.id)) findings.push({ kind: 'risk-duplicate-id', id: risk.id, line: risk.line, message: `the risk id ${risk.id} is used twice in design.md; give each risk its own` })
+    else ids.set(risk.id, risk)
+  }
+  const cited = new Set()
+  planLines.forEach((text, i) => {
+    for (const m of text.matchAll(/\bR(\d+)\b/g)) {
+      const id = `R${m[1]}`
+      const bullet = new RegExp(`^\\s*[-*]\\s+[*\`[]*${id}\\b`).test(text)
+      if (!ids.has(id)) {
+        if (bullet && risks.some((r) => r.id)) findings.push({ kind: 'risk-unknown-id', id, line: null, planLine: i + 1, message: `the plan cites ${id}, which design.md does not define` })
+        continue
+      }
+      if (!CITES.test(text)) continue
+      cited.add(id)
+      for (const t of text.matchAll(/\bTasks?\s+(\d+)/gi)) {
+        const task = Number(t[1])
+        if (!taskNumbers.includes(task)) findings.push({ kind: 'risk-unknown-task', id, line: ids.get(id).line, planLine: i + 1, task, message: `the plan reconciles ${id} with Task ${task}, which the plan does not have` })
+      }
+    }
+  })
+  for (const [id, risk] of ids)
+    if (!cited.has(id)) findings.push({ kind: 'risk-unreconciled', id, line: risk.line, message: `no plan line cites ${id} ("${risk.text}") with a Task or \`deferred\`` })
+  return findings
 }
 
 // ---------------------------------------------------------------- Delete sweep
@@ -333,8 +371,13 @@ export function lintPlanText({ planText, tasksText, designText = null, guideText
   for (const item of items)
     if (!refs.has(item.id)) say('error', 'unplanned-item', at(tasksFile, item.line), `${tasksFile} ${item.id} has no plan task`, { item: item.id })
 
-  for (const risk of reconcileRisks(parseRisks(designText), lines))
-    say('error', 'risk-unreconciled', at(designFile, risk.line), `no plan line names the risk "${risk.text}" with a Task or a deferral`, { risk: risk.text })
+  const risks = parseRisks(designText)
+  for (const f of reconcileRiskIds(risks, lines, tasks.map((t) => t.number))) {
+    const { kind, id, line, planLine, task, message } = f
+    say('error', kind, planLine && kind !== 'risk-unknown-task' ? at(planFile, planLine) : at(designFile, line), message, { risk: id, ...(planLine ? { planLine } : {}), ...(task ? { task } : {}) })
+  }
+  for (const risk of reconcileRisks(risks.filter((r) => !r.id), lines))
+    say('warning', 'risk-unreconciled', at(designFile, risk.line), `no plan line seems to name the risk "${risk.text}" with a Task or a deferral (matched by words, so unsure); write it as [R1] in design.md and cite R1 in the plan`, { risk: risk.text })
 
   for (const f of graphFindings(planText, tasks)) findings.push({ ...f, file: planFile })
   return { tasks, findings }
