@@ -2,7 +2,7 @@
 // attempt count behind the one-retry rule.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -79,7 +79,10 @@ test('names take the fixed form for every role', () => {
   assert.equal(dispatchName({ role: 'fix' }), 'fix')
   assert.equal(dispatchName({ role: 're-review', group: 'B' }), 're-review B')
   assert.equal(dispatchName({ role: 'investigate', topic: 'auth' }), 'investigate auth')
-  for (const c of ['c4', 'c6', 'c8', 'assemble']) assert.equal(dispatchName({ role: 'verify', check: c }), `verify ${c}`)
+  assert.equal(dispatchName({ role: 'fix', group: 'B', round: 2 }), 'fix B r2')
+  assert.equal(dispatchName({ role: 're-review', group: 'B', round: 1 }), 're-review B r1')
+  assert.equal(dispatchName({ role: 'fix', round: 3 }), 'fix r3')
+  for (const c of ['c4', 'c8']) assert.equal(dispatchName({ role: 'verify', check: c }), `verify ${c}`)
 })
 
 test('a name out of the form is refused', () => {
@@ -94,20 +97,23 @@ test('a name out of the form is refused', () => {
     [{ role: 'merge-review', group: 'b' }, /not a group letter/],
     [{ role: 'sweep', group: 'A' }, /takes no --group/],
     [{ role: 'fix', task: 1, round: 0 }, /positive integer/],
-    [{ role: 'fix', group: 'A', round: 2 }, /belongs to a task/],
+    [{ role: 'merge-review', group: 'A', round: 2 }, /belongs to a task dispatch, or to a fix or re-review/],
+    [{ role: 'sweep', round: 1 }, /belongs to a task dispatch/],
     [{ role: 'verify', check: 'c5' }, /needs --check/],
+    [{ role: 'verify', check: 'assemble' }, /needs --check/],
+    [{ role: 'verify', check: 'c6' }, /needs --check/],
     [{ role: 'impl', task: 1, group: 'A' }, /from the plan/]
   ]
   for (const [inputs, message] of bad) assert.throws(() => dispatchName(inputs), message, JSON.stringify(inputs))
 })
 
 test('parseName reads back every fixed-form name and refuses the rest', () => {
-  for (const name of ['T3 impl', 'T3 fix r2', 'final-review', 'sweep', 'merge-review B', 'fix B', 'fix', 're-review', 'investigate auth', 'verify c6']) {
+  for (const name of ['T3 impl', 'T3 fix r2', 'final-review', 'sweep', 'merge-review B', 'fix B', 'fix B r2', 're-review B r1', 'fix r3', 'fix', 're-review', 'investigate auth', 'verify c8']) {
     const parts = parseName(name)
     assert.ok(parts, name)
     assert.equal(dispatchName(parts), name)
   }
-  for (const name of ['T3 implement', 'T0 impl', 'investigate two words', 'merge-review', 'verify c5', 'review', 'Task 3 impl']) assert.equal(parseName(name), null, name)
+  for (const name of ['T3 implement', 'T0 impl', 'investigate two words', 'merge-review', 'merge-review B r2', 'verify c5', 'verify c6', 'verify assemble', 'review', 'Task 3 impl']) assert.equal(parseName(name), null, name)
 })
 
 test('the graph numbers groups by row and reads their tasks and wave', () => {
@@ -130,12 +136,13 @@ test('the level follows the task, the review floor and the round-2 step up', () 
   assert.equal(agent({ role: 'fix', task: 1, round: 2 }), 'adf:integration')
   assert.equal(agent({ role: 'fix', task: 3, round: 3 }), 'adf:architecture')
   assert.equal(agent({ role: 'merge-review', group: 'B' }), 'adf:architecture')
+  assert.equal(agent({ role: 'fix', group: 'B', round: 1 }), 'adf:integration')
+  assert.equal(agent({ role: 'fix', group: 'B', round: 2 }), 'adf:architecture')
+  assert.equal(agent({ role: 're-review', group: 'B', round: 2 }), 'adf:integration')
   assert.equal(agent({ role: 'final-review' }), 'adf:architecture')
   assert.equal(agent({ role: 'sweep' }), 'adf:integration')
   assert.equal(agent({ role: 'verify', check: 'c4' }), 'adf:architecture')
   assert.equal(agent({ role: 'verify', check: 'c8' }), 'adf:integration')
-  assert.equal(agent({ role: 'verify', check: 'c6' }), 'adf:integration')
-  assert.equal(agent({ role: 'verify', check: 'assemble' }), 'adf:mechanical')
 })
 
 test('a task runs in its group worktree, or in the change worktree when wave 1 has one group', () => {
@@ -165,8 +172,8 @@ test('the reply file sits in the change worktree and is never overwritten', () =
   mkdirSync(dirname(first.replyFile), { recursive: true })
   writeFileSync(first.replyFile, '{}')
   assert.equal(call(root, 'plan', '--role', 'fix', '--task', '3', '--round', '2').replyFile, first.replyFile.replace(/\.json$/, '-2.json'))
-  const v = call(root, 'plan', '--role', 'verify', '--check', 'c6')
-  assert.deepEqual(v.sectionFiles, ['test-record-agent.txt', 'test-record.json'].map((f) => join(root, '.superpowers', 'sdd', CHANGE, 'verify', f)))
+  const v = call(root, 'plan', '--role', 'verify', '--check', 'c8')
+  assert.deepEqual(v.sectionFiles, ['c8-agent.txt', 'c8.json'].map((f) => join(root, '.superpowers', 'sdd', CHANGE, 'verify', f)))
   assert.equal(v.replyFile, undefined)
 })
 
@@ -185,6 +192,8 @@ test('an implementer prompt carries every fixed field and clause, with paths abs
   assert.ok(prompt.includes(`node "${PLUGIN_ROOT}/scripts/ledger.mjs" debt --change ${CHANGE}`))
   assert.ok(prompt.includes(`--task 3 --root ${root}`))
   assert.ok(prompt.includes(`\`git -C ${wt}\``))
+  assert.ok(prompt.includes(`node "${PLUGIN_ROOT}/scripts/commit.mjs" --root ${wt} --only <path>`))
+  assert.match(prompt, /which tests cover a file\s+is your call/)
   assert.ok(prompt.includes(`${PLUGIN_ROOT}/scripts/lib/reply.mjs`))
   assert.ok(prompt.includes(join(root, '.superpowers', 'sdd', CHANGE, 'replies', 'T3-impl.json')))
   assert.doesNotMatch(prompt, /\$\{CLAUDE_PLUGIN_ROOT\}|<change>|<root>|<worktree>|<!--/)
@@ -195,27 +204,47 @@ test('a review proves the test can fail only for a test-first task; its question
   const q = join(root, 'q.txt')
   writeFileSync(q, 'Review it.')
   const proof = /the review proves the new test can fail/
-  assert.match(call(root, 'prompt', '--role', 'review', '--task', '2', '--question-file', q).prompt, proof)
+  const tdd = call(root, 'prompt', '--role', 'review', '--task', '2', '--question-file', q, '--base', 'c'.repeat(40), '--head', 'd'.repeat(40)).prompt
+  assert.match(tdd, proof)
+  assert.ok(tdd.includes(`scripts/tdd-proof.mjs" --worktree ${join(MAIN, '.claude', 'worktrees', `${CHANGE}--group-1`)} --commit ${'d'.repeat(40)} --test`))
+  assert.match(call(root, 'prompt', '--role', 'review', '--task', '2', '--question-file', q).prompt, /--commit <the task's commit>/)
   const plain = call(root, 'prompt', '--role', 'review', '--task', '1', '--question-file', q, '--base', 'a'.repeat(40), '--head', 'b'.repeat(40)).prompt
   assert.doesNotMatch(plain, proof)
   assert.ok(plain.includes(`review-aaaaaaa..bbbbbbb.diff`))
-  assert.match(plain, /A reviewer that accepts a compromise records it the same way\./)
+  assert.match(plain, /A reviewer that accepts a compromise records it/)
+  assert.match(plain, /do not re-run them to\s+confirm it/)
   const refused = cli(root, 'prompt', '--change', CHANGE, '--role', 'review', '--task', '1')
   assert.equal(refused.status, 1)
   assert.match(refused.out.error, /needs --question-file/)
 })
 
-test('the sweep prompt names the base and the fixed question; a merge review names the group files', () => {
+test('the sweep prompt names the base, the range and the fixed question; a merge review names the group files', () => {
   const root = host()
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: 'ignore' })
+  git('init', '-q', '-b', 'develop')
+  git('-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '--allow-empty', '-m', 'init')
   const sweep = call(root, 'prompt', '--role', 'sweep').prompt
   assert.ok(sweep.includes('Base: develop'))
+  assert.match(sweep, /Range: [0-9a-f]{40}\.\.[0-9a-f]{40}/)
   assert.ok(sweep.includes("against the change's base, `develop`"))
-  assert.match(sweep, /\*\*One question:\*\* does the branch add a symbol/)
+  assert.match(sweep, /whose behaviour the tree already has/)
+  assert.doesNotMatch(sweep, /A second question/)
+  const specs = join(root, 'openspec', 'changes', CHANGE, 'specs', 'cap')
+  mkdirSync(specs, { recursive: true })
+  writeFileSync(join(specs, 'spec.md'), '## REMOVED Requirements\n\n### Requirement: Old thing\n\n**Reason**: gone\n')
+  const second = call(root, 'prompt', '--role', 'sweep').prompt
+  assert.match(second, /A second question/)
+  assert.ok(second.includes('REMOVED Old thing (specs/cap/spec.md): no Code Disposition'))
   const q = join(root, 'q.txt')
   writeFileSync(q, 'Check the merge.')
   const merge = call(root, 'prompt', '--role', 'merge-review', '--group', 'A', '--question-file', q).prompt
   assert.ok(merge.includes(join(root, 'src/t1.mjs')) && merge.includes(join(root, 'src/t2.mjs')))
   assert.ok(!merge.includes('src/t3.mjs'))
+  assert.match(merge, /agree in\s+meaning/)
+  const fix = call(root, 'prompt', '--role', 'fix', '--group', 'A', '--round', '2', '--question-file', q)
+  assert.equal(fix.name, 'fix A r2')
+  assert.ok(fix.prompt.includes(`--reason <why> --root ${root}`))
+  assert.doesNotMatch(fix.prompt, /<n>/)
 })
 
 test('a verify prompt reads base and range from run.json and names its two files', () => {
@@ -233,10 +262,11 @@ test('a verify prompt reads base and range from run.json and names its two files
   assert.match(c4, /Every design decision traces to a requirement/)
   assert.ok(c4.includes(`git runs as \`git -C ${root}\``))
   const c8 = call(root, 'prompt', '--role', 'verify', '--check', 'c8').prompt
-  assert.ok(c8.includes(join(root, '.claude', 'skills', 'deploy', 'SKILL.md')))
-  const assemble = call(root, 'prompt', '--role', 'verify', '--check', 'assemble').prompt
-  assert.ok(assemble.includes(`It writes \`${join(root, 'openspec', 'changes', CHANGE, 'verify.md')}\``))
-  for (const p of [c4, c8, assemble]) assert.doesNotMatch(p, /\{\{\w+\}\}|<verify>|<id>|<root>|<change>/)
+  assert.ok(c8.includes(`Files in scope:\n  - ${join(verify, 'c8-candidates.txt')}`))
+  assert.ok(!c8.includes(join(root, '.claude', 'skills', 'deploy', 'SKILL.md')))
+  assert.ok(c8.includes(join(verify, 'c8-candidates.txt')))
+  assert.match(c4, /`proseEdits`/)
+  for (const p of [c4, c8]) assert.doesNotMatch(p, /\{\{\w+\}\}|<verify>|<id>|<root>|<change>/)
 })
 
 test('attempts per name: the first dispatches, the second retries, the third stops', () => {
@@ -261,18 +291,50 @@ test('the CLI separates a usage error from a refusal', () => {
   assert.equal(ok.out.worktree, root)
 })
 
-// The skeletons copy the instruction's clauses; a reworded instruction that leaves its copy
-// behind would send agents the old rule.
+// A skeleton under schema/prompts/ is the one full statement of what an agent is told; the
+// instruction points at it. A block marked verbatim is the exception, a copy of its instruction
+// checked word for word: a reworded instruction that leaves its copy behind would send agents the
+// old rule.
 test('every verbatim block of a prompt skeleton is in its instruction, word for word', () => {
   const pluginRoot = join(PROMPTS_DIR, '..', '..')
-  let blocks = 0
   for (const f of readdirSync(PROMPTS_DIR)) {
     for (const { source, text } of verbatimBlocks(readFileSync(join(PROMPTS_DIR, f), 'utf8'))) {
-      blocks++
       const instruction = normalize(readFileSync(join(pluginRoot, source), 'utf8'))
       assert.ok(instruction.includes(normalize(text)), `${f}: a verbatim block is not in ${source}: ${text.slice(0, 80)}`)
     }
   }
-  assert.ok(blocks >= 10)
-  assert.ok(!normalize(readFileSync(join(pluginRoot, 'schema/instructions/apply.md'), 'utf8')).includes(normalize('- dispatch a subagent of its own;')))
+})
+
+// The apply skeletons carry no verbatim block, and the apply instruction and command restate
+// none of their sentences: a rule an agent is told lives in its skeleton alone.
+test('the apply instruction and command restate no sentence of an apply prompt skeleton', () => {
+  const pluginRoot = join(PROMPTS_DIR, '..', '..')
+  const surfaces = ['schema/instructions/apply.md', 'commands/apply.md'].map((p) => normalize(readFileSync(join(pluginRoot, p), 'utf8')))
+  const skeletons = readdirSync(PROMPTS_DIR).filter((f) => f.endsWith('.md') && !f.startsWith('verify'))
+  assert.ok(skeletons.length >= 8, skeletons.join(', '))
+  const restated = []
+  for (const f of skeletons) {
+    const text = readFileSync(join(PROMPTS_DIR, f), 'utf8')
+    assert.deepEqual(verbatimBlocks(text), [], `${f} carries a verbatim block`)
+    const prose = text
+      .split('\n')
+      .filter((l) => !/^\s*<!--.*-->\s*$/.test(l))
+      .join('\n')
+    for (const sentence of normalize(prose).split(/(?<=[.;:])\s+/)) {
+      if (sentence.length < 40 || /\{\{|<\w/.test(sentence)) continue
+      if (surfaces.some((s) => s.includes(sentence))) restated.push(`${f}: ${sentence}`)
+    }
+  }
+  assert.deepEqual(restated, [])
+})
+
+// The orchestrator's own rules never reach an agent: a prompt is what the agent does.
+test('no apply prompt skeleton speaks to the orchestrator', () => {
+  for (const f of readdirSync(PROMPTS_DIR).filter((n) => n.endsWith('.md') && !n.startsWith('verify'))) {
+    const sent = readFileSync(join(PROMPTS_DIR, f), 'utf8')
+      .split('\n')
+      .filter((l) => !/^\s*<!--.*-->\s*$/.test(l))
+      .join('\n')
+    assert.doesNotMatch(sent, /\bdispatch text\b|\bthe orchestrator\b|\ban implementer prompt\b|\bthe prompt (names|tells|says)\b/i, f)
+  }
 })

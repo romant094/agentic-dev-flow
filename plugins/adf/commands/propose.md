@@ -21,109 +21,74 @@ verdict, named `investigate <topic>` with a one-word topic. Read one named file 
 
 **Input:** `$ARGUMENTS` is the change name in kebab-case, or a description of the change.
 
-1. **Check that Superpowers is available.**
-
-   ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/superpowers.mjs"
-   ```
-
-   If `ok` is false, stop. Show `reason` and `install`, and create nothing (see the propose
-   instruction).
-
-2. **Get the change name.** If the input is a kebab-case name, use it and ask nothing.
+1. **Get the change name.** If the input is a kebab-case name, use it and ask nothing.
    Otherwise ask one open question, with no preset options: "What change do you want to work
    on? Describe what you want to build or fix." Derive a kebab-case name from the answer. Do not
    continue without understanding what is to be built.
 
-3. **Make the branch and the worktree.** From the main checkout, run:
+2. **Check that Superpowers is available.** From the main checkout, run the preflight:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" suggest --change <name>
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/preflight.mjs" --phase propose --change <name>
    ```
 
-   - If `dirty` is not empty, stop: show `git status` and ask the developer to deal with it.
-   - If `path` already exists, the change is in flight: ask whether to continue it there or to
-     choose another name.
-   - Ask the developer, in one question, for the base (`bases`; offer `current` only when it is
-     listed, and name both branches) and for the branch name (`branch`, or ask for the type when
-     it is null). Wait for an explicit answer. Do not validate the confirmed name.
+   If `ok` is false, show `refusal` and create nothing; for uncommitted work, also show
+   `git status`. Otherwise read `workspace`:
+   - If `workspace.exists`, the change is in flight: ask whether to continue it there or to
+     choose another name. To continue, `workspace.path` is the root; go to step 4.
+   - Ask the developer, in one question, for the base (`workspace.bases`; offer `current` only
+     when it is listed, and name both branches) and for the branch name (`workspace.branch`, or
+     ask for the type when it is null). Wait for an explicit answer.
 
-   Then run:
+3. **Make the branch, the worktree and the change.**
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" create --change <name> --branch <branch> --base <integration|current>
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/propose.mjs" create --change <name> --branch <branch> --base <integration|current>
    ```
 
-   If it refuses, show `error` and stop. Otherwise `root` is the worktree. Every later step
-   passes `--root <root>` to the core's scripts and runs git with `git -C <root>`. Say:
-   "Working on `<branch>` in `<root>`, base `<base>`."
+   If it refuses, show `refusal` or `error` and stop. Otherwise `root` is the worktree. Every
+   later step passes `--root <root>`. Say: "Working on `<branch>` in `<root>`, base `<base>`."
 
-4. **Create the change and record the session.**
+4. **Write the artifacts.** Track them with the todo tool. Repeat:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" new <name> --base <base> --root <root>
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/ledger.mjs" session --change <name> --phase propose --root <root>
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" next --change <name> --root <root>
    ```
 
-5. **Read the build order.**
+   - `done: true`: go to step 5.
+   - `ok: false` with `blockedBy`: fix what its `gates` report in that artifact, run the `done`
+     command the `refusal` names, and repeat.
+   - Otherwise `artifact` is the next one to write:
+     1. Read every file in `dependencyFiles`.
+     2. Follow `instructions.instruction`, with `instructions.template` as the structure and
+        `context`, `rules` and `guides` as constraints.
+     3. Write to `instructions.resolvedOutputPath`; never assume a path. For an `optional`
+        artifact the change does not need, run the skip command `optionalNote` names instead.
+     4. Run the command in `then`. If it refuses, fix what it reports and run it again. Say
+        "Created <id>".
+
+   If the context is unclear, ask the developer; otherwise make a reasonable decision and
+   continue.
+
+5. **Commit the artifacts.**
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" status --change <name> --root <root>
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/propose.mjs" commit --change <name> --root <root>
    ```
 
-   Use `applyRequires`, `artifacts` and `artifactPaths`; never assume a path.
+   If it refuses, show `refusal` or `error` and stop.
 
-6. **Write the artifacts.** Track them with the todo tool. For each artifact whose status is
-   `ready`, in order:
-
-   1. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" instructions <id> --change <name> --root <root>`.
-   2. Read every completed dependency it lists.
-   3. Follow `instruction`. Use `template` as the structure. Apply `context`, `rules` and
-      `guides` as constraints, and do not copy them into the file.
-   4. Write the file to `resolvedOutputPath`. Say "Created <id>".
-   5. Run `status` again.
-
-   Gates, stated in full in the propose instruction:
-
-   - When `specs` is done, before `tasks`, run
-     `node "${CLAUDE_PLUGIN_ROOT}/scripts/specs.mjs" validate --change <name> --root <root>`.
-     Fix every invalid item before you continue.
-   - When `plan` is done, run
-     `node "${CLAUDE_PLUGIN_ROOT}/scripts/plan-symbols.mjs" <name> --root <root>`. Do not
-     commit until it exits 0.
-
-   Stop when every artifact in `applyRequires` is done. If the context is unclear, ask the
-   developer; otherwise make a reasonable decision and continue.
-
-7. **Commit the artifacts.**
+6. **Open the merge request.** Write the summary as `<scope>: <description>` for the change,
+   with no draft prefix. Run:
 
    ```bash
-   git -C <root> add openspec/changes/<name>
-   git -C <root> status --porcelain
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/forge.mjs" open --change <name> --root <root> --summary "<scope>: <description>"
    ```
 
-   If anything outside `openspec/changes/<name>/` is staged, stop and show it. Otherwise:
+   On `refused`, the artifacts stay committed; do not retry with other input.
+
+7. **Report.** Pass the forge result on, and show `report` as it is:
 
    ```bash
-   git -C <root> commit -m "docs(openspec): propose <name>"
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" status --change <name> --root <root> --report --forge '<forge result JSON>'
    ```
-
-8. **Open the merge request.** Write the title in Conventional Commits form from the branch
-   type and the change, with no draft prefix: `<type>(<scope>): <description>`. Run:
-
-   ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/forge.mjs" open --root <root> --input '{"change":"<name>","branch":"<branch>","base":"<base>","title":"<title>","draft":true,"protected":<protected list from suggest>}'
-   ```
-
-   Read `state` (see the propose instruction):
-   - `none`: no forge plugin is enabled. Nothing is pushed.
-   - `done`: note `url`, and whether it was `reused`.
-   - `degraded`: show `hint` and every `fallback` command.
-   - `refused`: show `error`. The artifacts stay committed; do not retry with other input.
-
-9. **Report.** Run `status` once more, then report:
-   - the change name, the branch, the worktree and the base;
-   - each artifact created, in one line;
-   - the merge request: its URL; or that none was opened because no forge plugin is enabled;
-     or, when degraded or refused, that none exists yet and what to run;
-   - the next step: `/adf:apply`.

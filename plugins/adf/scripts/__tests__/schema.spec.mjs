@@ -120,6 +120,6 @@ test('the verify instruction and template carry every check, one section each, a
     assert.match(instruction, new RegExp(`\`${id}\``), `the instruction does not name ${id}`)
   }
   for (const id of REPLACEABLE) assert.match(instruction, new RegExp(`\| \`${id}\` \|`), `no dispatch writes ${id}`)
-  for (const name of ['verify c4', 'verify c8', 'verify assemble']) assert.match(instruction, new RegExp(`\`${name}\``))
+  for (const name of ['verify c4', 'verify c8']) assert.match(instruction, new RegExp(`\`${name}\``))
   assert.match(template.trimEnd().split('\n').at(-1), /^Verdict: /)
 })

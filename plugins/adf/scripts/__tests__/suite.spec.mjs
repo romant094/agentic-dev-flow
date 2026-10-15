@@ -253,6 +253,25 @@ test('a suite that runs past the timeout is stopped and cannot run, never a pass
   assert.equal(cli(['run', '--change', CHANGE, '--root', root, '--timeout', 'soon']).code, 2)
 })
 
+// The suite runs in a process group of its own, so the timeout stops what the shell started too.
+test('a timed-out suite is stopped with its grandchildren', { skip: process.platform === 'win32' }, async () => {
+  const { root } = host({ command: "sh -c 'sleep 60 & echo $! > grand.pid; wait'" })
+  const r = runSuite(root, { change: CHANGE, timeoutMinutes: 0.01 })
+  assert.equal(r.timedOut, true)
+  const pid = Number(readFileSync(join(root, 'grand.pid'), 'utf8'))
+  const alive = () => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+  for (let i = 0; i < 40 && alive(); i++) await new Promise((done) => setTimeout(done, 50))
+  if (alive()) process.kill(pid, 'SIGKILL')
+  assert.equal(alive(), false, `the grandchild ${pid} outlived the timeout`)
+})
+
 test('no command in the guide is not-run with the reason, never a pass', () => {
   const { root } = host({ command: null })
   const out = cli(['run', '--change', CHANGE, '--root', root, '--record', '--section', 'test-record'])

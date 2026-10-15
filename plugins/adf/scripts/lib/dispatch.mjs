@@ -1,13 +1,15 @@
 // Every subagent dispatch of a change has a fixed name, a fixed agent level, a fixed reply or
 // section file and a fixed worktree, and its prompt carries fixed fields and fixed clauses. The
-// apply and verify instructions state the rules; this module applies them, so a dispatch does
-// not depend on the orchestrator remembering them. The metrics read the role, the task and the
+// apply and verify instructions state the orchestrator's rules and the skeletons under
+// schema/prompts/ state what an agent is told; this module applies both, so a dispatch does not
+// depend on the orchestrator remembering them. The metrics read the role, the task and the
 // round from the name: 17 of 39 dispatches of one origin change missed the form.
 //
 // Names (schema/instructions/apply.md, "Name every dispatch in the fixed form"):
 //   T<n> <role>, T<n> <role> r<k>          role impl | review | re-review | fix
-//   final-review, sweep, investigate <topic>, merge-review <G>, fix [<G>], re-review [<G>]
-//   verify c4 | verify c6 | verify c8 | verify assemble   (schema/instructions/verify.md)
+//   final-review, sweep, investigate <topic>, merge-review <G>
+//   fix [<G>] [r<k>], re-review [<G>] [r<k>]
+//   verify c4 | verify c8   (schema/instructions/verify.md)
 //
 // Pure: every read of the tree is done by the caller and passed in.
 import { join } from 'node:path'
@@ -28,14 +30,15 @@ export const TASKLESS = {
 // schema/instructions/verify.md, the dispatch table.
 export const VERIFY_CHECKS = {
   c4: { section: 'c4', level: 'architecture' },
-  c8: { section: 'c8', level: 'integration' },
-  c6: { section: 'test-record', level: 'integration' },
-  assemble: { section: null, level: 'mechanical' }
+  c8: { section: 'c8', level: 'integration' }
 }
 export const ROLES = [...new Set([...TASK_ROLES, ...Object.keys(TASKLESS), 'verify'])]
 // Roles whose question the orchestrator must write: the prompt refuses an empty slot.
 export const QUESTION_REQUIRED = ['review', 're-review', 'fix', 'final-review', 'merge-review', 'investigate']
 export const MAX_ATTEMPTS = 2
+// Task-less roles that loop in rounds: the fix and re-review after a merge review or the final
+// review.
+export const ROUNDED = ['fix', 're-review']
 
 const TOPIC = /^[A-Za-z0-9]+$/
 const GROUP = /^[A-Z]$/
@@ -47,6 +50,11 @@ const refuse = (message) => {
 
 const levelAt = (i) => LEVELS[Math.min(Math.max(i, 0), LEVELS.length - 1)]
 const atLeast = (level, floor) => levelAt(Math.max(LEVELS.indexOf(level), LEVELS.indexOf(floor)))
+// A task-less dispatch's level; a fix from round 2 on goes one level up, as a task's fix does.
+const taskless = (role, round) => {
+  const level = TASKLESS[role].level
+  return role === 'fix' && round >= 2 ? levelAt(LEVELS.indexOf(level) + 1) : level
+}
 
 // ---------------------------------------------------------------- the plan
 
@@ -122,7 +130,7 @@ export function dispatchName({ role, task, group, round, topic, check }) {
     return round === undefined ? `T${task} ${role}` : `T${task} ${role} r${round}`
   }
   if (!Object.hasOwn(TASKLESS, role)) refuse(`${role} needs --task`)
-  if (round !== undefined) refuse('--round belongs to a task dispatch')
+  if (round !== undefined && !ROUNDED.includes(role)) refuse('--round belongs to a task dispatch, or to a fix or re-review')
   if (role === 'investigate') {
     if (!TOPIC.test(topic ?? '')) refuse(`investigate needs --topic, one word of letters and digits, not "${topic ?? ''}"`)
     return `investigate ${topic}`
@@ -131,7 +139,8 @@ export function dispatchName({ role, task, group, round, topic, check }) {
   if (group !== undefined && !GROUP.test(group)) refuse(`group "${group}" is not a group letter`)
   if (rule === 'required' && group === undefined) refuse(`${role} needs --group <letter>`)
   if (rule === 'none' && group !== undefined) refuse(`${role} takes no --group`)
-  return group === undefined ? role : `${role} ${group}`
+  const suffix = round === undefined ? '' : ` r${round}`
+  return `${group === undefined ? role : `${role} ${group}`}${suffix}`
 }
 
 // The parts of a fixed-form name, or null when the name is not in the form.
@@ -139,14 +148,14 @@ export function parseName(name) {
   const text = String(name ?? '')
   let m = /^T([1-9]\d*) (impl|review|re-review|fix)(?: r([1-9]\d*))?$/.exec(text)
   if (m) return { role: m[2], task: Number(m[1]), ...(m[3] ? { round: Number(m[3]) } : {}) }
-  m = /^verify (c4|c6|c8|assemble)$/.exec(text)
+  m = /^verify (c4|c8)$/.exec(text)
   if (m) return { role: 'verify', check: m[1] }
   m = /^investigate ([A-Za-z0-9]+)$/.exec(text)
   if (m) return { role: 'investigate', topic: m[1] }
   m = /^(final-review|sweep)$/.exec(text)
   if (m) return { role: m[1] }
-  m = /^(merge-review) ([A-Z])$/.exec(text) ?? /^(fix|re-review)(?: ([A-Z]))?$/.exec(text)
-  if (m) return { role: m[1], ...(m[2] ? { group: m[2] } : {}) }
+  m = /^(merge-review) ([A-Z])$/.exec(text) ?? /^(fix|re-review)(?: ([A-Z]))?(?: r([1-9]\d*))?$/.exec(text)
+  if (m) return { role: m[1], ...(m[2] ? { group: m[2] } : {}), ...(m[3] ? { round: Number(m[3]) } : {}) }
   return null
 }
 
@@ -176,15 +185,13 @@ export function planDispatch(inputs, { root, main, planText, exists }) {
     out.check = check
     out.agent = `adf:${level}`
     out.worktree = root
-    if (section) {
-      out.section = section
-      out.sectionFiles = [join(dir, `${section}-agent.txt`), join(dir, `${section}.json`)]
-    } else out.recordFile = join(root, 'openspec', 'changes', change, 'verify.md')
+    out.section = section
+    out.sectionFiles = [join(dir, `${section}-agent.txt`), join(dir, `${section}.json`)]
     return out
   }
 
   if (role === 'investigate' || role === 'final-review' || role === 'sweep' || (task === undefined && group === undefined)) {
-    out.agent = `adf:${TASKLESS[role].level}`
+    out.agent = `adf:${taskless(role, round)}`
     out.worktree = root
     out.replyFile = replyFile(root, change, name, exists)
     return out
@@ -196,7 +203,7 @@ export function planDispatch(inputs, { root, main, planText, exists }) {
     // merge-review <G>, fix <G>, re-review <G>: in the change worktree, over the group's tasks.
     const row = graph.find((g) => g.letter === group)
     if (!row) refuse(`group ${group} is not in the plan's Execution Graph`)
-    out.agent = `adf:${TASKLESS[role].level}`
+    out.agent = `adf:${taskless(role, round)}`
     out.worktree = root
     out.group = group
     out.tasks = row.tasks
@@ -246,20 +253,21 @@ export function fill(skeleton, values, tokens) {
 }
 
 // Which skeletons, in order, make up the rules of a dispatch.
-export function ruleSkeletons({ role, check }, { testFirst = false } = {}) {
-  if (role === 'verify') return check === 'assemble' ? ['verify-assemble'] : ['verify', `verify-${check}`]
+export function ruleSkeletons({ role, check }, { testFirst = false, dispositions = false } = {}) {
+  if (role === 'verify') return ['verify', `verify-${check}`]
   const parts = []
   if (role === 'impl' || role === 'fix') parts.push('implementer')
   if (['review', 're-review', 'final-review', 'merge-review'].includes(role)) parts.push('reviewer')
+  if (role === 'merge-review') parts.push('merge-review')
   if (role === 'review' && testFirst) parts.push('test-first')
-  if (role === 'sweep') parts.push('read-only', 'sweep')
+  if (role === 'sweep') parts.push('read-only', 'sweep', ...(dispositions ? ['sweep-dispositions'] : []))
   if (role === 'investigate') parts.push('read-only')
   parts.push('git', 'reply')
   return parts
 }
 
 // skeletons: { name: text }; fields: [[label, value]] in display order (empty values dropped).
-export function renderPrompt({ plan, change, skeletons, fields, question, tokens, testFirst }) {
+export function renderPrompt({ plan, change, skeletons, fields, question, tokens, testFirst, dispositions }) {
   if (question === undefined && QUESTION_REQUIRED.includes(plan.role)) {
     refuse(`${plan.role} needs --question-file: the question is the part the orchestrator writes`)
   }
@@ -271,7 +279,7 @@ export function renderPrompt({ plan, change, skeletons, fields, question, tokens
     replyFile: plan.replyFile ?? '',
     base: tokens['<base>'] ?? ''
   }
-  const rules = ruleSkeletons(plan, { testFirst }).map((n) => fill(skeletons[n], values, tokens))
+  const rules = ruleSkeletons(plan, { testFirst, dispositions }).map((n) => fill(skeletons[n], values, tokens))
   const fieldText = fields
     .filter(([, v]) => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0))
     .map(([label, v]) => (Array.isArray(v) ? `${label}:\n${v.map((x) => `  - ${x}`).join('\n')}` : `${label}: ${v}`))

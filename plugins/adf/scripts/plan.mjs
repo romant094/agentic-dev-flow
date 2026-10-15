@@ -28,7 +28,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { changeDir, globToRegExp, inferChange, META_FILE } from './lib/changes.mjs'
 import { PLANNING_GUIDE } from './lib/host-files.mjs'
-import { listGroups } from './lib/groups.mjs'
+import { groupState } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
 import {
   addDuringApply,
@@ -157,27 +157,10 @@ function scheduleCmd(o) {
   const cap = o.cap === undefined ? DEFAULT_CAP : Number(o.cap)
   if (!Number.isInteger(cap) || cap < 1) throw new Usage('--cap must be a positive integer')
   const { planText, tasksText } = changeFiles(o.root, o.change)
-  const git = gitIn(o.root)
   const branch = changeBranch(o.root)
-  let merges = []
-  try {
-    merges = git('log', '--merges', '--format=%s', 'HEAD').split('\n')
-  } catch {
-    // no history: nothing is merged
-  }
-  let kept = []
-  try {
-    kept = listGroups(o.root, o.change).map((g) => g.group)
-  } catch {
-    // not a repository: nothing is kept
-  }
   const items = parseTaskItems(tasksText ?? '')
-  // A group is merged when the change branch holds the merge commit of its branch; the branch
-  // itself is deleted once its worktree is removed, so the merge subject is what remains.
-  const state = (n) => {
-    const name = `${branch}--group-${n}`
-    return { merged: Boolean(branch) && merges.some((s) => s === `Merge branch '${name}'` || s.startsWith(`Merge branch '${name}' into `)), kept: kept.includes(n) }
-  }
+  // A group is merged when the change branch holds its branch's merge commit (lib/groups.mjs).
+  const state = groupState(o.root, o.change)
   const result = schedule(planText, { state, ticked: (id) => items.some((i) => i.id === id && i.done), cap })
   return { code: result.ok ? 0 : 1, result: { ...result, branch, root: o.root } }
 }

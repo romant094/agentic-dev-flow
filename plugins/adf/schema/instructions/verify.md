@@ -1,7 +1,8 @@
 The procedure `/adf:verify` executes: was the change actually built as its artifacts say. The
 command file carries the step order; the rules below are stated here in full and the command
 points at them. `<root>` is the change worktree the change was resolved to, `<change>` its name,
-and `<verify>` is `<root>/.superpowers/sdd/<change>/verify/`.
+and `<verify>` is `<root>/.superpowers/sdd/<change>/verify/`. Every deterministic step is one
+script call; the orchestrator keeps the judgement on its result and the talk with the developer.
 
 **Verify runs after apply, never while planning.**
 
@@ -14,27 +15,32 @@ Run it until no blocking issue remains.
 
 **Verify acts on the change worktree, on a branch that can take the record.**
 
-The change is selected by the resolve instruction. Then confirm the worktree and the branch the
-way apply does: `git -C <root> rev-parse --show-toplevel` prints `<root>`, `<root>` is not the
-main checkout, and the `current` branch from `workspace.mjs suggest` is neither null nor listed
-in `protected`. A change with no worktree of its own, or a protected current branch, is refused:
-the record's commit would bypass the merge request. Verify makes no worktree and no branch.
+The change is selected by the resolve instruction. Then one call checks where verify runs:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/preflight.mjs" --phase verify --change <change> --root <root>
+```
+
+It checks the Superpowers gate, that `<root>` is the top level of a worktree other than the
+main checkout, that the current branch is named and not protected, and that the change's
+dependencies are done; on a pass it records the session. On `ok: false`, stop, show `refusal`
+and write nothing. A change with no worktree of its own, or a protected current branch, is
+refused: the record's commit would bypass the merge request. Verify makes no worktree and no
+branch.
 
 **The script runs the mechanical checks; the orchestrator reads verdicts, not output.**
 
-The first run of a verify session passes `--fresh`, which deletes `<verify>` first: every section
-is produced again, and a section left by an earlier session describes a HEAD that may have
-moved. Later runs of the same session leave it out:
-
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" run --change <change> --root <root> [--fresh] [--skill-edit <sha> ...]
+node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" run --change <change> --root <root>
 ```
 
-It prints one result per check (`id`, `title`, `verdict`, `summary`, `output`) and keeps the
-list in `<verify>/run.json`. The raw output of each check is in the file its `output` names;
-read the summaries, and leave the files to the dispatches. Exit 1 means a check failed or the
-run was refused; an `error` field is the refusal. The verdicts: `pass`; `warn`, which never
-blocks; `fail`, which blocks; `not-run`, which is not a pass.
+A run in a session other than the one that wrote `<verify>run.json` clears `<verify>` first:
+a section left by an earlier session describes a HEAD that may have moved. `--fresh` forces the
+clearing. The approved skill edits are read from the ledger. It prints one result per check
+(`id`, `title`, `verdict`, `summary`, `output`); read the summaries, and leave the files to the
+dispatches. Exit 1 means a check failed or the run was refused; an `error` field is the refusal.
+The verdicts: `pass`; `warn`, which never blocks; `fail`, which blocks; `not-run`, which is not a
+pass. What resolves each check:
 
 - `validation`: the change's own artifacts validate strictly. A failure is this change's: fix
   the artifact and re-run. The rest of the corpus is reported as advisory text and never gates.
@@ -44,42 +50,44 @@ blocks; `fail`, which blocks; `not-run`, which is not a pass.
 - `deltas`: each capability's delta against its main spec. `needs sync` is expected before
   archive, which merges the deltas: a warning naming the capabilities, not a failure. A
   `conflict` is a delta archive could not apply, and fails.
-- `tree`: nothing uncommitted, untracked files included, and a non-empty range from the change's
-  base to HEAD. An uncommitted path is outside every range a later phase reads: commit it, or
-  remove it, and re-run.
+- `tree`: an uncommitted path, untracked files included, is outside every range a later phase
+  reads: commit it, or remove it, and re-run.
 - `test-record`: whether apply's test record still describes HEAD. Its rules are below.
-- `worktrees`: no task-group worktree of this change and no base-check worktree remains. One
-  that remains is an apply that stopped, most likely at a blocked group; it fails whatever the
-  other checks say. Resolve it through apply, never by deleting it from verify.
-- `out-of-plan`: every file a commit in the range touched is named by a task's `**Files:**`
-  block, lies in the change's own directory, matches a glob of the registry's `outsidePlan`
-  list, or belongs to an approved skill edit. Each other file is reported with its commit and
-  fails. The resolution is a plan amendment the developer approves, an "Added during apply"
+- `worktrees`: a task-group or base-check worktree of this change that remains is an apply that
+  stopped, most likely at a blocked group; it fails whatever the other checks say. Resolve it
+  through apply, never by deleting it from verify.
+- `out-of-plan`: a file that no task's `**Files:**` block names, outside the change's own
+  directory, the registry's `outsidePlan` globs and the approved skill edits, fails with its
+  commit. The resolution is a plan amendment the developer approves, an "Added during apply"
   line as the apply instruction states it, or a ruling; never a rewritten verdict. An unparsed
-  `**Files:**` bullet is a warning: its path is not in backticks, so the check could not read
-  it.
+  `**Files:**` bullet is a warning: its path is not in backticks, so the check could not read it.
 
 **The test record is cited while it is current, and re-run once it is not.**
 
-The script reads the `**Commit:**` line of `.apply-test-record.md` and lists the commits after
-it across the whole repository, ignoring only those confined to the change's own directory,
-which no test reads.
+`verify.mjs run` reads the `**Commit:**` line of `.apply-test-record.md` and lists the commits
+after it across the whole repository, ignoring only those confined to the change's own
+directory, which no test reads.
 
 - No commit outside the change directory since the record: the record stands. Its section cites
   the record, and the suite is not run again.
 - A commit outside the change directory since the record, no record, or a record whose commit is
-  not in the branch: the record is stale, and citing it would accept a cached result. Run the
-  whole suite as if no record existed, through the `verify c6` dispatch.
+  not in the branch: the record is stale, and citing it would accept a cached result. The
+  `test-record` check fails, and the whole suite runs as if no record existed.
 
-`verify c6` runs the whole-suite command of the planning guide (delivered in `guides`, under
-`## Whole-suite command`) with `<root>` as its working directory, exactly as the apply
-instruction's whole-suite rule describes, uncached. A failure is checked on the base the same
-way apply checks it, through `workspace.mjs base-check-add` and `base-check-remove`: a failure
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" run --change <change> --root <root> --section test-record --base-check
+```
+
+It runs the whole-suite command of the planning guide with `<root>` as its working directory,
+exactly as the apply instruction's whole-suite rule describes, uncached, and writes
+`<verify>test-record.json` with its output file. A failure is checked on the base: a failure
 that also fails on the base is pre-existing, named as separate work, and does not fail the
-check; one that does not reproduce there fails it. A suite that cannot run at all in this
-workspace (a missing dependency or service) is a failure, not a pass: the developer decides
-whether to provision it or to accept the risk with a ruling. When the guide holds no
-whole-suite command, the section is `not-run` with that reason.
+check; one that does not reproduce there fails it. On `comparison: "whole-run"`, compare the two
+output files before relying on the result. A suite that cannot run at all in this workspace (a
+missing dependency or service), or that runs past its timeout, is a failure, not a pass: the
+developer decides whether to provision it or to accept the risk with a ruling. When the guide
+holds no whole-suite command, the section is `not-run` with that reason. No agent runs the
+suite: there is no `verify c6` dispatch.
 
 The section quotes the runner's real output, its own pass and fail counts and its file or suite
 counts, never a summary of them. A green run is evidence only of the configuration it ran
@@ -87,10 +95,10 @@ under.
 
 **Test counts are reconciled by count, not by verdict.**
 
-The script reads every `impl` and `fix` reply in the change's SDD workspace. A reply whose test
-summary carries no count, or counts more than the apply record shows, is a warning. A summary
-line that cannot show a suite that never loaded once read as green over one. A re-run's section
-carries these warning lines over from the script's `test-record` output.
+`verify.mjs run` reads every `impl` and `fix` reply in the change's SDD workspace. A reply whose
+test summary carries no count, or counts more than the apply record shows, is a warning. A
+summary line that cannot show a suite that never loaded once read as green over one. The
+re-run's section carries these warning lines over.
 
 **The judgement checks are dispatches; each writes a section file.**
 
@@ -107,14 +115,19 @@ Name each dispatch in the fixed form the metrics read, and choose its level by t
 | Dispatch | Section id | Level | Runs |
 |---|---|---|---|
 | `verify c4` | `c4` | `adf:architecture` | always |
-| `verify c8` | `c8` | `adf:integration` | always |
-| `verify c6` | `test-record` | `adf:integration` | when `test-record` fails as stale or missing |
-| `verify assemble` | — | `adf:mechanical` | once the verdict is computed |
+| `verify c8` | `c8` | `adf:integration` | always, after `verify.mjs skill-candidates` |
+| none: `suite.mjs run --section test-record` | `test-record` | script | when `test-record` fails |
 
-The number in a name is a fixed identifier, not a position or a count. Every prompt carries the
-change, `<root>` as an absolute path, the base and range from `run.json`, the files in scope,
-the question, and the two file paths to write; git runs as `git -C <root>`. No dispatch text asks
-for a repository-wide git mutation. `verify c4` and `verify c8` run in parallel, in one response.
+The number in a name is a fixed identifier, not a position or a count. One call writes each
+prompt, with every fixed field filled (the change, `<root>` as an absolute path, the base and
+range from `run.json`, the files in scope, the two file paths to write), and names the agent:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role verify --check <c4|c8> --root <root>
+```
+
+git runs as `git -C <root>`. No dispatch text asks for a repository-wide git mutation.
+`verify c4` and `verify c8` run in parallel, in one response.
 
 **`verify c4`: design and specs against each other and against the code.**
 
@@ -136,28 +149,45 @@ for a repository-wide git mutation. `verify c4` and `verify c8` run in parallel,
   disposition apply's sweep recorded.
 - New mechanisms: for each one the change adds, which of its paths a test or a recorded run
   exercised and which nothing exercised. A green gate never stands in for a path that ran.
+- The section carries three more fields, which the record renders as written, each a string or
+  a list of strings: `proseEdits`, each hand-edited capability with its reason, or `none`;
+  `removalAccounting`, each `REMOVED` or `RENAMED` requirement's disposition against the code,
+  or `N/A: no REMOVED or RENAMED requirement`; `exercised`, one entry per path of a new
+  mechanism with what exercised it or that nothing did, or `none`.
 
 **`verify c8`: stale skills.**
 
-Compare the range's diff with every `<root>/.claude/skills/*/SKILL.md`, and the `README.md` and
-manifest beside it where present: does a skill state, as current fact, a behaviour the diff
-changed? Only the host's own skills are read, never an installed plugin's.
+Before the dispatch, list the candidates:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" skill-candidates --change <change> --root <root>
+```
+
+It reads every `<root>/.claude/skills/*/SKILL.md` and the `README.md` beside it, and writes to
+`<verify>c8-candidates.txt` each line that names a path, symbol, command or route the range's
+diff changed. Only the host's own skills are read, never an installed plugin's. The dispatch
+judges each candidate line, reading the skill around it and the diff: does the skill state, as
+current fact, a behaviour the diff changed?
 
 - **CONFIRMED**: a skill's stated fact is contradicted by the diff. The check fails. The
   dispatch writes the proposed edit, as a diff, into its output file and edits nothing.
 - **PLAUSIBLE**: the skill may be affected but is not clearly contradicted. A warning.
-- **None**: the diff touches nothing any skill documents as current fact. A pass.
+- **None**: no candidate line, or none that the diff contradicts. A pass.
 
 Show each CONFIRMED finding's proposed edit to the developer and ask whether to apply it. No
 skill file is edited without an explicit approval; silence is not approval, and an automatic
 dismissal looks exactly like a missed defect.
 
-- **Approved**: apply the edit and commit it on its own, touching only files under
-  `<root>/.claude/skills/`, in Conventional Commits form. No plan task is back-filled for it.
-  Pass its sha as `--skill-edit <sha>` to `verify.mjs run`, now and on every later run for this
-  change, including a later verify session, which reads the shas from the committed
-  `verify.md`. Re-run `verify.mjs run`, then `verify c8` with the approved shas in its prompt, so
-  the section records them and shows the finding resolved.
+- **Approved**: apply the edit to the skill files, and nothing else, then commit it on its own:
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" skill-edit --change <change> --message "<type(scope): description>" --root <root>
+  ```
+
+  It refuses any changed path outside `<root>/.claude/skills/`, commits, records the sha in the
+  ledger, where every later run reads it, and runs the checks again. No plan task is
+  back-filled for it. Then list the candidates and dispatch `verify c8` again, so the section
+  shows the finding resolved.
 - **Declined with a reason**: record the decline as a ruling on `c8`. It resolves the finding.
 
 **A developer ruling turns a failing check into a warning; nothing else does.**
@@ -185,41 +215,44 @@ belong to other phases; none of them gates verify.
 
 **Checks that need the developer.** A check the plan assigns to verify that needs the developer
 (a live environment, real hardware, consent at the time) is run with the developer after the
-dispatches. Write what was run and what it showed to `<verify>/developer.txt`; it is recorded
-in its own section and does not replace a check.
+dispatches. Write what was run and what it showed to a text file outside `<verify>`, agree the
+verdict with the developer, and record it:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" developer --change <change> --text-file <file> --verdict <pass|warn|fail|not-run> --summary <text> --root <root>
+```
+
+It copies the text verbatim to `<verify>developer.txt` and writes its section, which does not
+replace a check.
 
 **The verdict is computed by script.**
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" verdict --change <change> --root <root> --out <root>/.superpowers/sdd/<change>/verdict.json
+node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" verdict --change <change> --root <root> --report
 ```
 
 It reads `run.json`, every section file and the rulings, and computes `PASS`, `PASS WITH
 WARNINGS` or `FAIL`: any failing check without a ruling makes it FAIL. An `error` with
-`refusals` means the record cannot be given a verdict yet: a section is malformed or has no
-output file, or a check is not run and has no ruling. Correct the section by re-dispatching it,
-or obtain a ruling, and compute again. The verdict file stays outside `<verify>`, where it
-would be read as a section.
+`refusals` means the record cannot be given a verdict yet, and the result names what resolves
+it: each section in `redispatch` is written again by its writer (`test-record` by the suite
+run, `developer` by the developer call, the others by their dispatch), each check in
+`needsRuling` waits for the developer's ruling, and `rerun` asks for `verify.mjs run` again.
+Then compute again.
 
-**`verify assemble` fills the template; it decides nothing.**
-
-It writes `<root>/openspec/changes/<change>/verify.md` from the template, the sections in the
-template's order, each with its verdict as the verdict file displays it, its summary and the
-verbatim content of its output file. A section with nothing to paste is a step that was
-skipped: report it rather than describe what it would have said. The record's last line is the
-verdict file's `line`, unchanged. Before committing, confirm that the record's last line equals
-that `line`.
-
-**The record is committed alone, and verify pushes nothing.**
+**The record is rendered and committed by script, alone, and verify pushes nothing.**
 
 ```bash
-git -C <root> add -- openspec/changes/<change>/verify.md
-git -C <root> commit -m "docs(openspec): verify <change>" -- openspec/changes/<change>/verify.md
+node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" assemble --change <change> --root <root> --commit
 ```
 
-The commit holds `verify.md` and nothing else; an approved skill edit is its own commit. Verify
-calls no forge operation: the record reaches the remote with a later push. Verify offers no
-worktree removal either: the review runs next in this worktree, and archive removes it.
+It renders `openspec/changes/<change>/verify.md` from the template, `run.json`, the sections in
+the template's order with the verbatim content of each output file, the verdict, the rulings and
+the approved skill edits, deciding nothing; the record's last line is the verdict's `line`. It
+refuses while the verdict refuses, and when HEAD moved since the run: run the checks again. The
+commit holds `verify.md` and nothing else; an approved skill edit is its own commit. Show the
+result's `report`. Verify calls no forge operation: the record reaches the remote with a later
+push. Verify offers no worktree removal either: the review runs next in this worktree, and
+archive removes it.
 
 **The next step follows the verdict.** `PASS` or `PASS WITH WARNINGS`: the review, which reads
 the record's `Verdict:` line. `FAIL`: fix what the failing checks name (the artifact, the code

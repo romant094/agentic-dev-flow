@@ -18,4 +18,9 @@ The section's title is `Design and specs coherence`.
   disposition apply's sweep recorded.
 - New mechanisms: for each one the change adds, which of its paths a test or a recorded run
   exercised and which nothing exercised. A green gate never stands in for a path that ran.
+- The section carries three more fields, which the record renders as written, each a string or
+  a list of strings: `proseEdits`, each hand-edited capability with its reason, or `none`;
+  `removalAccounting`, each `REMOVED` or `RENAMED` requirement's disposition against the code,
+  or `N/A: no REMOVED or RENAMED requirement`; `exercised`, one entry per path of a new
+  mechanism with what exercised it or that nothing did, or `none`.
 <!-- /verbatim -->

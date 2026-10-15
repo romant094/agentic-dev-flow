@@ -31,10 +31,14 @@ command line's sight, when they are run with `node <path>/<script>` or directly:
 |---|---|---|
 | `commit.mjs --root <r> --only <path> ... --message <m>` | always | the staged, modified and untracked files under each `--only` path |
 | `tasks.mjs tick ... --change <name> --commit` | with `--commit` | `openspec/changes/<name>/tasks.md` and its `plan.md` |
+| `propose.mjs commit [--change <name>]` | always | `openspec/changes/<name>/`; without `--change`, every change directory |
+| `verify.mjs assemble --change <name> --commit` | with `--commit` | `openspec/changes/<name>/verify.md` |
+| `verify.mjs skill-edit ...` | always | `.claude/skills/`, in scope only when the registry includes it |
 
 Paths resolve against `--root`, or the command's directory without it. The list is
 `CORE_COMMIT_SCRIPTS` in `scripts/lib/english.mjs`: a future core script that commits must be
-added there, or its commits go unchecked. `tasks.mjs` reads its tasks file name from the core's
+added there, or its commits go unchecked; the core's `flow-regression.spec.mjs` fails when one
+is missing. `tasks.mjs` reads its tasks file name from the core's
 schema; the hook assumes the default, `tasks.md`.
 
 A deleted file, or a file that cannot be read, is never a finding. The working-tree text of each

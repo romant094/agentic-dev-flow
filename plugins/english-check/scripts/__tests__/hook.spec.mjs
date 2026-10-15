@@ -269,3 +269,37 @@ test('tasks.mjs tick --commit checks the change tasks file; without --commit it 
   assert.match(blocked.stderr, /openspec\/changes\/x\/tasks\.md:1: /)
   assert.deepEqual([hook(tick, '/').code, hook(tick, '/').stderr], [0, ''])
 })
+
+test('propose.mjs commit checks the change directory; create passes', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('openspec/changes/x/proposal.md', `${RU}\n`)
+  const blocked = hook(`node /p/scripts/propose.mjs commit --change x --root ${r.root}`, '/')
+  assert.equal(blocked.code, 2)
+  assert.match(blocked.stderr, /openspec\/changes\/x\/proposal\.md:1: /)
+  assert.equal(hook(`node /p/scripts/propose.mjs commit --root ${r.root}`, '/').code, 2)
+  assert.equal(hook(`node /p/scripts/propose.mjs create --change x --root ${r.root}`, '/').code, 0)
+})
+
+test('verify.mjs assemble --commit checks the record; without --commit, and run, pass', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('openspec/changes/x/verify.md', `${RU}\n`)
+  const assemble = `node /p/scripts/verify.mjs assemble --change x --root ${r.root}`
+  const blocked = hook(`${assemble} --commit`, '/')
+  assert.equal(blocked.code, 2)
+  assert.match(blocked.stderr, /openspec\/changes\/x\/verify\.md:1: /)
+  assert.equal(hook(assemble, '/').code, 0)
+  assert.equal(hook(`node /p/scripts/verify.mjs run --change x --root ${r.root}`, '/').code, 0)
+})
+
+test('verify.mjs skill-edit checks the host skills when the registry puts them in scope', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'english-check', contract: '1.1', provides: {} }))
+  r.write('.claude/adf-extensions.json', JSON.stringify({ contract: '1.1', extensions: [{ path: 'vendor/ec', config: { include: ['.claude/skills/**'] } }] }))
+  r.write('.claude/skills/deploy/SKILL.md', `${RU}\n`)
+  const out = hook(`node /p/scripts/verify.mjs skill-edit --change x --message 'docs(skills): x' --root ${r.root}`, '/')
+  assert.equal(out.code, 2)
+  assert.match(out.stderr, /\.claude\/skills\/deploy\/SKILL\.md:1: /)
+})

@@ -20,16 +20,7 @@ plugin's configuration as a JSON object.
    project (run the install command the error names, then retry), a plugin written for another
    contract version, a plugin already enabled, or a role another plugin already provides.
 
-3. Run:
-
-   ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/extensions.mjs" check
-   ```
-
-   If `ok` is false, show the errors and stop.
-
-4. Report the plugin's name, the points it provides (or "no points"), and the host files it
-   copied (`hostFiles.copied`) or found already present (`hostFiles.kept`).
+3. Show `report` as it is.
 
 Do not commit: the developer commits the registry and the copied host files with the rest of
 their change.

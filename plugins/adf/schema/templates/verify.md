@@ -1,14 +1,16 @@
 # Verification Report
 
-<!-- Written by `verify assemble` from the section files under
-     .superpowers/sdd/<change>/verify/ and the verdict file; the rules are in the verify
-     instruction. Each section: the verdict as the verdict file displays it (an accepted
-     failure with the developer's reason), the summary, and the verbatim content of the
-     section's output file. Re-running verify overwrites this file. -->
+<!-- Rendered by `verify.mjs assemble` from .superpowers/sdd/<change>/verify/ (run.json and the
+     section files), the verdict, the rulings and the approved skill edits; the rules are in the
+     verify instruction. Assemble reads only the title and the `## ` headings here: their order
+     is the record's order, and a heading it does not know is refused. Each check's section is
+     `**Result:** <verdict>: <summary>` (an accepted failure shows the developer's reason), its
+     extra fields, then the verbatim content of its output file in a text fence. Re-running
+     verify overwrites this file. -->
 
 **Change:** `<change-name>`
 **Verified at:** `YYYY-MM-DD HH:mm`
-**Verifier:** `<who, and which agent ran each dispatch>`
+**Verifier:** <git user.name; checks by verify.mjs run; each section and the dispatch or script that wrote it>
 **Range:** `<base>..<head>`
 
 ## Structural validation
@@ -21,7 +23,7 @@
 
 ## Task completion
 
-**Result:** <!-- verdict and summary of `tasks`; each open task with why it stays open -->
+**Result:** <!-- verdict and summary of `tasks` -->
 
 ```text
 <!-- verbatim output of tasks -->
@@ -37,14 +39,11 @@
 
 ## Design and specs coherence
 
-**Result:** <!-- verdict and summary of `c4`; which case applied: design and specs, no delta
-specs, or no design -->
+**Result:** <!-- verdict and summary of `c4`, which says the case that applied -->
 
-**Hand-edited capability prose:** <!-- the capabilities whose prose above `## Requirements`
-the change edited, and why; or none -->
+**Hand-edited capability prose:** <!-- the c4 section's `proseEdits` -->
 
-**Removal accounting:** <!-- each REMOVED or RENAMED requirement's Code Disposition against
-the code; or N/A: no REMOVED or RENAMED requirement -->
+**Removal accounting:** <!-- the c4 section's `removalAccounting` -->
 
 ```text
 <!-- verbatim output of c4 -->
@@ -60,12 +59,12 @@ the code; or N/A: no REMOVED or RENAMED requirement -->
 
 ## Apply test record
 
-**Result:** <!-- verdict and summary of `test-record`: the record cited as current, or the
-suite re-run by `verify c6` -->
+**Result:** <!-- verdict and summary of `test-record` -->
 
-**Scope that ran:** <!-- whole suite, from the planning guide; or the record cited, not re-run -->
+**Scope that ran:** <!-- the whole suite, re-run by suite.mjs: the record was stale; or the
+record cited, not re-run -->
 
-**Pre-existing failures, separate work:** <!-- failures that also fail on the base; or none -->
+**Pre-existing failures, separate work:** <!-- from the re-run's section or the cited record; or none -->
 
 **Test count warnings:** <!-- the reconciliation warnings; or none -->
 
@@ -85,9 +84,9 @@ suite re-run by `verify c6` -->
 
 **Result:** <!-- verdict and summary of `c8`: CONFIRMED, PLAUSIBLE or none, per skill -->
 
-**Approved skill edits:** <!-- the sha of each approved edit's commit; or none -->
+**Approved skill edits:** <!-- the ledger's skill-edit records: sha and message; or none -->
 
-**Declined edits:** <!-- each decline with the developer's reason; or none -->
+**Declined edits:** <!-- the rulings on c8: reason and record id; or none -->
 
 ```text
 <!-- verbatim output of c8 -->
@@ -103,21 +102,21 @@ suite re-run by `verify c6` -->
 
 ## Checks run with the developer
 
-<!-- The checks the plan assigns to verify that needed the developer, with what was run and
-what it showed, verbatim from developer.txt; or none -->
+<!-- Any section the template does not name goes first, under its own title. Then the
+`developer` section from verify.mjs developer, with developer.txt verbatim; or none -->
 
 ## Exercised and not exercised
 
-<!-- From c4: for each new mechanism, the paths a test or a recorded run exercised and the
-paths nothing exercised -->
+<!-- The c4 section's `exercised` -->
 
 ## Rulings
 
-<!-- Each developer ruling: the check, the reason, the ledger record id; or none -->
+<!-- Each developer ruling: the check, the reason, the ledger record id; a ruling the verdict
+ignored, with why; or none -->
 
 ## Next step
 
-<!-- PASS or PASS WITH WARNINGS: the review. FAIL: what to fix, by failing check, then verify
-again. -->
+<!-- PASS or PASS WITH WARNINGS: the review. FAIL: each failing check with its summary, then
+verify again. -->
 
 Verdict: <!-- the verdict file's line, unchanged: PASS, PASS WITH WARNINGS or FAIL -->

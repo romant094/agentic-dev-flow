@@ -32,5 +32,6 @@ intends. A requirement whose polarity is inverted — MUST where MUST NOT is mea
 cleanly and specifies the opposite behaviour; one such slip reached verify past both whole-branch
 reviews.
 
-Structural validation of this change's specs runs right after specs is done, before tasks; the
-propose block states it in full.
+The `specs` gates check the structure, the capability contract and each delta header against
+the main spec; the propose block states how a gate binds. The polarity read above is yours: no
+gate can see it.

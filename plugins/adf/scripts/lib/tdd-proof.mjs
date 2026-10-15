@@ -17,36 +17,23 @@
 //
 // Test files are the commit's added or modified files that look like tests (a __tests__, test,
 // tests, spec or specs directory; a `.test.`, `.spec.`, `_test.` or `-test.` name; `test_*.py`),
-// or the ones the caller names. The command runs through the platform shell with the throwaway
-// worktree as its working directory; its output goes to
+// or the ones the caller names. The command runs through lib/suite.mjs's runner (the platform
+// shell in a process group of its own, stopped past the timeout) with the throwaway worktree as
+// its working directory; its output goes to
 // `<root>/.superpowers/sdd/<change>/tdd/<sha7>-parent.txt` and `-commit.txt`.
-import { execFileSync, spawnSync } from 'node:child_process'
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readdirSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, lstatSync, mkdirSync, readdirSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { mainCheckout } from './installed.mjs'
+import { runOnce } from './suite.mjs'
 import { gitIn, WORKTREES_DIR } from './workspace.mjs'
 
 export const TEST_FILE = /(^|\/)(__tests__|tests?|specs?)\/|[._-](test|spec)\.[^/]+$|(^|\/)test_[^/]+\.py$/
-export const CANNOT_RUN = [126, 127]
 export const DEFAULT_TIMEOUT_MINUTES = 20
 
 export const isTestFile = (path) => TEST_FILE.test(path)
 
 const gitError = (error) => String(error?.stderr ?? '').trim() || error.message
-
-function runOnce(command, cwd, file, timeoutMinutes) {
-  mkdirSync(dirname(file), { recursive: true })
-  const fd = openSync(file, 'w')
-  let result
-  try {
-    result = spawnSync(command, { cwd, shell: true, stdio: ['ignore', fd, fd], windowsHide: true, timeout: Math.round(timeoutMinutes * 60000) })
-  } finally {
-    closeSync(fd)
-  }
-  if (result.error) return { exit: null, cannotRun: true, error: result.error.code === 'ETIMEDOUT' ? `stopped after ${timeoutMinutes} minute(s)` : result.error.message }
-  const exit = result.status ?? 1
-  return { exit, cannotRun: CANNOT_RUN.includes(exit) }
-}
 
 // Empty directories left by a removed test file, up to the worktree root.
 function pruneDirs(top, file) {

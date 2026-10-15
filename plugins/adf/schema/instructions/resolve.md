@@ -10,9 +10,9 @@ checkout, where a session usually starts, rarely holds one. Run, from wherever t
 node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" find
 ```
 
-It reads the main checkout and every change worktree of the repository, and lists each active
-change with the checkout that holds it (`root`), its branch and its task progress. A task
-group's worktree is part of its change and is not listed.
+It reads every checkout of the repository and returns `choices`, one ready-to-show `label` per
+change entry and per worktree in `unresolved`, and `duplicates`, the names more than one
+checkout holds.
 
 **Only a change directory names a change.**
 
@@ -24,14 +24,15 @@ branch name at propose, and a name read off a branch may match no change.
 - The developer named a change: use the entry with that name. If none has it, say so, show the
   list, and stop.
 - One entry and no name given: name it and ask the developer to confirm.
-- Several entries: show them (name, branch, task progress) and ask which one.
-- A worktree in `unresolved` holds no change directory the script could read: show it as
-  `change name unresolved`, with its root and branch, beside the entries, and let the developer
-  name the change it holds. Never guess the name from the branch.
+- Several entries: show them (name, branch, task progress) and ask which one. Show each
+  choice's `label` as it is.
+- A worktree in `unresolved` holds no change directory the script could read; its choice,
+  with its root and branch, beside the entries, has no name. Let the developer name the change
+  it holds. Never guess the name from the branch.
 - No entry and nothing unresolved: say that no change is in flight and stop.
 
 The same name in two checkouts is two copies of one change: show both and ask which root to
-use.
+use. `duplicates` names them.
 
 **Announce the change and its root before the first call that takes it.**
 

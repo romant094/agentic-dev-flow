@@ -226,6 +226,21 @@ export const CORE_COMMIT_SCRIPTS = {
     const change = optionValues(args, '--change')[0]
     if (args[0] !== 'tick' || !args.includes('--commit') || !change) return null
     return [`openspec/changes/${change}/tasks.md`, `openspec/changes/${change}/plan.md`]
+  },
+  // propose.mjs commit [--change <name>]: the change directory; without --change the one
+  // active change, which the hook cannot name, so every change directory.
+  'propose.mjs': (args) => {
+    if (args[0] !== 'commit') return null
+    const change = optionValues(args, '--change')[0]
+    return [change ? `openspec/changes/${change}` : 'openspec/changes']
+  },
+  // verify.mjs assemble --change <name> --commit: the record; verify.mjs skill-edit: the
+  // host's skills, the only paths it commits.
+  'verify.mjs': (args) => {
+    const change = optionValues(args, '--change')[0]
+    if (args[0] === 'assemble' && args.includes('--commit') && change) return [`openspec/changes/${change}/verify.md`]
+    if (args[0] === 'skill-edit') return ['.claude/skills']
+    return null
   }
 }
 

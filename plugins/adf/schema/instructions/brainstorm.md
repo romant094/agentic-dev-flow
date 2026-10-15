@@ -1,11 +1,10 @@
 Invoke **superpowers:brainstorming** with the Skill tool.
 
-Output redirection:
-- Do NOT write to `docs/superpowers/specs/`. Write the brainstorming output directly to this
-  change's `brainstorm.md`; the skill's default location is outside the change, where the
-  artifact would be missing and the graph blocked.
-- If brainstorming produces a design document, also write it to this change's `design.md`. It
-  pre-fills the optional design artifact instead of being lost.
+Output: write the brainstorming output directly to this change's `brainstorm.md`. If
+brainstorming produces a design document, also write it to this change's `design.md`; it
+pre-fills the optional design artifact. A file the skill leaves in its default folder is moved
+into the change by `changes.mjs done brainstorm`; merge each one it reports under `strays` into
+its target by hand.
 
 After brainstorming completes, summarize the agreed design in `brainstorm.md` using the template
 structure.

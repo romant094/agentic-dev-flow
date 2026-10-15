@@ -4,16 +4,17 @@
 // refusal, exit 2 on a usage error.
 //
 //   dispatch.mjs plan    --change <name> --role <role> [--task <N>] [--group <G>] [--round <k>]
-//                        [--topic <word>] [--check c4|c6|c8|assemble] [--root <change worktree>]
-//       { ok, name, role, agent, worktree, replyFile | sectionFiles | recordFile, ... }
+//                        [--topic <word>] [--check c4|c8] [--root <change worktree>]
+//       { ok, name, role, agent, worktree, replyFile | sectionFiles, ... }
+//       --round names a task's fix round, or a fix or re-review round after a merge review or
+//       the final review (fix B r2)
 //   dispatch.mjs prompt  (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>]
 //       the plan and `prompt`, the full text with every fixed field filled; the question file's
 //       content goes into the question slot verbatim. --base and --head name a review's range.
 //   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <change worktree>]
 //       records one attempt of the dispatch and returns { ok, name, attempt, next }, next one of
 //       dispatch (the first), retry (the one retry of a refused reply), stop (BLOCKED)
-import { execFileSync } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -30,12 +31,13 @@ import {
 import { mainCheckout } from './lib/installed.mjs'
 import { isMain } from './lib/main.mjs'
 import { parsePlanTasks } from './lib/plan-symbols.mjs'
+import { sweepInputs } from './lib/sweep.mjs'
 
 export const PLUGIN_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const PROMPTS_DIR = join(PLUGIN_ROOT, 'schema', 'prompts')
 
 export const USAGE = `usage:
-  dispatch.mjs plan --change <name> --role <role> [--task <N>] [--group <G>] [--round <k>] [--topic <word>] [--check c4|c6|c8|assemble] [--root <dir>]
+  dispatch.mjs plan --change <name> --role <role> [--task <N>] [--group <G>] [--round <k>] [--topic <word>] [--check c4|c8] [--root <dir>]
   dispatch.mjs prompt (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>]
   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <dir>]`
 
@@ -78,38 +80,13 @@ function skeletons() {
   return out
 }
 
-// The change's base for the sweep, as verify resolves it: origin/<base> when it exists.
-function sweepBase(root, change) {
-  let meta
-  try {
-    meta = JSON.parse(readFileSync(join(root, 'openspec', 'changes', change, '.adf.json'), 'utf8'))
-  } catch {
-    return undefined
-  }
-  if (typeof meta?.base !== 'string' || !meta.base) return undefined
-  try {
-    execFileSync('git', ['-C', root, 'rev-parse', '--verify', '--quiet', `refs/remotes/origin/${meta.base}`], { stdio: 'ignore' })
-    return `origin/${meta.base}`
-  } catch {
-    return meta.base
-  }
-}
-
-function hostSkillFiles(root) {
-  const dir = join(root, '.claude', 'skills')
-  if (!existsSync(dir)) return []
-  return readdirSync(dir)
-    .filter((d) => statSync(join(dir, d)).isDirectory())
-    .flatMap((d) => ['SKILL.md', 'README.md'].map((f) => join(dir, d, f)))
-    .filter((f) => existsSync(f))
-}
-
 function promptFor(inputs, plan, values, root, planText) {
   const { change } = inputs
   const sdd = sddDir(root, change)
   const fields = [['Dispatch name', plan.name], ['Change', change]]
   const tokens = { '${CLAUDE_PLUGIN_ROOT}': PLUGIN_ROOT, '<change>': change, '<root>': root, '<worktree>': plan.worktree }
   let testFirst = false
+  let dispositions = false
   const range = values.base && values.head ? `${values.base}..${values.head}` : undefined
   if ((values.base === undefined) !== (values.head === undefined)) throw new UsageError('--base and --head go together')
 
@@ -118,6 +95,7 @@ function promptFor(inputs, plan, values, root, planText) {
     const body = taskBody(planText, inputs.task)
     testFirst = /\*\*Step \d+: RED\*\*/.test(body)
     tokens['<n>'] = inputs.task
+    if (values.head) tokens["<the task's commit>"] = values.head
     fields.push(['Task', `Task ${inputs.task} (group ${plan.group})`])
     fields.push(['Worktree', plan.worktree])
     fields.push(['Files in scope', task.files.map((f) => `${f.verb}: ${join(plan.worktree, f.path)}${f.to ? ` -> ${join(plan.worktree, f.to)}` : ''}`)])
@@ -130,6 +108,8 @@ function promptFor(inputs, plan, values, root, planText) {
   } else {
     fields.push(['Worktree', plan.worktree])
   }
+  // A dispatch that serves no single task records its compromises without a task number.
+  if (inputs.task === undefined) tokens[' --task <n>'] = ''
   if (inputs.role !== 'verify') {
     fields.push(['Plan', join(root, 'openspec', 'changes', change, 'plan.md')])
     if (range) {
@@ -137,9 +117,19 @@ function promptFor(inputs, plan, values, root, planText) {
       fields.push(['Review package', join(sdd, `review-${values.base.slice(0, 7)}..${values.head.slice(0, 7)}.diff`)])
     }
     if (inputs.role === 'sweep') {
-      tokens['<base>'] = sweepBase(root, change)
-      if (!tokens['<base>']) throw new DispatchError(`openspec/changes/${change}/.adf.json names no base branch`)
-      fields.push(['Base', tokens['<base>']])
+      let sweep
+      try {
+        sweep = sweepInputs(root, change)
+      } catch (error) {
+        throw new DispatchError(error.message)
+      }
+      tokens['<base>'] = sweep.base
+      dispositions = sweep.secondQuestion
+      fields.push(['Base', sweep.base], ['Range', sweep.range], ['Planning guide', join(root, 'openspec', 'planning.md')])
+      fields.push([
+        'Removed or renamed',
+        sweep.removedOrRenamed.map((r) => `${r.op} ${r.from ? `${r.from} -> ${r.requirement ?? '(no TO)'}` : r.requirement} (${r.spec}): ${r.codeDisposition ?? 'no Code Disposition'}`)
+      ])
     }
     fields.push(['Reply role', plan.role], ['Reply file', plan.replyFile])
   } else {
@@ -152,16 +142,11 @@ function promptFor(inputs, plan, values, root, planText) {
     fields.push(['Base', base], ['Range', base && head ? `${base}..${head}` : undefined], ['Run record', join(verify, 'run.json')])
     const changeDir = join(root, 'openspec', 'changes', change)
     if (inputs.check === 'c4') fields.push(['Files in scope', [join(changeDir, 'design.md'), join(changeDir, 'specs'), join(changeDir, 'tasks.md'), join(changeDir, 'plan.md')]])
-    if (inputs.check === 'c8') fields.push(['Files in scope', hostSkillFiles(root)])
-    if (inputs.check === 'c6') fields.push(['Planning guide', join(root, 'openspec', 'planning.md')])
-    if (plan.sectionFiles) fields.push(['Output file', plan.sectionFiles[0]], ['Section file', plan.sectionFiles[1]])
-    else {
-      fields.push(['Template', join(PLUGIN_ROOT, 'schema', 'templates', 'verify.md')], ['Sections', verify])
-      fields.push(['Verdict file', join(sdd, 'verdict.json')], ['Record file', plan.recordFile])
-    }
+    if (inputs.check === 'c8') fields.push(['Files in scope', [join(verify, 'c8-candidates.txt')]])
+    fields.push(['Output file', plan.sectionFiles[0]], ['Section file', plan.sectionFiles[1]])
   }
   const question = values['question-file'] === undefined ? undefined : readQuestion(values['question-file'])
-  return renderPrompt({ plan, change, skeletons: skeletons(), fields, question, tokens, testFirst })
+  return renderPrompt({ plan, change, skeletons: skeletons(), fields, question, tokens, testFirst, dispositions })
 }
 
 function readQuestion(file) {

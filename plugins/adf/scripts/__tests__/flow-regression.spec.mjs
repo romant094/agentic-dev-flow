@@ -57,9 +57,10 @@ test('every script under plugins/*/scripts is named in a spec of its own plugin'
 
 // --- One normative rule, stated in full on one surface ------------------------------------
 
-// The surfaces an agent acts on. A README is documentation for people, not a surface.
+// The surfaces an agent acts on, the prompt skeletons a dispatched agent is sent among them. A
+// README is documentation for people, not a surface.
 function surfaces() {
-  const folders = [join(adf, 'schema', 'instructions'), join(adf, 'commands'), join(adf, 'agents'), join(adf, 'host')]
+  const folders = [join(adf, 'schema', 'instructions'), join(adf, 'commands'), join(adf, 'agents'), join(adf, 'host'), join(adf, 'schema', 'prompts')]
   return folders.flatMap((dir) => readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => join(dir, f)))
 }
 
@@ -129,10 +130,14 @@ test('the duplicate detector fires on a restated rule and ignores code, tables a
   ])
 })
 
+// A prompt skeleton's block marked verbatim is a declared copy of its instruction, checked word
+// for word by dispatch.spec.mjs: a pointer with a guard, not a second statement.
+const VERBATIM = /<!-- verbatim \S+ -->\n[\s\S]*?<!-- \/verbatim -->/g
+
 test('no normative rule is stated in full on more than one surface', () => {
   const files = surfaces()
   assert.ok(files.length > 10, 'the surfaces were not found')
-  const texts = Object.fromEntries(files.map((f) => [rel(f), readFileSync(f, 'utf8')]))
+  const texts = Object.fromEntries(files.map((f) => [rel(f), readFileSync(f, 'utf8').replace(VERBATIM, '')]))
   const found = normativeDuplicates(texts).filter((d) => !KNOWN_DUPLICATES.has(d.sentence))
   assert.deepEqual(found, [], found.map((d) => `"${d.sentence}" in ${d.files.join(', ')}`).join('\n'))
 })
@@ -292,4 +297,86 @@ test('every prose list of the artifacts and commands matches the schema and the 
     ...readmeCommandFindings('README.md', read('README.md'), shape)
   ]
   assert.deepEqual(found, [], found.join('\n'))
+})
+
+// --- Every core script that commits is checked by the English check ----------------------
+
+// The english-check hook sees a `git commit` on the command line; a core script that commits
+// runs git out of its sight, and only the scripts named in CORE_COMMIT_SCRIPTS are checked. A new
+// committing script left off that list commits unchecked text, and nothing says so. A file
+// commits when a function of it runs `git commit` (an argument list starting `'commit', '-…'`)
+// or calls a committing function it imports; the closure is taken over named imports, so a
+// script that imports lib/commit.mjs only for its place check does not count.
+const RAW_COMMIT = /[([,]\s*['"]commit['"]\s*,\s*['"]-/
+
+function chunks(text) {
+  const lines = text.split('\n')
+  const out = []
+  let current = { name: null, body: [] }
+  for (const line of lines) {
+    const m = /^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/.exec(line)
+    if (m) {
+      out.push(current)
+      current = { name: m[1], body: [] }
+    }
+    current.body.push(line)
+  }
+  out.push(current)
+  return out.map((c) => ({ name: c.name, body: c.body.join('\n') }))
+}
+
+function namedImports(text) {
+  const out = new Map()
+  for (const m of text.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"](\.[^'"]+)['"]/g)) {
+    for (const part of m[1].split(',').map((s) => s.trim()).filter(Boolean)) {
+      const [exported, local = exported] = part.split(/\s+as\s+/).map((s) => s.trim())
+      out.set(local, { module: m[2], exported })
+    }
+  }
+  return out
+}
+
+// Takes { path: text } (paths absolute, imports relative) and returns the paths that commit.
+export function committingFiles(files) {
+  const parsed = Object.entries(files).map(([path, text]) => ({ path, imports: namedImports(text), chunks: chunks(text) }))
+  const committing = new Set()
+  const calls = (body, name) => new RegExp(`(^|[^\\w.]|\\.\\.\\.)${name}\\s*\\(`).test(body)
+  for (let changed = true; changed; ) {
+    changed = false
+    for (const file of parsed) {
+      for (const chunk of file.chunks) {
+        const key = `${file.path}#${chunk.name}`
+        if (committing.has(key)) continue
+        const viaImport = [...file.imports].some(([local, { module, exported }]) => committing.has(`${join(dirname(file.path), module)}#${exported}`) && calls(chunk.body, local))
+        const viaLocal = file.chunks.some((c) => c.name && c !== chunk && committing.has(`${file.path}#${c.name}`) && calls(chunk.body, c.name))
+        if (RAW_COMMIT.test(chunk.body) || viaImport || viaLocal) {
+          committing.add(key)
+          changed = true
+        }
+      }
+    }
+  }
+  return [...new Set([...committing].map((k) => k.slice(0, k.lastIndexOf('#'))))].sort()
+}
+
+test('the commit detector follows a committing function through a named import, and only it', () => {
+  const found = committingFiles({
+    '/s/lib/commit.mjs': "export function check(root) {\n  return root\n}\nexport function commitPaths(root) {\n  step(git, 'x', 'commit', '-q', '-m', m)\n}\n",
+    '/s/lib/b.mjs': "import { commitPaths as cp } from './commit.mjs'\nexport function save(root) {\n  return { ...cp(root) }\n}\n",
+    '/s/a.mjs': "import { save } from './lib/b.mjs'\nsave('.')\n",
+    '/s/c.mjs': "import { check } from './lib/commit.mjs'\nconst TAKES = { assemble: ['commit'] }\ncheck('.')\n"
+  })
+  assert.deepEqual(found, ['/s/a.mjs', '/s/lib/b.mjs', '/s/lib/commit.mjs'])
+})
+
+test('every core script that commits is named in the english-check hook', async () => {
+  const scripts = join(adf, 'scripts')
+  const paths = [...readdirSync(scripts).map((f) => join(scripts, f)), ...readdirSync(join(scripts, 'lib')).map((f) => join(scripts, 'lib', f))].filter((f) => f.endsWith('.mjs'))
+  const found = committingFiles(Object.fromEntries(paths.map((p) => [p, readFileSync(p, 'utf8')])))
+    .filter((p) => dirname(p) === scripts)
+    .map((p) => basename(p))
+  assert.ok(found.includes('commit.mjs') && found.includes('tasks.mjs'), `the detector found too little: ${found.join(', ')}`)
+  const { CORE_COMMIT_SCRIPTS } = await import(join(repo, 'plugins', 'english-check', 'scripts', 'lib', 'english.mjs'))
+  const missing = found.filter((name) => !Object.hasOwn(CORE_COMMIT_SCRIPTS, name))
+  assert.deepEqual(missing, [], `core scripts that commit and are not in CORE_COMMIT_SCRIPTS:\n  ${missing.join('\n  ')}`)
 })

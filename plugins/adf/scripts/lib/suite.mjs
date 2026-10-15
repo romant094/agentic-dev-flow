@@ -7,7 +7,7 @@
 // it is the caller's job.
 //
 // `runSuite` runs that command with `<root>` as the working directory, through the platform
-// shell (`spawnSync(command, { shell: true })`: `/bin/sh -c` on POSIX, `cmd.exe /d /s /c` on
+// shell (`spawn(command, { shell: true })`: `/bin/sh -c` on POSIX, `cmd.exe /d /s /c` on
 // Windows). A shell is right here because the command is the project's own whole-suite command
 // line, written by the developer into the planning guide, not a string built from input.
 // Running it uncached is the command's own job (`--no-cache`, `--force` and the like belong in
@@ -33,7 +33,9 @@
 //
 // Each run, the base check's included, is stopped after `timeoutMinutes` (DEFAULT_TIMEOUT_MINUTES
 // unless given): a suite that hangs is `cannotRun` with `timedOut: true`, a failure, never a pass.
-// The signal stops the process the shell runs; a grandchild that ignores it may outlive the run.
+// The shell starts in a process group of its own (`detached` on POSIX), and the timeout kills the
+// whole group, so a grandchild the suite started stops with it; on Windows `taskkill /T` stops
+// the process tree.
 import { spawnSync } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -48,7 +50,7 @@ export const SECTION_ID = 'test-record'
 export const TAIL_LINES = 40
 // Lines of the real output quoted in the committed record; the whole output stays in its file.
 export const QUOTE_LINES = 60
-const CANNOT_RUN = [126, 127]
+export const CANNOT_RUN = [126, 127]
 export const DEFAULT_TIMEOUT_MINUTES = 30
 
 const toPosix = (p) => p.split('\\').join('/')
@@ -151,22 +153,66 @@ export function failingIn(text) {
 
 const stampOf = (now) => now.replace(/[:.]/g, '-')
 
-function runOnce(command, cwd, file, timeoutMinutes) {
+// A node child that runs the command through the shell in a process group of its own, stops the
+// group (the process tree on Windows) past the timeout, and writes how it ended to fd 3.
+// spawnSync waits on this child, so a run stays synchronous.
+const GROUP_RUNNER = `
+const { spawn, spawnSync } = require('node:child_process')
+const { writeSync } = require('node:fs')
+const [command, cwd, ms] = process.argv.slice(1)
+const windows = process.platform === 'win32'
+let ended = false
+const end = (result) => {
+  if (ended) return
+  ended = true
+  clearTimeout(timer)
+  writeSync(3, JSON.stringify(result))
+}
+const child = spawn(command, { cwd, shell: true, stdio: ['ignore', 'inherit', 'inherit'], detached: !windows, windowsHide: true })
+let timedOut = false
+const timer = setTimeout(() => {
+  timedOut = true
+  if (windows) spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+  else {
+    try {
+      process.kill(-child.pid, 'SIGKILL')
+    } catch {}
+  }
+}, Number(ms))
+child.on('error', (error) => end({ error: error.message }))
+child.on('exit', (code, signal) => end({ code, signal, timedOut }))
+`
+
+// Runs one command through the platform shell in <cwd>, its output to <file>, never to stdout:
+// { exit, signal?, cannotRun, timedOut?, error?, text }. lib/tdd-proof.mjs runs its tests with it.
+export function runOnce(command, cwd, file, timeoutMinutes) {
   mkdirSync(dirname(file), { recursive: true })
   const fd = openSync(file, 'w')
+  const ms = Math.round(timeoutMinutes * 60000)
   let result
   try {
-    result = spawnSync(command, { cwd, shell: true, stdio: ['ignore', fd, fd], windowsHide: true, timeout: Math.round(timeoutMinutes * 60000) })
+    result = spawnSync(process.execPath, ['-e', GROUP_RUNNER, command, cwd, String(ms)], {
+      cwd,
+      stdio: ['ignore', fd, fd, 'pipe'],
+      windowsHide: true,
+      timeout: ms + 60000
+    })
   } finally {
     closeSync(fd)
   }
   const text = readFileSync(file, 'utf8')
-  if (result.error?.code === 'ETIMEDOUT') {
+  let ended = null
+  try {
+    ended = JSON.parse(String(result.output?.[3] ?? ''))
+  } catch {}
+  if (ended?.timedOut || result.error?.code === 'ETIMEDOUT') {
     return { exit: null, cannotRun: true, timedOut: true, error: `the run did not finish within ${timeoutMinutes} minute(s) and was stopped`, text }
   }
   if (result.error) return { exit: null, cannotRun: true, error: result.error.message, text }
-  const exit = result.status ?? 1
-  return { exit, ...(result.signal ? { signal: result.signal } : {}), cannotRun: CANNOT_RUN.includes(exit), text }
+  if (!ended) return { exit: null, cannotRun: true, error: `the runner ended without a result (exit ${result.status}, signal ${result.signal})`, text }
+  if (ended.error) return { exit: null, cannotRun: true, error: ended.error, text }
+  const exit = ended.code ?? 1
+  return { exit, ...(ended.signal ? { signal: ended.signal } : {}), cannotRun: CANNOT_RUN.includes(exit), text }
 }
 
 function attempt(fn) {

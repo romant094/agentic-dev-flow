@@ -11,8 +11,10 @@ Sections:
 - **Goals / Non-Goals**: what this design achieves and what it explicitly excludes.
 - **Decisions**: key technical choices with rationale (why X over Y?), including the
   alternatives considered.
-- **Risks / Trade-offs**: known limitations and what could go wrong, each as
-  `[Risk] → Mitigation`. Plan authoring reconciles every risk in this format.
+- **Risks / Trade-offs**: known limitations and what could go wrong, one bullet each as
+  `[R1] risk → mitigation`, with ids numbered from `R1` and never reused. Plan authoring
+  reconciles every risk in this format: the plan cites each id, and `plan.mjs lint` matches the
+  citation by the id alone.
 - **Migration Plan**: steps to deploy and the rollback strategy, if applicable.
 - **Open Questions**: outstanding decisions or unknowns to resolve.
 

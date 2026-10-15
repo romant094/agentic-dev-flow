@@ -1,7 +1,7 @@
 Create the task list that breaks down the implementation work.
 
-Follow the template exactly. The apply phase parses the checkbox format to track progress; a task
-not written as `- [ ]` is not tracked.
+Follow the template exactly. The apply phase parses the checkbox format to track progress; the
+`tasks-lint` gate checks that grammar, the item numbers against their group, and duplicates.
 
 - Group related tasks under numbered `##` headings.
 - Each task MUST be a checkbox: `- [ ] X.Y Task description`.
@@ -15,7 +15,7 @@ design instruction states when `design.md` is written.
 
 One checkbox is one independently reviewable deliverable, stated in domain terms. Do NOT put
 source file paths or test commands in `tasks.md` — they belong in `plan.md`, and duplicated they
-drift.
+drift. The gate warns on a path or a command it finds.
 
 **Investigate before you checkbox — do not let the apply phase discover scope one fix at a time.**
 Each checkbox becomes one implementer dispatch in the apply phase, one fresh subagent per task.
@@ -35,7 +35,8 @@ decide checkbox boundaries with the domain's full scope in view, not just the fi
   from its neighbours.
 
 The bound in the other direction is structural, not a token number: a task whose `**Files:**`
-block spans two of the host's packages (with no package map, two top-level source directories)
-**and** changes a failure or rollback path is split before dispatch. Only the conjunction
-triggers it. It is structural because an agent cannot reliably measure its own context at the
-moment the split decision is made.
+block spans two of the host's packages **and** changes a failure or rollback path is split
+before dispatch. Only the conjunction triggers it. It is structural because an agent cannot
+reliably measure its own context at the moment the split decision is made. `plan.mjs lint`
+warns on each task that spans two packages; whether it changes a failure or rollback path is
+yours to judge.
