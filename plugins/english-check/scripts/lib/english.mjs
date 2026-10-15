@@ -2,9 +2,9 @@
 // those files are in scope, and which of their lines hold non-English text. The hook entry
 // (../hook.mjs) only reads stdin and exits; everything it decides is here.
 import { execFileSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { isAbsolute, join, posix, resolve } from 'node:path'
+import { isAbsolute, join, posix, relative, resolve } from 'node:path'
 
 export const PLUGIN_NAME = 'english-check'
 export const REGISTRY_PATH = '.claude/adf-extensions.json'
@@ -195,13 +195,59 @@ function gitCall(words, dir) {
   return null
 }
 
+// The script a word list runs with node (`node [options] <script> ...`, or the script run
+// directly): its base name and its arguments.
+function scriptCall(words) {
+  let i = 0
+  while (i < words.length && (ASSIGNMENT.test(words[i]) || words[i] === 'env' || words[i] === 'command')) i++
+  const base = (w) => (w ?? '').slice((w ?? '').replace(/\\/g, '/').lastIndexOf('/') + 1)
+  if (/^node(\.exe)?$/.test(base(words[i]))) for (i++; i < words.length && words[i].startsWith('-'); i++);
+  if (!/\.mjs$/.test(base(words[i]))) return null
+  return { script: base(words[i]), args: words.slice(i + 1) }
+}
+
+// Every value an option takes in an argument list (`--name value` or `--name=value`).
+function optionValues(args, name) {
+  const out = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === name && i + 1 < args.length) out.push(args[++i])
+    else if (args[i].startsWith(`${name}=`)) out.push(args[i].slice(name.length + 1))
+  }
+  return out
+}
+
+// The ADF core's scripts that commit by path, and the paths each commits, relative to its
+// --root. A new core script that commits must be added here, or its commits go unchecked.
+export const CORE_COMMIT_SCRIPTS = {
+  // commit.mjs --root <r> --only <path> [--only <path> ...] --message <m>
+  'commit.mjs': (args) => optionValues(args, '--only'),
+  // tasks.mjs tick ... --change <name> --commit: the tasks file and plan.md of the change.
+  'tasks.mjs': (args) => {
+    const change = optionValues(args, '--change')[0]
+    if (args[0] !== 'tick' || !args.includes('--commit') || !change) return null
+    return [`openspec/changes/${change}/tasks.md`, `openspec/changes/${change}/plan.md`]
+  }
+}
+
+function coreCommit(words, dir) {
+  const call = scriptCall(words)
+  const pathsOf = call && Object.hasOwn(CORE_COMMIT_SCRIPTS, call.script) ? CORE_COMMIT_SCRIPTS[call.script] : null
+  const paths = pathsOf?.(call.args)
+  if (!paths?.length) return null
+  const root = resolve(dir, optionValues(call.args, '--root')[0] ?? '.')
+  return { dir: root, paths: paths.map((p) => (isAbsolute(p) ? relative(root, p) : p)) }
+}
+
 // The commits a Bash command line makes: where each runs, and whether it takes more than the
 // index. A hook runs before the command does, so a `git add` on the same line has not staged
 // anything yet; then, as with `-a`, the working tree's changes count too. `cd <dir>` moves
-// every later command of the line.
+// every later command of the line. A run of an ADF core commit script is a commit of the
+// `paths` it names, relative to
+// its root.
 export function parseCommits(command, cwd) {
   let dir = cwd
   const calls = []
+  const scripts = []
   for (const words of splitCommands(command)) {
     if (words[0] === 'cd' && words.length <= 2) {
       const target = words[1] ?? homedir()
@@ -210,11 +256,14 @@ export function parseCommits(command, cwd) {
     }
     const call = gitCall(words, dir)
     if (call) calls.push(call)
+    const core = call ? null : coreCommit(words, dir)
+    if (core) scripts.push(core)
   }
   const adds = calls.some((c) => c.subcommand === 'add')
   return calls
     .filter((c) => c.subcommand === 'commit')
     .map((c) => ({ dir: c.dir, wide: adds || stagesAll(c.args) }))
+    .concat(scripts)
 }
 
 const defaultGit = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -223,7 +272,8 @@ const names = (output) => output.split('\0').filter(Boolean)
 // The repository root of one commit and the repository-relative paths it takes. Only added,
 // copied, modified or renamed paths: a deleted path has no text to check. Outside a repository
 // (or in a directory that does not exist) the commit is git's to refuse, so root is null.
-export function commitFiles({ dir, wide }, git = defaultGit) {
+// With `paths` (relative to `dir`), only the files under them count.
+export function commitFiles({ dir, wide, paths }, git = defaultGit) {
   let root
   try {
     if (!existsSync(dir)) return { root: null, files: [] }
@@ -231,10 +281,18 @@ export function commitFiles({ dir, wide }, git = defaultGit) {
   } catch {
     return { root: null, files: [] }
   }
-  const files = new Set(names(git(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z'], root)))
-  if (wide) {
-    for (const f of names(git(['diff', '--name-only', '--diff-filter=ACMR', '-z'], root))) files.add(f)
-    for (const f of names(git(['ls-files', '--others', '--exclude-standard', '-z'], root))) files.add(f)
+  // A commit by path takes the staged, modified and untracked files under those paths alone.
+  let spec = []
+  if (paths) {
+    const prefix = relative(realpathSync(root), realpathSync(dir))
+    spec = paths.map((p) => normalizePath(join(prefix, p))).filter((p) => p && p !== '..' && !p.startsWith('../') && !isAbsolute(p))
+    if (!spec.length) return { root, files: [] }
+    spec = ['--', ...spec.map((p) => `:(literal)${p}`)]
+  }
+  const files = new Set(names(git(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', ...spec], root)))
+  if (wide || paths) {
+    for (const f of names(git(['diff', '--name-only', '--diff-filter=ACMR', '-z', ...spec], root))) files.add(f)
+    for (const f of names(git(['ls-files', '--others', '--exclude-standard', '-z', ...spec], root))) files.add(f)
   }
   return { root, files: [...files].sort() }
 }

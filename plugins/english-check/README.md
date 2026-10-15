@@ -24,6 +24,19 @@ The files it checks are those the commit takes:
   command line runs `git add` or the commit uses `-a` or `--all`. The hook runs before the
   command, so a `git add` on the same line has not staged anything yet.
 
+It also recognises the ADF core's commit scripts, which run `git commit` themselves, out of the
+command line's sight, when they are run with `node <path>/<script>` or directly:
+
+| Script | Commits | Files checked |
+|---|---|---|
+| `commit.mjs --root <r> --only <path> ... --message <m>` | always | the staged, modified and untracked files under each `--only` path |
+| `tasks.mjs tick ... --change <name> --commit` | with `--commit` | `openspec/changes/<name>/tasks.md` and its `plan.md` |
+
+Paths resolve against `--root`, or the command's directory without it. The list is
+`CORE_COMMIT_SCRIPTS` in `scripts/lib/english.mjs`: a future core script that commits must be
+added there, or its commits go unchecked. `tasks.mjs` reads its tasks file name from the core's
+schema; the hook assumes the default, `tasks.md`.
+
 A deleted file, or a file that cannot be read, is never a finding. The working-tree text of each
 file is read.
 
@@ -55,7 +68,7 @@ segment. The default exclusion exempts a change's `plan.md`, also after it is ar
 - The check exists only where this plugin is enabled in Claude Code. A commit made by hand,
   outside Claude Code, is not checked, and the plugin installs no git hook.
 - The hook reads the command line, not what the shell will do: a commit hidden in a script or an
-  alias is not seen.
+  alias is not seen, except in the core's commit scripts listed above.
 - A file staged partly is checked as it is in the working tree.
 
 ## Tests

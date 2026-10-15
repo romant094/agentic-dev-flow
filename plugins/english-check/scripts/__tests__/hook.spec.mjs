@@ -220,3 +220,52 @@ test('a check that cannot run fails open: exit 1 and a warning, never a block', 
   const garbled = spawnSync('node', [HOOK], { input: 'not json', encoding: 'utf8' })
   assert.equal(garbled.status, 1)
 })
+
+// The ADF core commits through its own scripts, which run `git commit` out of the hook's sight.
+const COMMIT = 'node "/plugins/adf/scripts/commit.mjs"'
+
+test('commit.mjs with a foreign line in an --only path in scope blocks', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('openspec/changes/x/proposal.md', `ok\n${RU}\n`)
+  const out = hook(`${COMMIT} --root "${r.root}" --only openspec/changes/x/proposal.md --message 'docs: x'`, '/')
+  assert.equal(out.code, 2)
+  assert.match(out.stderr, /openspec\/changes\/x\/proposal\.md:2: /)
+})
+
+test('commit.mjs with a clean --only path passes', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('openspec/changes/x/proposal.md', 'ok\n')
+  r.write('openspec/changes/x/design.md', `${RU}\n`)
+  const out = hook(`${COMMIT} --root ${r.root} --only openspec/changes/x/proposal.md --message m`, r.root)
+  assert.deepEqual([out.code, out.stderr], [0, ''])
+})
+
+test('commit.mjs with an --only path out of scope passes', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('src/notes.md', `${RU}\n`)
+  const out = hook(`${COMMIT} --only src --message m`, r.root)
+  assert.deepEqual([out.code, out.stderr], [0, ''])
+})
+
+test('commit.mjs with a quoted directory path holding spaces, from cd into the root, blocks', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('openspec/changes/my change/specs/a b.md', `${RU}\n`)
+  const out = hook(`cd "${r.root}" && node ./x/commit.mjs --only "openspec/changes/my change" --message m`, '/')
+  assert.equal(out.code, 2)
+  assert.match(out.stderr, /openspec\/changes\/my change\/specs\/a b\.md:1: /)
+})
+
+test('tasks.mjs tick --commit checks the change tasks file; without --commit it passes', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('openspec/changes/x/tasks.md', `- [ ] 1.1 ${RU}\n`)
+  const tick = `node /p/scripts/tasks.mjs tick 1.1 --change x --root ${r.root}`
+  const blocked = hook(`${tick} --commit`, '/')
+  assert.equal(blocked.code, 2)
+  assert.match(blocked.stderr, /openspec\/changes\/x\/tasks\.md:1: /)
+  assert.deepEqual([hook(tick, '/').code, hook(tick, '/').stderr], [0, ''])
+})
