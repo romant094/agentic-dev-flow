@@ -12,6 +12,7 @@ import {
   listRecords,
   parseFlags,
   readLedger,
+  skillEditShas,
   unresolvedDebt
 } from '../lib/ledger.mjs'
 import { run } from '../ledger.mjs'
@@ -165,4 +166,13 @@ test('a malformed ledger line is refused, not skipped', () => {
   mkdirSync(dirname(ledgerPath(root, 'c')), { recursive: true })
   writeFileSync(ledgerPath(root, 'c'), 'not json\n')
   assert.throws(() => run(['list', '--change', 'c', '--root', root], { env: {} }), SyntaxError)
+})
+
+test('a skill-edit record carries a commit sha and lists back for verify', () => {
+  const root = host()
+  const { record } = appendRecord(root, 'c', 'skill-edit', { sha: 'abc1234', message: 'docs(skills): x' }, { env: {}, now })
+  assert.deepEqual(record, { id: 'skill-edit-1', kind: 'skill-edit', at: now, sha: 'abc1234', message: 'docs(skills): x' })
+  assert.deepEqual(skillEditShas(listRecords(root, 'c')), ['abc1234'])
+  assert.throws(() => buildRecord('skill-edit', {}), /skill-edit needs --sha/)
+  assert.throws(() => buildRecord('skill-edit', { sha: 'abc1234', reason: 'r' }), /skill-edit takes no --reason/)
 })

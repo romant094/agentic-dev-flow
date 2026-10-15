@@ -24,6 +24,11 @@ export const RESOLUTIONS = ['tech-debt', 'flow-debt', 'follow-up', 'accepted']
 // out of KINDS, which lists the shapes the origin's ledger shares.
 export const CHECK_RULING = { required: ['check', 'reason'], optional: [] }
 const CHECK_ID = /^[a-z][a-z0-9-]*$/
+// An approved skill edit verify committed: `skill-edit --sha <commit> [--message <m>]`. Its sha
+// is exempt from the out-of-plan check for its files under `.claude/skills/` on every later
+// verify run. Kept out of KINDS for the same reason as CHECK_RULING.
+export const SKILL_EDIT = { required: ['sha'], optional: ['message'] }
+const SHA = /^[0-9a-f]{7,40}$/
 export const SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 
 export const ledgerPath = (root, change) => join(root, '.superpowers', 'sdd', change, 'ledger.jsonl')
@@ -40,7 +45,7 @@ export function readLedger(text) {
 // Build a record from `--field value` pairs, or throw naming what is wrong.
 export function buildRecord(kind, fields, { existing = [], sessionId = null, now = new Date().toISOString() } = {}) {
   const checkRuling = kind === 'ruling' && ('check' in fields || 'reason' in fields)
-  const spec = checkRuling ? CHECK_RULING : KINDS[kind]
+  const spec = checkRuling ? CHECK_RULING : kind === 'skill-edit' ? SKILL_EDIT : KINDS[kind]
   if (!spec) throw new Error(`unknown kind "${kind}"; one of: ${Object.keys(KINDS).join(', ')}`)
   const allowed = new Set([...spec.required, ...spec.optional])
   for (const key of Object.keys(fields)) {
@@ -52,6 +57,7 @@ export function buildRecord(kind, fields, { existing = [], sessionId = null, now
     if (typeof fields[key] !== 'string' || fields[key].trim() === '') throw new Error(`${kind} needs --${key}`)
   }
   if (checkRuling && !CHECK_ID.test(fields.check)) throw new Error(`--check must be a check id such as out-of-plan, got "${fields.check}"`)
+  if (kind === 'skill-edit' && !SHA.test(fields.sha)) throw new Error(`--sha must be a commit sha in lower-case hex, got "${fields.sha}"`)
   if ('task' in fields && !/^\d+(\.\d+)?$/.test(fields.task)) {
     throw new Error(`--task must be a task number, got "${fields.task}"`)
   }
@@ -85,6 +91,11 @@ export function parseFlags(argv) {
     i += 1
   }
   return fields
+}
+
+// The shas of every approved skill edit the ledger records, oldest first, without repeats.
+export function skillEditShas(records) {
+  return [...new Set(records.filter((r) => r.kind === 'skill-edit').map((r) => r.sha))]
 }
 
 export function readRecords(root, change) {

@@ -154,6 +154,11 @@ test('a passing run writes the raw output to a file, a record verify accepts, an
   const checks = Object.fromEntries(runChecks(root, { change: CHANGE, now: 'T' }).checks.map((c) => [c.id, c]))
   assert.equal(checks['test-record'].verdict, 'pass')
   assert.equal(r.section.file, `.superpowers/sdd/${CHANGE}/verify/test-record.json`)
+  assert.deepEqual([r.section.preExisting, r.section.countWarnings], [[], []])
+  for (const id of ['c4', 'c8']) {
+    write(root, `.superpowers/sdd/${CHANGE}/verify/${id}-agent.txt`, 'agent output\n')
+    write(root, `.superpowers/sdd/${CHANGE}/verify/${id}.json`, JSON.stringify({ id, title: id, verdict: 'pass', summary: 's', output: `.superpowers/sdd/${CHANGE}/verify/${id}-agent.txt` }))
+  }
   const verdict = computeVerdict(root, { change: CHANGE })
   assert.equal(verdict.refusals, undefined)
   const section = verdict.checks.find((c) => c.id === 'test-record')
@@ -233,6 +238,19 @@ test('a suite that cannot run is a failure, not a pass', () => {
   assert.equal(r.base, undefined)
   assert.equal(r.section.verdict, 'fail')
   assert.match(r.section.summary, /cannot run in this workspace/)
+})
+
+test('a suite that runs past the timeout is stopped and cannot run, never a pass', () => {
+  const { root } = host({ command: 'node -e "setTimeout(() => {}, 60000)"' })
+  const started = Date.now()
+  const r = runSuite(root, { change: CHANGE, baseCheck: true, record: true, section: 'test-record', timeoutMinutes: 0.01 })
+  assert.ok(Date.now() - started < 30000)
+  assert.deepEqual([r.status, r.cannotRun, r.timedOut, r.ok, r.base], ['fail', true, true, false, undefined])
+  assert.equal(r.section.verdict, 'fail')
+  assert.match(r.section.summary, /did not finish within 0\.01 minute/)
+  assert.doesNotMatch(readFileSync(join(root, r.record), 'utf8'), /\*\*Commit:\*\*/)
+  assert.equal(cli(['run', '--change', CHANGE, '--root', root, '--timeout', '0']).code, 2)
+  assert.equal(cli(['run', '--change', CHANGE, '--root', root, '--timeout', 'soon']).code, 2)
 })
 
 test('no command in the guide is not-run with the reason, never a pass', () => {

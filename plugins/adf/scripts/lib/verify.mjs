@@ -8,11 +8,14 @@
 // applies the developer's rulings from the ledger, and computes the verdict line.
 //
 // Every git call runs at the root: from a subdirectory a scan silently narrows.
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { changeDir, globToRegExp, META_FILE, parseTasks } from './changes.mjs'
 import { baseCheckPath, listGroups } from './groups.mjs'
-import { readRecords } from './ledger.mjs'
+import { commitPaths } from './commit.mjs'
+import { appendRecord, readRecords, SESSION_ENV, skillEditShas } from './ledger.mjs'
 import { baseRef, EXTENSIONS } from './plan-symbols.mjs'
 import { readRegistry } from './registry.mjs'
 import { extractRequirementsSection, parseDeltaSpec, validateProject } from './specs.mjs'
@@ -34,6 +37,12 @@ export const UNACCEPTABLE = ['tree', 'worktrees']
 export const REPLACEABLE = ['test-record']
 export const VERDICTS = ['pass', 'warn', 'fail', 'not-run']
 export const RECORD_FILE = '.apply-test-record.md'
+// The `**Commit:**` field of the apply test record, on a line of its own.
+export const RECORD_COMMIT = /^\*\*Commit:\*\*[ \t]*`?([0-9a-f]{7,40})`?[ \t]*$/m
+// Judgement sections every verify writes; a verdict without one of them is refused.
+export const REQUIRED_SECTIONS = ['c4', 'c8']
+export const DEVELOPER_ID = 'developer'
+export const SKILLS_DIR = '.claude/skills/'
 
 export const verifyDir = (root, change) => join(root, '.superpowers', 'sdd', change, 'verify')
 const relOutput = (change, file) => `.superpowers/sdd/${change}/verify/${file}`
@@ -230,7 +239,8 @@ function checkTestRecord(root, change, git) {
   const countLines = [`test counts: ${counts.replies} impl/fix repl${counts.replies === 1 ? 'y' : 'ies'} read`, ...counts.warnings.map((w) => `  warning: ${w}`)]
   const done = (verdict, summary, lines) => ({ verdict, summary, text: [...lines, '', ...countLines].join('\n'), countWarnings: counts.warnings })
   if (recordText === null) return done('fail', 'no apply test record: run the suite', [`${changePrefix(change)}${RECORD_FILE} is missing`])
-  const m = /\bcommit:?\**:?\s*`?([0-9a-f]{7,40})\b/i.exec(recordText)
+  // Only the record's own field counts: a "commit <hex>" inside quoted runner output is not it.
+  const m = RECORD_COMMIT.exec(recordText)
   if (!m) return done('fail', 'the apply test record names no commit: run the suite', ['no `**Commit:** <sha>` line in the record'])
   const sha = attempt(() => git('rev-parse', '--verify', '--quiet', `${m[1]}^{commit}`))
   if (!sha || attempt(() => git('merge-base', '--is-ancestor', sha, 'HEAD')) === null) {
@@ -339,9 +349,9 @@ function checkOutOfPlan(root, change, git, base, skillEdits) {
   const matchers = entries.map(pathMatcher)
   const allowed = (readRegistry(root)?.outsidePlan ?? []).map((g) => globToRegExp(g))
   const prefix = changePrefix(change)
-  const exempt = skillEdits.map((sha) => {
+  const exempt = skillEdits.map(({ sha, from }) => {
     const full = attempt(() => git('rev-parse', '--verify', '--quiet', `${sha}^{commit}`))
-    if (!full) throw new Error(`--skill-edit ${sha} is not a commit`)
+    if (!full) throw Object.assign(new Error(from === 'ledger' ? `the ledger's skill-edit ${sha} is not a commit` : `--skill-edit ${sha} is not a commit`), { skillEdit: true })
     return full
   })
   const findings = []
@@ -374,21 +384,32 @@ function checkOutOfPlan(root, change, git, base, skillEdits) {
 
 // ---------------------------------------------------------------- run
 
-// `fresh` starts a verify session: sections left by an earlier session describe a HEAD that may
-// have moved, so they are deleted before the first run.
-export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md', fresh = false, now = new Date().toISOString() }) {
+// A verify session starts fresh: sections left by an earlier session describe a HEAD that may
+// have moved, so they are deleted before its first run. The session is the harness's
+// (CLAUDE_CODE_SESSION_ID), kept in run.json: a run whose session differs from the one that
+// wrote run.json clears the directory itself. `fresh` forces the clearing. With no session id in
+// the environment nothing is cleared unless `fresh` asks.
+//
+// The approved skill edits are the ledger's `skill-edit` records, read on every run, plus any
+// `skillEdits` the caller names.
+export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md', fresh = false, env = process.env, now = new Date().toISOString() }) {
   const root = resolve(rootArg)
   if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
   const git = gitIn(root)
   const base = resolveBase(root, change, git)
   const outDir = verifyDir(root, change)
-  if (fresh) rmSync(outDir, { recursive: true, force: true })
+  const session = env[SESSION_ENV] || null
+  const previous = attempt(() => JSON.parse(readFileSync(join(outDir, 'run.json'), 'utf8')))
+  const cleared = fresh ? 'fresh' : previous && session && previous.session !== session ? 'new session' : null
+  if (cleared) rmSync(outDir, { recursive: true, force: true })
   mkdirSync(outDir, { recursive: true })
+  const ledgerShas = skillEditShas(readRecords(root, change))
+  const edits = [...ledgerShas.map((sha) => ({ sha, from: 'ledger' })), ...skillEdits.filter((sha) => !ledgerShas.includes(sha)).map((sha) => ({ sha, from: 'argument' }))]
   const guard = (fn) => {
     try {
       return fn()
     } catch (error) {
-      if (/^--skill-edit /.test(error.message)) throw error
+      if (error.skillEdit) throw error
       return { verdict: 'not-run', summary: `the check could not run: ${error.message}`, text: String(error.stack ?? error.message) }
     }
   }
@@ -399,13 +420,22 @@ export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md
     tree: guard(() => checkTree(git, base)),
     'test-record': guard(() => checkTestRecord(root, change, git)),
     worktrees: guard(() => checkWorktrees(root, change, git)),
-    'out-of-plan': guard(() => checkOutOfPlan(root, change, git, base, skillEdits))
+    'out-of-plan': guard(() => checkOutOfPlan(root, change, git, base, edits))
   }
-  const checks = Object.entries(results).map(([id, { verdict, summary, text }]) => {
+  const checks = Object.entries(results).map(([id, { verdict, summary, text, countWarnings }]) => {
     writeFileSync(join(outDir, `${id}.txt`), `${text}\n`)
-    return { id, title: CHECKS[id], verdict, summary, output: relOutput(change, `${id}.txt`) }
+    return { id, title: CHECKS[id], verdict, summary, output: relOutput(change, `${id}.txt`), ...(countWarnings ? { countWarnings } : {}) }
   })
-  const run = { change, at: now, base: base.ref ?? null, head: attempt(() => git('rev-parse', 'HEAD')), checks }
+  const run = {
+    change,
+    at: now,
+    session,
+    cleared,
+    base: base.ref ?? null,
+    head: attempt(() => git('rev-parse', 'HEAD')),
+    skillEdits: edits.map((e) => e.sha),
+    checks
+  }
   writeFileSync(join(outDir, 'run.json'), `${JSON.stringify(run, null, 2)}\n`)
   return { ...run, ok: !checks.some((c) => c.verdict === 'fail') }
 }
@@ -432,6 +462,10 @@ export function checkRulings(records) {
   return rulings
 }
 
+// A refusal names what resolves it: `redispatch` lists the section ids whose dispatch (or
+// writer) must run again, `needsRuling` the checks that were not run and wait for the
+// developer's ruling, and `rerun` is true when a script check's output is gone and
+// `verify.mjs run` must run again.
 export function computeVerdict(rootArg, { change }) {
   const root = resolve(rootArg)
   const dir = verifyDir(root, change)
@@ -440,23 +474,39 @@ export function computeVerdict(rootArg, { change }) {
   const run = JSON.parse(readFileSync(runFile, 'utf8'))
   const sections = new Map(run.checks.map((c) => [c.id, c]))
   const refusals = []
+  const redispatch = new Set()
+  const needsRuling = []
+  let rerun = false
   for (const file of readdirSync(dir).filter((f) => f.endsWith('.json') && f !== 'run.json').sort()) {
     const id = file.slice(0, -'.json'.length)
     const section = attempt(() => JSON.parse(readFileSync(join(dir, file), 'utf8')))
     if (section === null) {
       refusals.push(`${file} is not valid JSON`)
+      redispatch.add(id)
       continue
     }
     if (sections.has(id) && !REPLACEABLE.includes(id)) {
       refusals.push(`${file}: ${id} is a script check; only ${REPLACEABLE.join(', ')} may be replaced by a section`)
+      redispatch.add(id)
       continue
     }
     const errors = validSection(section, id, root)
-    if (errors.length > 0) refusals.push(`${file}: ${errors.join('; ')}`)
-    else sections.set(id, { id, title: section.title, verdict: section.verdict, summary: section.summary, output: section.output })
+    if (errors.length > 0) {
+      refusals.push(`${file}: ${errors.join('; ')}`)
+      redispatch.add(id)
+    } else sections.set(id, { id, title: section.title, verdict: section.verdict, summary: section.summary, output: section.output })
   }
   for (const c of run.checks) {
-    if (sections.get(c.id) === c && !existsSync(resolve(root, c.output))) refusals.push(`${c.id}: its output file ${c.output} does not exist`)
+    if (sections.get(c.id) === c && !existsSync(resolve(root, c.output))) {
+      refusals.push(`${c.id}: its output file ${c.output} does not exist`)
+      rerun = true
+    }
+  }
+  for (const id of REQUIRED_SECTIONS) {
+    if (!sections.has(id) && !redispatch.has(id)) {
+      refusals.push(`${id}.json is missing: the verify ${id} dispatch has not written its section`)
+      redispatch.add(id)
+    }
   }
   const rulings = checkRulings(readRecords(root, change))
   const ignoredRulings = []
@@ -470,10 +520,396 @@ export function computeVerdict(rootArg, { change }) {
     }
     return { ...c, accepted: ruling.reason, ruling: ruling.id, display: `${display}, accepted by the developer: ${ruling.reason}` }
   })
-  for (const c of checks) if (c.verdict === 'not-run' && !c.accepted) refusals.push(`${c.id} was not run and has no ruling: ${c.summary}`)
-  if (refusals.length > 0) return { ok: false, error: 'the record cannot be given a verdict', refusals, checks, ignoredRulings }
+  for (const c of checks) {
+    if (c.verdict === 'not-run' && !c.accepted) {
+      refusals.push(`${c.id} was not run and has no ruling: ${c.summary}`)
+      needsRuling.push(c.id)
+    }
+  }
+  if (refusals.length > 0) {
+    return { ok: false, error: 'the record cannot be given a verdict', refusals, redispatch: [...redispatch], needsRuling, rerun, checks, ignoredRulings }
+  }
   const failing = checks.filter((c) => c.verdict === 'fail' && !c.accepted)
   const warned = checks.some((c) => c.verdict === 'warn' || c.accepted)
   const verdict = failing.length > 0 ? 'FAIL' : warned ? 'PASS WITH WARNINGS' : 'PASS'
   return { ok: verdict !== 'FAIL', verdict, line: `Verdict: ${verdict}`, failing: failing.map((c) => c.id), checks, ignoredRulings }
+}
+
+// ---------------------------------------------------------------- report
+
+const listOrNone = (items) => (items.length === 0 ? ' none' : `\n${items.map((i) => `- ${i}`).join('\n')}`)
+
+// The report the command prints, from a computeVerdict result: failing, warnings, accepted and
+// the next step; on a refusal, the refusals and what resolves them.
+export function renderReport(result, { change, commit = null } = {}) {
+  const record = `openspec/changes/${change}/verify.md`
+  if (result.ok === false && result.refusals) {
+    return [
+      '## Verification: no verdict yet',
+      '',
+      `**Change:** ${change}`,
+      '',
+      `Refusals:${listOrNone(result.refusals)}`,
+      `Re-dispatch:${result.redispatch.length ? ` ${result.redispatch.join(', ')}` : ' none'}`,
+      `Needs a ruling:${result.needsRuling.length ? ` ${result.needsRuling.join(', ')}` : ' none'}`,
+      ...(result.rerun ? ['Re-run: verify.mjs run (a check output file is gone)'] : []),
+      '',
+      'Next step: re-dispatch each named section, ask the developer for each ruling, then compute the verdict again.'
+    ].join('\n')
+  }
+  const failing = result.checks.filter((c) => c.verdict === 'fail' && !c.accepted)
+  const warned = result.checks.filter((c) => c.verdict === 'warn')
+  const accepted = result.checks.filter((c) => c.accepted)
+  return [
+    `## Verification ${result.verdict}`,
+    '',
+    `**Change:** ${change}`,
+    `**Record:** ${record}, ${commit ? `commit ${commit}` : 'not committed yet'}`,
+    '',
+    `Failing:${listOrNone(failing.map((c) => `${c.id}: ${c.summary}`))}`,
+    `Warnings:${listOrNone(warned.map((c) => `${c.id}: ${c.summary}`))}`,
+    `Accepted by the developer:${listOrNone(accepted.map((c) => `${c.id}: ${c.accepted}`))}`,
+    '',
+    `Next step: ${nextStep(result)}`
+  ].join('\n')
+}
+
+function nextStep(result) {
+  if (result.verdict !== 'FAIL') return "the review, which reads the record's Verdict line."
+  return `fix what each failing check names (${result.failing.join(', ')}): the artifact, the code through a new apply round, or the plan with the developer's approval; then run /adf:verify again.`
+}
+
+// ---------------------------------------------------------------- the developer section
+
+// What was run with the developer and what it showed: `<verify>/developer.txt`, verbatim, and
+// its section `<verify>/developer.json`. The verdict is the one agreed with the developer.
+export function writeDeveloper(rootArg, { change, text, verdict, summary }) {
+  const root = resolve(rootArg)
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
+  if (typeof text !== 'string' || !text.trim()) throw new Error('the developer text is empty; write what was run and what it showed')
+  if (!VERDICTS.includes(verdict)) throw new Error(`--verdict must be one of ${VERDICTS.join(', ')}`)
+  const dir = verifyDir(root, change)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, `${DEVELOPER_ID}.txt`), text.endsWith('\n') ? text : `${text}\n`)
+  const firstLine = text.split('\n').map((l) => l.trim()).find(Boolean)
+  const section = {
+    id: DEVELOPER_ID,
+    title: 'Checks run with the developer',
+    verdict,
+    summary: summary?.trim() || firstLine,
+    output: relOutput(change, `${DEVELOPER_ID}.txt`)
+  }
+  writeFileSync(join(dir, `${DEVELOPER_ID}.json`), `${JSON.stringify(section, null, 2)}\n`)
+  return { ok: true, file: relOutput(change, `${DEVELOPER_ID}.json`), ...section }
+}
+
+// ---------------------------------------------------------------- stale-skill candidates
+
+const rawGit = (root, ...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28 })
+
+const GENERIC_NAMES = /^(?:index\.[a-z]+|readme\.md|skill\.md|changelog\.md|mod\.rs|__init__\.py)$/i
+const DECLARATION = /\b(?:function\*?|class|interface|type|enum|const|let|var|def|func|fn|struct|trait|module)\s+([A-Za-z_$][\w$]*)/g
+const FLAG = /(?<![\w-])(--[a-z][a-z0-9-]{2,})(?![\w-])/g
+const ROUTE = /['"`](\/[A-Za-z0-9_:{}.-]*[A-Za-z][A-Za-z0-9_:{}.\-/]*)['"`]/g
+const ROUTE_DECORATOR = /@(?:Get|Post|Put|Patch|Delete|All|Controller)\(\s*['"]([^'"]+)['"]/g
+const PACKAGE_KEY = /^\s*"([^"]+)"\s*:\s*"/
+const LINE_PATH = /(?:\.{0,2}\/)?[\w.@~-]+(?:\/[\w.@*~-]+)*\/?/g
+const escapeWord = (t) => new RegExp(`(?<![\\w$])${escapeRe(t)}(?![\\w$])`)
+
+// The terms the range's diff changed: the files it touched (the change's own directory left
+// out), and, from the changed lines of every file that is not Markdown, the names it declares,
+// the command-line flags only one side carries, package.json keys, and route strings.
+export function changedTerms(diffText, files, change) {
+  const prefix = changePrefix(change)
+  const paths = files.filter((f) => !f.startsWith(prefix))
+  const symbols = new Set()
+  const flags = { '+': new Set(), '-': new Set() }
+  const commands = new Set()
+  const routes = new Set()
+  let file = null
+  for (const line of diffText.split('\n')) {
+    const head = /^(?:\+\+\+|---) (?:[ab]\/(.*)|\/dev\/null)$/.exec(line)
+    if (head) {
+      if (head[1]) file = head[1]
+      continue
+    }
+    if (!/^[+-]/.test(line) || !file || file.startsWith(prefix) || /\.md$/i.test(file)) continue
+    const side = line[0]
+    const body = line.slice(1)
+    for (const m of body.matchAll(DECLARATION)) if (m[1].length >= 4) symbols.add(m[1])
+    for (const m of body.matchAll(FLAG)) flags[side].add(m[1])
+    for (const m of body.matchAll(ROUTE)) if (m[1].length >= 3) routes.add(m[1])
+    for (const m of body.matchAll(ROUTE_DECORATOR)) routes.add(m[1])
+    if (/(?:^|\/)package\.json$/.test(file)) {
+      const key = PACKAGE_KEY.exec(body)
+      if (key) commands.add(key[1])
+    }
+  }
+  for (const flag of flags['+']) if (!flags['-'].has(flag)) commands.add(flag)
+  for (const flag of flags['-']) if (!flags['+'].has(flag)) commands.add(flag)
+  return { paths, symbols: [...symbols].sort(), commands: [...commands].sort(), routes: [...routes].sort() }
+}
+
+function pathMatches(token, file) {
+  const t = token.replace(/^\.\//, '')
+  if (!t || t === '/' || t.startsWith('../')) return false
+  if (t.endsWith('/')) return file.startsWith(t) || file.includes(`/${t}`)
+  if (file === t || file.endsWith(`/${t}`)) return true
+  if (t.includes('/') && (file.startsWith(`${t}/`) || file.includes(`/${t}/`))) return true
+  const name = file.slice(file.lastIndexOf('/') + 1)
+  return !t.includes('/') && t === name && !GENERIC_NAMES.test(name)
+}
+
+// The lines of one skill file that name a changed term, each with what it matched.
+export function candidateLines(text, terms) {
+  const out = []
+  const symbolRes = terms.symbols.map((s) => [s, escapeWord(s)])
+  const commandRes = terms.commands.map((c) => [c, c.startsWith('--') ? new RegExp(`(?<![\\w-])${escapeRe(c)}(?![\\w-])`) : escapeWord(c)])
+  text.split('\n').forEach((line, i) => {
+    const matches = []
+    const tokens = [...line.matchAll(LINE_PATH)].map((m) => m[0]).filter((t) => t.includes('/') || /\.[A-Za-z0-9]{1,6}$/.test(t))
+    for (const file of terms.paths) if (tokens.some((t) => pathMatches(t, file))) matches.push({ kind: 'path', term: file })
+    for (const [s, re] of symbolRes) if (re.test(line)) matches.push({ kind: 'symbol', term: s })
+    for (const [c, re] of commandRes) if (re.test(line)) matches.push({ kind: 'command', term: c })
+    for (const r of terms.routes) if (line.includes(r)) matches.push({ kind: 'route', term: r })
+    if (matches.length > 0) out.push({ line: i + 1, text: line, matches })
+  })
+  return out
+}
+
+// For each host skill (`.claude/skills/*/SKILL.md` and the README.md beside it), the lines that
+// name a path, symbol, command or route the range's diff changed: the input of `verify c8`,
+// which judges each candidate. The listing is written to `<verify>/c8-candidates.txt`.
+export function skillCandidates(rootArg, { change }) {
+  const root = resolve(rootArg)
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
+  const git = gitIn(root)
+  const base = resolveBase(root, change, git)
+  if (base.error) throw new Error(`no commit range: ${base.error}`)
+  const range = `${base.ref}..HEAD`
+  const files = rawGit(root, 'diff', '--no-renames', '--name-only', range).split('\n').filter(Boolean)
+  const terms = changedTerms(rawGit(root, 'diff', '--no-renames', '--no-color', '-U0', range), files, change)
+  const skillsRoot = join(root, SKILLS_DIR)
+  const skillFiles = existsSync(skillsRoot)
+    ? readdirSync(skillsRoot, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name)
+        .sort()
+        .flatMap((name) => ['SKILL.md', 'README.md'].map((f) => `${SKILLS_DIR}${name}/${f}`))
+        .filter((f) => existsSync(join(root, f)))
+    : []
+  const skills = skillFiles.map((file) => ({ file, candidates: candidateLines(readFileSync(join(root, file), 'utf8'), terms) }))
+  const counts = Object.fromEntries(Object.entries(terms).map(([k, v]) => [k, v.length]))
+  const lines = [
+    `range ${range}; changed files: ${files.length}; terms: ${Object.entries(counts).map(([k, n]) => `${k} ${n}`).join(', ')}`,
+    `skill files read: ${skillFiles.length === 0 ? 'none' : skillFiles.length}`
+  ]
+  for (const s of skills) {
+    lines.push('', `${s.file}: ${s.candidates.length === 0 ? 'no candidate line' : `${s.candidates.length} candidate line(s)`}`)
+    for (const c of s.candidates) lines.push(`  ${c.line}: ${c.text.trim()}`, `      [${c.matches.map((m) => `${m.kind} ${m.term}`).join('; ')}]`)
+  }
+  const outDir = verifyDir(root, change)
+  mkdirSync(outDir, { recursive: true })
+  writeFileSync(join(outDir, 'c8-candidates.txt'), `${lines.join('\n')}\n`)
+  return {
+    ok: true,
+    range,
+    terms: counts,
+    skillFiles: skillFiles.length,
+    candidates: skills.reduce((n, s) => n + s.candidates.length, 0),
+    skills: skills.filter((s) => s.candidates.length > 0),
+    output: relOutput(change, 'c8-candidates.txt')
+  }
+}
+
+// ---------------------------------------------------------------- an approved skill edit
+
+const CONVENTIONAL = /^[a-z]+(?:\([^()\s][^()]*\))?!?: \S/
+
+// `git status --porcelain=v1 -z`: every staged, changed or untracked path, both ends of a rename.
+function changedPaths(root) {
+  const parts = rawGit(root, 'status', '--porcelain=v1', '-z', '--untracked-files=all').split('\0')
+  const paths = []
+  for (let i = 0; i < parts.length; i++) {
+    const entry = parts[i]
+    if (!entry) continue
+    paths.push(entry.slice(3))
+    if (/[RC]/.test(entry.slice(0, 2))) paths.push(parts[++i])
+  }
+  return paths
+}
+
+// Commits an approved skill edit on its own, records its sha in the ledger and runs the checks
+// again. Refused when any staged, changed or untracked path lies outside `.claude/skills/`.
+export function skillEdit(rootArg, { change, message, tracks = 'tasks.md', env = process.env, now }) {
+  const root = resolve(rootArg)
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
+  if (typeof message !== 'string' || !CONVENTIONAL.test(message)) throw new Error('the message must be a Conventional Commit: type(scope): description')
+  const paths = changedPaths(root)
+  const outside = paths.filter((p) => !p.startsWith(SKILLS_DIR))
+  if (outside.length > 0) throw new Error(`paths outside ${SKILLS_DIR} are changed: ${outside.join(', ')}; a skill edit commits only skill files`)
+  if (paths.length === 0) throw new Error(`nothing is changed under ${SKILLS_DIR}; apply the approved edit first`)
+  const committed = commitPaths(root, { only: paths, message })
+  const { record } = appendRecord(root, change, 'skill-edit', { sha: committed.commit, message }, { env })
+  const run = runChecks(root, { change, tracks, env, ...(now ? { now } : {}) })
+  return { ok: true, commit: committed.commit, files: committed.files, record: record.id, run }
+}
+
+// ---------------------------------------------------------------- the record
+
+export const TEMPLATE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema', 'templates', 'verify.md')
+export const recordPath = (change) => `openspec/changes/${change}/verify.md`
+
+// Each heading of the template and the check id whose section fills it.
+const HEADING_IDS = {
+  'Structural validation': 'validation',
+  'Task completion': 'tasks',
+  'Delta spec sync state': 'deltas',
+  'Design and specs coherence': 'c4',
+  'Implementation signal': 'tree',
+  'Apply test record': 'test-record',
+  'No leftover worktrees': 'worktrees',
+  'Stale skills': 'c8',
+  'Out-of-plan commits': 'out-of-plan'
+}
+const OTHER_HEADINGS = ['Checks run with the developer', 'Exercised and not exercised', 'Rulings', 'Next step']
+const DISPATCHED_BY = { c4: 'verify c4', c8: 'verify c8', 'test-record': 'suite.mjs run --section test-record', developer: 'verify.mjs developer' }
+
+function fenced(text) {
+  const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((m) => m[0].length))
+  const fence = '`'.repeat(Math.max(3, longest + 1))
+  return [`${fence}text`, text.replace(/\n+$/, ''), fence].join('\n')
+}
+
+// `**<name>:** <value>`: a list goes below the label, an empty list is `none`, and an absent
+// value is the fallback.
+const labelled = (name, value, fallback) => {
+  if (Array.isArray(value)) return value.length === 0 ? `**${name}:** none` : `**${name}:**\n\n${value.map((v) => `- ${v}`).join('\n')}`
+  return `**${name}:** ${typeof value === 'string' && value.trim() ? value.trim() : fallback}`
+}
+
+function stamp(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
+// The bullets under one `## ` heading of a Markdown text.
+function bulletsUnder(text, heading) {
+  const lines = String(text ?? '').split('\n')
+  const at = lines.findIndex((l) => l.trim() === `## ${heading}`)
+  if (at < 0) return []
+  const out = []
+  for (const line of lines.slice(at + 1)) {
+    if (/^#{1,2}\s/.test(line)) break
+    const m = /^-\s+(.*)$/.exec(line)
+    if (m) out.push(m[1])
+  }
+  return out
+}
+
+// Renders `openspec/changes/<change>/verify.md` from the template, run.json, the sections and
+// their verbatim output files, the verdict, the rulings and the approved skill edits, deciding
+// nothing; refuses when the verdict refuses or HEAD moved since the run. The record's last line
+// is the verdict's `line`, checked after writing. With `commit`, the record is committed alone.
+export function assemble(rootArg, { change, commit = false, template = TEMPLATE, now = new Date().toISOString() }) {
+  const root = resolve(rootArg)
+  const dir = verifyDir(root, change)
+  const result = computeVerdict(root, { change })
+  if (result.ok === false && result.refusals) {
+    return { ...result, error: `the record cannot be assembled: ${result.error}`, report: renderReport(result, { change }) }
+  }
+  const run = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8'))
+  const git = gitIn(root)
+  const head = git('rev-parse', 'HEAD')
+  if (run.head !== head) throw new Error(`HEAD is ${head.slice(0, 7)}, but the checks ran at ${String(run.head).slice(0, 7)}; run verify.mjs run again`)
+  const templateText = readFileSync(template, 'utf8')
+  const title = templateText.split('\n').find((l) => /^# /.test(l)) ?? '# Verification Report'
+  const headings = [...templateText.matchAll(/^## (.+)$/gm)].map((m) => m[1].trim())
+  const unknown = headings.filter((h) => !(h in HEADING_IDS) && !OTHER_HEADINGS.includes(h))
+  if (unknown.length > 0) throw new Error(`the template has section(s) assemble does not know: ${unknown.join(', ')}`)
+  const templated = new Set(headings.map((h) => HEADING_IDS[h]).filter(Boolean))
+  const byId = new Map(result.checks.map((c) => [c.id, c]))
+  const extra = (id) => attempt(() => JSON.parse(readFileSync(join(dir, `${id}.json`), 'utf8'))) ?? {}
+  const output = (c) => readFileSync(resolve(root, c.output), 'utf8')
+  const records = readRecords(root, change)
+  const rulings = records.filter((r) => r.kind === 'ruling' && typeof r.check === 'string')
+  const skillEdits = records.filter((r) => r.kind === 'skill-edit')
+  const placed = new Set()
+  const sectionOf = (c, fields = []) => {
+    placed.add(c.id)
+    return [`**Result:** ${c.display}: ${c.summary}`, ...fields.flatMap((f) => ['', f]), '', fenced(output(c))]
+  }
+  const c4 = extra('c4')
+  const notStated = 'not stated in the c4 section'
+  const renderers = {
+    c4: (c) => sectionOf(c, [
+      labelled('Hand-edited capability prose', c4.proseEdits, notStated),
+      labelled('Removal accounting', c4.removalAccounting, notStated)
+    ]),
+    'test-record': (c) => {
+      const rerun = existsSync(join(dir, 'test-record.json'))
+      const section = rerun ? extra('test-record') : {}
+      const recordFile = join(changeDir(root, change), RECORD_FILE)
+      const preExisting = rerun ? section.preExisting ?? [] : bulletsUnder(existsSync(recordFile) ? readFileSync(recordFile, 'utf8') : '', 'Pre-existing failures, separate work')
+      const warnings = rerun ? section.countWarnings ?? [] : run.checks.find((x) => x.id === 'test-record')?.countWarnings ?? []
+      return sectionOf(c, [
+        `**Scope that ran:** ${rerun ? 'the whole suite, re-run by suite.mjs: the record was stale' : `the record cited, not re-run: ${changePrefix(change)}${RECORD_FILE}`}`,
+        labelled('Pre-existing failures, separate work', preExisting, 'none'),
+        labelled('Test count warnings', warnings, 'none')
+      ])
+    },
+    c8: (c) => sectionOf(c, [
+      labelled('Approved skill edits', skillEdits.map((r) => `\`${r.sha}\`${r.message ? ` ${r.message}` : ''}`), 'none'),
+      labelled('Declined edits', rulings.filter((r) => r.check === 'c8').map((r) => `${r.reason} (${r.id})`), 'none')
+    ])
+  }
+  const verifier = [
+    attempt(() => git('config', 'user.name')) || 'unknown',
+    'checks by verify.mjs run',
+    ...result.checks.filter((c) => DISPATCHED_BY[c.id] && existsSync(join(dir, `${c.id}.json`))).map((c) => `${c.id} by ${DISPATCHED_BY[c.id]}`)
+  ].join('; ')
+  const out = [
+    title,
+    '',
+    `**Change:** \`${change}\``,
+    `**Verified at:** \`${stamp(now)}\``,
+    `**Verifier:** ${verifier}`,
+    `**Range:** \`${run.base}..${head}\``
+  ]
+  for (const heading of headings) {
+    let body
+    const id = HEADING_IDS[heading]
+    if (id) {
+      const c = byId.get(id)
+      if (!c) throw new Error(`no ${id} section to fill "${heading}"`)
+      body = (renderers[id] ?? sectionOf)(c)
+    } else if (heading === 'Checks run with the developer') {
+      // A section the template does not name is placed before the developer's, under its title.
+      for (const c of result.checks) {
+        if (placed.has(c.id) || c.id === DEVELOPER_ID || templated.has(c.id)) continue
+        out.push('', `## ${c.title}`, '', ...sectionOf(c))
+      }
+      const dev = byId.get(DEVELOPER_ID)
+      body = dev ? sectionOf(dev) : ['none']
+    } else if (heading === 'Exercised and not exercised') {
+      body = Array.isArray(c4.exercised) ? (c4.exercised.length ? c4.exercised.map((v) => `- ${v}`) : ['none']) : [typeof c4.exercised === 'string' && c4.exercised.trim() ? c4.exercised.trim() : notStated]
+    } else if (heading === 'Rulings') {
+      const lines = rulings.map((r) => `- \`${r.check}\`: ${r.reason} (${r.id})`)
+      for (const i of result.ignoredRulings) lines.push(`- \`${i.check}\`: ignored (${i.id}): ${i.reason}`)
+      body = lines.length ? lines : ['none']
+    } else {
+      body = [result.verdict === 'FAIL' ? `Fix what each failing check names, then run verify again:\n\n${result.checks.filter((c) => c.verdict === 'fail' && !c.accepted).map((c) => `- \`${c.id}\`: ${c.summary}`).join('\n')}` : "The review, which reads this record's Verdict line."]
+    }
+    out.push('', `## ${heading}`, '', ...body)
+  }
+  out.push('', result.line, '')
+  const file = recordPath(change)
+  writeFileSync(join(root, file), out.join('\n'))
+  const last = readFileSync(join(root, file), 'utf8').trimEnd().split('\n').at(-1)
+  if (last !== result.line) throw new Error(`the record's last line is "${last}", not "${result.line}"`)
+  const committed = commit ? commitPaths(root, { only: [file], message: `docs(openspec): verify ${change}` }) : null
+  const sha = committed?.commit ?? null
+  return { ok: true, file, verdict: result.verdict, line: result.line, commit: sha, report: renderReport(result, { change, commit: sha }) }
 }

@@ -6,6 +6,9 @@
 //   ledger.mjs ruling --change <name> --check <id> --reason <text>
 //                                                            a developer ruling accepting a
 //                                                            failing verify check
+//   ledger.mjs skill-edit --change <name> --sha <commit> [--message <m>]
+//                                                            an approved skill edit's commit,
+//                                                            which every later verify run exempts
 //   ledger.mjs list --change <name> [--unresolved-debt]      the records, or the open debt
 //
 // --root <dir> names the host project (default: the current directory); --repo <dir> is
@@ -21,7 +24,7 @@ Kinds: ${Object.entries(KINDS)
     ([k, v]) =>
       `${k} (${v.required.map((f) => `--${f}`).join(' ')}${v.optional.length ? ` [${v.optional.map((f) => `--${f}`).join(' ')}]` : ''})`
   )
-  .join('; ')}; ruling on a verify check (--check --reason)`
+  .join('; ')}; ruling on a verify check (--check --reason); skill-edit (--sha [--message])`
 
 export function run(argv, { env = process.env, cwd = process.cwd() } = {}) {
   const [kind, ...rest] = argv

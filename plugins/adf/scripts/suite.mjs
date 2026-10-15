@@ -8,7 +8,7 @@
 //       write the command under `## Whole-suite command`, creating the file or the section when
 //       absent: { file, command }. Committing it is the caller's job.
 //   suite.mjs run --change <name> [--root <change worktree>] [--base-check] [--record]
-//                 [--section test-record]
+//                 [--section test-record] [--timeout <minutes>]
 //       run the command in <root> through the platform shell, its output to
 //       .superpowers/sdd/<change>/suite/<stamp>.txt, never to stdout:
 //       { status, exit, counts, outputFile, failing, base?, preExisting, newFailures, blocking,
@@ -19,16 +19,18 @@
 //       final commit
 //       --section test-record writes verify/test-record.json and its output file, the re-run
 //       of a stale record
+//       --timeout stops each run after that many minutes (default 30, DEFAULT_TIMEOUT_MINUTES);
+//       a stopped run is cannotRun with timedOut: true, a failure and never a pass
 //   With no command in the guide, run reports `status: "not-run"` with the reason; never a pass.
 import { isMain } from './lib/main.mjs'
-import { readCommand, runSuite, writeCommand } from './lib/suite.mjs'
+import { DEFAULT_TIMEOUT_MINUTES, readCommand, runSuite, writeCommand } from './lib/suite.mjs'
 
 export const USAGE =
-  'usage: suite.mjs command [--root <dir>] | suite.mjs set --command "<cmd>" [--root <dir>] | suite.mjs run --change <name> [--root <dir>] [--base-check] [--record] [--section test-record]'
+  'usage: suite.mjs command [--root <dir>] | suite.mjs set --command "<cmd>" [--root <dir>] | suite.mjs run --change <name> [--root <dir>] [--base-check] [--record] [--section test-record] [--timeout <minutes>]'
 
 export class UsageError extends Error {}
 
-const VALUED = ['--change', '--root', '--command', '--section']
+const VALUED = ['--change', '--root', '--command', '--section', '--timeout']
 const FLAGS = ['--base-check', '--record']
 
 function parse(argv) {
@@ -72,10 +74,12 @@ export function run(argv, { cwd = process.cwd() } = {}) {
       if (!values.command) throw new UsageError('set needs --command')
       return writeCommand(root, values.command)
     case 'run':
-      only(['change', 'base-check', 'record', 'section'])
+      only(['change', 'base-check', 'record', 'section', 'timeout'])
       if (!values.change) throw new UsageError('run needs --change')
       if (values.section !== undefined && values.section !== 'test-record') throw new UsageError('--section must be test-record')
-      return runSuite(root, { change: values.change, baseCheck: Boolean(values['base-check']), record: Boolean(values.record), section: values.section ?? null })
+      const timeoutMinutes = values.timeout === undefined ? DEFAULT_TIMEOUT_MINUTES : Number(values.timeout)
+      if (!(timeoutMinutes > 0 && Number.isFinite(timeoutMinutes))) throw new UsageError('--timeout must be a positive number of minutes')
+      return runSuite(root, { change: values.change, baseCheck: Boolean(values['base-check']), record: Boolean(values.record), section: values.section ?? null, timeoutMinutes })
     default:
       throw new UsageError(USAGE)
   }

@@ -30,6 +30,10 @@
 //
 // The run is `blocking` unless it passed or every failure is pre-existing. A suite that cannot
 // run at all (exit 126 or 127) is a failure, never a pass.
+//
+// Each run, the base check's included, is stopped after `timeoutMinutes` (DEFAULT_TIMEOUT_MINUTES
+// unless given): a suite that hangs is `cannotRun` with `timedOut: true`, a failure, never a pass.
+// The signal stops the process the shell runs; a grandchild that ignores it may outlive the run.
 import { spawnSync } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -45,6 +49,7 @@ export const TAIL_LINES = 40
 // Lines of the real output quoted in the committed record; the whole output stays in its file.
 export const QUOTE_LINES = 60
 const CANNOT_RUN = [126, 127]
+export const DEFAULT_TIMEOUT_MINUTES = 30
 
 const toPosix = (p) => p.split('\\').join('/')
 const rel = (root, file) => toPosix(relative(root, file))
@@ -146,16 +151,19 @@ export function failingIn(text) {
 
 const stampOf = (now) => now.replace(/[:.]/g, '-')
 
-function runOnce(command, cwd, file) {
+function runOnce(command, cwd, file, timeoutMinutes) {
   mkdirSync(dirname(file), { recursive: true })
   const fd = openSync(file, 'w')
   let result
   try {
-    result = spawnSync(command, { cwd, shell: true, stdio: ['ignore', fd, fd], windowsHide: true })
+    result = spawnSync(command, { cwd, shell: true, stdio: ['ignore', fd, fd], windowsHide: true, timeout: Math.round(timeoutMinutes * 60000) })
   } finally {
     closeSync(fd)
   }
   const text = readFileSync(file, 'utf8')
+  if (result.error?.code === 'ETIMEDOUT') {
+    return { exit: null, cannotRun: true, timedOut: true, error: `the run did not finish within ${timeoutMinutes} minute(s) and was stopped`, text }
+  }
   if (result.error) return { exit: null, cannotRun: true, error: result.error.message, text }
   const exit = result.status ?? 1
   return { exit, ...(result.signal ? { signal: result.signal } : {}), cannotRun: CANNOT_RUN.includes(exit), text }
@@ -169,14 +177,14 @@ function attempt(fn) {
   }
 }
 
-function baseCheck(root, change, command, file) {
+function baseCheck(root, change, command, file, timeoutMinutes) {
   let made
   try {
     made = addBaseCheck(root, { change })
   } catch (error) {
     return { error: `no base-check worktree: ${error.message}`, cannotRun: true }
   }
-  const ran = runOnce(command, made.root, file)
+  const ran = runOnce(command, made.root, file, timeoutMinutes)
   const base = {
     ref: made.ref,
     commit: made.commit,
@@ -184,6 +192,7 @@ function baseCheck(root, change, command, file) {
     outputFile: rel(root, file),
     failing: failingIn(ran.text),
     cannotRun: ran.cannotRun,
+    ...(ran.timedOut ? { timedOut: true } : {}),
     ...(ran.error ? { error: ran.error } : {})
   }
   try {
@@ -238,6 +247,7 @@ export function recordText(result) {
     return lines.join('\n')
   }
   lines.push(`**Ran on:** \`${result.commit}\``, `**Exit:** ${result.exit}`, `**Result:** ${result.status}`, `**Output file:** \`${result.outputFile}\``)
+  if (result.timedOut) lines.push(`**Timed out:** ${result.error}`)
   if (result.dirty.length) lines.push(`**Uncommitted paths when the suite ran:** ${result.dirty.map((p) => `\`${p}\``).join(', ')}`)
   lines.push('', "## The runner's counts", '', ...fence(result.counts), '')
   lines.push(`## The output, last ${QUOTE_LINES} lines`, '', ...fence(result.quote), '')
@@ -262,6 +272,7 @@ function sectionVerdict(result) {
   if (result.status === 'pre-existing') {
     return { verdict: 'warn', summary: `the suite fails (exit ${result.exit}) only on what also fails on the base: ${result.preExisting.join('; ')}` }
   }
+  if (result.timedOut) return { verdict: 'fail', summary: `${result.error}: the developer raises --timeout, fixes the hang or rules` }
   if (result.cannotRun) return { verdict: 'fail', summary: `the suite cannot run in this workspace (exit ${result.exit ?? result.error}): the developer provisions it or rules` }
   const what = result.newFailures.length ? `: ${result.newFailures.join('; ')}` : ''
   const why = !result.base ? 'no base check was made' : result.base.cannotRun ? 'the base check could not run' : 'it does not reproduce on the base'
@@ -280,7 +291,8 @@ function writeSection(root, change, result) {
     summary = `${summary}; ${warnings.length} test count warning(s)`
   }
   writeFileSync(outFile, `${text}\n${warnings.length ? `\n## Test count warnings\n\n${warnings.map((w) => `- warning: ${w}`).join('\n')}\n` : ''}`)
-  const section = { id: SECTION_ID, title: CHECKS[SECTION_ID], verdict, summary, output: rel(root, outFile) }
+  // preExisting and countWarnings are read by verify.mjs assemble; computeVerdict ignores them.
+  const section = { id: SECTION_ID, title: CHECKS[SECTION_ID], verdict, summary, output: rel(root, outFile), preExisting: result.preExisting, countWarnings: warnings }
   const file = join(dir, `${SECTION_ID}.json`)
   writeFileSync(file, `${JSON.stringify(section, null, 2)}\n`)
   return { file: rel(root, file), ...section }
@@ -288,9 +300,10 @@ function writeSection(root, change, result) {
 
 // ---------------------------------------------------------------- run
 
-export function runSuite(rootArg, { change, baseCheck: withBase = false, record = false, section = null, now = new Date().toISOString() }) {
+export function runSuite(rootArg, { change, baseCheck: withBase = false, record = false, section = null, timeoutMinutes = DEFAULT_TIMEOUT_MINUTES, now = new Date().toISOString() }) {
   const root = resolve(rootArg)
   if (!change) throw new Error('no change name')
+  if (!(typeof timeoutMinutes === 'number' && timeoutMinutes > 0 && Number.isFinite(timeoutMinutes))) throw new Error('the timeout must be a positive number of minutes')
   if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
   if (section !== null && section !== SECTION_ID) throw new Error(`--section must be ${SECTION_ID}`)
   const git = gitIn(root)
@@ -304,14 +317,14 @@ export function runSuite(rootArg, { change, baseCheck: withBase = false, record 
     const stamp = stampOf(now)
     const dir = join(root, '.superpowers', 'sdd', change, 'suite')
     const file = join(dir, `${stamp}.txt`)
-    const ran = runOnce(command, root, file)
+    const ran = runOnce(command, root, file, timeoutMinutes)
     const head = { failing: failingIn(ran.text) }
     let base
     let verdict
     if (ran.exit === 0) verdict = { preExisting: [], newFailures: [], blocking: false, comparison: 'none' }
     else if (ran.cannotRun) verdict = { preExisting: [], newFailures: head.failing, blocking: true, comparison: 'none' }
     else {
-      if (withBase) base = baseCheck(root, change, command, join(dir, `${stamp}-base.txt`))
+      if (withBase) base = baseCheck(root, change, command, join(dir, `${stamp}-base.txt`), timeoutMinutes)
       verdict = compare(head, base)
     }
     const status = ran.exit === 0 ? 'pass' : verdict.blocking ? 'fail' : 'pre-existing'
@@ -325,6 +338,7 @@ export function runSuite(rootArg, { change, baseCheck: withBase = false, record 
       ...(ran.signal ? { signal: ran.signal } : {}),
       ...(ran.error ? { error: ran.error } : {}),
       cannotRun: ran.cannotRun,
+      ...(ran.timedOut ? { timedOut: true, timeoutMinutes } : {}),
       counts: countLines(ran.text),
       quote: ran.text.split(/\r?\n/).map((l) => l.trimEnd()).filter((l, i, all) => i < all.length - 1 || l).slice(-QUOTE_LINES),
       outputFile: rel(root, file),

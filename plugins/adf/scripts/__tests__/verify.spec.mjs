@@ -12,7 +12,7 @@ import { addGroup, baseCheckPath } from '../lib/groups.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { appendRecord, buildRecord } from '../lib/ledger.mjs'
 import { initRegistry, readRegistry, validateRegistry, writeRegistry } from '../lib/registry.mjs'
-import { computeVerdict, countsIn, deltaState, pathMatcher, plannedPaths, runChecks, verifyDir } from '../lib/verify.mjs'
+import { assemble, changedTerms, computeVerdict, countsIn, deltaState, pathMatcher, plannedPaths, renderReport, runChecks, skillCandidates, skillEdit, verifyDir, writeDeveloper } from '../lib/verify.mjs'
 import { create } from '../lib/workspace.mjs'
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'verify.mjs')
@@ -104,6 +104,12 @@ function section(root, id, verdict, { output = `.superpowers/sdd/${CHANGE}/verif
   write(root, `.superpowers/sdd/${CHANGE}/verify/${id}.json`, JSON.stringify({ id, title: `Agent ${id}`, verdict, summary: `${id} summary`, output }))
 }
 
+// The two judgement sections every verdict needs, as passes.
+function judged(root) {
+  section(root, 'c4', 'pass')
+  section(root, 'c8', 'pass')
+}
+
 test('a complete change passes every check, and each check leaves its output and run.json', () => {
   const { root } = host()
   const result = runChecks(root, { change: CHANGE, now: 'T' })
@@ -123,6 +129,7 @@ test('a complete change passes every check, and each check leaves its output and
   for (const c of result.checks) assert.equal(existsSync(join(root, c.output)), true, c.id)
   assert.match(readFileSync(join(root, result.checks[3].output), 'utf8'), /range develop\.\.HEAD:\n.* record\n.* src\/a\.mjs\n.* propose/)
   assert.deepEqual(JSON.parse(readFileSync(join(verifyDir(root, CHANGE), 'run.json'), 'utf8')).checks, result.checks)
+  judged(root)
   assert.deepEqual(computeVerdict(root, { change: CHANGE }).line, 'Verdict: PASS')
 })
 
@@ -354,21 +361,34 @@ test('verdict: warnings, agent sections, and the refusals', () => {
   runChecks(root, { change: CHANGE })
   section(root, 'c4', 'warn')
   let result = computeVerdict(root, { change: CHANGE })
+  assert.deepEqual(result.refusals, ['c8.json is missing: the verify c8 dispatch has not written its section'])
+  assert.deepEqual(result.redispatch, ['c8'])
+  section(root, 'c8', 'pass')
+  result = computeVerdict(root, { change: CHANGE })
   assert.equal(result.verdict, 'PASS WITH WARNINGS')
-  assert.deepEqual(result.checks.at(-1), { id: 'c4', title: 'Agent c4', verdict: 'warn', summary: 'c4 summary', output: `.superpowers/sdd/${CHANGE}/verify/c4-agent.txt`, display: 'WARN' })
+  assert.deepEqual(result.checks.find((c) => c.id === 'c4'), { id: 'c4', title: 'Agent c4', verdict: 'warn', summary: 'c4 summary', output: `.superpowers/sdd/${CHANGE}/verify/c4-agent.txt`, display: 'WARN' })
 
-  section(root, 'c8', 'fail', { writeOutput: false })
+  section(root, 'c8', 'fail', { output: `.superpowers/sdd/${CHANGE}/verify/c8-gone.txt`, writeOutput: false })
   result = computeVerdict(root, { change: CHANGE })
   assert.equal(result.ok, false)
-  assert.deepEqual(result.refusals, [`c8.json: its output file .superpowers/sdd/${CHANGE}/verify/c8-agent.txt does not exist`])
+  assert.deepEqual(result.refusals, [`c8.json: its output file .superpowers/sdd/${CHANGE}/verify/c8-gone.txt does not exist`])
+  assert.deepEqual([result.redispatch, result.needsRuling, result.rerun], [['c8'], [], false])
 
   section(root, 'c8', 'not-run')
-  assert.deepEqual(computeVerdict(root, { change: CHANGE }).refusals, ['c8 was not run and has no ruling: c8 summary'])
+  result = computeVerdict(root, { change: CHANGE })
+  assert.deepEqual(result.refusals, ['c8 was not run and has no ruling: c8 summary'])
+  assert.deepEqual([result.redispatch, result.needsRuling], [[], ['c8']])
 
   section(root, 'c8', 'fail')
   assert.equal(computeVerdict(root, { change: CHANGE }).line, 'Verdict: FAIL')
   section(root, 'tree', 'pass')
-  assert.match(computeVerdict(root, { change: CHANGE }).refusals[0], /^tree\.json: tree is a script check/)
+  result = computeVerdict(root, { change: CHANGE })
+  assert.match(result.refusals[0], /^tree\.json: tree is a script check/)
+  assert.deepEqual(result.redispatch, ['tree'])
+  rmSync(join(verifyDir(root, CHANGE), 'tree.json'))
+  rmSync(join(verifyDir(root, CHANGE), 'tasks.txt'))
+  result = computeVerdict(root, { change: CHANGE })
+  assert.equal(result.rerun, true)
 })
 
 test('verdict: a ruling accepts a failing check; silence and a ruling on tree do not', () => {
@@ -376,6 +396,7 @@ test('verdict: a ruling accepts a failing check; silence and a ruling on tree do
   commit(root, { 'docs/notes.md': 'n\n' })
   write(root, 'stray.txt', 'x\n')
   runChecks(root, { change: CHANGE })
+  judged(root)
   let result = computeVerdict(root, { change: CHANGE })
   assert.equal(result.verdict, 'FAIL')
   assert.deepEqual(result.failing, ['tree', 'test-record', 'out-of-plan'])
@@ -405,6 +426,7 @@ test('the CLI prints one JSON object: exit 0 on a pass, 1 on a failing check, 2 
   let proc = cli('run', '--change', CHANGE, '--root', root)
   assert.equal(proc.status, 0)
   assert.equal(JSON.parse(proc.stdout).checks.length, 7)
+  judged(root)
   const out = join(root, '.superpowers', 'sdd', CHANGE, 'verdict.json')
   proc = cli('verdict', '--change', CHANGE, '--root', root, '--out', out)
   assert.equal(JSON.parse(proc.stdout).line, 'Verdict: PASS')
@@ -416,7 +438,7 @@ test('the CLI prints one JSON object: exit 0 on a pass, 1 on a failing check, 2 
   assert.equal(cli('verdict', '--change', CHANGE, '--root', root).status, 1)
   proc = cli('check', '--change', CHANGE)
   assert.equal(proc.status, 2)
-  assert.match(JSON.parse(proc.stdout).usage, /^usage: verify\.mjs run/)
+  assert.match(JSON.parse(proc.stdout).usage, /^usage:\n {2}verify\.mjs run/)
   assert.equal(cli('run', '--change').status, 2)
   assert.equal(cli('verdict', '--change', CHANGE, '--root', root, '--skill-edit', 'abc').status, 2)
 })
@@ -446,4 +468,143 @@ test('globToRegExp: ** spans directories, * and ? stay in one segment', () => {
   assert.equal(globToRegExp('*.log').test('logs/run.log'), false)
   assert.equal(globToRegExp('?.log').test('a.log'), true)
   assert.equal(globToRegExp('specs/**/*.md').test('specs/x/spec.md'), true)
+})
+
+// ---------------------------------------------------------------- scripts first: wave 2
+
+test('test-record reads the commit only from the **Commit:** field, never from quoted output', () => {
+  const { root } = host({ record: false })
+  const code = git(root, 'rev-parse', 'HEAD')
+  commit(root, { [changeFile('.apply-test-record.md')]: `The suite passed.\n\n\`\`\`text\nHEAD is now at commit ${code}\n\`\`\`\n` })
+  assert.equal(runIn(root)['test-record'].summary, 'the apply test record names no commit: run the suite')
+  commit(root, { [changeFile('.apply-test-record.md')]: `# Apply test record\n\n**Commit:** \`${code}\`\n\n\`\`\`text\ncommit 0000000 in the output\n\`\`\`\n` })
+  assert.equal(runIn(root)['test-record'].summary, `the record is current at ${code.slice(0, 7)}`)
+})
+
+test('run clears the sections of another session by itself; --fresh still forces it', () => {
+  const { root } = host()
+  const dir = verifyDir(root, CHANGE)
+  runChecks(root, { change: CHANGE, env: { CLAUDE_CODE_SESSION_ID: 's1' } })
+  section(root, 'c4', 'pass')
+  let run = runChecks(root, { change: CHANGE, env: { CLAUDE_CODE_SESSION_ID: 's1' } })
+  assert.equal(run.cleared, null)
+  assert.equal(existsSync(join(dir, 'c4.json')), true, 'the same session keeps its sections')
+  run = runChecks(root, { change: CHANGE, env: {} })
+  assert.equal(existsSync(join(dir, 'c4.json')), true, 'no session id: nothing is cleared')
+  section(root, 'c4', 'pass')
+  run = runChecks(root, { change: CHANGE, env: { CLAUDE_CODE_SESSION_ID: 's2' } })
+  assert.equal(run.cleared, 'new session')
+  assert.equal(run.session, 's2')
+  assert.equal(existsSync(join(dir, 'c4.json')), false)
+  section(root, 'c4', 'pass')
+  assert.equal(runChecks(root, { change: CHANGE, env: { CLAUDE_CODE_SESSION_ID: 's2' }, fresh: true }).cleared, 'fresh')
+  assert.equal(existsSync(join(dir, 'c4.json')), false)
+})
+
+test('run reads the approved skill edits from the ledger', () => {
+  const { root } = host()
+  const sha = commit(root, { '.claude/skills/s/SKILL.md': 'skill\n' })
+  assert.equal(runIn(root)['out-of-plan'].verdict, 'fail')
+  appendRecord(root, CHANGE, 'skill-edit', { sha, message: 'docs(skills): s' }, { env: {} })
+  const run = runChecks(root, { change: CHANGE, now: 'T' })
+  assert.deepEqual(run.skillEdits, [sha])
+  assert.equal(byId(run)['out-of-plan'].verdict, 'pass')
+  assert.throws(() => buildRecord('skill-edit', { sha: 'HEAD' }), /--sha must be a commit sha/)
+  appendRecord(root, CHANGE, 'skill-edit', { sha: '1234567' }, { env: {} })
+  assert.throws(() => runChecks(root, { change: CHANGE }), /the ledger's skill-edit 1234567 is not a commit/)
+})
+
+test('skill-edit commits only skill files, records the sha and runs again', () => {
+  const { root } = host()
+  write(root, '.claude/skills/s/SKILL.md', 'edited\n')
+  write(root, 'other.txt', 'o\n')
+  assert.throws(() => skillEdit(root, { change: CHANGE, message: 'docs(skills): s', env: {} }), /paths outside \.claude\/skills\/ are changed: other\.txt/)
+  rmSync(join(root, 'other.txt'))
+  assert.throws(() => skillEdit(root, { change: CHANGE, message: 'edit the skill', env: {} }), /Conventional Commit/)
+  const result = skillEdit(root, { change: CHANGE, message: 'docs(skills): s', env: {} })
+  assert.deepEqual(result.files, ['.claude/skills/s/SKILL.md'])
+  assert.equal(git(root, 'log', '-1', '--format=%s'), 'docs(skills): s')
+  assert.equal(result.record, 'skill-edit-1')
+  assert.equal(byId(result.run)['out-of-plan'].verdict, 'pass')
+  assert.throws(() => skillEdit(root, { change: CHANGE, message: 'docs(skills): s', env: {} }), /nothing is changed under \.claude\/skills\//)
+})
+
+test('skill-candidates lists the skill lines naming a changed path, symbol, command or route', () => {
+  const { root } = host()
+  commit(root, { 'src/a.mjs': "export function greetUser(argv) {\n  if (argv.includes('--loud')) return fetch('/api/v1/greet')\n}\n" })
+  write(root, '.claude/skills/greet/SKILL.md', [
+    '# Greet',
+    'Run `node src/a.mjs` to greet.',
+    'It calls greetUser once.',
+    'Pass --loud for capitals.',
+    'The route is /api/v1/greet.',
+    'Nothing here changed: lib/other.mjs and greetUsers.'
+  ].join('\n'))
+  write(root, '.claude/skills/other/README.md', 'unrelated text\n')
+  const result = skillCandidates(root, { change: CHANGE })
+  assert.equal(result.skillFiles, 2)
+  assert.equal(result.candidates, 4)
+  assert.deepEqual(result.skills.map((s) => s.file), ['.claude/skills/greet/SKILL.md'])
+  assert.deepEqual(result.skills[0].candidates.map((c) => [c.line, c.matches.map((m) => m.kind)]), [[2, ['path']], [3, ['symbol']], [4, ['command']], [5, ['route']]])
+  assert.match(readFileSync(join(root, result.output), 'utf8'), /\.claude\/skills\/greet\/SKILL\.md: 4 candidate line\(s\)/)
+  const terms = changedTerms("+++ b/x.mjs\n+run('--keep')\n-run('--keep')\n+run('--new')\n", ['x.mjs'], CHANGE)
+  assert.deepEqual(terms.commands, ['--new'], 'a flag on both sides is unchanged')
+})
+
+test('developer writes its output file and a section the verdict reads', () => {
+  const { root } = host()
+  runChecks(root, { change: CHANGE })
+  judged(root)
+  assert.throws(() => writeDeveloper(root, { change: CHANGE, text: ' ', verdict: 'pass' }), /empty/)
+  assert.throws(() => writeDeveloper(root, { change: CHANGE, text: 'x', verdict: 'ok' }), /--verdict must be one of/)
+  const section = writeDeveloper(root, { change: CHANGE, text: 'Ran the board flash.\nIt booted.', verdict: 'fail' })
+  assert.equal(section.summary, 'Ran the board flash.')
+  assert.equal(readFileSync(join(root, section.output), 'utf8'), 'Ran the board flash.\nIt booted.\n')
+  const verdict = computeVerdict(root, { change: CHANGE })
+  assert.deepEqual(verdict.failing, ['developer'])
+})
+
+test('assemble renders the record from the sections, ends on the verdict line and commits it alone', () => {
+  const { root } = host()
+  runChecks(root, { change: CHANGE, now: 'T' })
+  section(root, 'c8', 'pass')
+  write(root, `.superpowers/sdd/${CHANGE}/verify/c4-agent.txt`, 'decision 1 traces to R1\n```js\nx\n```\n')
+  write(root, `.superpowers/sdd/${CHANGE}/verify/c4.json`, JSON.stringify({ id: 'c4', title: 'Design and specs coherence', verdict: 'warn', summary: 'one drift', output: `.superpowers/sdd/${CHANGE}/verify/c4-agent.txt`, proseEdits: 'none', removalAccounting: 'N/A: no REMOVED or RENAMED requirement', exercised: ['greet: exercised by a.spec'] }))
+  const refused = assemble(root, { change: CHANGE, commit: true })
+  assert.equal(refused.ok, true, 'c4 and c8 present')
+  const text = readFileSync(join(root, refused.file), 'utf8')
+  assert.equal(text.trimEnd().split('\n').at(-1), 'Verdict: PASS WITH WARNINGS')
+  assert.match(text, /^# Verification Report\n\n\*\*Change:\*\* `add-x`/)
+  assert.match(text, /## Design and specs coherence\n\n\*\*Result:\*\* WARN: one drift\n\n\*\*Hand-edited capability prose:\*\* none\n\n\*\*Removal accounting:\*\* N\/A/)
+  assert.match(text, /````text\ndecision 1 traces to R1\n```js\nx\n```\n````/)
+  assert.match(text, /## Exercised and not exercised\n\n- greet: exercised by a\.spec/)
+  assert.match(text, /\*\*Scope that ran:\*\* the record cited, not re-run/)
+  assert.match(text, /## Checks run with the developer\n\nnone/)
+  assert.match(text, /## Rulings\n\nnone/)
+  assert.equal(refused.commit, git(root, 'rev-parse', 'HEAD'))
+  assert.equal(git(root, 'show', '--name-only', '--format=%s', 'HEAD'), `docs(openspec): verify ${CHANGE}\n\n${changeFile('verify.md')}`)
+  assert.match(refused.report, /^## Verification PASS WITH WARNINGS\n\n\*\*Change:\*\* add-x\n\*\*Record:\*\* openspec\/changes\/add-x\/verify\.md, commit [0-9a-f]{40}/)
+
+  assert.throws(() => assemble(root, { change: CHANGE }), /HEAD is [0-9a-f]{7}, but the checks ran at/)
+  runChecks(root, { change: CHANGE })
+  rmSync(join(verifyDir(root, CHANGE), 'c8.json'))
+  const result = assemble(root, { change: CHANGE })
+  assert.equal(result.ok, false)
+  assert.deepEqual(result.redispatch, ['c8'])
+  assert.match(result.report, /^## Verification: no verdict yet[\s\S]*Re-dispatch: c8/)
+})
+
+test('verdict --report renders failing, warnings, accepted and the next step', () => {
+  const { root } = host()
+  commit(root, { 'docs/notes.md': 'n\n' })
+  runChecks(root, { change: CHANGE })
+  judged(root)
+  appendRecord(root, CHANGE, 'ruling', { check: 'out-of-plan', reason: 'notes are no task' }, { env: {} })
+  const report = renderReport(computeVerdict(root, { change: CHANGE }), { change: CHANGE })
+  assert.match(report, /^## Verification FAIL\n/)
+  assert.match(report, /Failing:\n- test-record: stale: re-run the suite\nWarnings: none\nAccepted by the developer:\n- out-of-plan: notes are no task/)
+  assert.match(report, /Next step: fix what each failing check names \(test-record\)/)
+  const proc = spawnSync('node', [CLI, 'verdict', '--change', CHANGE, '--root', root, '--report'], { encoding: 'utf8' })
+  assert.equal(JSON.parse(proc.stdout).report, report)
+  assert.equal(spawnSync('node', [CLI, 'assemble', '--change', CHANGE, '--root', root, '--report'], { encoding: 'utf8' }).status, 2)
 })
