@@ -19,7 +19,8 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Propose: one branch and worktree per change, the branch policy, the planning guide, the artifact instructions, the plan symbol check, the execution ledger | done (iteration 04) |
 | Contract `1.1`: the `forge` role, plugins named by their installed id, host files a plugin declares; the GitLab forge plugin; the English check plugin | done (iteration 05) |
 | Apply: one orchestrator, task groups in parallel worktrees, the capability-level agents, the dispatch guard, reply checks, push through the forge | done (iteration 07) |
-| The rest of the cycle (verify, review, archive) | not ported |
+| Verify: the mechanical checks and the verdict by script, read-only judgement dispatches, developer rulings, the base check as a workspace operation | done (iteration 08) |
+| The rest of the cycle (review, archive) | not ported |
 | Metrics, retrospective | not ported |
 | Wiki memory and technical debt | not ported |
 | Plugins: tracker (Jira), project stack | not started |
@@ -56,6 +57,7 @@ Then, in the host project:
 /adf:init
 /adf:propose <change>
 /adf:apply [change]
+/adf:verify [change]
 /adf:add <plugin id or path>
 /adf:remove <plugin name>
 ```
@@ -78,8 +80,8 @@ scope (`plugins/english-check/README.md`).
 ```
 .claude-plugin/marketplace.json   the marketplace: the core and every plugin
 plugins/adf/                      the core
-  commands/                       /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply
-  agents/                         the capability-level subagents apply dispatches
+  commands/                       /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply, /adf:verify
+  agents/                         the capability-level subagents apply and verify dispatch
   contract/                       the extension contract and its version
   schema/                         the artifact graph (schema.json), templates, instructions
   host/                           templates of files /adf:init adds to the host (planning guide)
