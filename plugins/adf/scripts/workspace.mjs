@@ -11,11 +11,15 @@
 //       it back (conflicts are listed and the merge left in progress), remove a merged one
 //   workspace.mjs groups --change <name>
 //       the change's group worktrees
+//   workspace.mjs base-check-add|base-check-remove --change <name>
+//       from the change worktree: make a detached worktree of the change's base (the
+//       .adf.json base, the remote-tracking ref when it exists) to check whether a whole-suite
+//       failure is pre-existing; remove it again, never forced
 //
-// --root <dir> names the host project's main checkout, or for a group command the change
-// worktree (default: the current directory).
+// --root <dir> names the host project's main checkout, or for a group or base-check
+// command the change worktree (default: the current directory).
 import { create, suggest } from './lib/workspace.mjs'
-import { addGroup, listGroups, mergeGroup, removeGroup } from './lib/groups.mjs'
+import { addBaseCheck, addGroup, listGroups, mergeGroup, removeBaseCheck, removeGroup } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
 
 function option(args, name) {
@@ -47,8 +51,12 @@ export function run(argv) {
       return removeGroup(root, { change, group })
     case 'groups':
       return { groups: listGroups(root, change) }
+    case 'base-check-add':
+      return addBaseCheck(root, { change })
+    case 'base-check-remove':
+      return removeBaseCheck(root, { change })
     default:
-      throw new Error('usage: workspace.mjs suggest|create|group-add|group-merge|group-remove|groups --change <name> [--root <dir>]')
+      throw new Error('usage: workspace.mjs suggest|create|group-add|group-merge|group-remove|groups|base-check-add|base-check-remove --change <name> [--root <dir>]')
   }
 }
 

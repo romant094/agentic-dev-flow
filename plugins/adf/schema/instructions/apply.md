@@ -274,10 +274,11 @@ for the next merge.
 
 A fix round, a merge fix, the final-review fix or the sweep's consolidation that touches a file
 outside its task's `**Files:**` block adds that file to the owning task's block in the change
-worktree's `plan.md`, as one bullet: `- <Verb>: <path> — Added during apply, <YYYY-MM-DD>:
-<why>`. Work that serves no single task belongs to the task whose files it changed most. Commit
-the plan with the next tick, or on its own. Verify compares the branch with the plan's file
-blocks; without the line, a correct apply fails there.
+worktree's `plan.md`, as one bullet with the path in backticks: ``- <Verb>: `<path>` — Added
+during apply, <YYYY-MM-DD>: <why>``. Verify reads only a backticked path. Work that serves no
+single task belongs to the task whose files it changed most. Commit the plan with the next tick,
+or on its own. Verify compares the branch with the plan's file blocks; without the line, a
+correct apply fails there.
 
 **Merge a group as soon as every task of it is complete.**
 
@@ -413,11 +414,16 @@ A failure blocks unless it also fails on the change's base. Check that in a thro
 the base, never by stashing:
 
 ```bash
-git -C <main> worktree add --detach <main>/.claude/worktrees/<change>--base-check <base ref>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" base-check-add --change <change> --root <root>
 ```
 
-Run the same command there, then remove it with `git -C <main> worktree remove
-<main>/.claude/worktrees/<change>--base-check`; if git refuses, report it and leave it. A failure
+Run the same command in the `root` it prints, then remove it:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" base-check-remove --change <change> --root <root>
+```
+
+The remove is never forced; if git refuses, report it and leave it. A failure
 that reproduces there is pre-existing: name it as separate work and do not block on it. If the
 command cannot run in that worktree, say so; the failure then blocks until the developer rules.
 A failure that does not reproduce pauses apply like any other implementation issue.

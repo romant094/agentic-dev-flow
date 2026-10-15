@@ -2,9 +2,11 @@
 // are merged back into it one by one. Every path is rooted at the main checkout: run from
 // inside the change worktree, a relative `.claude/worktrees/...` would nest the group inside
 // it, where removing the change worktree strands the group.
-import { realpathSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
+import { changeDir, META_FILE } from './changes.mjs'
 import { mainCheckout } from './installed.mjs'
+import { baseRef } from './plan-symbols.mjs'
 import { gitIn, WORKTREES_DIR } from './workspace.mjs'
 
 const GROUP = /^[1-9]\d*$/
@@ -87,4 +89,55 @@ export function listGroups(changeRoot, change) {
       const path = line.slice('worktree '.length)
       return { group: Number(path.slice(prefix.length)), root: path }
     })
+}
+
+// The whole-suite run checks whether a failure is pre-existing in a throwaway, detached
+// worktree of the change's base, never by stashing. The base is the change's `.adf.json` base,
+// resolved as plan-symbols resolves it: the remote-tracking ref when it exists.
+export function baseCheckPath(changeRoot, change) {
+  return join(mainCheckout(changeRoot), WORKTREES_DIR, `${change}--base-check`)
+}
+
+function gitError(error) {
+  const stderr = String(error?.stderr ?? '').trim()
+  return stderr || error.message
+}
+
+export function addBaseCheck(changeRoot, { change }) {
+  if (!change) throw new Error('no change name')
+  const git = gitIn(changeRoot)
+  let meta
+  try {
+    meta = JSON.parse(readFileSync(join(changeDir(changeRoot, change), META_FILE), 'utf8'))
+  } catch {
+    throw new Error(`cannot read openspec/changes/${change}/${META_FILE} in ${changeRoot}; run this from the change worktree`)
+  }
+  const ref = baseRef(meta, (name) => attempt(git, 'rev-parse', '--verify', '--quiet', name) !== null)
+  const commit = attempt(git, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`)
+  if (!commit) throw new Error(`the base ref ${ref} of ${change} does not resolve to a commit`)
+  const path = baseCheckPath(changeRoot, change)
+  if (isWorktree(git, path)) {
+    throw new Error(`${path} is already a worktree, a leftover from an earlier run; remove it first (base-check-remove)`)
+  }
+  try {
+    git('worktree', 'add', '--detach', path, commit)
+  } catch (error) {
+    throw new Error(`git refused to add the base-check worktree: ${gitError(error)}`)
+  }
+  if (!isWorktree(git, path)) throw new Error(`the base-check worktree is not listed at ${path}; stop`)
+  return { root: path, ref, commit: gitIn(path)('rev-parse', 'HEAD') }
+}
+
+// Never forced: a base-check worktree git will not remove is reported and left.
+export function removeBaseCheck(changeRoot, { change }) {
+  if (!change) throw new Error('no change name')
+  const git = gitIn(changeRoot)
+  const path = baseCheckPath(changeRoot, change)
+  if (!isWorktree(git, path)) throw new Error(`${path} is not a worktree; there is no base check to remove`)
+  try {
+    git('worktree', 'remove', path)
+  } catch (error) {
+    throw new Error(`git refused to remove ${path}; leave it and report it: ${gitError(error)}`)
+  }
+  return { removed: path }
 }

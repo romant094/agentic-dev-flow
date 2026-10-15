@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setBranches } from '../lib/branches.mjs'
-import { addGroup, listGroups, mergeGroup, removeGroup } from '../lib/groups.mjs'
+import { addBaseCheck, addGroup, baseCheckPath, listGroups, mergeGroup, removeBaseCheck, removeGroup } from '../lib/groups.mjs'
 import { compare, snapshot } from '../lib/guard.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { initRegistry } from '../lib/registry.mjs'
@@ -119,4 +119,60 @@ test('a failed git read stops the group scripts and is reported by the guard', (
   assert.equal(after.ok, false)
   assert.deepEqual(after.changed.map((c) => [c.root, c.after.status]), [[group.root, 'the checkout is gone']])
   assert.equal(root.length > 0, true)
+})
+
+test('group listing is per change: another change\'s group worktree is not listed', () => {
+  const { root, change } = host()
+  const other = create(root, { change: 'add-b', branch: 'feat/add-b', base: 'integration' })
+  const theirs = addGroup(other.root, { change: 'add-b', group: 1 })
+  const ours = addGroup(change, { change: 'add-x', group: 2 })
+  assert.deepEqual(listGroups(change, 'add-x'), [{ group: 2, root: ours.root }])
+  assert.deepEqual(listGroups(other.root, 'add-b'), [{ group: 1, root: theirs.root }])
+})
+
+// The change's metadata names its base; the change branch moves on past it.
+function withBase(change, base = 'develop') {
+  writeFileSync(join(change, 'openspec/changes/add-x/.adf.json'), `${JSON.stringify({ base })}\n`)
+  git(change, 'add', '.')
+  git(change, 'commit', '-q', '-m', 'meta')
+}
+
+test('a base check is a detached worktree of the base commit, refused twice, removed once', () => {
+  const { root, change } = host()
+  withBase(change)
+  const base = git(root, 'rev-parse', 'develop')
+  assert.notEqual(git(change, 'rev-parse', 'HEAD'), base)
+  const path = baseCheckPath(change, 'add-x')
+  assert.equal(path, join(root, '.claude/worktrees/add-x--base-check'))
+  assert.deepEqual(addBaseCheck(change, { change: 'add-x' }), { root: path, ref: 'develop', commit: base })
+  assert.equal(git(path, 'rev-parse', 'HEAD'), base)
+  assert.equal(git(path, 'branch', '--show-current'), '', 'the base check is detached')
+  assert.throws(() => addBaseCheck(change, { change: 'add-x' }), /already a worktree, a leftover/)
+  assert.deepEqual(removeBaseCheck(change, { change: 'add-x' }), { removed: path })
+  assert.equal(existsSync(path), false)
+  assert.throws(() => removeBaseCheck(change, { change: 'add-x' }), /not a worktree/)
+})
+
+test('a base check prefers the remote-tracking base and refuses an unreadable change', () => {
+  const { root, change } = host()
+  assert.throws(() => addBaseCheck(change, { change: 'add-x' }), /cannot read openspec\/changes\/add-x\/\.adf\.json/)
+  withBase(change)
+  const first = git(root, 'rev-list', '--max-parents=0', 'develop')
+  commitIn(root, 'later.txt', 'later\n')
+  git(root, 'update-ref', 'refs/remotes/origin/develop', first)
+  const made = addBaseCheck(change, { change: 'add-x' })
+  assert.deepEqual([made.ref, made.commit], ['origin/develop', first])
+  removeBaseCheck(change, { change: 'add-x' })
+  writeFileSync(join(change, 'openspec/changes/add-x/.adf.json'), '{}\n')
+  assert.throws(() => addBaseCheck(change, { change: 'add-x' }), /no "base" branch/)
+})
+
+test('a dirty base check is never force-removed', () => {
+  const { change } = host()
+  withBase(change)
+  const { root: path } = addBaseCheck(change, { change: 'add-x' })
+  writeFileSync(join(path, 'a.txt'), 'changed\n')
+  assert.throws(() => removeBaseCheck(change, { change: 'add-x' }), /git refused to remove/)
+  assert.equal(existsSync(join(path, 'a.txt')), true)
+  assert.equal(git(change, 'worktree', 'list', '--porcelain').includes(`worktree ${path}`), true)
 })

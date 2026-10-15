@@ -605,3 +605,18 @@ test('a missing plan.md and a usage error are exit 2 with an error', () => {
   assert.match(usage.out.error, /^usage:/)
   assert.deepEqual(usage.out.findings, [])
 })
+
+test('an "Added during apply" bullet with a backticked path joins the task files; an unbackticked one stays unparsed', () => {
+  const added = '- Modify: `src/b.ts` — Added during apply, 2026-10-15: the merge fix touched it'
+  const [t] = parsePlanTasks(task(1, `- Modify: \`src/a.ts\`\n${added}`))
+  assert.deepEqual(
+    t.files.map((f) => [f.verb, f.path]),
+    [
+      ['Modify', 'src/a.ts'],
+      ['Modify', 'src/b.ts']
+    ]
+  )
+  assert.deepEqual(t.unparsed, [])
+  const bare = '- Modify: src/b.ts — Added during apply, 2026-10-15: the merge fix touched it'
+  assert.deepEqual(parsePlanTasks(task(1, bare))[0].unparsed, [bare])
+})
