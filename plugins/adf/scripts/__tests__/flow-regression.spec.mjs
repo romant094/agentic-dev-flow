@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildOrder, loadSchema } from '../lib/schema.mjs'
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..')
 const adf = join(repo, 'plugins', 'adf')
@@ -163,4 +164,132 @@ test('no surface states how many checks, steps, artifacts or rules there are', (
   const texts = Object.fromEntries(surfaces().map((f) => [rel(f), readFileSync(f, 'utf8')]))
   const found = countLiterals(texts).filter((hit) => !KNOWN_COUNTS.has(hit))
   assert.deepEqual(found, [])
+})
+
+// --- Prose that lists the workflow's shape agrees with the schema ---------------------------
+
+// The origin's `check-workflow-shape.mjs`: documentation contradicted the workflow's real shape,
+// so the shape is derived from the files that define it, never remembered. `schema.json` holds
+// the artifacts and their order; `commands/*.md` are the commands. Only the declaration sites
+// are checked, the places that enumerate a set: the origin's first version matched every count
+// or id near "artifact" anywhere, and its findings were dominated by sentences naming a subset or
+// using an id as the plain English word it is. A missing site is a finding, never silence: the
+// person most likely to move its anchor is the one changing the shape.
+//
+// The schema has no "optional" field; nothing in lib/schema.mjs or lib/changes.mjs marks one.
+// Optional is derived the origin's way, from `requires`: the artifacts the last artifact of the
+// build order does not depend on, directly or through others, are side branches a change may
+// skip (today `design`, required by nothing).
+export function workflowShape(schema, commandFiles) {
+  const byId = new Map(schema.artifacts.map((a) => [a.id, a]))
+  const needed = new Set()
+  const queue = [buildOrder(schema).at(-1)]
+  while (queue.length > 0) {
+    const id = queue.shift()
+    if (needed.has(id)) continue
+    needed.add(id)
+    queue.push(...byId.get(id).requires)
+  }
+  const optional = schema.artifacts.filter((a) => !needed.has(a.id))
+  return {
+    mandatory: schema.artifacts.filter((a) => needed.has(a.id)).map((a) => a.id),
+    optional: optional.map((a) => a.id),
+    generates: schema.artifacts.map((a) => a.generates),
+    optionalGenerates: optional.map((a) => a.generates),
+    commands: commandFiles.filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, '')).sort()
+  }
+}
+
+const differs = (file, site, listed, expected) =>
+  JSON.stringify(listed) === JSON.stringify(expected) ? [] : [`${file} [${site}]: lists ${listed.join(', ') || '(none)'}; the schema has ${expected.join(', ') || '(none)'}`]
+const missing = (file, site) => [`${file} [${site}]: the list was not found`]
+const sorted = (list) => [...new Set(list)].sort()
+
+// Site: the schema's own `description`, "<intro>: a, b, c. x is optional: ...". The list keeps
+// the schema's order, so order is compared too.
+export function schemaDescriptionFindings(file, description, shape) {
+  const list = description.match(/:\s*([^.:]+)\./)
+  if (!list) return missing(file, 'description-sequence')
+  const named = list[1].split(/,\s*|\s+and\s+/).map((s) => s.trim())
+  const optional = [...description.matchAll(/\b([a-z][a-z-]*(?:(?:,\s*|\s+and\s+)[a-z][a-z-]*)*)\s+(?:is|are)\s+optional\b/g)].flatMap((m) =>
+    m[1].split(/,\s*|\s+and\s+/)
+  )
+  return [...differs(file, 'description-sequence', named, shape.mandatory), ...differs(file, 'description-optional', sorted(optional), sorted(shape.optional))]
+}
+
+// Site: the propose command's paragraph "This command writes, under ...: `a.md`, `b.md`
+// (optional), ... `x.md` and `y.md` are written later": every generated file, and the optional
+// ones marked as such.
+export function proposeFilesFindings(file, text, shape) {
+  const paragraph = text.split(/\n\s*\n/).find((p) => /^This command writes\b/.test(p.trim()))
+  if (!paragraph) return missing(file, 'propose-files')
+  const files = [...paragraph.matchAll(/`([^`<>]+\.md)`(\s*\(optional\))?/g)]
+  return [
+    ...differs(file, 'propose-files', sorted(files.map((m) => m[1])), sorted(shape.generates)),
+    ...differs(file, 'propose-optional', sorted(files.filter((m) => m[2]).map((m) => m[1])), sorted(shape.optionalGenerates))
+  ]
+}
+
+// Sites: the README's command block after "in the host project:" and its layout line for
+// `commands/`. Each lists every command, in an order of its own, so sets are compared.
+export function readmeCommandFindings(file, text, shape) {
+  const block = text.match(/in the host project:\s*\n\s*```[^\n]*\n([\s\S]*?)```/)
+  const layout = text.match(/^\s*commands\/\s+(.+)$/m)
+  const names = (source) => sorted([...source.matchAll(/\/adf:([a-z][a-z-]*)/g)].map((m) => m[1]))
+  return [
+    ...(block ? differs(file, 'readme-command-block', names(block[1]), shape.commands) : missing(file, 'readme-command-block')),
+    ...(layout ? differs(file, 'readme-layout-commands', names(layout[1]), shape.commands) : missing(file, 'readme-layout-commands'))
+  ]
+}
+
+test('the shape detectors fire on a drifted list and on a missing site, and pass a matching one', () => {
+  const schema = {
+    artifacts: [
+      { id: 'a', generates: 'a.md', requires: [] },
+      { id: 'side', generates: 'side.md', requires: ['a'] },
+      { id: 'b', generates: 'b/**/*.md', requires: ['a'] },
+      { id: 'c', generates: 'c.md', requires: ['b'] }
+    ]
+  }
+  const shape = workflowShape(schema, ['go.md', 'init.md', 'notes.txt'])
+  assert.deepEqual([shape.mandatory, shape.optional, shape.commands], [['a', 'b', 'c'], ['side'], ['go', 'init']])
+
+  assert.deepEqual(schemaDescriptionFindings('s', 'Flow: a, b, c. side is optional: never required.', shape), [])
+  assert.deepEqual(schemaDescriptionFindings('s', 'Flow: a, c, b. side and b are optional.', shape), [
+    's [description-sequence]: lists a, c, b; the schema has a, b, c',
+    's [description-optional]: lists b, side; the schema has side'
+  ])
+  assert.deepEqual(schemaDescriptionFindings('s', 'No list here', shape), ['s [description-sequence]: the list was not found'])
+
+  const propose = 'Intro.\n\nThis command writes, under `x/<name>/`: `a.md`, `side.md` (optional),\n`b/**/*.md` and `c.md`.\n\nMore.'
+  assert.deepEqual(proposeFilesFindings('p', propose, shape), [])
+  assert.deepEqual(proposeFilesFindings('p', propose.replace(' (optional)', '').replace('`c.md`', '`d.md`'), shape), [
+    'p [propose-files]: lists a.md, b/**/*.md, d.md, side.md; the schema has a.md, b/**/*.md, c.md, side.md',
+    'p [propose-optional]: lists (none); the schema has side.md'
+  ])
+  assert.deepEqual(proposeFilesFindings('p', 'Nothing.', shape), ['p [propose-files]: the list was not found'])
+
+  const readme = 'Then, in the host project:\n\n```\n/adf:init\n/adf:go <x>\n```\n\n  commands/   /adf:go, /adf:init\n'
+  assert.deepEqual(readmeCommandFindings('r', readme, shape), [])
+  assert.deepEqual(readmeCommandFindings('r', readme.replace('/adf:go <x>', '/adf:gone').replace(', /adf:init', ''), shape), [
+    'r [readme-command-block]: lists gone, init; the schema has go, init',
+    'r [readme-layout-commands]: lists go; the schema has go, init'
+  ])
+  assert.deepEqual(readmeCommandFindings('r', 'Nothing.', shape), [
+    'r [readme-command-block]: the list was not found',
+    'r [readme-layout-commands]: the list was not found'
+  ])
+})
+
+test('every prose list of the artifacts and commands matches the schema and the commands folder', () => {
+  const schema = loadSchema()
+  const shape = workflowShape(schema, readdirSync(join(adf, 'commands')))
+  assert.ok(shape.optional.length > 0 && shape.commands.length > 0, 'the shape was not derived')
+  const read = (path) => readFileSync(join(repo, path), 'utf8')
+  const found = [
+    ...schemaDescriptionFindings('plugins/adf/schema/schema.json', schema.description, shape),
+    ...proposeFilesFindings('plugins/adf/commands/propose.md', read('plugins/adf/commands/propose.md'), shape),
+    ...readmeCommandFindings('README.md', read('README.md'), shape)
+  ]
+  assert.deepEqual(found, [], found.join('\n'))
 })

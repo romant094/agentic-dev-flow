@@ -52,6 +52,6 @@ specifics in the core. The rules and their reasons are in `docs/lessons/verify.m
 - `claude plugin validate .`: not run to the end; it hung twice in this session with no output
   (it passed in iteration 07). The manifests changed only in their version.
 - Not run: `/adf:verify` by an agent end to end. That is the behaviour check (iteration 14).
-- Open: two rules of the origin's shape check have no port counterpart and no iteration: the
-  artifact list and the cycle's commands compared with the schema description, and the
-  description's optional artifacts derived from `requires`.
+- Added after the first record: the origin's shape check as a port test. The artifact list and
+  the cycle's commands are compared with the schema description, propose's artifact paragraph
+  and the README; the optional artifacts are derived from `requires`.
