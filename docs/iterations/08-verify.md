@@ -49,8 +49,8 @@ specifics in the core. The rules and their reasons are in `docs/lessons/verify.m
   - The first replay found three port defects in reading a plan's Files bullets: a path after a
     parenthesis was lost, a placeholder path never matched, and a prose reference named nothing.
     The first two are fixed in the check; the third is a plan rule.
-- `claude plugin validate .`: not run to the end; it hung twice in this session with no output
-  (it passed in iteration 07). The manifests changed only in their version.
+- `claude plugin validate .`: passes, run by the developer; from inside the agent session it
+  hung with no output.
 - Not run: `/adf:verify` by an agent end to end. That is the behaviour check (iteration 14).
 - Added after the first record: the origin's shape check as a port test. The artifact list and
   the cycle's commands are compared with the schema description, propose's artifact paragraph

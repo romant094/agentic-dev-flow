@@ -4,6 +4,11 @@ One capability per iteration. Every iteration leaves the repository with green t
 working `/adf:init`. A capability is ported when its lessons file (`docs/lessons/`) accounts for
 every rule of the origin project: ported, or rejected with a reason.
 
+Every deterministic step is a script: a script does its work the same way every time, and an LLM
+varies with its context. The LLM keeps the work that needs reasoning: writing the artifacts and
+the code, planning and grouping, review, the judgement checks and the talk with the developer.
+Every iteration's plan lists the steps an LLM would do, and moves each one a script can do.
+
 ## Checks after every iteration
 
 1. `npm test`: the unit tests and `scripts/check-lessons.mjs`, which proves every rule of the
@@ -31,6 +36,7 @@ that needs it, under the version rule in `plugins/adf/contract/README.md`.
 | 06 | (folded into 04 and 10) | the worktree is part of the core: made at propose (04), merged and removed at archive (10) | none |
 | 07 | Apply | task groups, subagent dispatch, capability levels, the execution ledger | none |
 | 08 | Verify | the verification checks | adds `verify-check` if a plugin needs it |
+| 08a | Scripts first | every deterministic step of propose, apply and verify moves from the instruction text to a script; the LLM keeps the reasoning work (artifacts, code, grouping, review, judgement, the talk with the developer) | none |
 | 09 | Review | the review stage; the CI review reuses it | none |
 | 10 | Archive and wiki memory | spec merge, memory ingest, technical debt ledger, log; the worktree removed; with no forge plugin, archive offers to merge the change into its base branch and merges only on the developer's yes; on a no the developer merges it | none |
 | 11 | Metrics and retrospective | `adf-metrics`, `adf-retro` | none |

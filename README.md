@@ -20,6 +20,7 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Contract `1.1`: the `forge` role, plugins named by their installed id, host files a plugin declares; the GitLab forge plugin; the English check plugin | done (iteration 05) |
 | Apply: one orchestrator, task groups in parallel worktrees, the capability-level agents, the dispatch guard, reply checks, push through the forge | done (iteration 07) |
 | Verify: the mechanical checks and the verdict by script, read-only judgement dispatches, developer rulings, the base check as a workspace operation | done (iteration 08) |
+| Scripts first: every deterministic step of propose, apply and verify is a script; the LLM keeps the reasoning work | done (iteration 08a) |
 | The rest of the cycle (review, archive) | not ported |
 | Metrics, retrospective | not ported |
 | Wiki memory and technical debt | not ported |

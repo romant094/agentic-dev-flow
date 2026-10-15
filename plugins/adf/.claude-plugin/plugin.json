@@ -1,7 +1,7 @@
 {
   "name": "adf",
   "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "author": { "name": "Anton Romankov" },
   "license": "MIT",
   "keywords": ["workflow", "spec-driven", "agents"],
