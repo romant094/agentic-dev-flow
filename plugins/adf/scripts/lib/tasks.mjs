@@ -3,6 +3,8 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { changeDir } from './changes.mjs'
+import { lintTasks, parsePlan } from './plan.mjs'
+import { gitIn } from './workspace.mjs'
 
 const ITEM = /^\d+(\.\d+)*$/
 
@@ -23,3 +25,33 @@ export function tickTask(root, change, item, { tracks = 'tasks.md' } = {}) {
   writeFileSync(file, text.replace(line, '$1x$3'))
   return { item, ticked: true, already: false }
 }
+
+// The tasks.md item a plan task implements, read from its back-reference.
+export function itemForPlanTask(planText, number) {
+  const task = parsePlan(planText).tasks.find((t) => t.number === Number(number))
+  if (!task) throw new Error(`plan.md has no Task ${number}`)
+  if (!task.implements) throw new Error(`Task ${number} has no "> Implements tasks.md N.M" line`)
+  return task.implements
+}
+
+export const tickMessage = (item, change) => `chore(openspec): tick ${item} of ${change}`
+
+// Commits the tick: the tasks file, and plan.md when it differs from HEAD (an "Added during
+// apply" bullet). Staged paths outside these are refused, never swept into the commit, and
+// git stages and commits by path only. Returns { sha, paths }, sha null when nothing changed;
+// `dryRun` runs the refusal alone.
+export function commitTick(root, change, item, { tracks = 'tasks.md', git = gitIn(root), dryRun = false } = {}) {
+  const dir = `openspec/changes/${change}`
+  const candidates = [`${dir}/${tracks}`, `${dir}/plan.md`]
+  const staged = git('diff', '--cached', '--name-only').split('\n').filter(Boolean)
+  const foreign = staged.filter((p) => !candidates.includes(p))
+  if (foreign.length) throw new Error(`other paths are staged, so the tick is not committed: ${foreign.join(', ')}`)
+  if (dryRun) return { sha: null, paths: [] }
+  const paths = candidates.filter((p) => git('status', '--porcelain', '--', p) !== '')
+  if (!paths.length) return { sha: null, paths: [] }
+  git('add', '--', ...paths)
+  git('commit', '-m', tickMessage(item, change), '--', ...paths)
+  return { sha: git('rev-parse', 'HEAD'), paths }
+}
+
+export { lintTasks }
