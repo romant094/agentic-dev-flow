@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The `forge` role: push the change branch and keep its merge request.
 //
-//   forge.mjs check|open|finalize [--input <json> | --input-file <path>] [--root <dir>] [--home <dir>]
+//   forge.mjs check|open|push|finalize [--input <json> | --input-file <path>] [--root <dir>] [--home <dir>]
 //
 // Prints one JSON object. With no forge plugin enabled the state is `none`: nothing is pushed
 // and no merge request exists; archive offers to merge the change into its base. Exit 1 only for
@@ -31,7 +31,7 @@ export function run(argv) {
   const text = option(args, '--input')
   const file = option(args, '--input-file')
   const [operation] = args
-  if (!operation || args.length > 1) throw new Error('usage: forge.mjs check|open|finalize [--input <json> | --input-file <path>] [--root <dir>]')
+  if (!operation || args.length > 1) throw new Error('usage: forge.mjs check|open|push|finalize [--input <json> | --input-file <path>] [--root <dir>]')
   const input = file ? JSON.parse(readFileSync(file, 'utf8')) : text ? JSON.parse(text) : {}
   return callRole(root, 'forge', operation, input, { coreContract: contract.version, points: contract.points, home })
 }

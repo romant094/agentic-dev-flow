@@ -62,3 +62,30 @@ export function stopMessage(changeName, foreign) {
     'passing explicit output paths to task-brief and review-package.'
   ]
 }
+
+// The change's own workspace and its identity line, written before the skill is invoked so the
+// skill's ledger is named by the change and never by the plan's file name.
+export const progressPath = (changeName) => `${ROOT}/${changeName}/progress.md`
+export const identityLine = (planPath) => `# SDD ledger — plan: ${planPath}`
+
+// Runs the check, then writes the identity line when the change's progress.md is missing. An
+// existing progress.md is the skill's working memory of a resumed apply: kept when its first
+// line names this change's plan, refused when it names another plan or none.
+export function initSddWorkspace({ changeName, planPath, read, list, write }) {
+  const check = checkSddWorkspace({ changeName, read, list })
+  const progress = progressPath(changeName)
+  if (!check.ok) return { ok: false, foreign: check.foreign, progress, written: false }
+  let text
+  try {
+    text = read(progress)
+  } catch (e) {
+    if (e.code !== 'ENOENT') {
+      return { ok: false, foreign: { path: `${ROOT}/${changeName}`, plan: null, unreadable: e.code ?? 'unknown' }, progress, written: false }
+    }
+    write(progress, `${identityLine(planPath)}\n`)
+    return { ok: true, foreign: null, progress, written: true }
+  }
+  const plan = planOf(text)
+  if (plan && plan.endsWith(`/openspec/changes/${changeName}/plan.md`)) return { ok: true, foreign: null, progress, written: false }
+  return { ok: false, foreign: { path: `${ROOT}/${changeName}`, plan }, progress, written: false }
+}
