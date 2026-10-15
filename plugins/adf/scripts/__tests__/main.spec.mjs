@@ -4,7 +4,8 @@ import { spawnSync } from 'node:child_process'
 import { mkdtempSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { isMain } from '../lib/main.mjs'
 
 const scripts = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -20,4 +21,10 @@ test('a CLI started through a symbolic link still runs', { skip: process.platfor
 test('importing a CLI module does not run it', async () => {
   const { run } = await import('../forge.mjs')
   assert.equal(typeof run, 'function')
+})
+
+test('isMain is true only for the script node was started with', () => {
+  assert.equal(isMain(pathToFileURL(process.argv[1]).href), true)
+  assert.equal(isMain(new URL('../lib/main.mjs', import.meta.url).href), false)
+  assert.equal(isMain(pathToFileURL(join(tmpdir(), 'no-such-script.mjs')).href), false)
 })

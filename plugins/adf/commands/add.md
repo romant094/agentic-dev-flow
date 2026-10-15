@@ -31,5 +31,5 @@ plugin's configuration as a JSON object.
 4. Report the plugin's name, the points it provides (or "no points"), and the host files it
    copied (`hostFiles.copied`) or found already present (`hostFiles.kept`).
 
-Do not commit. The developer commits the registry and the copied host files with the rest of
+Do not commit: the developer commits the registry and the copied host files with the rest of
 their change.

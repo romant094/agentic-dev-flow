@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initRegistry, writeRegistry, readRegistry } from '../lib/registry.mjs'
+import { callRole } from '../lib/roles.mjs'
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'forge.mjs')
 const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
@@ -51,4 +52,9 @@ test('a provider that prints no result, or an unknown operation, is refused with
   assert.match(broken.out.error, /fake check returned no result: hello/)
   assert.match(forge(host(ECHO), 'merge').out.error, /forge has no operation merge/)
   assert.match(forge(host(ECHO), 'open', '--input').out.error, /--input needs a value/)
+})
+
+test('callRole refuses an operation the point does not declare, before looking for a provider', () => {
+  const core = { points: { forge: { operations: ['check'] } } }
+  assert.throws(() => callRole(host(), 'forge', 'merge', {}, core), /forge has no operation merge/)
 })

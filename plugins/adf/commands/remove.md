@@ -21,4 +21,4 @@ registry entry goes.
 3. Report the removed plugin and its path. When a later contract version defines roles, also
    report each role that now falls back to the core default.
 
-Do not commit. The developer commits the registry with the rest of their change.
+Do not commit: the developer commits the registry with the rest of their change.

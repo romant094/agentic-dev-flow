@@ -64,6 +64,6 @@ missing and changes nothing that exists.
    - the enabled plugins from the `check` output, or "none";
    - that plugins are enabled with `/adf:add <plugin path>`.
 
-Do not commit. The developer commits the registry, the settings, `.gitignore` and the planning
+Do not commit: the developer commits the registry, the settings, `.gitignore` and the planning
 guide. A change's worktree forks from the integration branch, so it sees them only after they
 reach it.
