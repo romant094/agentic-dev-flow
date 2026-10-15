@@ -2,11 +2,13 @@
 // are merged back into it one by one. Every path is rooted at the main checkout: run from
 // inside the change worktree, a relative `.claude/worktrees/...` would nest the group inside
 // it, where removing the change worktree strands the group.
-import { readFileSync, realpathSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { requireBranches } from './branches.mjs'
 import { changeDir, META_FILE } from './changes.mjs'
 import { mainCheckout } from './installed.mjs'
 import { baseRef } from './plan-symbols.mjs'
+import { callRole } from './roles.mjs'
 import { gitIn, WORKTREES_DIR } from './workspace.mjs'
 
 const GROUP = /^[1-9]\d*$/
@@ -53,11 +55,24 @@ export function addGroup(changeRoot, { change, group }) {
   return { root: path, branch: groupBranch, from: branch }
 }
 
-// A conflict leaves the merge in progress for the subagent that resolves it.
+// A conflict leaves the merge in progress for the subagent that resolves it. A merge that is
+// made, by this call or by the resolver's commit, reports the merge commit and its first parent:
+// the range of the merge review. Called again once the resolver committed, it merges nothing and
+// reports the same pair, with `already` true.
 export function mergeGroup(changeRoot, { change, group }) {
   const { git, branch, groupBranch } = names(changeRoot, change, group)
+  if (attempt(git, 'rev-parse', '--verify', '--quiet', 'MERGE_HEAD')) {
+    throw new Error('a merge is in progress in the change worktree; the resolver completes it, then run group-merge again')
+  }
   const dirty = git('status', '--porcelain', '--untracked-files=no')
   if (dirty !== '') throw new Error(`the change worktree has uncommitted changes:\n${dirty}`)
+  const tip = attempt(git, 'rev-parse', '--verify', '--quiet', `refs/heads/${groupBranch}`)
+  if (!tip) throw new Error(`branch ${groupBranch} does not exist`)
+  if (attempt(git, 'merge-base', '--is-ancestor', tip, 'HEAD') !== null) {
+    const found = mergeOf(git, tip)
+    if (!found) throw new Error(`${groupBranch} is already in ${branch} without a merge commit; there is no merge to review`)
+    return { merged: true, already: true, into: branch, branch: groupBranch, commit: found.mergeCommit, ...found, conflicts: [] }
+  }
   try {
     git('merge', '--no-ff', '--no-edit', groupBranch)
   } catch {
@@ -65,7 +80,18 @@ export function mergeGroup(changeRoot, { change, group }) {
     if (conflicts.length === 0) throw new Error(`merging ${groupBranch} into ${branch} failed without a conflict`)
     return { merged: false, into: branch, branch: groupBranch, conflicts }
   }
-  return { merged: true, into: branch, branch: groupBranch, commit: git('rev-parse', 'HEAD'), conflicts: [] }
+  const mergeCommit = git('rev-parse', 'HEAD')
+  return { merged: true, already: false, into: branch, branch: groupBranch, commit: mergeCommit, mergeCommit, firstParent: git('rev-parse', 'HEAD^1'), conflicts: [] }
+}
+
+// The merge commit on the change branch whose second parent is the group branch's tip.
+function mergeOf(git, tip) {
+  const rows = (attempt(git, 'log', '--merges', '--format=%H %P', 'HEAD') ?? '').split('\n').filter(Boolean)
+  for (const row of rows) {
+    const [mergeCommit, firstParent, ...others] = row.split(' ')
+    if (others.includes(tip)) return { mergeCommit, firstParent }
+  }
+  return null
 }
 
 // Only a merged group is removed; a blocked group keeps its worktree and branch.
@@ -77,6 +103,44 @@ export function removeGroup(changeRoot, { change, group }) {
   if (isWorktree(git, path)) git('worktree', 'remove', path)
   git('branch', '-d', groupBranch)
   return { removed: path, branch: groupBranch }
+}
+
+// Each group's state on disk, for the schedule: merged when the change branch holds the merge
+// commit of its branch (the branch itself is deleted once its worktree is removed, so the merge
+// subject is what remains), kept while its worktree exists. Returns `(n) => { merged, kept }`.
+// After the merge review passed: remove the group's worktree and branch, then push the change
+// branch through the forge role with the branch and the protected list read here, never typed.
+// With no forge plugin the push state is `none`, which is not an error. The push result is kept
+// in .superpowers/sdd/<change>/push.json for apply's report. `core` is callRole's.
+export const PUSH_FILE = 'push.json'
+export const pushPath = (changeRoot, change) => join(changeRoot, '.superpowers', 'sdd', change, PUSH_FILE)
+
+export function finishGroup(changeRoot, { change, group }, core) {
+  const branches = requireBranches(changeRoot)
+  const removed = removeGroup(changeRoot, { change, group })
+  const branch = changeBranch(gitIn(changeRoot))
+  const result = callRole(changeRoot, 'forge', 'push', { change, branch, protected: branches.protected }, core)
+  const push = { state: result.state, ...(result.plugin ? { plugin: result.plugin } : {}), ...(result.hint ? { hint: result.hint } : {}), ...(result.error ? { error: result.error } : {}) }
+  const file = pushPath(changeRoot, change)
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), group: Number(group), branch, ...push }, null, 2)}\n`, 'utf8')
+  return { removed, push }
+}
+
+export function groupState(changeRoot, change) {
+  const git = gitIn(changeRoot)
+  const branch = attempt(git, 'branch', '--show-current') ?? ''
+  const merges = (attempt(git, 'log', '--merges', '--format=%s', 'HEAD') ?? '').split('\n')
+  let kept = []
+  try {
+    kept = listGroups(changeRoot, change).map((g) => g.group)
+  } catch {
+    // not a repository: nothing is kept
+  }
+  return (n) => {
+    const name = `${branch}--group-${n}`
+    return { merged: Boolean(branch) && merges.some((s) => s === `Merge branch '${name}'` || s.startsWith(`Merge branch '${name}' into `)), kept: kept.includes(n) }
+  }
 }
 
 export function listGroups(changeRoot, change) {

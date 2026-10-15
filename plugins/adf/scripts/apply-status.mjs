@@ -1,0 +1,77 @@
+#!/usr/bin/env node
+// CLI over lib/apply-status.mjs: where a change's apply stands, read from the plan's Execution
+// Graph, git, the tasks file, the execution ledger and the test record. Prints one JSON object
+// on stdout; exit 1 on a refusal (no change, no plan, a missing or defective graph), exit 2 on a
+// usage error.
+//
+//   apply-status.mjs --change <name> [--root <change worktree>] [--cap 3] [--report]
+//
+//   { ok, change, single, cap, groups: [{ n, letter, tasks, wave, dependsOn, state }],
+//     merged, running, blocked, startable, waitingOnBlocked, ticked, remaining,
+//     progress: { done, total }, completedThisSession, openDebt: { count, ids }, lastHandoff,
+//     push, suite: { state, commit, reason? }, complete, report? }
+//
+// Group numbers are graph rows, the first row 1. `state` is merged, running, blocked or
+// pending (done or pending for a single-group graph). `blocked` is read from the last
+// `handoff` record's `blocked` field; `startable` are the groups to start now under the cap.
+// `completedThisSession` lists the items whose tick commits came after the last apply session
+// record. --report adds `report`, the apply command's closing block: Complete in full, or
+// Paused with `<the issue>` and `<option>` left for the orchestrator to write.
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { applyStatus, renderReport } from './lib/apply-status.mjs'
+import { changeDir } from './lib/changes.mjs'
+import { isMain } from './lib/main.mjs'
+import { parseTaskItems } from './lib/plan.mjs'
+import { loadSchema } from './lib/schema.mjs'
+
+export const USAGE = 'usage: apply-status.mjs --change <name> [--root <change worktree>] [--cap <n>] [--report]'
+
+export class UsageError extends Error {}
+
+function parse(argv) {
+  const values = { report: false }
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]
+    if (arg === '--report') {
+      values.report = true
+      continue
+    }
+    if (!['--change', '--root', '--cap'].includes(arg)) throw new UsageError(`unexpected argument "${arg}"`)
+    const value = argv[i + 1]
+    if (value === undefined || value.startsWith('--')) throw new UsageError(`${arg} needs a value`)
+    if (values[arg.slice(2)] !== undefined) throw new UsageError(`${arg} is given twice`)
+    values[arg.slice(2)] = value
+    i++
+  }
+  return values
+}
+
+export function run(argv, { cwd = process.cwd() } = {}) {
+  const { change, root = cwd, cap: capText, report } = parse(argv)
+  if (!change) throw new UsageError(USAGE)
+  const cap = capText === undefined ? undefined : Number(capText)
+  if (cap !== undefined && (!Number.isInteger(cap) || cap < 1)) throw new UsageError('--cap must be a positive integer')
+  const schema = loadSchema()
+  const tracks = schema.apply?.tracks ?? 'tasks.md'
+  const status = applyStatus(root, change, { tracks, ...(cap ? { cap } : {}) })
+  if (!report || !status.ok) return status
+  let items = []
+  try {
+    items = parseTaskItems(readFileSync(join(changeDir(root, change), tracks), 'utf8'))
+  } catch {
+    // no tasks file: the report names the items by number
+  }
+  return { ...status, report: renderReport(status, { schemaName: schema.name, items }) }
+}
+
+if (isMain(import.meta.url)) {
+  try {
+    const result = run(process.argv.slice(2))
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+    process.exitCode = result.ok ? 0 : 1
+  } catch (error) {
+    process.stdout.write(`${JSON.stringify({ ok: false, error: error.message, ...(error instanceof UsageError ? { usage: USAGE } : {}) })}\n`)
+    process.exitCode = error instanceof UsageError ? 2 : 1
+  }
+}

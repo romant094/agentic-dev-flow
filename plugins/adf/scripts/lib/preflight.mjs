@@ -18,9 +18,9 @@ import { mainCheckout } from './installed.mjs'
 import { appendRecord } from './ledger.mjs'
 import { loadSchema } from './schema.mjs'
 import { checkSuperpowers } from './superpowers.mjs'
+import { runPlanSymbols as planSymbols } from './plan-symbols-repo.mjs'
+import { initSdd } from './sdd.mjs'
 import { gitIn, suggest } from './workspace.mjs'
-import { run as planSymbols } from '../plan-symbols.mjs'
-import { init as initSdd } from '../sdd.mjs'
 
 export const PHASES = ['propose', 'apply', 'verify']
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/
