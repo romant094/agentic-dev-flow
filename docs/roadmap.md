@@ -37,8 +37,9 @@ that needs it, under the version rule in `plugins/adf/contract/README.md`.
 | 07 | Apply | task groups, subagent dispatch, capability levels, the execution ledger | none |
 | 08 | Verify | the verification checks | adds `verify-check` if a plugin needs it |
 | 08a | Scripts first | every deterministic step of propose, apply and verify moves from the instruction text to a script; the LLM keeps the reasoning work (artifacts, code, grouping, review, judgement, the talk with the developer) | none |
-| 09 | Review | the review stage; the CI review reuses it | none |
+| 09 | Review | the review stage: the reviewer and the fixer reply in JSON under a schema the core owns, checked by script; the verdict computed by script from the findings; the fix plan, the dispositions, the markers and the record by script; `review.mjs input`, `response` and `render` run standalone on a `--range`. No CI runner: the developer rebuilds the CI review from the plugin's scripts, outside the port | none |
 | 10 | Archive and wiki memory | spec merge, memory ingest, technical debt ledger, log; the worktree removed; with no forge plugin, archive offers to merge the change into its base branch and merges only on the developer's yes; on a no the developer merges it | none |
+| 10a | Structured replies | every other agent role replies in JSON, checked by script: the implementer, the task reviewer and the verify dispatches; the metrics then read JSON | none |
 | 11 | Metrics and retrospective | `adf-metrics`, `adf-retro` | none |
 | 12 | Project stack plugin (origin project) | worktree provisioning, per-worktree database, test runner, package map | adds the hooks it needs |
 | 13 | Tracker plugin: Jira | gather context at propose and at a quick task, start, hand off to QA after merge, `/opsx:land` | adds `context-source`, `on-start`, `post-merge`, `forge.state` |
