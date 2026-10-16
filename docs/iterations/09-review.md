@@ -108,8 +108,8 @@ finding contradicts the delta spec; whether a new tool ran on a real input.
 - Corrections to the plan draft: the origin's CI fetches every diff page (`review.sh:40-66`), so
   there is no pagination defect; a top-level `__snapshots__/` is kept by both origin filters, the
   local pathspec and the CI regex, and only the port excludes it.
-- Not run: `/adf:review` by an agent end to end (iteration 14); `claude plugin validate .` (the
-  developer runs it).
+- Not run: `/adf:review` by an agent end to end (iteration 14); `claude plugin validate .` passes, run by
+  the developer.
 - Open: the review's own retry counter (`attempts.json` in the review state) is separate from
   `dispatch.mjs attempt`; joining them comes with every agent role's JSON reply (iteration 10a).
 - Versions: adf 0.8.0, english-check 0.3.0 (`review.mjs` joins the scripts whose commits it checks).
