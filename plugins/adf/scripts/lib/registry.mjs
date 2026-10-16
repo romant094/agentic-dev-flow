@@ -255,6 +255,12 @@ const plugins = (check) => (check.plugins.length ? check.plugins.map((p) => `${p
 const checkLine = (check) => (check.ok ? 'Registry check: ok' : `Registry check: ${check.errors.length} error(s)\n${check.errors.map((e) => `- ${e}`).join('\n')}`)
 const policy = (branches) => `Branch policy: integration ${branches.integration}; protected ${branches.protected.join(', ')}`
 
+const reviewPromptLine = (p) => {
+  if (p.invalid) return `Review prompt: review.prompt "${p.path}" is not a path inside the project; nothing installed`
+  const where = p.created ? `created at ${p.path}; the team tunes its criteria` : `${p.path} already exists`
+  return `Review prompt: ${where}${p.registered ? '; review.prompt set in the registry' : ''}`
+}
+
 // The text /adf:init shows, from the fields of `extensions.mjs init`.
 export function initReport(r) {
   return [
@@ -265,11 +271,12 @@ export function initReport(r) {
     r.branches ? policy(r.branches) : `Branch policy: not set; ask for the integration branch${r.detectedIntegration ? ` (detected: ${r.detectedIntegration})` : ''} and other protected branches, then run extensions.mjs branches`,
     `.gitignore: ${r.gitignore.added.length ? `added ${r.gitignore.added.join(', ')}` : 'unchanged'}`,
     `Planning guide: ${r.planningGuide.created ? `created at ${r.planningGuide.path}; the team fills it in` : `${r.planningGuide.path} already exists`}`,
+    reviewPromptLine(r.reviewPrompt),
     `Superpowers: ${r.superpowers.ok ? 'available' : `not available (${r.superpowers.reason}); install it with \`${r.superpowers.install}\``}`,
     `Enabled plugins: ${plugins(r.check)}`,
     checkLine(r.check),
     'Enable a plugin with /adf:add <plugin id or path>.',
-    'Nothing was committed: the developer commits the registry, the settings, .gitignore and the planning guide.'
+    'Nothing was committed: the developer commits the registry, the settings, .gitignore, the planning guide and the review prompt.'
   ].join('\n')
 }
 

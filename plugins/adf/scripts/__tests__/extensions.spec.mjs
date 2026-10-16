@@ -7,7 +7,10 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { createReviewPrompt } from '../lib/host-files.mjs'
+
 const here = dirname(fileURLToPath(import.meta.url))
+const REVIEW_TEMPLATE = join(here, '..', '..', 'host', 'review-prompt.md')
 const cli = join(here, '..', 'extensions.mjs')
 const fixtures = join(here, '..', '..', '..', '..', 'test', 'fixtures')
 
@@ -38,6 +41,9 @@ test('init, add, check, remove on a fresh host', () => {
   assert.equal(init.contract, '1.2')
   assert.deepEqual(init.settings.added, ['enabledPlugins.adf@agentic-dev-flow'])
   assert.deepEqual(init.planningGuide, { path: 'openspec/planning.md', created: true })
+  assert.deepEqual(init.reviewPrompt, { path: 'openspec/review-prompt.md', created: true, registered: true })
+  assert.equal(readFileSync(join(root, 'openspec', 'review-prompt.md'), 'utf8'), readFileSync(REVIEW_TEMPLATE, 'utf8'))
+  assert.match(init.report, /Review prompt: created at openspec\/review-prompt\.md; the team tunes its criteria; review\.prompt set in the registry/)
   assert.equal(init.branches, null)
   // init runs the gate and the check itself (I1) and renders the report (I2).
   assert.equal(init.superpowers.ok, false)
@@ -53,6 +59,7 @@ test('init, add, check, remove on a fresh host', () => {
   assert.equal(again.created, false)
   assert.deepEqual(again.settings.added, [])
   assert.equal(again.planningGuide.created, false)
+  assert.deepEqual(again.reviewPrompt, { path: 'openspec/review-prompt.md', created: false, registered: false })
   assert.deepEqual(again.branches.protected, ['develop', 'main'])
 
   const added = adf(root, 'add', 'plugins/sample', '--config', '{"greeting":"hi"}')
@@ -130,4 +137,31 @@ test('an installed plugin is enabled by id, its host files copied once, and a ro
   assert.match(adfAt(root, forgeHome, 'add', 'missing@mk').out.error, /not installed for this project/)
   assert.equal(adfAt(root, forgeHome, 'remove', 'forge-a').code, 0)
   assert.deepEqual(adfAt(root, forgeHome, 'add', 'forge-a@mk').out.hostFiles, { copied: [], kept: ['.forge/mr.md'] })
+})
+
+test('the review prompt goes to the registry\'s review.prompt, and an existing one is never overwritten', () => {
+  const root = mkdtempSync(join(tmpdir(), 'adf-review-prompt-'))
+  const registry = (review) => {
+    mkdirSync(join(root, '.claude'), { recursive: true })
+    writeFileSync(join(root, '.claude', 'adf-extensions.json'), JSON.stringify({ contract: '1.2', extensions: [], ...(review ? { review } : {}) }))
+  }
+  registry({ prompt: 'ci/review.md', blockOn: ['CRITICAL'] })
+  assert.deepEqual(createReviewPrompt(root), { path: 'ci/review.md', created: true, registered: false })
+  assert.equal(readFileSync(join(root, 'ci', 'review.md'), 'utf8'), readFileSync(REVIEW_TEMPLATE, 'utf8'))
+  writeFileSync(join(root, 'ci', 'review.md'), 'ours')
+  assert.deepEqual(createReviewPrompt(root), { path: 'ci/review.md', created: false, registered: false })
+  assert.equal(readFileSync(join(root, 'ci', 'review.md'), 'utf8'), 'ours')
+
+  // No key: the default path is registered beside the other review settings, and a file the
+  // host already keeps there stays as it is.
+  registry({ maxBytes: 1000 })
+  mkdirSync(join(root, 'openspec'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'review-prompt.md'), 'theirs')
+  assert.deepEqual(createReviewPrompt(root), { path: 'openspec/review-prompt.md', created: false, registered: true })
+  assert.deepEqual(JSON.parse(readFileSync(join(root, '.claude', 'adf-extensions.json'), 'utf8')).review, { maxBytes: 1000, prompt: 'openspec/review-prompt.md' })
+  assert.equal(readFileSync(join(root, 'openspec', 'review-prompt.md'), 'utf8'), 'theirs')
+
+  registry({ prompt: '../outside.md' })
+  assert.deepEqual(createReviewPrompt(root), { path: '../outside.md', created: false, registered: false, invalid: true })
+  assert.equal(existsSync(join(root, '..', 'outside.md')), false)
 })

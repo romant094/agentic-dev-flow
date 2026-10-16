@@ -380,3 +380,123 @@ test('no apply prompt skeleton speaks to the orchestrator', () => {
     assert.doesNotMatch(sent, /\bdispatch text\b|\bthe orchestrator\b|\ban implementer prompt\b|\bthe prompt (names|tells|says)\b/i, f)
   }
 })
+
+// ---------------------------------------------------------------- the review stage
+
+test('the review stage names one reviewer per round or slice and one fixer per finding', () => {
+  assert.equal(dispatchName({ role: 'ai-review', round: 1 }), 'ai-review r1')
+  assert.equal(dispatchName({ role: 'ai-review', round: 2, slice: 3 }), 'ai-review r2 s3')
+  assert.equal(dispatchName({ role: 'ai-fix', finding: 'F12', round: 1 }), 'ai-fix F12 r1')
+  for (const name of ['ai-review r1', 'ai-review r2 s3', 'ai-fix F12 r1']) assert.equal(dispatchName(parseName(name)), name)
+  assert.deepEqual(parseName('ai-fix F4 r2'), { role: 'ai-fix', finding: 'F4', round: 2 })
+  assert.deepEqual(parseName('ai-review r3 s1'), { role: 'ai-review', round: 3, slice: 1 })
+  for (const name of ['ai-review', 'ai-review r0', 'ai-review s1 r1', 'ai-fix F1', 'ai-fix r1', 'ai-fix F0 r1', 'ai-fix 1 r1']) assert.equal(parseName(name), null, name)
+  const bad = [
+    [{ role: 'ai-review' }, /needs --round/],
+    [{ role: 'ai-fix', finding: 'F1' }, /needs --round/],
+    [{ role: 'ai-fix', round: 1 }, /needs --finding F<n>/],
+    [{ role: 'ai-fix', finding: '3', round: 1 }, /needs --finding F<n>/],
+    [{ role: 'ai-review', round: 1, finding: 'F1' }, /--finding belongs to ai-fix/],
+    [{ role: 'ai-fix', finding: 'F1', round: 1, slice: 1 }, /--slice belongs to ai-review/],
+    [{ role: 'ai-review', round: 1, slice: 0 }, /positive integer/],
+    [{ role: 'ai-review', round: 1, task: 2 }, /takes no --task or --group/],
+    [{ role: 'ai-fix', finding: 'F1', round: 1, group: 'A' }, /takes no --task or --group/],
+    [{ role: 'fix', task: 1, slice: 1 }, /--slice belongs to ai-review/]
+  ]
+  for (const [inputs, message] of bad) assert.throws(() => dispatchName(inputs), message, JSON.stringify(inputs))
+})
+
+test('the reviewer runs at architecture every round; the fixer at integration, one level up from round 2', () => {
+  const root = host('no plan needed')
+  const sdd = join(root, '.superpowers', 'sdd', CHANGE)
+  const r1 = call(root, 'plan', '--role', 'ai-review', '--round', '1')
+  assert.deepEqual(
+    { name: r1.name, agent: r1.agent, worktree: r1.worktree, round: r1.round, inputFile: r1.inputFile, replyFile: r1.replyFile },
+    { name: 'ai-review r1', agent: 'adf:architecture', worktree: root, round: 1, inputFile: join(sdd, 'review', 'input-r1.md'), replyFile: join(sdd, 'replies', 'ai-review-r1.json') }
+  )
+  const s2 = call(root, 'plan', '--role', 'ai-review', '--round', '3', '--slice', '2')
+  assert.equal(s2.agent, 'adf:architecture')
+  assert.equal(s2.slice, 2)
+  assert.equal(s2.inputFile, join(sdd, 'review', 'input-r3-s2.md'))
+  const f1 = call(root, 'plan', '--role', 'ai-fix', '--finding', 'F2', '--round', '1')
+  assert.deepEqual({ name: f1.name, agent: f1.agent, finding: f1.finding }, { name: 'ai-fix F2 r1', agent: 'adf:integration', finding: 'F2' })
+  assert.equal(call(root, 'plan', '--role', 'ai-fix', '--finding', 'F2', '--round', '2').agent, 'adf:architecture')
+  // Two fixes of one round run side by side: their names and reply files differ.
+  assert.notEqual(call(root, 'plan', '--role', 'ai-fix', '--finding', 'F3', '--round', '1').replyFile, f1.replyFile)
+  assert.throws(() => call(root, 'plan', '--role', 'ai-fix', '--finding', 'F2', '--round', '1', '--findings', 'x.json'), /belong to prompt/)
+})
+
+test('a retry counts only for the same review dispatch name', () => {
+  const root = host()
+  assert.equal(call(root, 'attempt', '--name', 'ai-fix F1 r1').next, 'dispatch')
+  assert.equal(call(root, 'attempt', '--name', 'ai-fix F2 r1').next, 'dispatch')
+  assert.equal(call(root, 'attempt', '--name', 'ai-review r1 s1').next, 'dispatch')
+  assert.equal(call(root, 'attempt', '--name', 'ai-review r1 s2').next, 'dispatch')
+  assert.equal(call(root, 'attempt', '--name', 'ai-fix F1 r1').next, 'retry')
+  assert.equal(call(root, 'attempt', '--name', 'ai-fix F1 r2').next, 'dispatch')
+  assert.equal(call(root, 'attempt', '--name', 'ai-fix F1 r1').next, 'stop')
+  // A review dispatch closes no apply fix round.
+  assert.equal(call(root, 'round').completed, 0)
+})
+
+test('the reviewer prompt names its one input and its JSON reply, and from round 2 distrusts the last round', () => {
+  const root = host()
+  const plan1 = call(root, 'plan', '--role', 'ai-review', '--round', '1')
+  assert.throws(() => call(root, 'prompt', '--role', 'ai-review', '--round', '1'), /run review\.mjs input --out/)
+  mkdirSync(dirname(plan1.inputFile), { recursive: true })
+  writeFileSync(plan1.inputFile, 'criteria\n\nHere is the diff:\n')
+  const { prompt } = call(root, 'prompt', '--role', 'ai-review', '--round', '1')
+  assert.match(prompt, /You are dispatched as `ai-review r1`, at the architecture capability level/)
+  assert.ok(prompt.includes(`- Input file: ${plan1.inputFile}`))
+  assert.ok(prompt.includes(`- Reply file: ${plan1.replyFile}`))
+  assert.ok(prompt.includes(`Its whole input is \`${plan1.inputFile}\``))
+  assert.ok(prompt.includes(`Write it to \`${plan1.replyFile}\``))
+  assert.match(prompt, /use no other tool/)
+  // No worktree, plan or reply.mjs: the reviewer reads the input file alone, and its reply is
+  // the JSON review.mjs response checks.
+  assert.doesNotMatch(prompt, /Worktree:|Plan:|reply\.mjs|git -C|previous round's verdict/)
+  assert.doesNotMatch(prompt, /\{\{|\$\{CLAUDE_PLUGIN_ROOT\}|<!--/)
+
+  const plan2 = call(root, 'plan', '--role', 'ai-review', '--round', '2', '--slice', '1')
+  mkdirSync(dirname(plan2.inputFile), { recursive: true })
+  writeFileSync(plan2.inputFile, 'x')
+  const second = call(root, 'prompt', '--role', 'ai-review', '--round', '2', '--slice', '1').prompt
+  assert.ok(second.includes('- Slice: 1'))
+  assert.match(second, /A previous round's verdict, a fix commit's message and a\s+fixer's claim/)
+  assert.throws(() => call(root, 'prompt', '--role', 'ai-review', '--round', '1', '--base', 'a', '--head', 'b'), /do not belong to ai-review/)
+  assert.throws(() => call(root, 'prompt', '--role', 'ai-review', '--round', '1', '--findings', 'x'), /belongs to ai-fix/)
+})
+
+test('the fixer prompt names one finding, its file, the commit script and the fix schema', () => {
+  const root = host()
+  const findings = join(root, 'r1.json')
+  writeFileSync(
+    findings,
+    JSON.stringify({
+      summary: 's',
+      findings: [
+        { id: 'F1', severity: 'HIGH', category: 'correctness', file: 'src/a.mjs', line: 7, title: 'off by one', body: 'b' },
+        { id: 'F2', severity: 'CRITICAL', category: 'security', file: 'src/b.mjs', line: null, title: 'injection', body: 'b' }
+      ]
+    })
+  )
+  assert.throws(() => call(root, 'prompt', '--role', 'ai-fix', '--finding', 'F1', '--round', '1'), /ai-fix needs --findings/)
+  assert.throws(() => call(root, 'prompt', '--role', 'ai-fix', '--finding', 'F9', '--round', '1', '--findings', findings), /F9 is not a finding of/)
+  assert.throws(() => call(root, 'prompt', '--role', 'ai-fix', '--finding', 'F1', '--round', '1', '--findings', join(root, 'none.json')), /cannot read the findings/)
+  const out = call(root, 'prompt', '--role', 'ai-fix', '--finding', 'F1', '--round', '1', '--findings', findings)
+  assert.equal(out.agent, 'adf:integration')
+  const { prompt } = out
+  assert.match(prompt, /You are dispatched as `ai-fix F1 r1`, at the integration capability level/)
+  assert.ok(prompt.includes('- Finding: F1 (HIGH): off by one'))
+  assert.ok(prompt.includes(`- Findings file: ${findings}`))
+  assert.ok(prompt.includes(`  - ${join(root, 'src/a.mjs')}:7`))
+  assert.ok(prompt.includes(`node "${PLUGIN_ROOT}/scripts/commit.mjs" --root ${root} --only <path>`))
+  assert.ok(prompt.includes(`valid under \`${join(PLUGIN_ROOT, 'schema', 'review-fix.schema.json')}\``))
+  assert.ok(prompt.includes(`Write it to\n\`${out.replyFile}\``) || prompt.includes(`Write it to \`${out.replyFile}\``))
+  assert.match(prompt, /`failureMode` states the failure/)
+  assert.match(prompt, /`git -C /)
+  assert.doesNotMatch(prompt, /reply\.mjs|\{\{|\$\{CLAUDE_PLUGIN_ROOT\}|<worktree>|<!--/)
+  const f2 = call(root, 'prompt', '--role', 'ai-fix', '--finding', 'F2', '--round', '2', '--findings', findings)
+  assert.equal(f2.agent, 'adf:architecture')
+  assert.ok(f2.prompt.includes(`  - ${join(root, 'src/b.mjs')}\n`))
+})

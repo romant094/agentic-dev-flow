@@ -4,7 +4,8 @@
 //
 //   extensions.mjs init                      create the registry if missing; declare ADF
 //                                            in the host's .claude/settings.json; ignore
-//                                            the flow's local state; add the planning guide;
+//                                            the flow's local state; add the planning guide
+//                                            and the review prompt (review.prompt);
 //                                            then the Superpowers gate (`superpowers`) and
 //                                            the registry check (`check`)
 //   extensions.mjs branches --integration B [--protected B1,B2]
@@ -26,7 +27,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { declareInHost, marketplaceSource } from './lib/host-settings.mjs'
 import { detectIntegration, readBranches, setBranches } from './lib/branches.mjs'
-import { createPlanningGuide, ignoreLocalDirs } from './lib/host-files.mjs'
+import { createPlanningGuide, createReviewPrompt, ignoreLocalDirs } from './lib/host-files.mjs'
 import { addExtension, addReport, branchesReport, checkRegistry, initRegistry, initReport, removeExtension, removeReport } from './lib/registry.mjs'
 import { checkSuperpowers, claudeHome } from './lib/superpowers.mjs'
 import { isMain } from './lib/main.mjs'
@@ -58,6 +59,7 @@ export function run(argv) {
         settings: declareInHost(root, { source: marketplaceSource(home) }),
         gitignore: ignoreLocalDirs(root),
         planningGuide: createPlanningGuide(root),
+        reviewPrompt: createReviewPrompt(root),
         branches: readBranches(root),
         detectedIntegration: detectIntegration(root),
         superpowers: checkSuperpowers(root, { home }),

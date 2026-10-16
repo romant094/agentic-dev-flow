@@ -10,6 +10,7 @@
 //   final-review, sweep, investigate <topic>, merge-review <G>
 //   fix [<G>] [r<k>], re-review [<G>] [r<k>]
 //   verify c4 | verify c8   (schema/instructions/verify.md)
+//   ai-review r<k>, ai-review r<k> s<n>, ai-fix F<n> r<k>   (the review stage)
 //
 // Pure: every read of the tree is done by the caller and passed in.
 import { join } from 'node:path'
@@ -32,7 +33,15 @@ export const VERIFY_CHECKS = {
   c4: { section: 'c4', level: 'architecture' },
   c8: { section: 'c8', level: 'integration' }
 }
-export const ROLES = [...new Set([...TASK_ROLES, ...Object.keys(TASKLESS), 'verify'])]
+// The review stage (lib/review.mjs): one reviewer per round, or one per slice of a diff over
+// review.maxBytes, and one fixer per finding, so concurrent fixes never share a name. Both
+// reply in JSON under the core's schemas, checked by `review.mjs response`, not lib/reply.mjs.
+// The reviewer is never downgraded; the fixer goes one level up from round 2.
+export const REVIEW_ROLES = {
+  'ai-review': { level: 'architecture', schema: 'review-findings.schema.json' },
+  'ai-fix': { level: 'integration', schema: 'review-fix.schema.json' }
+}
+export const ROLES = [...new Set([...TASK_ROLES, ...Object.keys(TASKLESS), 'verify', ...Object.keys(REVIEW_ROLES)])]
 // Roles whose question the orchestrator must write: the prompt refuses an empty slot.
 export const QUESTION_REQUIRED = ['review', 're-review', 'fix', 'final-review', 'merge-review', 'investigate']
 export const MAX_ATTEMPTS = 2
@@ -42,6 +51,7 @@ export const ROUNDED = ['fix', 're-review']
 
 const TOPIC = /^[A-Za-z0-9]+$/
 const GROUP = /^[A-Z]$/
+const FINDING = /^F[1-9]\d*$/
 
 export class DispatchError extends Error {}
 const refuse = (message) => {
@@ -54,6 +64,10 @@ const atLeast = (level, floor) => levelAt(Math.max(LEVELS.indexOf(level), LEVELS
 const taskless = (role, round) => {
   const level = TASKLESS[role].level
   return role === 'fix' && round >= 2 ? levelAt(LEVELS.indexOf(level) + 1) : level
+}
+const reviewLevel = (role, round) => {
+  const level = REVIEW_ROLES[role].level
+  return role === 'ai-fix' && round >= 2 ? levelAt(LEVELS.indexOf(level) + 1) : level
 }
 
 // ---------------------------------------------------------------- the plan
@@ -113,11 +127,24 @@ export function parseGraph(planText) {
 
 // ---------------------------------------------------------------- names
 
-export function dispatchName({ role, task, group, round, topic, check }) {
+export function dispatchName({ role, task, group, round, topic, check, slice, finding }) {
   if (!ROLES.includes(role)) refuse(`unknown role "${role}"; known: ${ROLES.join(', ')}`)
   if (round !== undefined && !(Number.isInteger(round) && round >= 1)) refuse(`round "${round}" is not a positive integer`)
   if (topic !== undefined && role !== 'investigate') refuse('--topic belongs to investigate')
   if (check !== undefined && role !== 'verify') refuse('--check belongs to verify')
+  if (slice !== undefined && role !== 'ai-review') refuse('--slice belongs to ai-review')
+  if (finding !== undefined && role !== 'ai-fix') refuse('--finding belongs to ai-fix')
+  if (Object.hasOwn(REVIEW_ROLES, role)) {
+    if (task !== undefined || group !== undefined) refuse(`${role} takes no --task or --group: it serves the review stage`)
+    if (round === undefined) refuse(`${role} needs --round <k>`)
+    if (role === 'ai-fix') {
+      if (!FINDING.test(finding ?? '')) refuse(`ai-fix needs --finding F<n>, not "${finding ?? ''}"`)
+      return `ai-fix ${finding} r${round}`
+    }
+    if (slice === undefined) return `ai-review r${round}`
+    if (!(Number.isInteger(slice) && slice >= 1)) refuse(`slice "${slice}" is not a positive integer`)
+    return `ai-review r${round} s${slice}`
+  }
   if (role === 'verify') {
     if (task !== undefined || group !== undefined || round !== undefined) refuse('verify takes only --check')
     if (!Object.hasOwn(VERIFY_CHECKS, check ?? '')) refuse(`verify needs --check, one of ${Object.keys(VERIFY_CHECKS).join(', ')}`)
@@ -150,6 +177,10 @@ export function parseName(name) {
   if (m) return { role: m[2], task: Number(m[1]), ...(m[3] ? { round: Number(m[3]) } : {}) }
   m = /^verify (c4|c8)$/.exec(text)
   if (m) return { role: 'verify', check: m[1] }
+  m = /^ai-review r([1-9]\d*)(?: s([1-9]\d*))?$/.exec(text)
+  if (m) return { role: 'ai-review', round: Number(m[1]), ...(m[2] ? { slice: Number(m[2]) } : {}) }
+  m = /^ai-fix (F[1-9]\d*) r([1-9]\d*)$/.exec(text)
+  if (m) return { role: 'ai-fix', finding: m[1], round: Number(m[2]) }
   m = /^investigate ([A-Za-z0-9]+)$/.exec(text)
   if (m) return { role: 'investigate', topic: m[1] }
   m = /^(final-review|sweep)$/.exec(text)
@@ -161,6 +192,8 @@ export function parseName(name) {
 
 export const sddDir = (root, change) => join(root, '.superpowers', 'sdd', change)
 export const verifyDirOf = (root, change) => join(sddDir(root, change), 'verify')
+// The reviewer's input file, which `review.mjs input --out` writes before the dispatch.
+export const reviewInputFile = (root, change, round, slice) => join(sddDir(root, change), 'review', `input-r${round}${slice === undefined ? '' : `-s${slice}`}.md`)
 
 // `<root>/.superpowers/sdd/<change>/replies/<name, spaces as hyphens>.json`, or `-2`, `-3`
 // before `.json` when the name is taken.
@@ -172,7 +205,7 @@ export function replyFile(root, change, name, exists) {
 
 // ---------------------------------------------------------------- the plan of one dispatch
 
-// inputs: { change, role, task?, group?, round?, topic?, check? }
+// inputs: { change, role, task?, group?, round?, topic?, check?, slice?, finding? }
 // tree:   { root, main, planText (null when absent), exists(path) }
 export function planDispatch(inputs, { root, main, planText, exists }) {
   const name = dispatchName(inputs)
@@ -187,6 +220,18 @@ export function planDispatch(inputs, { root, main, planText, exists }) {
     out.worktree = root
     out.section = section
     out.sectionFiles = [join(dir, `${section}-agent.txt`), join(dir, `${section}.json`)]
+    return out
+  }
+
+  if (Object.hasOwn(REVIEW_ROLES, role)) {
+    out.agent = `adf:${reviewLevel(role, round)}`
+    out.worktree = root
+    out.round = round
+    if (role === 'ai-review') {
+      if (inputs.slice !== undefined) out.slice = inputs.slice
+      out.inputFile = reviewInputFile(root, change, round, inputs.slice)
+    } else out.finding = inputs.finding
+    out.replyFile = replyFile(root, change, name, exists)
     return out
   }
 
@@ -253,8 +298,11 @@ export function fill(skeleton, values, tokens) {
 }
 
 // Which skeletons, in order, make up the rules of a dispatch.
-export function ruleSkeletons({ role, check }, { testFirst = false, dispositions = false } = {}) {
+export function ruleSkeletons({ role, check, round }, { testFirst = false, dispositions = false } = {}) {
   if (role === 'verify') return ['verify', `verify-${check}`]
+  // The review stage's replies are the JSON its skeletons name, so `reply` is not among them.
+  if (role === 'ai-review') return round >= 2 ? ['ai-review', 'ai-review-round'] : ['ai-review']
+  if (role === 'ai-fix') return ['ai-fix', 'git']
   const parts = []
   if (role === 'impl' || role === 'fix') parts.push('implementer')
   if (['review', 're-review', 'final-review', 'merge-review'].includes(role)) parts.push('reviewer')
@@ -277,6 +325,8 @@ export function renderPrompt({ plan, change, skeletons, fields, question, tokens
     change,
     role: plan.role,
     replyFile: plan.replyFile ?? '',
+    inputFile: plan.inputFile ?? '',
+    schema: Object.hasOwn(REVIEW_ROLES, plan.role) ? join('${CLAUDE_PLUGIN_ROOT}', 'schema', REVIEW_ROLES[plan.role].schema) : '',
     base: tokens['<base>'] ?? ''
   }
   const rules = ruleSkeletons(plan, { testFirst, dispositions }).map((n) => fill(skeletons[n], values, tokens))

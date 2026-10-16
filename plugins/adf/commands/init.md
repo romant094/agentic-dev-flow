@@ -31,6 +31,6 @@ missing and changes nothing that exists.
    branch policy line. When Superpowers is not available, continue: setup does not need
    Superpowers, but every command that changes a change does.
 
-Do not commit: the developer commits the registry, the settings, `.gitignore` and the planning
-guide. A change's worktree forks from the integration branch, so it sees them only after they
+Do not commit: the developer commits the registry, the settings, `.gitignore`, the planning
+guide and the review prompt. A change's worktree forks from the integration branch, so it sees them only after they
 reach it.
