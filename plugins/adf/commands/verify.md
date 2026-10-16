@@ -50,5 +50,5 @@ conversation; if that is vague or ambiguous, the selection in step 1 asks.
 8. **Assemble and commit the record.** `verify.mjs assemble --commit`. Push nothing.
 
 9. **Report.** Show the `report` that `assemble` returned. End with what is blocked on the
-    developer, if anything; the report carries the next step: the review on `PASS` or `PASS
+    developer, if anything; the report carries the next step: `/adf:review` on `PASS` or `PASS
     WITH WARNINGS`; on `FAIL`, the fix the failing checks name and then `/adf:verify` again.

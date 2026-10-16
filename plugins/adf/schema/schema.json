@@ -68,6 +68,8 @@
       "id": "review",
       "generates": "review.md",
       "description": "Code review record and the disposition of every finding",
+      "template": "review.md",
+      "instruction": "review.md",
       "requires": ["verify"]
     }
   ],

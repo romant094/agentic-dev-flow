@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildOrder, GATES, loadSchema, SCHEMA_DIR, validateSchema } from '../lib/schema.mjs'
+import { checkRecord } from '../lib/review-state.mjs'
 import { CHECKS, REPLACEABLE } from '../lib/verify.mjs'
 
 const artifact = (id, requires = [], extra = {}) => ({ id, generates: `${id}.md`, description: id, requires, ...extra })
@@ -95,6 +96,8 @@ test('no dispatch-facing text asks for a repository-wide git mutation', () => {
     'commands/apply.md',
     'schema/instructions/verify.md',
     'commands/verify.md',
+    'schema/instructions/review.md',
+    'commands/review.md',
     ...readdirSync(join(root, 'agents')).map((f) => `agents/${f}`),
     ...readdirSync(join(root, 'schema', 'prompts')).map((f) => `schema/prompts/${f}`)
   ]
@@ -122,4 +125,20 @@ test('the verify instruction and template carry every check, one section each, a
   for (const id of REPLACEABLE) assert.match(instruction, new RegExp(`\| \`${id}\` \|`), `no dispatch writes ${id}`)
   for (const name of ['verify c4', 'verify c8']) assert.match(instruction, new RegExp(`\`${name}\``))
   assert.match(template.trimEnd().split('\n').at(-1), /^Verdict: /)
+})
+
+// The review record is written by `review.mjs assemble`, which does not read the template: the
+// template documents the record, so its sections must be the ones the script renders, and its
+// unfilled verdict line must fail the parser archive reads it with.
+test('the review template documents the sections assemble renders, and its unfilled verdict is refused', () => {
+  const review = loadSchema().artifacts.find((a) => a.id === 'review')
+  assert.deepEqual([review.template, review.instruction, review.requires], ['review.md', 'review.md', ['verify']])
+  const template = readFileSync(join(SCHEMA_DIR, 'templates', 'review.md'), 'utf8')
+  const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'review-state.mjs'), 'utf8')
+  const rendered = [...source.matchAll(/'## ([^'$]+)'/g)].map((m) => m[1])
+  const documented = [...template.matchAll(/^## (.+)$/gm)].map((m) => m[1])
+  assert.deepEqual([...new Set(documented)].sort(), [...new Set(rendered)].sort())
+  const parsed = checkRecord(template)
+  assert.equal(parsed.ok, false)
+  assert.equal(parsed.verdict, null)
 })

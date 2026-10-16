@@ -1,5 +1,5 @@
-How apply, verify and archive decide which change they act on. Each command file carries the
-step order and points here; the rules below are stated in full only here.
+How apply, verify, review and archive decide which change they act on. Each command file
+carries the step order and points here; the rules below are stated in full only here.
 
 **Every checkout is read, because no single one is complete.**
 

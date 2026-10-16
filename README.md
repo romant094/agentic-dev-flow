@@ -59,6 +59,7 @@ Then, in the host project:
 /adf:propose <change>
 /adf:apply [change]
 /adf:verify [change]
+/adf:review [change]
 /adf:add <plugin id or path>
 /adf:remove <plugin name>
 ```
@@ -81,8 +82,8 @@ scope (`plugins/english-check/README.md`).
 ```
 .claude-plugin/marketplace.json   the marketplace: the core and every plugin
 plugins/adf/                      the core
-  commands/                       /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply, /adf:verify
-  agents/                         the capability-level subagents apply and verify dispatch
+  commands/                       /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply, /adf:verify, /adf:review
+  agents/                         the capability-level subagents apply, verify and review dispatch
   contract/                       the extension contract and its version
   schema/                         the artifact graph (schema.json), templates, instructions
   host/                           templates of files /adf:init adds to the host (planning guide)
