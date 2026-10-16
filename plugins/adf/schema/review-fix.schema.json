@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf/review-fix.schema.json",
+  "title": "ADF review fix reply",
+  "description": "The fixer's reply for one finding: fixed with the commit, or a false-positive claim with its argument; the failure mode either way.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["finding", "outcome", "failureMode"],
+  "properties": {
+    "finding": { "type": "string", "pattern": "^F[1-9][0-9]*$" },
+    "outcome": { "enum": ["fixed", "false-positive"] },
+    "sha": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+    "failureMode": { "type": "string", "minLength": 1 },
+    "argument": { "type": "string", "minLength": 1 }
+  },
+  "allOf": [
+    { "if": { "properties": { "outcome": { "const": "fixed" } } }, "then": { "required": ["sha"] } },
+    { "if": { "properties": { "outcome": { "const": "false-positive" } } }, "then": { "required": ["argument"] } }
+  ]
+}

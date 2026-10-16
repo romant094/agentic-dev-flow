@@ -9,49 +9,22 @@
 // A file whose format has no comment syntax (JSON, for one) cannot carry a marker: markFile
 // refuses it, and the debt record alone carries the acceptance.
 import { execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync } from 'node:fs'
-import { basename, extname, isAbsolute, join, relative } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { isAbsolute, join, relative } from 'node:path'
+import { commentFor, dupText, parseMarker as parseAny, placeMarker } from './marker.mjs'
 
-const LINE = (open) => ({ open, close: '' })
-const BLOCK = (open, close) => ({ open, close })
-const SLASH = LINE('//')
-const HASH = LINE('#')
-const DASH = LINE('--')
-const HTML = BLOCK('<!--', '-->')
-
-// By extension, lower case; by whole basename for the files that have no extension.
-export const COMMENTS = {
-  ...Object.fromEntries(
-    ['js', 'mjs', 'cjs', 'jsx', 'ts', 'mts', 'cts', 'tsx', 'java', 'kt', 'kts', 'scala', 'groovy', 'gradle', 'c', 'h', 'cc', 'cpp', 'cxx', 'hpp', 'cs', 'go', 'rs', 'swift', 'dart', 'php', 'proto', 'jsonc', 'json5', 'scss', 'less'].map((e) => [e, SLASH])
-  ),
-  ...Object.fromEntries(
-    ['py', 'sh', 'bash', 'zsh', 'fish', 'rb', 'pl', 'pm', 'r', 'ps1', 'psm1', 'yaml', 'yml', 'toml', 'conf', 'cfg', 'mk', 'cmake', 'tf', 'tfvars', 'properties', 'env', 'dockerfile', 'nix', 'ex', 'exs', 'jl', 'coffee', 'graphql', 'gql'].map((e) => [e, HASH])
-  ),
-  ...Object.fromEntries(['sql', 'lua', 'hs', 'elm', 'ada'].map((e) => [e, DASH])),
-  ...Object.fromEntries(['md', 'markdown', 'html', 'htm', 'xml', 'xhtml', 'svg', 'xsl', 'xsd', 'plist'].map((e) => [e, HTML])),
-  css: BLOCK('/*', '*/'),
-  ...Object.fromEntries(['tex', 'sty', 'erl', 'hrl', 'm'].map((e) => [e, LINE('%')])),
-  ...Object.fromEntries(['clj', 'cljs', 'el', 'lisp', 'scm', 'asm', 'ini'].map((e) => [e, LINE(';')])),
-  vim: LINE('"')
-}
-export const BY_NAME = { Makefile: HASH, Dockerfile: HASH, Gemfile: HASH, Rakefile: HASH, '.gitignore': HASH, '.dockerignore': HASH, '.editorconfig': HASH }
-
-export function commentFor(file) {
-  const name = basename(file)
-  if (Object.hasOwn(BY_NAME, name)) return BY_NAME[name]
-  const ext = extname(name).slice(1).toLowerCase()
-  return ext && Object.hasOwn(COMMENTS, ext) ? COMMENTS[ext] : null
-}
+// The comment syntax table lives in lib/marker.mjs, shared with the review's markers.
+export { BY_NAME, COMMENTS, commentFor } from './marker.mjs'
 
 // The message of the commit `dup.mjs mark --commit` makes.
 export const markMessage = (file) => `chore: mark the accepted duplicate in ${file}`
 
-export const markerText = (existing, reason) => `ADF DUP ${existing} -- ${reason}`
+export const markerText = dupText
 
-// The marker on a line, in any comment syntax: { existing, reason } or null.
+// The DUP marker on a line, in any comment syntax: { existing, reason } or null.
 export function parseMarker(line) {
-  const m = /ADF DUP (.+?) -- (.*?)\s*(?:-->|\*\/)?\s*$/.exec(line)
-  return m ? { existing: m[1].trim(), reason: m[2].trim() } : null
+  const m = parseAny(line)
+  return m?.kind === 'dup' && m.existing && m.separated ? { existing: m.existing, reason: m.reason } : null
 }
 
 const toRelative = (root, file) => (isAbsolute(file) ? relative(root, file) : file).split('\\').join('/')
@@ -70,31 +43,7 @@ export function markFile(root, { file, line, existing, reason }) {
   }
   if (existing.includes(' -- ')) throw new Error('--existing must not contain " -- ", which ends it in the marker grammar')
   if (syntax.close && reason.includes(syntax.close)) throw new Error(`--reason must not contain "${syntax.close}", which would close the comment`)
-  const path = join(root, rel)
-  let text
-  try {
-    text = readFileSync(path, 'utf8')
-  } catch {
-    throw new Error(`cannot read ${rel} in ${root}`)
-  }
-  const eol = text.includes('\r\n') ? '\r\n' : '\n'
-  const lines = text.split(/\r?\n/)
-  let at
-  if (line === undefined || line === null) at = lines[0]?.startsWith('#!') ? 1 : 0
-  else {
-    const n = Number(line)
-    if (!Number.isInteger(n) || n < 1 || n > lines.length) throw new Error(`--line ${line} is not a line of ${rel} (1-${lines.length})`)
-    at = n - 1
-  }
-  // A marker already there: above the introduced line, or for the whole file on the marker line.
-  const there = line === undefined || line === null ? at : at - 1
-  const found = there >= 0 ? parseMarker(lines[there]) : null
-  if (found && found.existing === existing.trim()) return { file: rel, line: there + 1, marker: lines[there].trim(), already: true }
-  const indent = /^\s*/.exec(lines[at] ?? '')[0]
-  const marker = `${syntax.open} ${markerText(existing.trim(), reason.trim())}${syntax.close ? ` ${syntax.close}` : ''}`
-  lines.splice(at, 0, `${indent}${marker}`)
-  writeFileSync(path, lines.join(eol), 'utf8')
-  return { file: rel, line: at + 1, marker, already: false }
+  return placeMarker(root, { file: rel, line, body: markerText(existing.trim(), reason.trim()), same: (m) => m.kind === 'dup' && m.existing === existing.trim() })
 }
 
 // Every marker in the tracked and untracked (not ignored) files of the tree: { file, line,

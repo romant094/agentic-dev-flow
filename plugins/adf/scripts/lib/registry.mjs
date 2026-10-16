@@ -77,6 +77,29 @@ export function validateRegistry(registry) {
   if (outside !== undefined && (!Array.isArray(outside) || !outside.every((glob) => inside(glob) && glob.trim() === glob))) {
     errors.push('outsidePlan must be a list of glob patterns relative to the project root')
   }
+  // The review stage's settings (lib/review.mjs): the host prompt, globs added to or taken back
+  // from the default exclusion list, the diff size one reviewer takes, the blocking severities.
+  if (registry.review !== undefined) errors.push(...validateReviewSettings(registry.review))
+  return errors
+}
+
+export const SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
+const REVIEW_KEYS = ['prompt', 'exclude', 'include', 'maxBytes', 'blockOn']
+const globs = (value) => Array.isArray(value) && value.every((glob) => inside(glob) && glob.trim() === glob)
+
+export function validateReviewSettings(review) {
+  if (review === null || typeof review !== 'object' || Array.isArray(review)) return ['review must be an object']
+  const errors = []
+  for (const key of Object.keys(review)) if (!REVIEW_KEYS.includes(key)) errors.push(`review.${key} is not a review setting (${REVIEW_KEYS.join(', ')})`)
+  if (review.prompt !== undefined && !(inside(review.prompt) && review.prompt.trim() === review.prompt)) errors.push('review.prompt must be a path relative to the project root')
+  for (const key of ['exclude', 'include']) {
+    if (review[key] !== undefined && !globs(review[key])) errors.push(`review.${key} must be a list of glob patterns relative to the project root`)
+  }
+  if (review.maxBytes !== undefined && !(Number.isInteger(review.maxBytes) && review.maxBytes > 0)) errors.push('review.maxBytes must be a positive integer')
+  const blockOn = review.blockOn
+  if (blockOn !== undefined && !(Array.isArray(blockOn) && blockOn.length > 0 && blockOn.every((s) => SEVERITIES.includes(s)) && new Set(blockOn).size === blockOn.length)) {
+    errors.push(`review.blockOn must list distinct severities of ${SEVERITIES.join(', ')}`)
+  }
   return errors
 }
 
