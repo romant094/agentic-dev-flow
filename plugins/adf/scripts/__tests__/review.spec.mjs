@@ -178,7 +178,7 @@ test('start takes --range with no change and no registry, and refuses a range it
   assert.equal(parseRange('..b'), null)
   assert.throws(() => review(['start', '--range', 'a...b', '--root', root]), /is not a range/)
   assert.throws(() => review(['start', '--range', 'nope..HEAD', '--root', root]), /nope is not a commit/)
-  assert.throws(() => review(['start', '--root', root]), /exactly one of --change and --range/)
+  assert.throws(() => review(['start', '--root', root]), /--change, --range, or both/)
   assert.throws(() => review(['start', '--range', `${a}..HEAD`, '--round', '1', '--root', root]), /--round does not belong to start/)
 })
 
@@ -256,40 +256,43 @@ test('input writes the host prompt, the core block and the filtered diff; it nee
   assert.equal(cli(root, 'input', '--round', '1', '--range', `${a}..HEAD`, '--out', 'in.txt').out.error, 'no review prompt: set review.prompt in the registry, or pass --prompt <file>')
 })
 
-test('input from round 2 reads only the fix range after --since', () => {
-  const { change } = host()
-  write(change, '.review/prompt.md', 'Criteria.\n')
-  setReview(change, { prompt: '.review/prompt.md' })
-  commitAll(change, { 'src/a.ts': 'first version\n' })
-  const before = git(change, 'rev-parse', 'HEAD')
-  commitAll(change, { 'src/b.ts': 'the fix\n' }, 'fix F1')
-  assert.throws(() => review(['input', '--round', '2', '--change', 'add-x', '--out', 'x', '--root', change]), /pass --since/)
-  assert.throws(() => review(['input', '--round', '1', '--since', before, '--change', 'add-x', '--out', 'x', '--root', change]), /--since belongs to round 2/)
-  const out = review(['input', '--round', '2', '--since', before, '--change', 'add-x', '--out', join(change, 'r2.txt'), '--root', change])
+test('input without a change: round 2 and later read only the fix range after --since', () => {
+  const root = repo({ 'p.md': 'Criteria.\n' })
+  const a = git(root, 'rev-parse', 'HEAD')
+  commitAll(root, { 'src/a.ts': 'first version\n' })
+  const before = git(root, 'rev-parse', 'HEAD')
+  commitAll(root, { 'src/b.ts': 'the fix\n' }, 'fix F1')
+  const args = (...more) => ['input', '--range', `${a}..HEAD`, '--prompt', 'p.md', '--out', join(root, 'r2.txt'), '--root', root, ...more]
+  assert.throws(() => review(args('--round', '2'), { cwd: root }), /pass --since/)
+  assert.throws(() => review(args('--round', '1', '--since', before), { cwd: root }), /--since belongs to round 2/)
+  assert.throws(() => review(['input', '--round', '1', '--range', `${a}..HEAD`, '--prompt', 'p.md', '--root', root], { cwd: root }), /needs --out/)
+  const out = review(args('--round', '2', '--since', before), { cwd: root })
   assert.deepEqual([out.ok, out.files, out.range.since, out.range.base], [true, 1, before, before])
-  const text = readFileSync(join(change, 'r2.txt'), 'utf8')
+  const text = readFileSync(join(root, 'r2.txt'), 'utf8')
   assert.match(text, /This is review round 2/)
   assert.match(text, /\+the fix/)
   assert.doesNotMatch(text, /first version/)
 })
 
-test('input over review.maxBytes needs --slice and sends that slice only; an empty diff is refused', () => {
+test('input without a change over review.maxBytes needs --slice and sends that slice only; an empty diff is refused', () => {
   const { change } = host()
   write(change, 'p.md', 'Criteria.\n')
   setReview(change, { prompt: 'p.md', maxBytes: 300 })
-  const empty = review(['input', '--round', '1', '--change', 'add-x', '--out', join(change, 'x.txt'), '--root', change])
+  const base = git(change, 'rev-parse', 'HEAD')
+  const args = (...more) => ['input', '--round', '1', '--range', `${base}..HEAD`, '--root', change, ...more]
+  const empty = review(args('--out', join(change, 'x.txt')))
   assert.equal(empty.ok, false)
   assert.match(empty.error, /is empty: there is nothing to review/)
   commitAll(change, { 'apps/client/a.ts': 'a\n'.repeat(60), 'apps/server/b.ts': 'b\n'.repeat(60) })
-  const refused = review(['input', '--round', '1', '--change', 'add-x', '--out', join(change, 'x.txt'), '--root', change])
+  const refused = review(args('--out', join(change, 'x.txt')))
   assert.equal(refused.ok, false)
   assert.match(refused.error, /pass --slice <n>, 1-2/)
-  const out = review(['input', '--round', '1', '--slice', '2', '--change', 'add-x', '--out', join(change, 's2.txt'), '--root', change])
+  const out = review(args('--slice', '2', '--out', join(change, 's2.txt')))
   assert.deepEqual([out.ok, out.slice, out.files], [true, { index: 2, of: 2, dir: 'apps/server/' }, 1])
   const text = readFileSync(join(change, 's2.txt'), 'utf8')
   assert.match(text, /This is slice 2 of 2: the files under apps\/server\//)
   assert.doesNotMatch(text, /apps\/client\/a\.ts/)
-  assert.equal(review(['input', '--round', '1', '--slice', '3', '--change', 'add-x', '--out', join(change, 's.txt'), '--root', change]).ok, false)
+  assert.equal(review(args('--slice', '3', '--out', join(change, 's.txt'))).ok, false)
 })
 
 test('the core block names the blocking severities and the marker grammar, and no model', () => {

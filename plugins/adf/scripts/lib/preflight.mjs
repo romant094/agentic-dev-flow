@@ -14,7 +14,7 @@
 // checkout the developer has not yet chosen to continue the change.
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
-import { applyInstructions, artifactInstructions, changeDir, META_FILE } from './changes.mjs'
+import { applyInstructions, artifactInstructions, changeDir, CHANGES_DIR, META_FILE } from './changes.mjs'
 import { checkCommitPlace, Refusal } from './commit.mjs'
 import { mainCheckout } from './installed.mjs'
 import { appendRecord } from './ledger.mjs'
@@ -24,7 +24,7 @@ import { runPlanSymbols as planSymbols } from './plan-symbols-repo.mjs'
 import { initSdd } from './sdd.mjs'
 import { gitIn, suggest } from './workspace.mjs'
 
-export const PHASES = ['propose', 'apply', 'verify']
+export const PHASES = ['propose', 'apply', 'verify', 'review']
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
 function readBase(root, change) {
@@ -34,6 +34,37 @@ function readBase(root, change) {
   } catch {
     return null
   }
+}
+
+// Review reads the code verify verified: the verify record's `Verdict:` line is not FAIL, the
+// record is committed, and no commit after the one that last wrote it touches a path outside the
+// change directory. The record's verdict is its last `Verdict:` line, the one assemble writes.
+export const VERDICT_LINE = /^Verdict: (PASS WITH WARNINGS|PASS|FAIL)[ \t]*$/gm
+
+function verifiedCode(root, change, git) {
+  const record = `${CHANGES_DIR}/${change}/verify.md`
+  const verdict = [...readFileSync(join(root, record), 'utf8').matchAll(VERDICT_LINE)].at(-1)?.[1] ?? null
+  if (!verdict) return { refusal: `${record} has no Verdict: line; run /adf:verify ${change} again.` }
+  if (verdict === 'FAIL') return { verify: { verdict }, refusal: `${record} says Verdict: FAIL; fix what it names and run /adf:verify ${change} before the review.` }
+  let commit
+  let after
+  try {
+    commit = git('log', '-1', '--format=%H', '--', record)
+    after = commit ? git('log', '--no-renames', '--name-only', '--format=%x1e%H', `${commit}..HEAD`) : ''
+  } catch (error) {
+    return { refusal: `git failed to read the history of ${record} (${String(error.stderr || error.message).trim()}); check the worktree and run again.` }
+  }
+  if (!commit) return { verify: { verdict }, refusal: `${record} is not committed; run /adf:verify ${change} to assemble and commit it.` }
+  const prefix = `${CHANGES_DIR}/${change}/`
+  const outside = []
+  for (const chunk of after.split('\x1e').map((c) => c.trim()).filter(Boolean)) {
+    const [sha, ...files] = chunk.split('\n').map((l) => l.trim()).filter(Boolean)
+    if (files.some((f) => !f.startsWith(prefix))) outside.push(sha.slice(0, 7))
+  }
+  if (outside.length > 0) {
+    return { verify: { verdict, commit }, refusal: `commit(s) ${outside.join(', ')} after the verify record touch files outside ${prefix}: the code changed since it was verified; run /adf:verify ${change} again.` }
+  }
+  return { verify: { verdict, commit } }
 }
 
 async function changePhase(out, { phase, change, root, env, schema, git }) {
@@ -65,9 +96,14 @@ async function changePhase(out, { phase, change, root, env, schema, git }) {
     out.sdd = initSdd(root, change)
     if (!out.sdd.ok) return stop(out.sdd.error)
   } else {
-    const missing = artifactInstructions(root, change, 'verify', schema).dependencies.filter((d) => !d.done).map((d) => d.id)
+    const missing = artifactInstructions(root, change, phase, schema).dependencies.filter((d) => !d.done).map((d) => d.id)
     out.state = missing.length > 0 ? 'blocked' : 'ready'
-    if (missing.length > 0) return stop(`verify needs ${missing.join(', ')} done first; run /adf:propose ${change} to write it.`)
+    if (missing.length > 0) return stop(`${phase} needs ${missing.join(', ')} done first; run ${missing.includes('verify') ? `/adf:verify ${change}` : `/adf:propose ${change}`} to write it.`)
+    if (phase === 'review') {
+      const verified = verifiedCode(root, change, git)
+      out.verify = verified.verify ?? null
+      if (verified.refusal) return stop(verified.refusal)
+    }
   }
 
   // The session record is the ledger's, not a guard: a runtime without a session id still runs

@@ -31,6 +31,11 @@ export const SKILL_EDIT = { required: ['sha'], optional: ['message'] }
 // A handoff that blocks a group carries the orchestrator's reason (`apply-status.mjs handoff
 // --block`). The field is the port's own, so it is kept out of KINDS as well.
 export const HANDOFF_EXTRA = ['blockedReason']
+// A ruling on a review finding names what the developer decided: `ruling --finding F<n>
+// --as dismissed|accepted --decision <reason>` (lib/review-state.mjs reads it; a disposition
+// must match it). The field is the port's own, kept out of KINDS like HANDOFF_EXTRA.
+export const RULING_EXTRA = ['as']
+export const RULING_AS = ['dismissed', 'accepted']
 const SHA = /^[0-9a-f]{7,40}$/
 export const SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 
@@ -50,7 +55,8 @@ export function buildRecord(kind, fields, { existing = [], sessionId = null, now
   const checkRuling = kind === 'ruling' && ('check' in fields || 'reason' in fields)
   const spec = checkRuling ? CHECK_RULING : kind === 'skill-edit' ? SKILL_EDIT : KINDS[kind]
   if (!spec) throw new Error(`unknown kind "${kind}"; one of: ${Object.keys(KINDS).join(', ')}`)
-  const allowed = new Set([...spec.required, ...spec.optional, ...(kind === 'handoff' && !checkRuling ? HANDOFF_EXTRA : [])])
+  const extra = kind === 'handoff' ? HANDOFF_EXTRA : kind === 'ruling' && !checkRuling ? RULING_EXTRA : []
+  const allowed = new Set([...spec.required, ...spec.optional, ...extra])
   for (const key of Object.keys(fields)) {
     if (!allowed.has(key)) {
       // The message names the shape's own fields: HANDOFF_EXTRA is written by apply-status, not typed.
@@ -61,6 +67,7 @@ export function buildRecord(kind, fields, { existing = [], sessionId = null, now
     if (typeof fields[key] !== 'string' || fields[key].trim() === '') throw new Error(`${kind} needs --${key}`)
   }
   if (checkRuling && !CHECK_ID.test(fields.check)) throw new Error(`--check must be a check id such as out-of-plan, got "${fields.check}"`)
+  if (kind === 'ruling' && 'as' in fields && !RULING_AS.includes(fields.as)) throw new Error(`--as must be one of: ${RULING_AS.join(', ')}`)
   if (kind === 'skill-edit' && !SHA.test(fields.sha)) throw new Error(`--sha must be a commit sha in lower-case hex, got "${fields.sha}"`)
   if ('task' in fields && !/^\d+(\.\d+)?$/.test(fields.task)) {
     throw new Error(`--task must be a task number, got "${fields.task}"`)

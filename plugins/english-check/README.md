@@ -37,6 +37,8 @@ command line's sight, when they are run with `node <path>/<script>` or directly:
 | `suite.mjs run --change <name> --record --commit` | with `--commit` | `openspec/changes/<name>/.apply-test-record.md` |
 | `suite.mjs set --command <c> --commit` | with `--commit` | `openspec/planning.md` |
 | `dup.mjs mark --file <path> ... --commit` | with `--commit` | the `--file` path |
+| `review.mjs assemble --change <name> --commit` | with `--commit` | `openspec/changes/<name>/review.md` |
+| `review.mjs mark --file <path> ... --commit` | with `--commit` | the `--file` path |
 | `plan.mjs added [--change <name>] ... --commit` | with `--commit` | `openspec/changes/<name>/plan.md`; without `--change`, every change directory |
 
 Paths resolve against `--root`, or the command's directory without it. The list is

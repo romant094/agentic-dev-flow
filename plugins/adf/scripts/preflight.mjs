@@ -2,12 +2,14 @@
 // CLI over lib/preflight.mjs: everything a phase checks before its first step of work, in one
 // call. Prints one JSON object on stdout; exit 1 on a refusal, exit 2 on a usage error.
 //
-//   preflight.mjs --phase propose|apply|verify --change <name> [--root <dir>] [--home <dir>]
+//   preflight.mjs --phase propose|apply|verify|review --change <name> [--root <dir>] [--home <dir>]
 //
-// apply and verify: --root is the change worktree. The Superpowers gate (read for the main
+// apply, verify and review: --root is the change worktree. The Superpowers gate (read for the main
 // checkout); the root is its working tree's top level and not the main checkout; the current
 // branch is read without error, named, and not protected; the change exists there; its state
-// (apply: plan done and tasks left; verify: its dependencies done). apply also runs the plan
+// (apply: plan done and tasks left; verify and review: their dependencies done). review also
+// reads the verify record: its `Verdict:` line not FAIL, the record committed, and no commit
+// after it touching a path outside the change directory (`verify`: { verdict, commit }). apply also runs the plan
 // symbol check (--phase apply) and `sdd.mjs init`. On a pass the phase's session is recorded in
 // the ledger.
 //
@@ -19,11 +21,11 @@
 // $CLAUDE_CONFIG_DIR, else ~/.claude).
 //
 //   {"ok", "refusal"?, "phase", "change", "main", "root", "branch", "protected", "base", "state",
-//    "progress", "sdd", "planFindings"?, "ledger", "workspace"?}
+//    "progress", "sdd", "planFindings"?, "verify"?, "ledger", "workspace"?}
 import { isMain } from './lib/main.mjs'
 import { PHASES, preflight } from './lib/preflight.mjs'
 
-export const USAGE = 'usage: preflight.mjs --phase propose|apply|verify --change <name> [--root <dir>] [--home <dir>]'
+export const USAGE = 'usage: preflight.mjs --phase propose|apply|verify|review --change <name> [--root <dir>] [--home <dir>]'
 
 export class UsageError extends Error {}
 

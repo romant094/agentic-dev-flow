@@ -253,6 +253,15 @@ export const CORE_COMMIT_SCRIPTS = {
   },
   // dup.mjs mark --file <path> --commit: the marked file.
   'dup.mjs': (args) => (args[0] === 'mark' && args.includes('--commit') ? optionValues(args, '--file') : null),
+  // review.mjs assemble --change <name> --commit: the record; review.mjs mark --file <path>
+  // --commit: the marked file.
+  'review.mjs': (args) => {
+    if (!args.includes('--commit')) return null
+    const change = optionValues(args, '--change')[0]
+    if (args[0] === 'assemble' && change) return [`openspec/changes/${change}/review.md`]
+    if (args[0] === 'mark') return optionValues(args, '--file')
+    return null
+  },
   // plan.mjs added [--change <name>] --commit: plan.md; without --change the one active
   // change, which the hook cannot name, so every change directory.
   'plan.mjs': (args) => {

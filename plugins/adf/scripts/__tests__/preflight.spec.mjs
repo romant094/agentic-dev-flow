@@ -168,6 +168,38 @@ test('verify passes with its dependencies done and refuses without the plan', as
   assert.match(blocked.refusal, /verify needs plan/)
 })
 
+test('review reads the verify record: committed, its Verdict line not FAIL, and no code commit after it', async () => {
+  const { change, dir } = host()
+  const commitAll = (message) => {
+    git(change, 'add', '.')
+    git(change, 'commit', '-q', '-m', message)
+  }
+  assert.match((await check('review', change)).refusal, /review needs verify done first; run \/adf:verify add-x/)
+  writeFileSync(join(dir, 'verify.md'), '# Verification Report\n\nno verdict here\n')
+  assert.match((await check('review', change)).refusal, /verify\.md has no Verdict: line/)
+  writeFileSync(join(dir, 'verify.md'), '# Verification Report\n\nVerdict: PASS\n')
+  assert.match((await check('review', change)).refusal, /verify\.md is not committed/)
+  writeFileSync(join(dir, 'verify.md'), '# Verification Report\n\nVerdict: PASS\n\nVerdict: FAIL\n')
+  commitAll('verify')
+  const failed = await check('review', change)
+  assert.deepEqual([failed.ok, failed.verify], [false, { verdict: 'FAIL' }])
+  assert.match(failed.refusal, /says Verdict: FAIL/)
+  writeFileSync(join(dir, 'verify.md'), '# Verification Report\n\nVerdict: PASS WITH WARNINGS\n')
+  commitAll('verify again')
+  const recorded = git(change, 'rev-parse', 'HEAD')
+  writeFileSync(join(dir, 'notes.md'), 'a later note in the change directory\n')
+  commitAll('notes')
+  const out = await check('review', change)
+  assert.equal(out.ok, true, out.refusal)
+  assert.deepEqual(out.verify, { verdict: 'PASS WITH WARNINGS', commit: recorded })
+  assert.equal(JSON.parse(readFileSync(out.ledger.path, 'utf8').trim()).phase, 'review')
+  writeFileSync(join(change, 'a.txt'), 'changed code\n')
+  commitAll('code after verify')
+  const stale = await check('review', change)
+  assert.match(stale.refusal, new RegExp(`commit\\(s\\) ${git(change, 'rev-parse', '--short=7', 'HEAD')} after the verify record touch files outside openspec/changes/add-x/: .*run /adf:verify add-x again`))
+  assert.match((await check('review', host().root)).refusal, /main checkout/)
+})
+
 test('a missing session id still passes and says why nothing was recorded', async () => {
   const { change } = host()
   const out = await preflight({ phase: 'verify', change: 'add-x', root: change, env: {}, home: home() })
@@ -233,7 +265,7 @@ test('the CLI prints one JSON object and exits 0, 1 on a refusal, 2 on a usage e
   const refused = call('--phase', 'apply', '--change', 'add-x', '--root', root, '--home', h)
   assert.equal(refused.code, 1)
   assert.match(refused.out.refusal, /main checkout/)
-  for (const args of [['--phase', 'review', '--change', 'add-x'], ['--phase', 'apply'], ['--phase', 'apply', '--change'], ['--change', 'add-x', 'extra']]) {
+  for (const args of [['--phase', 'archive', '--change', 'add-x'], ['--phase', 'apply'], ['--phase', 'apply', '--change'], ['--change', 'add-x', 'extra']]) {
     const usage = call(...args)
     assert.equal(usage.code, 2, args.join(' '))
     assert.ok(usage.out.usage)

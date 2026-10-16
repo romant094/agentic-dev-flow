@@ -47,6 +47,10 @@ import { gitIn } from './workspace.mjs'
 export const PLANNING_FILE = 'openspec/planning.md'
 export const HEADING = '## Whole-suite command'
 export const SECTION_ID = 'test-record'
+// `--section review`: the run after the review stage's last fix, always with the base check,
+// written to the review state as `review/suite.json` (lib/review-state.mjs reads it).
+export const REVIEW_SECTION = 'review'
+export const SECTIONS = [SECTION_ID, REVIEW_SECTION]
 export const TAIL_LINES = 40
 // Lines of the real output quoted in the committed record; the whole output stays in its file.
 export const QUOTE_LINES = 60
@@ -347,14 +351,42 @@ function writeSection(root, change, result) {
   return { file: rel(root, file), ...section }
 }
 
+// The review stage's record of the run: what review.mjs assemble renders and gates on.
+function writeReviewSection(root, change, result) {
+  const dir = join(root, '.superpowers', 'sdd', change, 'review')
+  mkdirSync(dir, { recursive: true })
+  const b = result.base
+  const record = {
+    at: result.now,
+    status: result.status,
+    commit: result.commit ?? null,
+    command: result.command,
+    exit: result.exit,
+    ...(result.reason ? { reason: result.reason } : {}),
+    ...(result.timedOut ? { timedOut: true } : {}),
+    counts: result.counts,
+    outputFile: result.outputFile,
+    base: b ? { ref: b.ref ?? null, commit: b.commit ?? null, exit: b.exit ?? null, outputFile: b.outputFile ?? null, cannotRun: Boolean(b.cannotRun), ...(b.error ? { error: b.error } : {}) } : null,
+    comparison: result.comparison ?? 'none',
+    preExisting: result.preExisting,
+    newFailures: result.newFailures,
+    blocking: result.blocking
+  }
+  const file = join(dir, 'suite.json')
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  return { file: rel(root, file), ...record }
+}
+
 // ---------------------------------------------------------------- run
 
-export function runSuite(rootArg, { change, baseCheck: withBase = false, record = false, section = null, timeoutMinutes = DEFAULT_TIMEOUT_MINUTES, now = new Date().toISOString() }) {
+export function runSuite(rootArg, { change, baseCheck: withBaseArg = false, record = false, section = null, timeoutMinutes = DEFAULT_TIMEOUT_MINUTES, now = new Date().toISOString() }) {
   const root = resolve(rootArg)
   if (!change) throw new Error('no change name')
   if (!(typeof timeoutMinutes === 'number' && timeoutMinutes > 0 && Number.isFinite(timeoutMinutes))) throw new Error('the timeout must be a positive number of minutes')
   if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
-  if (section !== null && section !== SECTION_ID) throw new Error(`--section must be ${SECTION_ID}`)
+  if (section !== null && !SECTIONS.includes(section)) throw new Error(`--section must be one of ${SECTIONS.join(', ')}`)
+  // The review's run tells a new failure from a pre-existing one, so it always checks the base.
+  const withBase = withBaseArg || section === REVIEW_SECTION
   const git = gitIn(root)
   const { command, reason } = readCommand(root)
   let result
@@ -405,6 +437,7 @@ export function runSuite(rootArg, { change, baseCheck: withBase = false, record 
     writeFileSync(file, recordText(result))
     out.record = rel(root, file)
   }
-  if (section) out.section = writeSection(root, change, result)
+  if (section === SECTION_ID) out.section = writeSection(root, change, result)
+  else if (section === REVIEW_SECTION) out.section = writeReviewSection(root, change, result)
   return out
 }

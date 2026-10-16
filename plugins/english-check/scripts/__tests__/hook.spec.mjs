@@ -321,6 +321,20 @@ test('verify.mjs skill-edit --diff-file checks the lines the diff adds, by their
   assert.equal(hook(cmd('clean.diff'), r.root).code, 0)
 })
 
+test('review.mjs assemble and mark check what they commit only with --commit', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('openspec/changes/x/review.md', `${RU}\n`)
+  r.write('openspec/changes/x/notes.md', `${RU}\n`)
+  const assemble = `node /p/scripts/review.mjs assemble --change x --root ${r.root}`
+  assert.match(hook(`${assemble} --commit`, '/').stderr, /openspec\/changes\/x\/review\.md:1: /)
+  assert.equal(hook(assemble, '/').code, 0)
+  const mark = `node /p/scripts/review.mjs mark --file openspec/changes/x/notes.md --line 1 --key CWE-79 --reason r --root ${r.root}`
+  assert.match(hook(`${mark} --commit`, '/').stderr, /openspec\/changes\/x\/notes\.md:1: /)
+  assert.equal(hook(mark, '/').code, 0)
+  assert.equal(hook(`node /p/scripts/review.mjs start --change x --commit --root ${r.root}`, '/').code, 0)
+})
+
 test('suite.mjs, dup.mjs and plan.mjs check what they commit only with --commit', (t) => {
   const r = repo()
   t.after(() => rmSync(r.root, { recursive: true, force: true }))

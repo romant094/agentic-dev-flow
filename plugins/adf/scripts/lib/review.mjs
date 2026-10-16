@@ -280,6 +280,8 @@ export function planTouch(root, change, changed) {
 // ---------------------------------------------------------------- payload
 
 const list = (items) => items.join(', ')
+export const cell = (text) => String(text ?? '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+export const where = (f) => (f.line === null || f.line === undefined ? f.file : `${f.file}:${f.line}`)
 
 // The block the core appends to the host prompt: the reply's JSON schema, the severities and
 // which of them block, and the marker grammar. The host prompt holds the criteria only.
@@ -310,9 +312,27 @@ export function coreBlock({ blockOn = DEFAULT_BLOCK_ON, schemaText = readFileSyn
   ].join('\n')
 }
 
+// The previous round's findings the fix range was made for, from round 2: each with its state
+// now and the fixer's failure mode. `previous` is [{ id, severity, file, line, title, body,
+// state, failureMode }].
+export function previousBlock(round, previous) {
+  const lines = [
+    `## Round ${round - 1} findings`,
+    '',
+    `The fix range below was made for these findings of round ${round - 1}. Each gives its state now and, where a fixer answered it, the failure mode the fixer stated. Check each fix against its stated failure mode: a fix can miss its finding, fix it in part or add a new defect, and each of these is a finding of this round.`,
+    ''
+  ]
+  for (const f of previous) {
+    lines.push(`### ${f.id} (${f.severity}): ${f.title}`, '', `Location: \`${where(f)}\`. State: ${f.state}.`, '', f.body.trim(), '')
+    lines.push(`Failure mode: ${f.failureMode ? f.failureMode.trim() : 'none stated: no fixer answered this finding.'}`, '')
+  }
+  return lines.join('\n').trimEnd()
+}
+
 // The reviewer's whole input: the host prompt, the core block, then the diff. From round 2 the
-// diff is the fix range only; a slice says which part of the diff it is.
-export function buildPayload({ prompt, diff, range, blockOn = DEFAULT_BLOCK_ON, round = 1, slice = null, schemaText }) {
+// diff is the fix range only, after the previous round's findings; a slice says which part of
+// the diff it is.
+export function buildPayload({ prompt, diff, range, blockOn = DEFAULT_BLOCK_ON, round = 1, slice = null, previous = [], schemaText }) {
   const scope = []
   if (round > 1) {
     scope.push(`This is review round ${round}. The diff is the fix range ${range.spec}: the commits made to fix the previous round's findings. Review it on its own merits; do not rely on the previous round's verdict.`)
@@ -327,6 +347,7 @@ export function buildPayload({ prompt, diff, range, blockOn = DEFAULT_BLOCK_ON, 
     '',
     coreBlock({ blockOn, ...(schemaText ? { schemaText } : {}) }),
     '',
+    ...(round > 1 && previous.length ? [previousBlock(round, previous), ''] : []),
     '## Diff',
     '',
     ...(scope.length ? [...scope, ''] : []),
@@ -336,6 +357,28 @@ export function buildPayload({ prompt, diff, range, blockOn = DEFAULT_BLOCK_ON, 
     '',
     diff
   ].join('\n')
+}
+
+// The reviewer's input for a range: { ok: true, payload, files, bytes, slice, slices } or
+// { ok: false, error, ... }. Over `config.maxBytes` the diff goes by slices and `slice` (1-based)
+// picks one; `slicesApproved` false refuses a slice, with the proposal and its proof to show.
+export function prepareInput(root, { range, config, prompt, round = 1, slice = null, previous = [], slicesApproved = true }) {
+  const { files, diffs } = collect(root, range, config)
+  if (files.length === 0) return { ok: false, error: `the filtered diff of ${range.spec} is empty: there is nothing to review`, range }
+  const slices = proposeSlices(files, config.maxBytes)
+  let chosen = files.map((f) => f.file)
+  let picked = null
+  if (slices) {
+    if (slice === null) return { ok: false, error: `the diff is over review.maxBytes (${config.maxBytes}): pass --slice <n>, 1-${slices.length}, as start proposed`, range, slices: slices.length }
+    if (!slicesApproved) return { ok: false, error: 'the slices have no developer approval: the developer approves them with a review-slices ruling', needsRuling: true, range, slices, proof: coverageProof(files, slices) }
+    const s = slices[slice - 1]
+    if (!s) return { ok: false, error: `--slice ${slice} is not a slice: 1-${slices.length}`, range }
+    chosen = s.files
+    picked = { index: s.index, of: slices.length, dir: s.dir }
+  } else if (slice !== null) return { ok: false, error: `the diff fits one reviewer (${config.maxBytes} bytes): there are no slices`, range }
+  const diff = chosen.map((f) => diffs.get(f)).join('')
+  const payload = buildPayload({ prompt, diff, range, blockOn: config.blockOn, round, slice: picked, previous })
+  return { ok: true, payload, files: chosen.length, bytes: Buffer.byteLength(diff, 'utf8'), slice: picked, slices: slices ? slices.length : null }
 }
 
 // ---------------------------------------------------------------- the replies
@@ -441,8 +484,6 @@ export function computeVerdict(findings, { blockOn = DEFAULT_BLOCK_ON, dispositi
   return { verdict: blocking.length > 0 ? 'BLOCKED' : 'PASS', blocking, counts, blockOn }
 }
 
-const cell = (text) => String(text ?? '').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
-const where = (f) => (f.line === null || f.line === undefined ? f.file : `${f.file}:${f.line}`)
 
 // The reply as markdown: summary, verdict, counts per severity, the table and each body. The
 // text of review.md and of a merge request comment.

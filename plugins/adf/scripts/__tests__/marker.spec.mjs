@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } fro
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import * as dup from '../lib/dup.mjs'
-import { commentFor, COMMENTS, KEY, markIgnore, pairErrors, parseMarker, scanMarkers } from '../lib/marker.mjs'
+import { commentFor, COMMENTS, coveringIgnore, KEY, markIgnore, markIgnoreBlock, pairErrors, parseMarker, scanMarkers } from '../lib/marker.mjs'
 import { FINDINGS_SCHEMA_PATH, readSchema } from '../lib/review.mjs'
 import { run as review } from '../review.mjs'
 
@@ -80,6 +80,30 @@ test('mark writes the IGNORE marker above the line, in the file syntax, with its
   assert.throws(() => markIgnore(root, { file: 'src/a.ts', line: 1, key: 'CWE-1', reason: 'two\nlines' }), /one line/)
   assert.throws(() => markIgnore(root, { file: 'src/a.ts', line: 99, key: 'CWE-1', reason: 'r' }), /is not a line/)
   assert.throws(() => review(['mark', '--file', 'src/a.ts', '--key', 'CWE-1', '--reason', 'r', '--root', root]), /mark needs/)
+})
+
+test('mark --end-line writes the START/END pair around the lines, refuses one that would nest, and covers the block', () => {
+  const root = repo({ 'src/a.ts': 'function f() {\n  a()\n  b()\n}\n', 'x.html': '<p>\n</p>\n' })
+  const out = review(['mark', '--file', 'src/a.ts', '--line', '2', '--end-line', '3', '--key', 'CWE-78', '--reason', 'trusted input', '--root', root])
+  assert.deepEqual(out, { ok: true, file: 'src/a.ts', line: 2, endLine: 5, marker: '// ADF IGNORE-START CWE-78 -- trusted input', already: false })
+  const lines = readFileSync(join(root, 'src/a.ts'), 'utf8').split('\n')
+  assert.deepEqual(lines, ['function f() {', '  // ADF IGNORE-START CWE-78 -- trusted input', '  a()', '  b()', '  // ADF IGNORE-END', '}', ''])
+  assert.equal(markIgnoreBlock(root, { file: 'src/a.ts', line: 3, endLine: 4, key: 'CWE-78', reason: 'r' }).already, true)
+  assert.throws(() => markIgnoreBlock(root, { file: 'src/a.ts', line: 4, endLine: 4, key: 'CWE-1', reason: 'r' }), /would break the blocks of src\/a\.ts/)
+  assert.throws(() => markIgnoreBlock(root, { file: 'src/a.ts', line: 3, endLine: 2, key: 'CWE-1', reason: 'r' }), /--end-line 2 is not a line/)
+  assert.deepEqual(coveringIgnore(lines, 4, 'CWE-78'), { line: 2, kind: 'start', key: 'CWE-78' })
+  assert.equal(coveringIgnore(lines, 4, 'CWE-79'), null)
+  assert.equal(coveringIgnore(lines, 6), null)
+  assert.deepEqual(coveringIgnore(['// ADF IGNORE CWE-1 -- r', 'x'], 2), { line: 1, kind: 'ignore', key: 'CWE-1' })
+  assert.equal(coveringIgnore(['// ADF IGNORE -- keyless', 'x'], 2), null)
+  markIgnoreBlock(root, { file: 'x.html', line: 1, endLine: 2, key: 'CWE-79', reason: 'static' })
+  assert.equal(readFileSync(join(root, 'x.html'), 'utf8'), '<!-- ADF IGNORE-START CWE-79 -- static -->\n<p>\n</p>\n<!-- ADF IGNORE-END -->\n')
+  assert.deepEqual(review(['markers', '--root', root]).invalid, [])
+})
+
+test('mark --commit commits the marked file alone through the commit library', () => {
+  const root = repo({ 'src/a.ts': 'x\n' })
+  assert.throws(() => review(['mark', '--file', 'src/a.ts', '--line', '1', '--key', 'CWE-1', '--reason', 'r', '--commit', '--root', root]), /main checkout|branch policy/)
 })
 
 test('markers lists every marker of the tree and refuses a keyless or unpaired one', () => {

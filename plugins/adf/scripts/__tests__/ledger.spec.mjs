@@ -44,6 +44,15 @@ test('refuses a field its kind does not take, instead of keeping prose it cannot
   assert.throws(() => buildRecord('debt', { what: 'a', reason: 'b', note: 'c' }), /debt takes no --note; it takes --what, --reason, --task, --accepted/)
 })
 
+test('a ruling on a review finding names what the developer decided, dismissed or accepted', () => {
+  const r = buildRecord('ruling', { finding: 'F3', as: 'dismissed', decision: 'the value is a constant' }, { now })
+  assert.deepEqual([r.id, r.finding, r.as], ['ruling-1', 'F3', 'dismissed'])
+  assert.throws(() => buildRecord('ruling', { finding: 'F3', as: 'fixed', decision: 'd' }), /--as must be one of: dismissed, accepted/)
+  assert.throws(() => buildRecord('ruling', { check: 'review-slices', reason: 'r', as: 'accepted' }), /ruling takes no --as; it takes --check, --reason/)
+  assert.throws(() => buildRecord('ruling', { finding: 'F3', decision: 'd', note: 'x' }), /ruling takes no --note; it takes --finding, --decision, --task/)
+  assert.equal(buildRecord('ruling', { check: 'review-round-4', reason: 'one more' }).check, 'review-round-4')
+})
+
 test('refuses an unknown kind and a task that is not a task number', () => {
   assert.throws(() => buildRecord('dispatch', {}), /unknown kind "dispatch"; one of: session, deviation, debt, ruling, handoff, resolve/)
   assert.throws(

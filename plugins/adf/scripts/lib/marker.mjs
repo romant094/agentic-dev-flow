@@ -140,10 +140,76 @@ export function placeMarker(root, { file, line, body, same = () => false }) {
 // Writes `ADF IGNORE <key> -- <reason>` above `line`. The same key already there is left alone.
 export function markIgnore(root, { file, line, key, reason }) {
   if (line === undefined || line === null) throw new Error('--line is required: an IGNORE marker stands above the line it covers')
+  checkKeyReason(key, reason)
+  return placeMarker(root, { file, line, body: ignoreText(key, reason.trim()), same: (m) => m.kind === 'ignore' && m.key === key })
+}
+
+function checkKeyReason(key, reason) {
   if (typeof key !== 'string' || !KEY.test(key)) throw new Error(`--key "${key ?? ''}" is not a marker key (one upper-case identifier, such as CWE-79)`)
   if (typeof reason !== 'string' || !reason.trim()) throw new Error('--reason is empty')
   if (/[\r\n]/.test(reason)) throw new Error('--reason must be one line')
-  return placeMarker(root, { file, line, body: ignoreText(key, reason.trim()), same: (m) => m.kind === 'ignore' && m.key === key })
+}
+
+// Writes `ADF IGNORE-START <key> -- <reason>` above `line` and `ADF IGNORE-END` below `endLine`,
+// both with the indentation of `line`. The pair already there, with the same key, is left alone.
+// A pair that would nest in, or cross, another block is refused before anything is written.
+export function markIgnoreBlock(root, { file, line, endLine, key, reason }) {
+  checkKeyReason(key, reason)
+  const rel = toRelative(root, file)
+  const syntax = commentFor(rel)
+  if (!syntax) throw new Error(`${rel} has no comment syntax this script knows; it cannot carry a marker`)
+  const body = `ADF IGNORE-START ${key} -- ${reason.trim()}`
+  if (syntax.close && body.includes(syntax.close)) throw new Error(`the marker must not contain "${syntax.close}", which would close the comment`)
+  const path = join(root, rel)
+  let text
+  try {
+    text = readFileSync(path, 'utf8')
+  } catch {
+    throw new Error(`cannot read ${rel} in ${root}`)
+  }
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  const lines = text.split(/\r?\n/)
+  // A final newline leaves an empty last element, which is no line of the file.
+  const count = lines.at(-1) === '' ? lines.length - 1 : lines.length
+  const first = Number(line)
+  const last = Number(endLine)
+  if (!Number.isInteger(first) || first < 1 || first > count) throw new Error(`--line ${line} is not a line of ${rel} (1-${count})`)
+  if (!Number.isInteger(last) || last < first || last > count) throw new Error(`--end-line ${endLine} is not a line of ${rel} from --line on (${first}-${count})`)
+  const above = first >= 2 ? parseMarker(lines[first - 2]) : null
+  const below = last < lines.length ? parseMarker(lines[last]) : null
+  if (above?.kind === 'start' && above.key === key && !above.error && below?.kind === 'end' && !below.error) {
+    return { file: rel, line: first - 1, endLine: last + 1, marker: lines[first - 2].trim(), already: true }
+  }
+  const indent = /^\s*/.exec(lines[first - 1])[0]
+  const wrap = (b) => `${indent}${syntax.open} ${b}${syntax.close ? ` ${syntax.close}` : ''}`
+  const next = [...lines]
+  next.splice(last, 0, wrap('ADF IGNORE-END'))
+  next.splice(first - 1, 0, wrap(body))
+  const markers = []
+  next.forEach((l, i) => {
+    const m = parseMarker(l)
+    if (m) markers.push({ ...m, line: i + 1 })
+  })
+  const errors = pairErrors(markers)
+  if (errors.length > 0) throw new Error(`the pair would break the blocks of ${rel}: line ${errors[0].line}: ${errors[0].error}`)
+  writeFileSync(path, next.join(eol), 'utf8')
+  return { file: rel, line: first, endLine: last + 2, marker: wrap(body).trim(), already: false }
+}
+
+// The IGNORE marker that covers line `n` (1-based) of a file's lines: a valid `ADF IGNORE` on the
+// line directly above it, or a valid `ADF IGNORE-START` above it whose block is still open at it.
+// With `key`, only a marker of that key covers the line. { line, kind, key } or null.
+export function coveringIgnore(lines, n, key = null) {
+  const fits = (m) => Boolean(m) && !m.error && (key === null || m.key === key)
+  const above = n >= 2 ? parseMarker(lines[n - 2]) : null
+  if (above?.kind === 'ignore' && fits(above)) return { line: n - 1, kind: 'ignore', key: above.key }
+  let open = null
+  for (let i = 0; i < n - 1; i++) {
+    const m = parseMarker(lines[i])
+    if (m?.kind === 'start') open = { ...m, line: i + 1 }
+    else if (m?.kind === 'end') open = null
+  }
+  return fits(open) ? { line: open.line, kind: 'start', key: open.key } : null
 }
 
 // Every marker in the tracked and untracked (not ignored) files of the tree, and the invalid

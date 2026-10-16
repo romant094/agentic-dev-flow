@@ -6,6 +6,14 @@
 //   ledger.mjs ruling --change <name> --check <id> --reason <text>
 //                                                            a developer ruling accepting a
 //                                                            failing verify check
+//   ledger.mjs ruling --change <name> --finding F<n> --as dismissed|accepted --decision <text>
+//                                                            a developer ruling on a review
+//                                                            finding, which review.mjs
+//                                                            disposition requires
+//   ledger.mjs ruling --change <name> --check review-<id> --reason <text>
+//                                                            a ruling of the review stage:
+//                                                            review-range, review-slices,
+//                                                            review-suite, review-round-<k>
 //   ledger.mjs skill-edit --change <name> --sha <commit> [--message <m>]
 //                                                            an approved skill edit's commit,
 //                                                            which every later verify run exempts
@@ -24,7 +32,7 @@ Kinds: ${Object.entries(KINDS)
     ([k, v]) =>
       `${k} (${v.required.map((f) => `--${f}`).join(' ')}${v.optional.length ? ` [${v.optional.map((f) => `--${f}`).join(' ')}]` : ''})`
   )
-  .join('; ')}; ruling on a verify check (--check --reason); skill-edit (--sha [--message])`
+  .join('; ')}; ruling on a verify check or a review stage step (--check --reason); ruling on a review finding (--finding --as dismissed|accepted --decision); skill-edit (--sha [--message])`
 
 export function run(argv, { env = process.env, cwd = process.cwd() } = {}) {
   const [kind, ...rest] = argv
