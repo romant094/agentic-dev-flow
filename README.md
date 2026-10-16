@@ -21,7 +21,8 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Apply: one orchestrator, task groups in parallel worktrees, the capability-level agents, the dispatch guard, reply checks, push through the forge | done (iteration 07) |
 | Verify: the mechanical checks and the verdict by script, read-only judgement dispatches, developer rulings, the base check as a workspace operation | done (iteration 08) |
 | Scripts first: every deterministic step of propose, apply and verify is a script; the LLM keeps the reasoning work | done (iteration 08a) |
-| The rest of the cycle (review, archive) | not ported |
+| Review: the reviewer and the fixer reply in JSON, the verdict, the rounds, the dispositions, the markers and the record by script; `input`, `response` and `render` run standalone for a CI job | done (iteration 09) |
+| Archive | not ported |
 | Metrics, retrospective | not ported |
 | Wiki memory and technical debt | not ported |
 | Plugins: tracker (Jira), project stack | not started |
