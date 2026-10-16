@@ -32,10 +32,11 @@ export const SKILL_EDIT = { required: ['sha'], optional: ['message'] }
 // --block`). The field is the port's own, so it is kept out of KINDS as well.
 export const HANDOFF_EXTRA = ['blockedReason']
 // A ruling on a review finding names what the developer decided: `ruling --finding F<n>
-// --as dismissed|accepted --decision <reason>` (lib/review-state.mjs reads it; a disposition
-// must match it). The field is the port's own, kept out of KINDS like HANDOFF_EXTRA.
+// --as dismissed|accepted|fix --decision <reason>` (lib/review-state.mjs reads it; a disposition
+// must match it; `fix` rejects a fixer's false-positive claim, and the fix plan lists the finding
+// again). The field is the port's own, kept out of KINDS like HANDOFF_EXTRA.
 export const RULING_EXTRA = ['as']
-export const RULING_AS = ['dismissed', 'accepted']
+export const RULING_AS = ['dismissed', 'accepted', 'fix']
 const SHA = /^[0-9a-f]{7,40}$/
 export const SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 

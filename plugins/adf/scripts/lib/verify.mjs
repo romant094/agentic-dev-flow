@@ -598,7 +598,7 @@ export function renderReport(result, { change, commit = null } = {}) {
 }
 
 function nextStep(result) {
-  if (result.verdict !== 'FAIL') return "the review, which reads the record's Verdict line."
+  if (result.verdict !== 'FAIL') return "/adf:review, which reads the record's Verdict line."
   return `fix what each failing check names (${result.failing.join(', ')}): the artifact, the code through a new apply round, or the plan with the developer's approval; then run /adf:verify again.`
 }
 
@@ -974,7 +974,7 @@ export function assemble(rootArg, { change, commit = false, template = TEMPLATE,
       for (const i of result.ignoredRulings) lines.push(`- \`${i.check}\`: ignored (${i.id}): ${i.reason}`)
       body = lines.length ? lines : ['none']
     } else {
-      body = [result.verdict === 'FAIL' ? `Fix what each failing check names, then run verify again:\n\n${result.checks.filter((c) => c.verdict === 'fail' && !c.accepted).map((c) => `- \`${c.id}\`: ${c.summary}`).join('\n')}` : "The review, which reads this record's Verdict line."]
+      body = [result.verdict === 'FAIL' ? `Fix what each failing check names, then run verify again:\n\n${result.checks.filter((c) => c.verdict === 'fail' && !c.accepted).map((c) => `- \`${c.id}\`: ${c.summary}`).join('\n')}` : "`/adf:review`, which reads this record's Verdict line."]
     }
     out.push('', `## ${heading}`, '', ...body)
   }

@@ -89,8 +89,8 @@ test('a run: start, round, input, response, fixplan, fix, recorded, a second rou
   const stored = R(change, 'response', '--change', 'add-x', '--round', '1', '--file', reply(change, 'ai-review-r1-2', findings(finding('F1', 'HIGH'), finding('F2', 'MEDIUM', { line: 3 }))))
   assert.deepEqual([stored.ok, stored.complete, stored.ids, stored.verdict, stored.blocking], [true, true, ['F1', 'F2'], 'BLOCKED', ['F1']])
   const plan = R(change, 'fixplan', '--change', 'add-x', '--round', '1')
-  assert.deepEqual(plan.waves, [[{ finding: 'F1', severity: 'HIGH', file: 'src/a.ts', line: 2, title: 'title F1', name: 'ai-fix F1 r1', level: 'integration' }]])
-  assert.equal(JSON.parse(readFileSync(plan.findingsFile, 'utf8')).findings[0].id, 'F1')
+  const f1 = { finding: 'F1', severity: 'HIGH', file: 'src/a.ts', line: 2, title: 'title F1', name: 'ai-fix F1 r1', level: 'integration' }
+  assert.deepEqual([plan.next, plan.fixes, plan.awaitingDeveloper], [f1, [f1], []])
 
   const { sha, out } = fix(change, 1, 'F1', { 'src/a.ts': 'line1\nline2 fixed\nline3\n' })
   assert.deepEqual([out.ok, out.sha, out.tests], [true, sha, []])
@@ -130,6 +130,7 @@ test('a run: start, round, input, response, fixplan, fix, recorded, a second rou
   const check = R(change, 'check', '--file', record.file)
   assert.deepEqual([check.ok, check.verdict, check.commit, check.rounds, check.counts], [true, 'PASS', reviewedAt, 2, { CRITICAL: 0, HIGH: 1, MEDIUM: 1, LOW: 0 }])
   assert.deepEqual(check.dispositions.map((d) => [d.id, d.kind]), [['F1', 'fixed'], ['F2', 'recorded']])
+  assert.deepEqual(check.warnings, [])
 })
 
 test('a second invalid reply stops the stage until start --fresh', () => {
@@ -156,7 +157,8 @@ test('a fix is one commit in the fix range touching its finding file and tests o
   const change = setup({ files: { 'src/a.ts': 'a1\na2\n', 'src/b.ts': 'b1\n' } })
   reviewed(change, finding('F1', 'HIGH', { line: 1 }), finding('F2', 'HIGH', { file: 'src/b.ts', line: 1 }), finding('F3', 'CRITICAL'))
   const plan = R(change, 'fixplan', '--change', 'add-x', '--round', '1')
-  assert.deepEqual(plan.waves.map((w) => w.map((e) => e.name)), [['ai-fix F1 r1', 'ai-fix F2 r1'], ['ai-fix F3 r1']])
+  // One fixer at a time, in one worktree: same-file findings adjacent, the first file first.
+  assert.deepEqual([plan.next.name, plan.fixes.map((e) => e.name)], ['ai-fix F1 r1', ['ai-fix F1 r1', 'ai-fix F3 r1', 'ai-fix F2 r1']])
   const fixFile = (name, value) => R(change, 'fix', '--change', 'add-x', '--round', '1', '--file', reply(change, name, value))
   const old = git(change, 'rev-parse', 'HEAD~1')
   assert.match(fixFile('x1', { finding: 'F1', outcome: 'fixed', sha: old, failureMode: 'm' }).error, /is not in round 1's fix range/)
@@ -173,9 +175,27 @@ test('a fix is one commit in the fix range touching its finding file and tests o
   assert.deepEqual([claim.ok, claim.awaiting], [true, 'developer'])
   assert.match(claim.next, /ruling --change add-x --finding F2 --as dismissed/)
   const again = R(change, 'fixplan', '--change', 'add-x', '--round', '1')
-  assert.deepEqual([again.waves.map((w) => w.map((e) => e.finding)), again.awaitingDeveloper], [[['F3']], [{ finding: 'F2', argument: 'src/b.ts:1 is a constant' }]])
+  assert.deepEqual([again.next.finding, again.fixes.map((e) => e.finding), again.awaitingDeveloper], ['F3', ['F3'], [{ finding: 'F2', argument: 'src/b.ts:1 is a constant' }]])
   assert.match(fixFile('x6', '{"finding": "F3"}').error, /invalid/)
   assert.equal(TEST_FILE.test('apps/x/__tests__/a.spec.mjs') && TEST_FILE.test('pkg/a_test.go') && !TEST_FILE.test('src/latest.ts'), true)
+})
+
+test('a false-positive claim the developer rejects is listed again as a fix, with the argument and the decision; --also is kept', () => {
+  const change = setup({ files: { 'src/a.ts': 'a1\na2\n', 'src/b.ts': 'b1\n' } })
+  reviewed(change, finding('F1', 'HIGH', { file: 'src/b.ts', line: 1 }), finding('F2', 'LOW', { line: 1 }))
+  assert.deepEqual(R(change, 'fixplan', '--change', 'add-x', '--round', '1', '--also', 'F2').fixes.map((e) => e.finding), ['F1', 'F2'])
+  const claim = { finding: 'F1', outcome: 'false-positive', failureMode: 'b1 is never null', argument: 'src/b.ts:1 is a constant' }
+  R(change, 'fix', '--change', 'add-x', '--round', '1', '--file', reply(change, 'fp1', claim))
+  const waiting = R(change, 'fixplan', '--change', 'add-x', '--round', '1')
+  assert.deepEqual([waiting.next.finding, waiting.awaitingDeveloper.map((c) => c.finding)], ['F2', ['F1']])
+  const ruling = rule(change, { finding: 'F1', as: 'fix', decision: 'b1 is read from the request' })
+  const listed = R(change, 'fixplan', '--change', 'add-x', '--round', '1')
+  assert.deepEqual([listed.next.finding, listed.awaitingDeveloper], ['F1', []])
+  assert.deepEqual(listed.next.rejected, { argument: 'src/b.ts:1 is a constant', decision: 'b1 is read from the request', ruling: ruling.id })
+  assert.match(R(change, 'disposition', '--change', 'add-x', '--finding', 'F1', '--as', 'dismissed').error, /ruled F1 fix .*, not dismissed/)
+  // A second claim after the ruling waits for the developer again.
+  R(change, 'fix', '--change', 'add-x', '--round', '1', '--file', reply(change, 'fp2', claim))
+  assert.deepEqual(R(change, 'fixplan', '--change', 'add-x', '--round', '1').awaitingDeveloper.map((c) => c.finding), ['F1'])
 })
 
 test('an open blocking finding makes a BLOCKED record, not a refusal; a fix no round re-reviewed blocks it too', () => {
@@ -231,6 +251,8 @@ test('dismissed needs the developer ruling of this run and a committed marker co
   assert.match(md, /\| F2 \| 1 \| HIGH \| `src\/a\.ts` \| title F2 \| dismissed — the whole module is generated; no marker: the finding names no line \|/)
   assert.match(md, /## Developer rulings\n\n- `F1` dismissed: x is a constant here \(ruling-3\)\n- `F2` dismissed: the whole module is generated \(ruling-4\)/)
   assert.doesNotMatch(md, /## Suite after the fixes/, 'no fix landed, so no suite run is needed')
+  const check = R(change, 'check', '--file', out.file)
+  assert.deepEqual([check.dispositions.map((d) => d.kind), check.warnings], [['dismissed', 'dismissed', 'recorded'], []])
 })
 
 test('a dismissed line gone from HEAD needs no marker; a file with no comment syntax cannot be dismissed', () => {
@@ -280,7 +302,7 @@ test('three rounds at most; the developer ruling allows a fourth, and the record
     R(change, 'input', '--round', String(k), '--change', 'add-x', '--prompt', PROMPT)
     const stored = R(change, 'response', '--change', 'add-x', '--round', String(k), '--file', reply(change, `ai-review-r${k}`, findings(finding('F1', 'HIGH'))))
     assert.deepEqual(stored.ids, [`F${k}`])
-    assert.equal(R(change, 'fixplan', '--change', 'add-x', '--round', String(k)).waves[0][0].level, 'architecture')
+    assert.equal(R(change, 'fixplan', '--change', 'add-x', '--round', String(k)).next.level, 'architecture')
     fix(change, k, `F${k}`, { 'src/a.ts': `line1\nline2 r${k}\nline3\n` })
   }
   const capped = R(change, 'round', '--change', 'add-x')
@@ -416,18 +438,27 @@ test('check reads a record as archive does: the exact verdict token, the sha, th
       '| # | Severity | Where | Disposition |',
       '|---|---|---|---|',
       '| 1 | HIGH | `a.ts:4` | fixed in `abc1234` |',
-      '| 2 | HIGH | `b.ts:1` | dismissed — reason; marker added |',
+      '| 2 | HIGH | `b.ts:1` | dismissed — reason; marker ADF IGNORE K1 at `b.ts:1` |',
       '| 3 | MEDIUM | `c.ts` | test added |',
+      '| 4 | HIGH | `d.ts` | fixed, abc1234 |',
+      '| 5 | HIGH | `e.ts` | fixed in `abc1234` — found by round 2 |',
+      '| 6 | HIGH | `f.ts` | dismissed — reason; marker added |',
       extra
     ].join('\n')
   const ok = checkRecord(record('**Verdict**: PASS'))
   assert.deepEqual([ok.ok, ok.verdict, ok.commit, ok.change, ok.rounds, ok.counts], [true, 'PASS', '6bc8b234687da861a3690611cad0cf5d0309e13c', 'add-x', 2, { CRITICAL: 0, HIGH: 2, MEDIUM: 1, LOW: 0 }])
-  assert.deepEqual(ok.dispositions.map((d) => [d.id, d.severity, d.where, d.kind]), [['1', 'HIGH', 'a.ts:4', 'fixed'], ['2', 'HIGH', 'b.ts:1', 'dismissed'], ['3', 'MEDIUM', 'c.ts', 'other']])
+  assert.deepEqual(ok.dispositions.map((d) => [d.id, d.severity, d.where, d.kind]), [['1', 'HIGH', 'a.ts:4', 'fixed'], ['2', 'HIGH', 'b.ts:1', 'dismissed'], ['3', 'MEDIUM', 'c.ts', 'other'], ['4', 'HIGH', 'd.ts', 'other'], ['5', 'HIGH', 'e.ts', 'other'], ['6', 'HIGH', 'f.ts', 'other']])
+  // The whole cell is matched against the template's forms, not its first word.
+  assert.deepEqual(ok.warnings, ['disposition outside the vocabulary: 3 "test added"; 4 "fixed, abc1234"; 5 "fixed in `abc1234` — found by round 2"; 6 "dismissed — reason; marker added"'])
+  const over = record('**Verdict**: PASS').replace('**Rounds**: `2` (one review, one fix round)', '**Rounds**: `4`')
+  assert.ok(checkRecord(over).warnings.includes("4 rounds, above the round cap of 3, and no **Round cap** line names the developer's ruling"))
+  const ruled = over.replace('**Rounds**: `4`', "**Rounds**: `4`\n**Round cap**: 3, passed by the developer's ruling: round 4 (ruling-1: one more)")
+  assert.equal(checkRecord(ruled).warnings.some((w) => /round cap/.test(w)), false)
   assert.equal(checkRecord(record('**Verdict:** `BLOCKED`')).verdict, 'BLOCKED')
   const template = checkRecord(record('**Verdict**: `PASS` | `BLOCKED`'))
   assert.deepEqual([template.ok, template.verdict, template.errors], [false, null, ['the verdict reads "PASS|BLOCKED", not PASS or BLOCKED']])
   assert.equal(checkRecord(record('**Verdict**: PASS — nothing blocked')).ok, false)
   assert.deepEqual(checkRecord('**Verdict**: PASS\n').errors, ['no reviewed commit sha'])
   assert.deepEqual(checkRecord('**Verdict**: PASS\n**Reviewed commit**: `abc1234`\n').warnings, ['no **Rounds** count', 'no **Counts** line with the four severities', 'no ## Findings section'])
-  assert.match(checkRecord(record('**Verdict**: PASS').replace('fixed in `abc1234`', 'outstanding')).warnings[0], /a PASS record lists an outstanding finding/)
+  assert.ok(checkRecord(record('**Verdict**: PASS').replace('fixed in `abc1234` |', 'outstanding |')).warnings.includes('a PASS record lists an outstanding finding'))
 })

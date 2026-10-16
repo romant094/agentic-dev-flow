@@ -45,12 +45,16 @@
 //       { ok, valid, round, slice, complete, missing? | findingsFile, ids, renumbered, verdict,
 //         blocking, counts }
 //   review.mjs fixplan --change <name> --round <k> [--also F<n> ...] [--root <dir>]
-//       the round's open blocking findings (and --also, open findings chosen to be fixed) in
-//       waves: one finding per file in a wave, the findings of one file in successive waves;
-//       each with its dispatch name `ai-fix F<n> r<k>` and level (integration, architecture
-//       from round 2). False-positive claims waiting for the developer are listed apart.
-//       { ok, round, findingsFile, level, waves: [[{ finding, severity, file, line, title,
-//         name, level }]], awaitingDeveloper: [{ finding, argument }] }
+//       the round's open blocking findings (and --also, open findings chosen to be fixed, kept
+//       for the round's later calls) in sequential order, same-file findings adjacent: fixers
+//       share the one worktree, so one runs at a time. `next` is the one to dispatch now, each
+//       with its dispatch name `ai-fix F<n> r<k>` and level (integration, architecture from
+//       round 2); run it again after each stored reply. False-positive claims waiting for the
+//       developer are listed apart; one they rejected (`ledger.mjs ruling --as fix`) is a fix
+//       again, carrying `rejected`.
+//       { ok, round, level, also, next: entry | null, fixes: [entry], awaitingDeveloper:
+//         [{ finding, argument }] }, entry { finding, severity, file, line, title, name, level,
+//         rejected?: { argument, decision, ruling } }
 //   review.mjs fix --change <name> --round <k> --file <json> [--root <dir>]
 //       check a fixer's reply; `fixed` needs its sha in the round's fix range, one commit
 //       touching the finding's file and otherwise only test files, and records the disposition;

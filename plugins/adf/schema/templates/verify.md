@@ -116,7 +116,7 @@ ignored, with why; or none -->
 
 ## Next step
 
-<!-- PASS or PASS WITH WARNINGS: the review. FAIL: each failing check with its summary, then
+<!-- PASS or PASS WITH WARNINGS: run /adf:review. FAIL: each failing check with its summary, then
 verify again. -->
 
 Verdict: <!-- the verdict file's line, unchanged: PASS, PASS WITH WARNINGS or FAIL -->

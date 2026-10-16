@@ -39,7 +39,7 @@ branch that carries several, is recorded with a body that names the change it be
 Only the developer's own words make a ruling, written with `ledger.mjs ruling`: an
 orchestrator's or a dispatch's judgement is not one, and silence never is. The stage's rulings
 are `review-range`, `review-slices`, `review-suite`, `review-round-<k>` on a check, and
-`--finding F<n> --as dismissed|accepted` on a finding.
+`--finding F<n> --as dismissed|accepted|fix` on a finding.
 
 **The procedure, one script call per step.**
 
@@ -134,31 +134,31 @@ are `review-range`, `review-slices`, `review-suite`, `review-round-<k>` on a che
    On a complete round, read `verdict`, `blocking` and `counts`. Nothing blocking and no fix to
    make: go to step 9.
 
-8. **Fix, wave by wave.**
+8. **Fix, one finding at a time.**
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" fixplan --change <change> --round <k> --root <root>
    ```
 
-   It lists the round's open blocking findings in `waves`, each entry with its dispatch `name`
-   and level, and the false-positive claims that wait for the developer apart. A non-blocking
-   finding that contradicts the change's delta spec joins the plan with `--also F<n>`. For each
-   entry of a wave, in one response:
+   It returns `next`, the fix to dispatch now, with its dispatch `name` and level, and the
+   false-positive claims that wait for the developer apart, in `awaitingDeveloper`. Every fixer
+   commits in the one change worktree, so fixers run one after another, never side by side. A
+   non-blocking finding that contradicts the change's delta spec joins the plan with
+   `--also F<n>`. For `next`:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role ai-fix --finding F<n> --round <k> --findings <findingsFile> --root <root>
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role ai-fix --finding F<n> --round <k> --root <root>
    ```
 
-   with `findingsFile` from the fix plan, and dispatch each `prompt` as it is. Then store every
-   fixer's reply:
+   and dispatch its `prompt` as it is. Then store the fixer's reply:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" fix --change <change> --round <k> --file <replyFile> --root <root>
    ```
 
    `fixed` is checked against the round's fix range and the finding's file, and closes the
-   finding. An invalid reply follows step 7's retry rule. The next wave starts once every reply
-   of the one before is stored.
+   finding. An invalid reply follows step 7's retry rule. Then run `fixplan` again; the fixes
+   are done when `next` is null.
 
 9. **Settle what is not fixed.**
    - A false-positive claim (`awaiting: "developer"`, or the fix plan's `awaitingDeveloper`):
@@ -173,8 +173,10 @@ are `review-range`, `review-slices`, `review-suite`, `review-round-<k>` on a che
      A refusal with `markCommand` names the line to mark: run it, `review.mjs mark ... --commit`
      with the developer's reason and the finding's key, then the disposition again. A
      finding whose line is gone from HEAD is dismissed with no marker, and the record says so.
-     If they reject the claim, the finding is fixed and carries no marker: dispatch its fixer
-     again with their reason in `--question-file`.
+     If they reject the claim, record their decision with `ledger.mjs ruling --finding F<n>
+     --as fix --decision "<their reason>"` and go back to step 8: `fixplan` lists the finding
+     again, and its fixer's prompt carries the rejected argument and the decision. The fix
+     carries no marker.
    - A blocking finding the developer decides to leave as it is: their ruling `--as accepted`,
      then `disposition --as accepted`, with `--body-file` when the reason needs more than the
      ruling says.

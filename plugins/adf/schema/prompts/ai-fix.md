@@ -12,6 +12,9 @@ whether the finding holds in the code as it is, not as the finding describes it.
   `outcome` is `false-positive`, and its `argument` names the code that refutes the finding,
   with file and line: the guard, the caller or the type that keeps the failure from happening.
   "Unlikely" or "works in practice" is not an argument.
+- **The fields carry a rejected argument.** A fixer claimed a false positive, and the developer's
+  decision rejects that argument: the developer has ruled that the finding holds. Fix it, with
+  their decision as your guide; claim no false positive again.
 
 Either way, `failureMode` states the failure the finding is about in one or two sentences: which
 input or state leads to which wrong outcome. For a false positive, it is the failure the finding

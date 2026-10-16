@@ -14,11 +14,13 @@
 //       review.maxBytes) at architecture, with `inputFile`, the file `review.mjs input --out`
 //       writes; `ai-fix F<n> r<k>`, one per finding, at integration, architecture from round 2
 //   dispatch.mjs prompt  (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>]
-//                        [--findings <json>]
 //       the plan and `prompt`, the full text with every fixed field filled; the question file's
 //       content goes into the question slot verbatim. --base and --head name a review's range.
-//       ai-review refuses while its input file is missing; ai-fix needs --findings, the
-//       reviewer's reply that carries the finding, and names the finding's file in scope.
+//       ai-review refuses while its input file is missing. ai-fix reads the finding from the
+//       round's findings file (`review.mjs response` wrote it, ids renumbered) and refuses unless
+//       the finding is the `next` of the round's fix plan (`review.mjs fixplan`); it names the
+//       finding's file in scope and, for a false-positive claim the developer rejected, the
+//       rejected argument and their decision.
 //   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <change worktree>]
 //       records one attempt of the dispatch and returns { ok, name, attempt, next }, next one of
 //       dispatch (the first), retry (the one retry of a refused reply), stop (BLOCKED)
@@ -52,6 +54,7 @@ import { mainCheckout } from './lib/installed.mjs'
 import { isMain } from './lib/main.mjs'
 import { unplannedIn } from './lib/plan.mjs'
 import { parsePlanTasks } from './lib/plan-symbols.mjs'
+import { fixTarget, Refusal } from './lib/review-state.mjs'
 import { sweepInputs } from './lib/sweep.mjs'
 
 export const PLUGIN_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -59,13 +62,13 @@ export const PROMPTS_DIR = join(PLUGIN_ROOT, 'schema', 'prompts')
 
 export const USAGE = `usage:
   dispatch.mjs plan --change <name> --role <role> [--task <N>] [--group <G>] [--round <k>] [--topic <word>] [--check c4|c8] [--slice <n>] [--finding F<n>] [--root <dir>]
-  dispatch.mjs prompt (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>] [--findings <json>]
+  dispatch.mjs prompt (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>]
   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <dir>]
   dispatch.mjs round --change <name> [--task <N> | --group <G>] [--root <dir>]`
 
 export class UsageError extends Error {}
 
-const FLAGS = ['--change', '--role', '--task', '--group', '--round', '--topic', '--check', '--slice', '--finding', '--root', '--question-file', '--base', '--head', '--name', '--findings']
+const FLAGS = ['--change', '--role', '--task', '--group', '--round', '--topic', '--check', '--slice', '--finding', '--root', '--question-file', '--base', '--head', '--name']
 
 function parse(argv) {
   const values = {}
@@ -103,27 +106,26 @@ function skeletons() {
 }
 
 // The review stage's fields: the reviewer reads its input file alone; the fixer reads its one
-// finding from the reviewer's reply and works in that finding's file.
-function reviewFields(inputs, plan, values) {
+// finding from the round's findings file and works in that finding's file.
+function reviewFields(inputs, plan, root) {
   const fields = [['Dispatch name', plan.name], ['Change', inputs.change], ['Round', plan.round]]
   if (inputs.role === 'ai-review') {
-    if (values.findings !== undefined) throw new UsageError('--findings belongs to ai-fix')
     if (!existsSync(plan.inputFile)) throw new DispatchError(`no ${plan.inputFile}: run review.mjs input --out ${plan.inputFile} first`)
     if (plan.slice !== undefined) fields.push(['Slice', plan.slice])
     return [...fields, ['Input file', plan.inputFile], ['Reply file', plan.replyFile]]
   }
-  if (values.findings === undefined) throw new UsageError('ai-fix needs --findings <the reviewer\'s reply>')
-  const file = resolve(plan.worktree, values.findings)
-  let finding
+  let target
   try {
-    finding = JSON.parse(readFileSync(file, 'utf8')).findings.find((f) => f.id === plan.finding)
+    target = fixTarget(root, inputs.change, { round: plan.round, finding: plan.finding })
   } catch (error) {
-    throw new DispatchError(`cannot read the findings in ${file}: ${error.message}`)
+    if (error instanceof Refusal) throw new DispatchError(error.message)
+    throw new DispatchError(`cannot read round ${plan.round}'s findings: ${error.message}`)
   }
-  if (!finding) throw new DispatchError(`${plan.finding} is not a finding of ${file}`)
-  if (typeof finding.file !== 'string' || finding.file === '') throw new DispatchError(`${plan.finding} in ${file} names no file`)
+  const { findingsFile, finding, rejected } = target
+  if (typeof finding.file !== 'string' || finding.file === '') throw new DispatchError(`${plan.finding} in ${findingsFile} names no file`)
   const where = `${join(plan.worktree, finding.file)}${Number.isInteger(finding.line) ? `:${finding.line}` : ''}`
-  fields.push(['Worktree', plan.worktree], ['Finding', `${plan.finding} (${finding.severity}): ${finding.title}`], ['Findings file', file], ['Files in scope', [where]])
+  fields.push(['Worktree', plan.worktree], ['Finding', `${plan.finding} (${finding.severity}): ${finding.title}`], ['Findings file', findingsFile], ['Files in scope', [where]])
+  if (rejected) fields.push(['Rejected false-positive argument', rejected.argument], ["Developer's decision", rejected.decision])
   return [...fields, ['Reply file', plan.replyFile]]
 }
 
@@ -135,9 +137,8 @@ function promptFor(inputs, plan, values, root, planText) {
   if (Object.hasOwn(REVIEW_ROLES, inputs.role)) {
     if (values.base !== undefined || values.head !== undefined) throw new UsageError(`--base and --head do not belong to ${inputs.role}: its range is in its input`)
     const question = values['question-file'] === undefined ? undefined : readQuestion(values['question-file'])
-    return renderPrompt({ plan, change, skeletons: skeletons(), fields: reviewFields(inputs, plan, values), question, tokens })
+    return renderPrompt({ plan, change, skeletons: skeletons(), fields: reviewFields(inputs, plan, root), question, tokens })
   }
-  if (values.findings !== undefined) throw new UsageError('--findings belongs to ai-fix')
   let testFirst = false
   let dispositions = false
   const range = values.base && values.head ? `${values.base}..${values.head}` : undefined
@@ -239,7 +240,7 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
 
   if (!values.role) throw new UsageError(USAGE)
   if (values.name) throw new UsageError('--name belongs to attempt')
-  if (command === 'plan' && (values['question-file'] || values.base || values.head || values.findings)) throw new UsageError('--question-file, --base, --head and --findings belong to prompt')
+  if (command === 'plan' && (values['question-file'] || values.base || values.head)) throw new UsageError('--question-file, --base and --head belong to prompt')
   const inputs = {
     change,
     role: values.role,

@@ -656,9 +656,11 @@ test('assemble renders the record from the sections, ends on the verdict line an
   assert.match(text, /\*\*Scope that ran:\*\* the record cited, not re-run/)
   assert.match(text, /## Checks run with the developer\n\nnone/)
   assert.match(text, /## Rulings\n\nnone/)
+  assert.match(text, /## Next step\n\n`\/adf:review`, which reads this record's Verdict line\./)
   assert.equal(refused.commit, git(root, 'rev-parse', 'HEAD'))
   assert.equal(git(root, 'show', '--name-only', '--format=%s', 'HEAD'), `docs(openspec): verify ${CHANGE}\n\n${changeFile('verify.md')}`)
   assert.match(refused.report, /^## Verification PASS WITH WARNINGS\n\n\*\*Change:\*\* add-x\n\*\*Record:\*\* openspec\/changes\/add-x\/verify\.md, commit [0-9a-f]{40}/)
+  assert.match(refused.report, /Next step: \/adf:review, which reads the record's Verdict line\./)
 
   assert.throws(() => assemble(root, { change: CHANGE }), /HEAD is [0-9a-f]{7}, but the checks ran at/)
   runChecks(root, { change: CHANGE })

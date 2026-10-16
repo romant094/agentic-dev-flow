@@ -11,7 +11,7 @@
 //   r<k>/reply[-s<n>].json  a reviewer's valid reply, one per slice (response)
 //   r<k>/findings.json    the round's findings, slices merged and ids renumbered (response)
 //   r<k>/fixes/F<n>.json  a fixer's valid reply (fix)
-//   r<k>/fixplan.json     the waves of fixes (fixplan)
+//   r<k>/fixplan.json     the round's fixes in sequential order, `next` first (fixplan)
 //   dispositions.json     F<n> -> { as: fixed | dismissed | accepted | recorded, ... }
 //   attempts.json         invalid replies per reviewer slice or fixer
 //   stopped.json          a second invalid reply stopped the stage
@@ -295,8 +295,13 @@ export function storeReply(root, change, { round: k, slice = null, text }) {
 
 // ---------------------------------------------------------------- fixes
 
-// The open blocking findings of round k (and `also`, open findings the orchestrator chose to fix)
-// in waves: one finding per file in each wave, the findings of one file in successive waves.
+// The open blocking findings of round k (and `also`, open findings the orchestrator chose to fix,
+// kept from the round's earlier plan) in sequential order, the findings of one file adjacent:
+// every fixer works in the one change worktree, so one fixer runs at a time, the rule apply
+// follows inside one worktree. `next` is the fix to dispatch now; the plan is computed again after
+// each stored reply. A false-positive claim waits for the developer, apart; once they reject it
+// (`ruling --as fix`, written after the claim), the finding is listed again as a fix carrying the
+// rejected argument and their decision, which the fixer's prompt shows.
 export function fixPlan(root, change, { round: k, also = [] }) {
   const state = liveState(root, change)
   const r = state.rounds[k - 1]
@@ -304,22 +309,48 @@ export function fixPlan(root, change, { round: k, also = [] }) {
   const { blockOn } = reviewConfig(root)
   const own = new Map(r.findings.findings.map((f) => [f.id, f]))
   for (const id of also) if (!own.has(id)) refuse(`${id} is not a finding of round ${k}`)
+  const file = join(roundDir(root, change, k), 'fixplan.json')
+  const chosen = [...new Set([...(readJson(file)?.also ?? []), ...also])]
+  const records = rulings(root, change, state)
   const open = (f) => !CLOSED.includes(state.dispositions[f.id]?.as)
   const claimed = []
-  const targets = []
-  for (const f of r.findings.findings) {
-    if (!open(f) || !(blockOn.includes(f.severity) || also.includes(f.id))) continue
-    const fix = fixReply(root, change, { ...f, round: k })
-    if (fix?.outcome === 'false-positive') claimed.push({ finding: f.id, argument: fix.argument })
-    else targets.push(f)
-  }
   const byFile = new Map()
-  for (const f of targets) byFile.set(f.file, [...(byFile.get(f.file) ?? []), f])
-  const waves = []
-  for (const list of byFile.values()) list.forEach((f, i) => (waves[i] ??= []).push({ finding: f.id, severity: f.severity, file: f.file, line: f.line, title: f.title, name: fixName(f.id, k), level: fixLevel(k) }))
-  const plan = { round: k, findingsFile: join(roundDir(root, change, k), 'findings.json'), level: fixLevel(k), waves, awaitingDeveloper: claimed }
-  writeJson(join(roundDir(root, change, k), 'fixplan.json'), plan)
+  for (const f of r.findings.findings) {
+    if (!open(f) || !(blockOn.includes(f.severity) || chosen.includes(f.id))) continue
+    const fix = fixReply(root, change, { ...f, round: k })
+    let rejected = null
+    if (fix?.outcome === 'false-positive') {
+      const ruling = lastFindingRuling(records, f.id)
+      if (ruling?.as !== 'fix' || ruling.at < fix.at) {
+        claimed.push({ finding: f.id, argument: fix.argument })
+        continue
+      }
+      rejected = { argument: fix.argument, decision: ruling.decision, ruling: ruling.id }
+    }
+    const entry = { finding: f.id, severity: f.severity, file: f.file, line: f.line, title: f.title, name: fixName(f.id, k), level: fixLevel(k), ...(rejected ? { rejected } : {}) }
+    byFile.set(f.file, [...(byFile.get(f.file) ?? []), entry])
+  }
+  const fixes = [...byFile.values()].flat()
+  const plan = { round: k, level: fixLevel(k), also: chosen, next: fixes[0] ?? null, fixes, awaitingDeveloper: claimed }
+  writeJson(file, plan)
   return { ok: true, ...plan }
+}
+
+// What the fixer of `id` in round k is given: the round's findings file and the finding, and the
+// rejected false-positive argument with the developer's decision when the plan carries them.
+// Refused unless `id` is the plan's `next`: one fixer at a time, in the plan's order.
+export function fixTarget(root, change, { round: k, finding: id }) {
+  const rd = roundDir(root, change, k)
+  const findingsFile = join(rd, 'findings.json')
+  const stored = readJson(findingsFile)
+  if (!stored) refuse(`round ${k}'s findings are not stored: run review.mjs response --change ${change} --round ${k}`)
+  const finding = stored.findings.find((f) => f.id === id)
+  if (!finding) refuse(`${id} is not a finding of round ${k}`)
+  const plan = readJson(join(rd, 'fixplan.json'))
+  const again = `review.mjs fixplan --change ${change} --round ${k}`
+  if (!plan) refuse(`round ${k} has no fix plan: run ${again}`)
+  if (plan.next?.finding !== id) refuse(`${id} is not the next fix of round ${k} (${plan.next ? plan.next.finding : 'none'}): run ${again} after each stored reply`)
+  return { findingsFile, finding, rejected: plan.next.rejected ?? null }
 }
 
 // A fixer's reply: `fixed` with a commit in round k's fix range that touches the finding's file
@@ -345,7 +376,7 @@ export function recordFix(root, change, { round: k, text, now = new Date().toISO
       finding: f.id,
       outcome: reply.outcome,
       awaiting: 'developer',
-      next: `put the argument to the developer: a dismissal needs ledger.mjs ruling --change ${change} --finding ${f.id} --as dismissed --decision "<their reason>", then the marker and review.mjs disposition --as dismissed; a rejected claim is fixed`
+      next: `put the argument to the developer: a dismissal needs ledger.mjs ruling --change ${change} --finding ${f.id} --as dismissed --decision "<their reason>", then the marker and review.mjs disposition --as dismissed; a rejected claim needs ledger.mjs ruling --change ${change} --finding ${f.id} --as fix --decision "<their reason>", then review.mjs fixplan lists it again`
     }
   }
   const git = gitAt(root)
@@ -524,7 +555,7 @@ export function assemble(rootArg, { change, notReviewed = null, commit = false, 
     const d = dispositions[f.id]
     if (blockOn.includes(f.severity)) {
       const ruling = lastFindingRuling(records, f.id)
-      if (!d && ruling) refusals.push(`${f.id}: the developer ruled it ${ruling.as} (${ruling.id}); apply it with review.mjs disposition --change ${change} --finding ${f.id} --as ${ruling.as}`)
+      if (!d && ruling && ruling.as !== 'fix') refusals.push(`${f.id}: the developer ruled it ${ruling.as} (${ruling.id}); apply it with review.mjs disposition --change ${change} --finding ${f.id} --as ${ruling.as}`)
     } else if (!d) refusals.push(`${f.id} (${f.severity}) has no disposition: fix it, or record it with review.mjs disposition --change ${change} --finding ${f.id} --as recorded --body-file <why it was left>`)
     if (d?.as === 'recorded' && !d.body?.trim()) refusals.push(`${f.id} is recorded with no body`)
   }
@@ -613,18 +644,21 @@ function finish(root, { change, file, lines, verdict, counts, rounds, outstandin
 // ---------------------------------------------------------------- reading a record
 
 const field = (text, name) => text.split('\n').find((l) => new RegExp(`^\\*\\*${name}[:*]`).test(l)) ?? null
+// The disposition cell's whole forms, as the template defines them and `describe` renders them;
+// any other cell reads as `other` and is warned about.
 const KINDS = [
-  [/^fixed\b/i, 'fixed'],
-  [/^dismissed\b/i, 'dismissed'],
-  [/^recorded\b/i, 'recorded'],
-  [/^accepted\b/i, 'accepted'],
-  [/^outstanding\b/i, 'outstanding']
+  [/^fixed in `[0-9a-f]{7,40}`$/, 'fixed'],
+  [/^dismissed — .+; (?:marker ADF IGNORE(?:-START)? \S+ at `[^`]+`|no marker: .+)$/, 'dismissed'],
+  [/^recorded, non-blocking$/, 'recorded'],
+  [/^accepted — .+$/, 'accepted'],
+  [/^outstanding$/, 'outstanding']
 ]
 
 // Reads a review record as archive does: the verdict token compared for equality after the
 // field's colon (backticks, asterisks and spaces dropped), the reviewed commit's sha, the rounds,
 // the counts as the metrics read them, and the findings table's dispositions. ok is false when the
-// verdict or the sha cannot be read; what else is missing is in `warnings`.
+// verdict or the sha cannot be read; what else is missing or malformed is in `warnings`: rounds
+// above the cap with no **Round cap** line, a disposition cell outside the template's forms.
 export function checkRecord(text) {
   const errors = []
   const warnings = []
@@ -662,11 +696,14 @@ export function checkRecord(text) {
       for (const row of rows.slice(2)) {
         const text = row[disposition] ?? ''
         if (/no findings/i.test(text)) continue
-        const kind = KINDS.find(([re]) => re.test(text.replace(/^`/, '')))?.[1] ?? 'other'
+        const kind = KINDS.find(([re]) => re.test(text))?.[1] ?? 'other'
         dispositions.push({ id: row[id] ?? null, severity: row[severity] ?? null, where: (row[location] ?? '').replace(/`/g, ''), disposition: text, kind })
       }
     }
   }
+  const other = dispositions.filter((d) => d.kind === 'other')
+  if (other.length > 0) warnings.push(`disposition outside the vocabulary: ${other.map((d) => `${d.id ?? '?'} "${d.disposition}"`).join('; ')}`)
+  if (rounds !== null && rounds > ROUND_CAP && field(text, 'Round cap') === null) warnings.push(`${rounds} rounds, above the round cap of ${ROUND_CAP}, and no **Round cap** line names the developer's ruling`)
   if (verdict === 'PASS' && dispositions.some((d) => d.kind === 'outstanding')) warnings.push('a PASS record lists an outstanding finding')
   return { ok: errors.length === 0, verdict: verdict === 'PASS' || verdict === 'BLOCKED' ? verdict : null, commit, change, rounds, counts, dispositions, errors, warnings }
 }
