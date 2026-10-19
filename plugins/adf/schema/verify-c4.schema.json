@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf/verify-c4.schema.json",
+  "title": "ADF verify c4 reply",
+  "description": "Verify section c4, the coherence of the design, the delta specs and the implementation: the findings by kind, the prose edits to capability specs, the accounting for each REMOVED or RENAMED requirement, and what exercised each new mechanism. The script cross-checks proseEdits and removalAccounting against its own lists and computes the verdict; exercisedBy null is allowed and becomes a warning.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["role", "case", "findings", "proseEdits", "removalAccounting", "exercised", "summary"],
+  "properties": {
+    "role": { "const": "verify-c4" },
+    "case": { "enum": ["both", "no-deltas", "no-design"] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "where", "text"],
+        "properties": {
+          "kind": {
+            "enum": [
+              "decision-untraced",
+              "requirement-contradicts-decision",
+              "doc-drift",
+              "exec-contradiction",
+              "prose-edit-unstated",
+              "prose-edit-below-requirements",
+              "disposition-contradicted",
+              "disposition-missing",
+              "old-path-reachable"
+            ]
+          },
+          "where": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["file", "line"],
+              "properties": {
+                "file": { "type": "string", "minLength": 1 },
+                "line": { "type": ["integer", "null"], "minimum": 1 }
+              }
+            }
+          },
+          "text": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "proseEdits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["capability", "commit", "reason"],
+        "properties": {
+          "capability": { "type": "string", "minLength": 1 },
+          "commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+          "reason": { "type": ["string", "null"], "minLength": 1 }
+        }
+      }
+    },
+    "removalAccounting": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["requirement", "op", "disposition", "holds", "oldPathReachable"],
+        "properties": {
+          "requirement": { "type": "string", "minLength": 1 },
+          "op": { "enum": ["REMOVED", "RENAMED"] },
+          "disposition": { "type": ["string", "null"], "minLength": 1 },
+          "holds": { "type": "boolean" },
+          "oldPathReachable": { "type": "boolean" }
+        }
+      }
+    },
+    "exercised": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mechanism", "path", "exercisedBy"],
+        "properties": {
+          "mechanism": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "exercisedBy": { "type": ["string", "null"], "minLength": 1 }
+        }
+      }
+    },
+    "summary": { "type": "string", "minLength": 1 }
+  }
+}

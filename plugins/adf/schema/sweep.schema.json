@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf/sweep.schema.json",
+  "title": "ADF reuse sweep reply",
+  "description": "The reuse sweep: each introduced code that duplicates existing code, and a disposition for each REMOVED or RENAMED requirement `sweep.mjs inputs` listed. The script requires dispositions exactly when inputs reports a second question, drops the findings a DUP marker accepts, and computes CLEAN or FINDINGS; the reply states no verdict.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["role", "findings"],
+  "properties": {
+    "role": { "const": "sweep" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["introduced", "existing", "why"],
+        "properties": {
+          "introduced": { "type": "string", "minLength": 1 },
+          "existing": { "type": "string", "minLength": 1 },
+          "why": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "dispositions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["requirement", "disposition"],
+        "properties": {
+          "requirement": { "type": "string", "minLength": 1 },
+          "disposition": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

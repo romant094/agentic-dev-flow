@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf/investigate.schema.json",
+  "title": "ADF investigation reply",
+  "description": "A read-only investigation: the answer for the orchestrator and the file locations it rests on. The script checks only this shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["role", "answer", "evidence"],
+  "properties": {
+    "role": { "const": "investigate" },
+    "answer": { "type": "string", "minLength": 1 },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file"],
+        "properties": {
+          "file": { "type": "string", "minLength": 1 },
+          "line": { "type": "integer", "minimum": 1 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf/re-review.schema.json",
+  "title": "ADF re-review reply",
+  "description": "The re-review of a fix diff: whether each open finding the prompt listed is addressed, the new findings the fix introduced, and the out-of-scope items for the deferred list. The script checks that previous covers exactly the open set and computes the round's result.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["role", "summary", "previous", "findings", "outOfScope"],
+  "properties": {
+    "role": { "const": "re-review" },
+    "summary": { "type": "string", "minLength": 1 },
+    "previous": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "file", "line"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^F[1-9][0-9]*$" },
+          "status": { "enum": ["addressed", "not-addressed"] },
+          "file": { "type": "string", "minLength": 1 },
+          "line": { "type": ["integer", "null"], "minimum": 1 }
+        }
+      }
+    },
+    "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "outOfScope": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "line", "title"],
+        "properties": {
+          "file": { "type": "string", "minLength": 1 },
+          "line": { "type": ["integer", "null"], "minimum": 1 },
+          "title": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "kind", "file", "line", "title", "body"],
+      "properties": {
+        "severity": { "enum": ["critical", "important", "minor"] },
+        "kind": { "enum": ["spec", "quality"] },
+        "file": { "type": "string", "minLength": 1 },
+        "line": { "type": ["integer", "null"], "minimum": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "body": { "type": "string", "minLength": 1 },
+        "planMandated": { "type": "boolean" }
+      }
+    }
+  }
+}

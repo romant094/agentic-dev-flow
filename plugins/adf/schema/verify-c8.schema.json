@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf/verify-c8.schema.json",
+  "title": "ADF verify c8 reply",
+  "description": "Verify section c8, stale host skills: a judgement for each candidate line of c8-candidates.txt, named by its skill file and line number, with the patch of each CONFIRMED item in the reply. The script checks that every candidate is answered once and that each patch passes `git apply --check`, joins the patches into c8.diff and computes the verdict.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["role", "candidates", "summary"],
+  "properties": {
+    "role": { "const": "verify-c8" },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "line", "class", "fact", "why"],
+        "properties": {
+          "file": { "type": "string", "minLength": 1 },
+          "line": { "type": "integer", "minimum": 1 },
+          "class": { "enum": ["CONFIRMED", "PLAUSIBLE", "none"] },
+          "fact": { "type": "string", "minLength": 1 },
+          "why": { "type": "string", "minLength": 1 },
+          "patch": { "type": "string", "pattern": "^diff --git " }
+        },
+        "allOf": [
+          { "if": { "properties": { "class": { "const": "CONFIRMED" } } }, "then": { "required": ["patch"] } }
+        ]
+      }
+    },
+    "summary": { "type": "string", "minLength": 1 }
+  }
+}

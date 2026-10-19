@@ -33,7 +33,7 @@ import { fileURLToPath } from 'node:url'
 import { ARCHIVE, CHANGES_DIR, globToRegExp, META_FILE } from './changes.mjs'
 import { sddDir } from './dispatch.mjs'
 import { baseRef } from './plan-symbols.mjs'
-import { parseReply, readSchema, validateJson } from './review.mjs'
+import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { parseDeltaSpec } from './specs.mjs'
 
 export const INGEST_SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema', 'ingest.schema.json')

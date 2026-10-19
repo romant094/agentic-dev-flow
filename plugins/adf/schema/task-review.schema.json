@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf/task-review.schema.json",
+  "title": "ADF task review reply",
+  "description": "A task, group, final or merge review: the findings with their severity on the Superpowers scale and their kind, and the requirements the reviewer could not verify. The script assigns the finding ids and computes the spec verdict, the quality verdict and the result; the reply states no verdict.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["role", "summary", "findings", "unverifiable"],
+  "properties": {
+    "role": { "enum": ["review", "final-review", "merge-review"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+    "unverifiable": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["requirement", "check"],
+        "properties": {
+          "requirement": { "type": "string", "minLength": 1 },
+          "check": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "kind", "file", "line", "title", "body"],
+      "properties": {
+        "severity": { "enum": ["critical", "important", "minor"] },
+        "kind": { "enum": ["spec", "quality"] },
+        "file": { "type": "string", "minLength": 1 },
+        "line": { "type": ["integer", "null"], "minimum": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "body": { "type": "string", "minLength": 1 },
+        "planMandated": { "type": "boolean" }
+      }
+    }
+  }
+}

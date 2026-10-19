@@ -8,7 +8,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { sddDir } from './dispatch.mjs'
-import { parseReply, readSchema, validateJson } from './review.mjs'
+import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { checkResolutions, normalizeRequirementName } from './specs.mjs'
 
 export const SPEC_MERGE_SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema', 'spec-merge-resolution.schema.json')
