@@ -1,4 +1,3 @@
-The section's title is `Design and specs coherence`.
 <!-- verbatim schema/instructions/verify.md -->
 - Every design decision traces to a requirement or a scenario, and every requirement agrees
   with the decisions. Read every decision and requirement, not a sample, and open what a
@@ -18,9 +17,10 @@ The section's title is `Design and specs coherence`.
   disposition apply's sweep recorded.
 - New mechanisms: for each one the change adds, which of its paths a test or a recorded run
   exercised and which nothing exercised. A green gate never stands in for a path that ran.
-- The section carries three more fields, which the record renders as written, each a string or
-  a list of strings: `proseEdits`, each hand-edited capability with its reason, or `none`;
-  `removalAccounting`, each `REMOVED` or `RENAMED` requirement's disposition against the code,
-  or `N/A: no REMOVED or RENAMED requirement`; `exercised`, one entry per path of a new
-  mechanism with what exercised it or that nothing did, or `none`.
 <!-- /verbatim -->
+The reply carries each issue as a finding of its kind, with a file and a line for each place it
+names. `proseEdits` answers each entry of the Prose edits field once, with the reason the change
+gives, or null when it gives none. `removalAccounting` answers each entry of the Removed or renamed
+field once, by its operation and name: the disposition, null when there is none, whether the code
+holds it, and whether the old path is still reachable. `exercised` gives one entry per path of a
+new mechanism, with what exercised it, or null when nothing did.

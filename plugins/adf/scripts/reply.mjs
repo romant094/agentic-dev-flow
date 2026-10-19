@@ -5,6 +5,11 @@
 // header. Prints one JSON object on stdout.
 //
 //   reply.mjs check --change <name> --name "<dispatch name>" --file <reply file> [--root <dir>]
+//   reply.mjs render --file <reply file> [--name "<dispatch name>"] [--change <name>] [--root <dir>]
+//       the Markdown of any reply for the developer (lib/reply-render.mjs): an escalation, the
+//       sweep's findings, the c8 edits. The role is the reply's own, else the name's. With
+//       --change, the computed result of the reply's last valid event in attempts.jsonl is shown
+//       too (the status, the finding ids, the verdict). { ok: true, name, role, file, markdown }
 //
 // --root is the change worktree (default: the current directory); a relative <reply file> is
 // read from it. Exit 0: the reply is valid ({ ok: true, valid: true, errors: [], result, name,
@@ -13,13 +18,17 @@
 // — a missing flag, a name of no reply role, an unreadable file ({ ok: false, error, usage }).
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { attemptsFile, parseEvents, readLog } from './lib/attempts.mjs'
 import { parseName } from './lib/dispatch.mjs'
+import { parseReply } from './lib/json-schema.mjs'
 import { mainCheckout } from './lib/installed.mjs'
 import { isMain } from './lib/main.mjs'
 import { checkReply, replyContext, ROLES } from './lib/reply.mjs'
+import { render, RenderError, roleOf } from './lib/reply-render.mjs'
 
 export const USAGE = `Usage:
   reply.mjs check --change <name> --name "<dispatch name>" --file <reply file> [--root <dir>]
+  reply.mjs render --file <reply file> [--name "<dispatch name>"] [--change <name>] [--root <dir>]
 Roles: ${Object.keys(ROLES).join(', ')}`
 
 // A wrong call, as opposed to a refused reply: exit 2.
@@ -45,8 +54,39 @@ function parse(argv) {
   return { values, rest }
 }
 
+// The Markdown of one reply file, with the computed result of its last valid event when --change
+// names the change whose attempts log recorded it.
+function renderOp(values, cwd) {
+  if (!values.file) throw new UsageError(USAGE)
+  const root = resolve(cwd, values.root ?? '.')
+  const file = resolve(root, values.file)
+  let text
+  try {
+    text = readFileSync(file, 'utf8')
+  } catch (e) {
+    throw new UsageError(`cannot read ${values.file}: ${e.message}`)
+  }
+  const parsed = parseReply(text)
+  if (parsed.errors.length) return { ok: false, error: parsed.errors.join('; '), file }
+  let result
+  if (values.change) {
+    const events = parseEvents(readLog(attemptsFile(root, values.change))).filter((e) => e.event === 'valid' && resolve(root, e.file ?? '') === file)
+    const last = events.at(-1)
+    result = last?.result
+    values.name ??= last?.name
+  }
+  try {
+    const role = roleOf(parsed.reply, values.name)
+    return { ok: true, name: values.name ?? null, role, file, markdown: render(parsed.reply, { name: values.name, result }) }
+  } catch (error) {
+    if (error instanceof RenderError) throw new UsageError(error.message)
+    return { ok: false, error: `the reply does not have its role's shape: ${error.message}`, file }
+  }
+}
+
 export function run(argv, { cwd = process.cwd(), main } = {}) {
   const { values, rest } = parse(argv)
+  if (rest.length === 1 && rest[0] === 'render') return renderOp(values, cwd)
   if (rest.length !== 1 || rest[0] !== 'check' || !values.change || !values.name || !values.file) throw new UsageError(USAGE)
   const root = resolve(cwd, values.root ?? '.')
   const role = parseName(values.name)?.role

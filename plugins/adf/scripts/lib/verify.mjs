@@ -4,22 +4,27 @@
 // `<root>/.superpowers/sdd/<change>/verify/<id>.txt` and returns one result per check:
 // { id, title, verdict: pass | warn | fail | not-run, summary, output } with `output` relative
 // to the root. The list is kept in `verify/run.json`. Judgement checks are agent dispatches
-// that write a section of the same shape as `verify/<id>.json`; `computeVerdict` reads both,
-// applies the developer's rulings from the ledger, and computes the verdict line.
+// whose JSON replies `dispatch.mjs reply` checks and turns into a section of the same shape,
+// `verify/<id>.json` (lib/verify-reply.mjs); `computeVerdict` reads both, applies the developer's
+// rulings from the ledger, and computes the verdict line.
 //
 // Every git call runs at the root: from a subdirectory a scan silently narrows.
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { attemptsFile, parseEvents, readLog } from './attempts.mjs'
 import { changeDir, globToRegExp, META_FILE, parseTasks } from './changes.mjs'
+import { parseName } from './dispatch.mjs'
 import { baseCheckPath, listGroups } from './groups.mjs'
 import { commitPaths } from './commit.mjs'
 import { appendRecord, readRecords, SESSION_ENV, skillEditShas } from './ledger.mjs'
 import { baseRef, EXTENSIONS } from './plan-symbols.mjs'
 import { readRegistry } from './registry.mjs'
+import { c4Lines, c8Lines, fence as fenceText } from './reply-render.mjs'
 import { CORE, knowledgePaths } from './roles.mjs'
 import { checkSpecsBase, extractRequirementsSection, parseDeltaSpec, validateProject } from './specs.mjs'
+import { countsOf, readTestRecord } from './suite.mjs'
 import { claudeHome } from './superpowers.mjs'
 import { gitIn } from './workspace.mjs'
 
@@ -46,6 +51,11 @@ export const RECORD_COMMIT = /^\*\*Commit:\*\*[ \t]*`?([0-9a-f]{7,40})`?[ \t]*$/
 export const REQUIRED_SECTIONS = ['c4', 'c8']
 export const DEVELOPER_ID = 'developer'
 export const SKILLS_DIR = '.claude/skills/'
+// The c8 candidates as the c8 reply is checked against them, and the CONFIRMED patches joined:
+// files of <verify> that are no section.
+export const C8_CANDIDATES = 'c8-candidates.json'
+export const C8_DIFF = 'c8.diff'
+const NOT_SECTIONS = ['run.json', C8_CANDIDATES]
 
 export const verifyDir = (root, change) => join(root, '.superpowers', 'sdd', change, 'verify')
 const relOutput = (change, file) => `.superpowers/sdd/${change}/verify/${file}`
@@ -77,7 +87,7 @@ function readMeta(root, change) {
   return attempt(() => JSON.parse(readFileSync(join(changeDir(root, change), META_FILE), 'utf8')))
 }
 
-function resolveBase(root, change, git) {
+export function resolveBase(root, change, git) {
   const meta = readMeta(root, change)
   if (!meta) return { error: `cannot read ${changePrefix(change)}${META_FILE}` }
   try {
@@ -229,25 +239,36 @@ export function countsIn(text) {
   return counts
 }
 
-// impl and fix replies of the SDD workspace whose test summary carries no count, or a count
-// larger than any the apply record shows: one task's tests are a part of the whole suite.
+// The accepted impl and fix replies (their `valid` events in attempts.jsonl, lib/attempts.mjs)
+// whose last covering test-run record (lib/suite.mjs runCovering) printed no count line, counts
+// more tests than the apply record, or cannot be read; a done reply that names no run at all. One
+// task's tests are a part of the whole suite, so a larger total means the record missed a suite.
+// The record's total is the runner summary countsOf reads in it, else its largest count.
 export function reconcileCounts(root, change, recordText) {
-  const dir = join(root, '.superpowers', 'sdd', change, 'replies')
-  if (!existsSync(dir)) return { replies: 0, warnings: [] }
-  const recordMax = Math.max(0, ...countsIn(recordText))
+  const events = parseEvents(readLog(attemptsFile(root, change))).filter(
+    (e) => e.event === 'valid' && ['impl', 'fix'].includes(parseName(e.name)?.role) && e.result?.tests
+  )
+  const recordTotal = recordText === null ? null : countsOf(recordText)?.total ?? Math.max(0, ...countsIn(recordText))
   const warnings = []
-  let replies = 0
-  for (const file of readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
-    const reply = attempt(() => JSON.parse(readFileSync(join(dir, file), 'utf8')))
-    if (!reply || (reply.role !== 'impl' && reply.role !== 'fix') || typeof reply.tests?.summary !== 'string') continue
-    replies++
-    const counts = countsIn(reply.tests.summary)
-    if (counts.length === 0) warnings.push(`${file}: the test summary "${reply.tests.summary}" carries no count`)
-    else if (recordText !== null && Math.max(...counts) > recordMax) {
-      warnings.push(`${file}: the test summary "${reply.tests.summary}" counts more than the apply record (${recordMax})`)
+  for (const { name, result } of events) {
+    const last = (result.tests.runs ?? []).at(-1)
+    if (!last) {
+      if (/^DONE/.test(result.status ?? '')) warnings.push(`${name}: the reply names no covering test run`)
+      continue
+    }
+    let record
+    try {
+      record = readTestRecord(resolve(root, last.file))
+    } catch (error) {
+      warnings.push(`${name}: ${error.message}`)
+      continue
+    }
+    if (record.counts === null) warnings.push(`${name}: the covering run ${last.file} printed no count line`)
+    else if (recordTotal !== null && record.counts.total > recordTotal) {
+      warnings.push(`${name}: the covering run ${last.file} counts ${record.counts.total} tests, more than the apply record (${recordTotal})`)
     }
   }
-  return { replies, warnings }
+  return { replies: events.length, warnings }
 }
 
 function checkTestRecord(root, change, git) {
@@ -450,9 +471,13 @@ export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md
     writeFileSync(join(outDir, `${id}.txt`), `${text}\n`)
     return { id, title: CHECKS[id], verdict, summary, output: relOutput(change, `${id}.txt`), ...(countWarnings ? { countWarnings } : {}) }
   })
+  // When this verify session started: the verify replies' retries count from it
+  // (lib/verify-reply.mjs), and the verdict reads only the replies accepted since.
+  const started = cleared || !previous ? now : previous.started ?? previous.at ?? now
   const run = {
     change,
     at: now,
+    started,
     session,
     cleared,
     base: base.ref ?? null,
@@ -477,6 +502,22 @@ function validSection(section, id, root) {
   if (typeof section?.output !== 'string' || !section.output) errors.push('output must be a path')
   else if (!existsSync(resolve(root, section.output))) errors.push(`its output file ${section.output} does not exist`)
   return errors
+}
+
+// A c4 or c8 section is written by `dispatch.mjs reply` (lib/verify-reply.mjs) from an accepted
+// reply, never by an agent: it must name the reply of the last `valid` event of its dispatch since
+// the session started, and carry that event's computed verdict. Null when it does.
+function unbackedSection(root, change, id, section, since) {
+  const accepted = parseEvents(readLog(attemptsFile(root, change))).filter(
+    (e) => e.name === `verify ${id}` && e.event === 'valid' && (since === null || String(e.at ?? '') >= since)
+  )
+  const last = accepted.at(-1)
+  if (!last) return `no accepted verify ${id} reply is recorded in this session; record the reply with dispatch.mjs reply, which writes the section`
+  if (typeof section.reply !== 'string' || resolve(root, section.reply) !== resolve(root, last.file)) {
+    return `it is not the section of the last accepted verify ${id} reply (${relative(root, resolve(root, last.file))}); record the reply with dispatch.mjs reply, which writes the section`
+  }
+  if (last.result?.verdict !== section.verdict) return `its verdict ${section.verdict} is not the computed ${last.result?.verdict}`
+  return null
 }
 
 // The latest ruling per check id, from the ledger's `ruling --check --reason` records.
@@ -518,12 +559,13 @@ export function computeVerdict(rootArg, { change }) {
   const runFile = join(dir, 'run.json')
   if (!existsSync(runFile)) throw new Error(`no ${relOutput(change, 'run.json')}; run verify.mjs run first`)
   const run = JSON.parse(readFileSync(runFile, 'utf8'))
+  const since = run.started ?? run.at ?? null
   const sections = new Map(run.checks.map((c) => [c.id, c]))
   const refusals = []
   const redispatch = new Set()
   const needsRuling = []
   let rerun = false
-  for (const file of readdirSync(dir).filter((f) => f.endsWith('.json') && f !== 'run.json').sort()) {
+  for (const file of readdirSync(dir).filter((f) => f.endsWith('.json') && !NOT_SECTIONS.includes(f)).sort()) {
     const id = file.slice(0, -'.json'.length)
     const section = attempt(() => JSON.parse(readFileSync(join(dir, file), 'utf8')))
     if (section === null) {
@@ -537,6 +579,8 @@ export function computeVerdict(rootArg, { change }) {
       continue
     }
     const errors = validSection(section, id, root)
+    const unbacked = errors.length === 0 && REQUIRED_SECTIONS.includes(id) ? unbackedSection(root, change, id, section, since) : null
+    if (unbacked) errors.push(unbacked)
     if (errors.length > 0) {
       refusals.push(`${file}: ${errors.join('; ')}`)
       redispatch.add(id)
@@ -726,7 +770,9 @@ export function candidateLines(text, terms) {
 
 // For each host skill (`.claude/skills/*/SKILL.md` and the README.md beside it), the lines that
 // name a path, symbol, command or route the range's diff changed: the input of `verify c8`,
-// which judges each candidate. The listing is written to `<verify>/c8-candidates.txt`.
+// which judges each candidate. The listing is written to `<verify>/c8-candidates.txt`, the file
+// the agent reads, and as `<verify>/c8-candidates.json` { range, candidates: [{ file, line, text }] },
+// the list its reply is checked against (lib/verify-reply.mjs).
 export function skillCandidates(rootArg, { change }) {
   const root = resolve(rootArg)
   if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
@@ -758,6 +804,8 @@ export function skillCandidates(rootArg, { change }) {
   const outDir = verifyDir(root, change)
   mkdirSync(outDir, { recursive: true })
   writeFileSync(join(outDir, 'c8-candidates.txt'), `${lines.join('\n')}\n`)
+  const listed = skills.flatMap((s) => s.candidates.map((c) => ({ file: s.file, line: c.line, text: c.text })))
+  writeFileSync(join(outDir, C8_CANDIDATES), `${JSON.stringify({ range, candidates: listed }, null, 2)}\n`)
   return {
     ok: true,
     range,
@@ -795,10 +843,10 @@ export function patchOf(text) {
   return patch.endsWith('\n') ? patch : `${patch}\n`
 }
 
-const gitApply = (root, args, patch) => execFileSync('git', ['apply', ...args, '-'], { cwd: root, input: patch, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] })
+export const gitApply = (root, args, patch) => execFileSync('git', ['apply', ...args, '-'], { cwd: root, input: patch, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] })
 
 // The paths a patch touches, both ends of a rename, from `git apply --numstat -z`.
-function patchPaths(root, patch) {
+export function patchPaths(root, patch) {
   const parts = gitApply(root, ['--numstat', '-z'], patch).split('\0')
   const paths = []
   for (let i = 0; i < parts.length; i++) {
@@ -808,6 +856,16 @@ function patchPaths(root, patch) {
     else paths.push(parts[++i], parts[++i])
   }
   return paths.filter(Boolean)
+}
+
+// Whether a patch applies cleanly in <root>, changing nothing: null when it does, else git's reason.
+export function applyCheck(root, patch) {
+  try {
+    gitApply(root, ['--check'], patch)
+    return null
+  } catch (error) {
+    return String(error.stderr || error.message).trim()
+  }
 }
 
 // Applies the approved diff with `git apply`: refused when a path of it lies outside
@@ -836,12 +894,15 @@ function applySkillDiff(root, diffText) {
 
 // Commits an approved skill edit on its own, records its sha in the ledger and runs the checks
 // again. With `diff`, the text of the c8 agent's proposed diff, it is applied first
-// (applySkillDiff). Refused when any staged, changed or untracked path lies outside
-// `.claude/skills/`.
-export function skillEdit(rootArg, { change, message, diff = null, tracks = 'tasks.md', env = process.env, now }) {
+// (applySkillDiff). With none, a clean tree takes `<verify>/c8.diff`, the CONFIRMED patches of the
+// accepted c8 reply, when it exists; a tree that holds the edit already is committed as it is.
+// Refused when any staged, changed or untracked path lies outside `.claude/skills/`.
+export function skillEdit(rootArg, { change, message, diff: diffArg = null, tracks = 'tasks.md', env = process.env, now }) {
   const root = resolve(rootArg)
   if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
   if (typeof message !== 'string' || !CONVENTIONAL.test(message)) throw new Error('the message must be a Conventional Commit: type(scope): description')
+  const c8Diff = join(verifyDir(root, change), C8_DIFF)
+  const diff = diffArg ?? (changedPaths(root).length === 0 && existsSync(c8Diff) ? readFileSync(c8Diff, 'utf8') : null)
   if (diff !== null) applySkillDiff(root, diff)
   const paths = changedPaths(root)
   const outside = paths.filter((p) => !p.startsWith(SKILLS_DIR))
@@ -850,7 +911,7 @@ export function skillEdit(rootArg, { change, message, diff = null, tracks = 'tas
   const committed = commitPaths(root, { only: paths, message })
   const { record } = appendRecord(root, change, 'skill-edit', { sha: committed.commit, message }, { env })
   const run = runChecks(root, { change, tracks, env, ...(now ? { now } : {}) })
-  return { ok: true, commit: committed.commit, files: committed.files, record: record.id, run }
+  return { ok: true, commit: committed.commit, files: committed.files, record: record.id, diff: diffArg === null && diff !== null ? relOutput(change, C8_DIFF) : null, run }
 }
 
 // ---------------------------------------------------------------- the record
@@ -874,11 +935,7 @@ const HEADING_IDS = {
 const OTHER_HEADINGS = ['Checks run with the developer', 'Exercised and not exercised', 'Rulings', 'Next step']
 const DISPATCHED_BY = { c4: 'verify c4', c8: 'verify c8', 'test-record': 'verify.mjs run --suite', developer: 'verify.mjs developer' }
 
-function fenced(text) {
-  const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((m) => m[0].length))
-  const fence = '`'.repeat(Math.max(3, longest + 1))
-  return [`${fence}text`, text.replace(/\n+$/, ''), fence].join('\n')
-}
+const fenced = (text) => fenceText(text, 'text')
 
 // `**<name>:** <value>`: a list goes below the label, an empty list is `none`, and an absent
 // value is the fallback.
@@ -909,8 +966,8 @@ function bulletsUnder(text, heading) {
 }
 
 // Renders `openspec/changes/<change>/verify.md` from the template, run.json, the sections and
-// their verbatim output files, the verdict, the rulings and the approved skill edits, deciding
-// nothing; refuses when the verdict refuses or HEAD moved since the run. The record's last line
+// their verbatim output files, the c4 and c8 replies (lib/reply-render.mjs, the JSON a section
+// names in `reply`), the verdict, the rulings and the approved skill edits, deciding nothing; refuses when the verdict refuses or HEAD moved since the run. The record's last line
 // is the verdict's `line`, checked after writing. With `commit`, the record is committed alone.
 export function assemble(rootArg, { change, commit = false, template = TEMPLATE, now = new Date().toISOString() }) {
   const root = resolve(rootArg)
@@ -936,17 +993,25 @@ export function assemble(rootArg, { change, commit = false, template = TEMPLATE,
   const rulings = records.filter((r) => r.kind === 'ruling' && typeof r.check === 'string')
   const skillEdits = records.filter((r) => r.kind === 'skill-edit')
   const placed = new Set()
-  const sectionOf = (c, fields = []) => {
+  const sectionOf = (c, fields = [], { verbatim = true } = {}) => {
     placed.add(c.id)
-    return [`**Result:** ${c.display}: ${c.summary}`, ...fields.flatMap((f) => ['', f]), '', fenced(output(c))]
+    return [`**Result:** ${c.display}: ${c.summary}`, ...fields.flatMap((f) => ['', f]), ...(verbatim ? ['', fenced(output(c))] : [])]
   }
-  const c4 = extra('c4')
-  const notStated = 'not stated in the c4 section'
+  // A judgement section is rendered from its reply, not pasted: computeVerdict accepted it only
+  // as the section of a recorded valid reply.
+  const replyOf = (id) => {
+    const section = extra(id)
+    return { reply: JSON.parse(readFileSync(resolve(root, section.reply), 'utf8')), result: section.result }
+  }
+  const c4 = byId.has('c4') ? replyOf('c4') : null
+  const c4l = c4 ? c4Lines(c4.reply, c4.result) : null
   const renderers = {
     c4: (c) => sectionOf(c, [
-      labelled('Hand-edited capability prose', c4.proseEdits, notStated),
-      labelled('Removal accounting', c4.removalAccounting, notStated)
-    ]),
+      `**Case:** ${c4.reply.case}`,
+      labelled('Findings', c4l.findings),
+      labelled('Hand-edited capability prose', c4l.proseEdits),
+      c4l.removalAccounting.length ? labelled('Removal accounting', c4l.removalAccounting) : '**Removal accounting:** N/A: no REMOVED or RENAMED requirement'
+    ], { verbatim: false }),
     'test-record': (c) => {
       const rerun = existsSync(join(dir, 'test-record.json'))
       const section = rerun ? extra('test-record') : {}
@@ -959,10 +1024,18 @@ export function assemble(rootArg, { change, commit = false, template = TEMPLATE,
         labelled('Test count warnings', warnings, 'none')
       ])
     },
-    c8: (c) => sectionOf(c, [
-      labelled('Approved skill edits', skillEdits.map((r) => `\`${r.sha}\`${r.message ? ` ${r.message}` : ''}`), 'none'),
-      labelled('Declined edits', rulings.filter((r) => r.check === 'c8').map((r) => `${r.reason} (${r.id})`), 'none')
-    ])
+    c8: (c) => {
+      const { reply } = replyOf('c8')
+      const l = c8Lines(reply)
+      return sectionOf(c, [
+        labelled('CONFIRMED', l.confirmed),
+        labelled('PLAUSIBLE', l.plausible),
+        labelled('Not contradicted', l.none),
+        `**Proposed edits:**${l.patch ? `\n\n${fenceText(l.patch, 'diff')}` : ' none'}`,
+        labelled('Approved skill edits', skillEdits.map((r) => `\`${r.sha}\`${r.message ? ` ${r.message}` : ''}`), 'none'),
+        labelled('Declined edits', rulings.filter((r) => r.check === 'c8').map((r) => `${r.reason} (${r.id})`), 'none')
+      ], { verbatim: false })
+    }
   }
   const verifier = [
     attempt(() => git('config', 'user.name')) || 'unknown',
@@ -993,7 +1066,7 @@ export function assemble(rootArg, { change, commit = false, template = TEMPLATE,
       const dev = byId.get(DEVELOPER_ID)
       body = dev ? sectionOf(dev) : ['none']
     } else if (heading === 'Exercised and not exercised') {
-      body = Array.isArray(c4.exercised) ? (c4.exercised.length ? c4.exercised.map((v) => `- ${v}`) : ['none']) : [typeof c4.exercised === 'string' && c4.exercised.trim() ? c4.exercised.trim() : notStated]
+      body = c4l && c4l.exercised.length ? c4l.exercised.map((v) => `- ${v}`) : ['none']
     } else if (heading === 'Rulings') {
       const lines = rulings.map((r) => `- \`${r.check}\`: ${r.reason} (${r.id})`)
       for (const i of result.ignoredRulings) lines.push(`- \`${i.check}\`: ignored (${i.id}): ${i.reason}`)

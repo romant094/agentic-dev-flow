@@ -14,8 +14,12 @@ import { appendRecord, buildRecord } from '../lib/ledger.mjs'
 import { initRegistry, readRegistry, validateRegistry, writeRegistry } from '../lib/registry.mjs'
 import { assemble, changedTerms, computeVerdict, countsIn, deltaState, pathMatcher, plannedPaths, renderReport, runChecks, skillCandidates, skillEdit, verifyDir, writeDeveloper } from '../lib/verify.mjs'
 import { create } from '../lib/workspace.mjs'
-import { writeCommand } from '../lib/suite.mjs'
+import { runCovering, writeCommand } from '../lib/suite.mjs'
+import { recordReply } from '../lib/attempts.mjs'
+import { CONTRADICTION, c4Reply, c8Reply, DRIFT, judge, judged as judgedIn } from './verify-replies.mjs'
 import { run as verifyCli } from '../verify.mjs'
+import { run as dispatchCli } from '../dispatch.mjs'
+import { checkVerifyReply, FAIL_KINDS, proseEditsIn, WARN_KINDS } from '../lib/verify-reply.mjs'
 import { writeSpecsBase } from '../lib/specs.mjs'
 
 const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -97,22 +101,23 @@ function host({ outsidePlan, plan = PLAN, tasks = '- [x] 1.1 greet\n', record = 
 const byId = (result) => Object.fromEntries(result.checks.map((c) => [c.id, c]))
 const runIn = (root, opts = {}) => byId(runChecks(root, { change: CHANGE, now: 'T', ...opts }))
 
-function reply(root, name, value) {
-  write(root, `.superpowers/sdd/${CHANGE}/replies/${name}.json`, JSON.stringify(value))
+// An accepted impl or fix reply whose covering run printed `out`: the test-run record runCovering
+// writes and the valid event dispatch.mjs reply records, with the computed result's tests.
+function implRun(root, name, out, status = 'DONE') {
+  const printed = join(mkdtempSync(join(tmpdir(), 'adf-out-')), 'out.txt')
+  writeFileSync(printed, out ?? '')
+  const run = out === null ? null : runCovering(root, { change: CHANGE, name, command: `cat "${printed}"`, worktree: root })
+  const runs = run ? [{ file: run.file, command: run.command, exit: run.exit, counts: run.counts, failing: run.failing }] : []
+  recordReply(root, CHANGE, { name, file: join(root, `.superpowers/sdd/${CHANGE}/replies/${name.replace(/ /g, '-')}.json`), result: { status, tests: { result: run ? 'pass' : null, counts: run?.counts ?? null, runs } } })
 }
-
-const impl = (summary) => ({ role: 'impl', status: 'DONE', commits: [], tests: { command: 'npm test', result: 'pass', summary }, concerns: [], report: 'r' })
 
 function section(root, id, verdict, { output = `.superpowers/sdd/${CHANGE}/verify/${id}-agent.txt`, writeOutput = true } = {}) {
   if (writeOutput) write(root, output, 'agent output\n')
   write(root, `.superpowers/sdd/${CHANGE}/verify/${id}.json`, JSON.stringify({ id, title: `Agent ${id}`, verdict, summary: `${id} summary`, output }))
 }
 
-// The two judgement sections every verdict needs, as passes.
-function judged(root) {
-  section(root, 'c4', 'pass')
-  section(root, 'c8', 'pass')
-}
+// The two judgement sections every verdict needs, as passes, from recorded replies.
+const judged = (root) => judgedIn(root, CHANGE)
 
 test('a complete change passes every check, and each check leaves its output and run.json', () => {
   const { root } = host()
@@ -237,19 +242,24 @@ test('test-record fails with no record and with a record naming no commit', () =
 
 test('test-record warns on an impl or fix reply with no count, or one the record contradicts', () => {
   const { root } = host()
-  reply(root, 'impl-task-1', impl('4 passed'))
-  reply(root, 'review-task-1', { role: 'review', verdict: 'pass', findings: [] })
+  implRun(root, 'T1 impl', '# tests 4\n# pass 4\n')
+  recordReply(root, CHANGE, { name: 'T1 review', file: 'r.json', result: { result: 'clean' } })
+  implRun(root, 'T3 impl', null, 'BLOCKED')
   assert.equal(runIn(root)['test-record'].verdict, 'pass')
 
-  reply(root, 'impl-task-2', impl('PASS'))
-  reply(root, 'fix-task-2', { ...impl('17 tests passed'), role: 'fix' })
+  implRun(root, 'T2 impl', 'all green\n')
+  implRun(root, 'T2 fix r1', '# tests 17\n# pass 17\n')
+  implRun(root, 'T4 impl', null)
+  recordReply(root, CHANGE, { name: 'T5 impl', file: 'x.json', errors: ['$.commits: required'] })
   const check = runIn(root)['test-record']
   assert.equal(check.verdict, 'warn')
-  assert.equal(check.summary.endsWith('2 test count warning(s)'), true)
+  assert.equal(check.summary.endsWith('3 test count warning(s)'), true)
   const output = readFileSync(join(root, check.output), 'utf8')
-  assert.match(output, /impl-task-2\.json: the test summary "PASS" carries no count/)
-  assert.match(output, /fix-task-2\.json: the test summary "17 tests passed" counts more than the apply record \(4\)/)
-  assert.doesNotMatch(output, /impl-task-1/)
+  assert.match(output, /test counts: 5 impl\/fix replies read/)
+  assert.match(output, /T2 impl: the covering run \.superpowers\/sdd\/add-x\/tests\/T2-impl-[^ ]+\.json printed no count line/)
+  assert.match(output, /T2 fix r1: the covering run [^ ]+ counts 17 tests, more than the apply record \(4\)/)
+  assert.match(output, /T4 impl: the reply names no covering test run/)
+  assert.doesNotMatch(output, /T1 impl|T3 impl|T5 impl/)
 })
 
 test('countsIn reads the shapes a runner summary takes', () => {
@@ -379,32 +389,52 @@ test('verdict: warnings, agent sections, and the refusals', () => {
   const { root } = host()
   assert.throws(() => computeVerdict(root, { change: CHANGE }), /no \.superpowers\/sdd\/add-x\/verify\/run\.json/)
   runChecks(root, { change: CHANGE })
-  section(root, 'c4', 'warn')
+  judge(root, CHANGE, 'c4', c4Reply({ findings: [DRIFT], summary: 'one drift' }))
   let result = computeVerdict(root, { change: CHANGE })
   assert.deepEqual(result.refusals, ['c8.json is missing: the verify c8 dispatch has not written its section'])
   assert.deepEqual(result.redispatch, ['c8'])
-  section(root, 'c8', 'pass')
+  const c8 = judge(root, CHANGE, 'c8')
   result = computeVerdict(root, { change: CHANGE })
   assert.equal(result.verdict, 'PASS WITH WARNINGS')
-  assert.deepEqual(result.checks.find((c) => c.id === 'c4'), { id: 'c4', title: 'Agent c4', verdict: 'warn', summary: 'c4 summary', output: `.superpowers/sdd/${CHANGE}/verify/c4-agent.txt`, display: 'WARN' })
+  const reply = `.superpowers/sdd/${CHANGE}/replies/verify-c4.json`
+  assert.deepEqual(result.checks.find((c) => c.id === 'c4'), {
+    id: 'c4',
+    title: 'Design and specs coherence',
+    verdict: 'warn',
+    summary: 'warns: doc-drift at design.md:3, specs/greeting/spec.md:5. one drift',
+    output: reply,
+    display: 'WARN'
+  })
 
-  section(root, 'c8', 'fail', { output: `.superpowers/sdd/${CHANGE}/verify/c8-gone.txt`, writeOutput: false })
+  rmSync(c8.replyFile)
   result = computeVerdict(root, { change: CHANGE })
   assert.equal(result.ok, false)
-  assert.deepEqual(result.refusals, [`c8.json: its output file .superpowers/sdd/${CHANGE}/verify/c8-gone.txt does not exist`])
+  assert.deepEqual(result.refusals, [`c8.json: its output file .superpowers/sdd/${CHANGE}/replies/verify-c8.json does not exist`])
   assert.deepEqual([result.redispatch, result.needsRuling, result.rerun], [['c8'], [], false])
   assert.deepEqual(result.redispatchCommands, [{ id: 'c8', command: `node "${SCRIPTS}/dispatch.mjs" prompt --role verify --check c8 --change ${CHANGE} --root "${root}"` }])
   assert.equal(result.rerunCommand, null)
 
-  section(root, 'c8', 'not-run')
+  // A section no recorded reply backs, or one whose verdict is not the computed one, is refused.
+  section(root, 'c8', 'pass')
   result = computeVerdict(root, { change: CHANGE })
-  assert.deepEqual(result.refusals, ['c8 was not run and has no ruling: c8 summary'])
-  assert.deepEqual([result.redispatch, result.needsRuling], [[], ['c8']])
-  assert.deepEqual(result.rulingCommands, [
-    { id: 'c8', command: `node "${SCRIPTS}/ledger.mjs" ruling --check c8 --reason "<the developer's reason, in their words>" --change ${CHANGE} --root "${root}"` }
-  ])
+  assert.match(result.refusals[0], /^c8\.json: it is not the section of the last accepted verify c8 reply \(\.superpowers\/sdd\/add-x\/replies\/verify-c8\.json\)/)
+  assert.deepEqual(result.redispatch, ['c8'])
+  judge(root, CHANGE, 'c8')
+  const forged = JSON.parse(readFileSync(join(verifyDir(root, CHANGE), 'c4.json'), 'utf8'))
+  write(root, `.superpowers/sdd/${CHANGE}/verify/c4.json`, JSON.stringify({ ...forged, verdict: 'pass' }))
+  assert.deepEqual(computeVerdict(root, { change: CHANGE }).refusals, ['c4.json: its verdict pass is not the computed warn'])
 
-  section(root, 'c8', 'fail')
+  writeDeveloper(root, { change: CHANGE, text: 'The board was not at hand.', verdict: 'not-run' })
+  judge(root, CHANGE, 'c4')
+  result = computeVerdict(root, { change: CHANGE })
+  assert.deepEqual(result.refusals, ['developer was not run and has no ruling: The board was not at hand.'])
+  assert.deepEqual([result.redispatch, result.needsRuling], [[], ['developer']])
+  assert.deepEqual(result.rulingCommands, [
+    { id: 'developer', command: `node "${SCRIPTS}/ledger.mjs" ruling --check developer --reason "<the developer's reason, in their words>" --change ${CHANGE} --root "${root}"` }
+  ])
+  rmSync(join(verifyDir(root, CHANGE), 'developer.json'))
+
+  judge(root, CHANGE, 'c4', c4Reply({ findings: [CONTRADICTION] }))
   assert.equal(computeVerdict(root, { change: CHANGE }).line, 'Verdict: FAIL')
   section(root, 'tree', 'pass')
   result = computeVerdict(root, { change: CHANGE })
@@ -637,7 +667,8 @@ test('prompts lists the skill candidates and writes the c4 and c8 prompts in one
   assert.deepEqual(result.dispatches.map((d) => [d.check, d.name, d.agent]), [['c4', 'verify c4', 'adf:architecture'], ['c8', 'verify c8', 'adf:integration']])
   assert.match(result.dispatches[1].prompt, /c8-candidates\.txt/)
   assert.match(result.dispatches[1].prompt, /git apply/)
-  assert.ok(result.dispatches.every((d) => d.sectionFiles.length === 2))
+  assert.deepEqual(result.dispatches.map((d) => d.replyFile), ['verify-c4', 'verify-c8'].map((n) => join(root, '.superpowers', 'sdd', CHANGE, 'replies', `${n}.json`)))
+  assert.deepEqual(JSON.parse(readFileSync(join(verifyDir(root, CHANGE), 'c8-candidates.json'), 'utf8')).candidates, [])
 })
 
 test('skill-candidates lists the skill lines naming a changed path, symbol, command or route', () => {
@@ -678,17 +709,21 @@ test('developer writes its output file and a section the verdict reads', () => {
 test('assemble renders the record from the sections, ends on the verdict line and commits it alone', () => {
   const { root } = host()
   runChecks(root, { change: CHANGE, now: 'T' })
-  section(root, 'c8', 'pass')
-  write(root, `.superpowers/sdd/${CHANGE}/verify/c4-agent.txt`, 'decision 1 traces to R1\n```js\nx\n```\n')
-  write(root, `.superpowers/sdd/${CHANGE}/verify/c4.json`, JSON.stringify({ id: 'c4', title: 'Design and specs coherence', verdict: 'warn', summary: 'one drift', output: `.superpowers/sdd/${CHANGE}/verify/c4-agent.txt`, proseEdits: 'none', removalAccounting: 'N/A: no REMOVED or RENAMED requirement', exercised: ['greet: exercised by a.spec'] }))
+  judge(root, CHANGE, 'c8')
+  judge(root, CHANGE, 'c4', c4Reply({
+    findings: [DRIFT],
+    exercised: [{ mechanism: 'greet', path: 'the CLI', exercisedBy: 'a.spec' }, { mechanism: 'greet', path: 'the retry', exercisedBy: null }],
+    summary: 'one drift, with ```js x``` quoted'
+  }))
   const refused = assemble(root, { change: CHANGE, commit: true })
   assert.equal(refused.ok, true, 'c4 and c8 present')
   const text = readFileSync(join(root, refused.file), 'utf8')
   assert.equal(text.trimEnd().split('\n').at(-1), 'Verdict: PASS WITH WARNINGS')
   assert.match(text, /^# Verification Report\n\n\*\*Change:\*\* `add-x`/)
-  assert.match(text, /## Design and specs coherence\n\n\*\*Result:\*\* WARN: one drift\n\n\*\*Hand-edited capability prose:\*\* none\n\n\*\*Removal accounting:\*\* N\/A/)
-  assert.match(text, /````text\ndecision 1 traces to R1\n```js\nx\n```\n````/)
-  assert.match(text, /## Exercised and not exercised\n\n- greet: exercised by a\.spec/)
+  assert.match(text, /## Design and specs coherence\n\n\*\*Result:\*\* WARN: warns: doc-drift at design\.md:3, specs\/greeting\/spec\.md:5; nothing exercised greet: the retry\. one drift, with ```js x``` quoted\n\n\*\*Case:\*\* no-design\n\n\*\*Findings:\*\*\n\n- doc-drift at design\.md:3 and specs\/greeting\/spec\.md:5: the two disagree\n\n\*\*Hand-edited capability prose:\*\* none\n\n\*\*Removal accounting:\*\* N\/A: no REMOVED or RENAMED requirement\n\n## /)
+  assert.doesNotMatch(text, /"role": "verify-c4"/, 'the reply is rendered, never pasted')
+  assert.match(text, /## Stale skills\n\n\*\*Result:\*\* PASS: no stale skill\n\n\*\*CONFIRMED:\*\* none\n\n\*\*PLAUSIBLE:\*\* none\n\n\*\*Not contradicted:\*\* none\n\n\*\*Proposed edits:\*\* none/)
+  assert.match(text, /## Exercised and not exercised\n\n- greet, the CLI: exercised by a\.spec\n- greet, the retry: nothing exercised it/)
   assert.match(text, /\*\*Scope that ran:\*\* the record cited, not re-run/)
   assert.match(text, /## Checks run with the developer\n\nnone/)
   assert.match(text, /## Rulings\n\nnone/)
@@ -720,4 +755,125 @@ test('verdict --report renders failing, warnings, accepted and the next step', (
   const proc = spawnSync('node', [CLI, 'verdict', '--change', CHANGE, '--root', root, '--report'], { encoding: 'utf8' })
   assert.equal(JSON.parse(proc.stdout).report, report)
   assert.equal(spawnSync('node', [CLI, 'assemble', '--change', CHANGE, '--root', root, '--report'], { encoding: 'utf8' }).status, 2)
+})
+
+// ---------------------------------------------------------------- the c4 and c8 replies
+
+const c4Ctx = (root, over = {}) => ({ root, change: CHANGE, case: 'no-design', proseEdits: [], removals: [], ...over })
+const c4Check = (reply, ctx) => checkVerifyReply('c4', JSON.stringify(reply), ctx)
+
+test('c4: the script computes the verdict from each finding kind and from what nothing exercised', () => {
+  const { root } = host()
+  const where = [{ file: 'a.md', line: 1 }, { file: 'b.md', line: null }]
+  for (const kind of FAIL_KINDS) assert.equal(c4Check(c4Reply({ findings: [{ kind, where, text: 't' }] }), c4Ctx(root)).result.verdict, 'fail', kind)
+  for (const kind of WARN_KINDS) assert.equal(c4Check(c4Reply({ findings: [{ kind, where, text: 't' }] }), c4Ctx(root)).result.verdict, 'warn', kind)
+  assert.equal(FAIL_KINDS.length + WARN_KINDS.length, 9, 'every kind of the schema has a verdict')
+  const unexercised = c4Check(c4Reply({ exercised: [{ mechanism: 'm', path: 'p', exercisedBy: null }] }), c4Ctx(root)).result
+  assert.deepEqual([unexercised.verdict, unexercised.warn], ['warn', ['nothing exercised m: p']])
+  assert.equal(c4Check(c4Reply({ exercised: [{ mechanism: 'm', path: 'p', exercisedBy: 'x.spec' }] }), c4Ctx(root)).result.verdict, 'pass')
+  const both = c4Check(c4Reply({ findings: [DRIFT, CONTRADICTION] }), c4Ctx(root)).result
+  assert.deepEqual([both.verdict, both.fail, both.warn], ['fail', ['exec-contradiction at src/a.mjs:1'], ['doc-drift at design.md:3, specs/greeting/spec.md:5']])
+  assert.deepEqual(c4Check(c4Reply({ findings: [{ ...DRIFT, where: [DRIFT.where[0]] }] }), c4Ctx(root)).errors, ['$.findings[0].where: a doc-drift names both sides, a file and a line on each'])
+  assert.deepEqual(c4Check(c4Reply({ case: 'both' }), c4Ctx(root)).errors, ['$.case: the change\'s files give "no-design", not "both"'])
+  assert.deepEqual(c4Check({ ...c4Reply(), verdict: 'pass' }, c4Ctx(root)).errors, ['$: verdict is not allowed'], 'the reply states no verdict')
+})
+
+test('c4: each REMOVED or RENAMED requirement the script lists is answered once, and its accounting decides', () => {
+  const { root } = host()
+  const ctx = c4Ctx(root, { removals: [{ op: 'REMOVED', requirement: 'Greeting', spec: 'specs/greeting/spec.md', codeDisposition: 'deleted with its route' }, { op: 'RENAMED', requirement: 'Welcome', from: 'Hello', spec: 'specs/greeting/spec.md', codeDisposition: null }] })
+  const entry = (op, requirement, over = {}) => ({ requirement, op, disposition: 'deleted', holds: true, oldPathReachable: false, ...over })
+  assert.deepEqual(c4Check(c4Reply(), ctx).errors, ['$.removalAccounting: REMOVED Greeting is not answered', '$.removalAccounting: RENAMED Welcome is not answered'])
+  assert.deepEqual(c4Check(c4Reply({ removalAccounting: [entry('REMOVED', 'Greeting'), entry('REMOVED', 'Greeting'), entry('RENAMED', 'Hello')] }), ctx).errors, [
+    '$.removalAccounting[1]: REMOVED Greeting is answered twice',
+    '$.removalAccounting[2]: RENAMED Hello is not one the script listed',
+    '$.removalAccounting: RENAMED Welcome is not answered'
+  ])
+  const result = c4Check(c4Reply({ removalAccounting: [entry('REMOVED', 'Greeting', { holds: false, oldPathReachable: true }), entry('RENAMED', 'Welcome')] }), ctx).result
+  assert.deepEqual(result.fail, ['the code contradicts the disposition of REMOVED Greeting', 'the old path of REMOVED Greeting is still reachable', 'RENAMED Welcome has no Code Disposition'])
+  const clean = c4Check(c4Reply({ removalAccounting: [entry('REMOVED', 'Greeting'), entry('RENAMED', 'Welcome')] }), c4Ctx(root, { removals: ctx.removals.map((r) => ({ ...r, codeDisposition: 'kept' })) })).result
+  assert.equal(clean.verdict, 'pass')
+  assert.equal(c4Check(c4Reply({ removalAccounting: [entry('REMOVED', 'Greeting', { disposition: null }), entry('RENAMED', 'Welcome')] }), c4Ctx(root, { removals: ctx.removals.map((r) => ({ ...r, codeDisposition: 'kept' })) })).result.verdict, 'fail')
+})
+
+test('c4: the script finds each hand edit of a capability spec and where it lies; the reply gives only the reason', () => {
+  const { root } = host()
+  const above = commit(root, { 'openspec/specs/greeting/spec.md': MAIN.replace('greets every user', 'greets each user') }, 'docs(specs): reword the purpose')
+  const below = commit(root, { 'openspec/specs/greeting/spec.md': MAIN.replace('greets every user', 'greets each user').replace('greet the user.', 'greet the user warmly.') }, 'edit a requirement')
+  const listed = proseEditsIn(root, CHANGE)
+  assert.deepEqual(listed.map((p) => [p.capability, p.commit, p.position]), [['greeting', above, 'above'], ['greeting', below, 'below']])
+  const ctx = c4Ctx(root, { proseEdits: listed })
+  assert.deepEqual(c4Check(c4Reply({ proseEdits: [{ capability: 'greeting', commit: above.slice(0, 8), reason: 'the purpose named the old flow' }] }), ctx).errors, [`$.proseEdits: the edit of greeting in ${below.slice(0, 7)} is not answered`])
+  assert.deepEqual(c4Check(c4Reply({ proseEdits: [{ capability: 'farewell', commit: above, reason: null }, { capability: 'greeting', commit: 'abcdef1', reason: null }] }), ctx).errors.slice(0, 2), [
+    '$.proseEdits[1].commit: abcdef1 is no commit',
+    `$.proseEdits[0]: the edit of farewell in ${above.slice(0, 7)} is not one the script listed`
+  ])
+  const result = c4Check(c4Reply({ proseEdits: [{ capability: 'greeting', commit: above.slice(0, 8), reason: null }, { capability: 'greeting', commit: below, reason: 'a typo' }] }), ctx).result
+  assert.deepEqual(result.fail, [`an edit of greeting at or below ## Requirements in ${below.slice(0, 7)}`])
+  assert.deepEqual(result.warn, [`an edit of greeting in ${above.slice(0, 7)} with no stated reason`])
+  assert.deepEqual(result.proseEdits.map((p) => [p.commit, p.position, p.reason]), [[above, 'above', null], [below, 'below', 'a typo']])
+  assert.equal(c4Check(c4Reply({ proseEdits: [{ capability: 'greeting', commit: above, reason: 'r' }] }), c4Ctx(root, { proseEdits: listed.slice(0, 1) })).result.verdict, 'pass')
+})
+
+// A host whose range changed greetUser, with a skill naming it on line 3: one c8 candidate.
+function skillHost() {
+  const { root } = host()
+  commit(root, { '.claude/skills/greet/SKILL.md': '# Greet\n\nIt calls greetUser once.\n', 'src/a.mjs': 'export function greetUser() {}\n' }, 'greet')
+  write(root, '.claude/skills/greet/SKILL.md', '# Greet\n\nIt calls greetUser twice.\n')
+  const patch = `${git(root, 'diff', '--', '.claude/skills')}\n`
+  git(root, 'checkout', '--', '.')
+  runChecks(root, { change: CHANGE })
+  skillCandidates(root, { change: CHANGE })
+  return { root, patch }
+}
+
+test('c8: every candidate is answered once, and each CONFIRMED patch applies; a refused patch never reaches the developer', () => {
+  const { root, patch } = skillHost()
+  const ctx = { root, change: CHANGE, candidates: JSON.parse(readFileSync(join(verifyDir(root, CHANGE), 'c8-candidates.json'), 'utf8')).candidates }
+  assert.deepEqual(ctx.candidates, [{ file: '.claude/skills/greet/SKILL.md', line: 3, text: 'It calls greetUser once.' }])
+  const check = (candidates) => checkVerifyReply('c8', JSON.stringify(c8Reply({ candidates })), ctx)
+  const item = (over) => ({ file: '.claude/skills/greet/SKILL.md', line: 3, class: 'CONFIRMED', fact: 'greetUser runs once', why: 'the diff calls it twice', patch, ...over })
+  assert.deepEqual(check([]).errors, ['$.candidates: the candidate .claude/skills/greet/SKILL.md:3 is not answered'])
+  assert.deepEqual(check([item(), item()]).errors.slice(0, 1), ['$.candidates[1]: the candidate .claude/skills/greet/SKILL.md:3 is answered twice'])
+  assert.deepEqual(check([item({ line: 4 })]).errors.slice(0, 1), ['$.candidates[0]: the candidate .claude/skills/greet/SKILL.md:4 is not one the script listed'])
+  assert.deepEqual(check([item({ patch: undefined })]).errors, ['$.candidates[0]: patch is required'])
+  assert.match(check([item({ patch: patch.replace('once', 'thrice') })]).errors[0], /^\$\.candidates\[0\]\.patch: git apply --check refuses it in /)
+  assert.match(check([item({ patch: patch.replace(/\.claude\/skills\/greet\/SKILL\.md/g, 'src/a.mjs') })]).errors[0], /it touches paths outside \.claude\/skills\/: src\/a\.mjs/)
+  assert.deepEqual(check([item({ class: 'PLAUSIBLE' })]).errors, ['$.candidates[0].patch: only a CONFIRMED item carries a patch'])
+  const confirmed = check([item()]).result
+  assert.deepEqual([confirmed.verdict, confirmed.fail], ['fail', ['CONFIRMED .claude/skills/greet/SKILL.md:3']])
+  assert.equal(check([item({ class: 'PLAUSIBLE', patch: undefined })]).result.verdict, 'warn')
+  assert.equal(check([item({ class: 'none', patch: undefined })]).result.verdict, 'pass')
+})
+
+test('c8: an accepted reply joins its patches into c8.diff, which skill-edit applies by default', () => {
+  const { root, patch } = skillHost()
+  const reply = c8Reply({ candidates: [{ file: '.claude/skills/greet/SKILL.md', line: 3, class: 'CONFIRMED', fact: 'greetUser runs once', why: 'the diff calls it twice', patch }] })
+  const recorded = judge(root, CHANGE, 'c8', reply)
+  assert.equal(recorded.valid, true)
+  assert.equal(recorded.result.diff, `.superpowers/sdd/${CHANGE}/verify/c8.diff`)
+  assert.equal(readFileSync(join(root, recorded.result.diff), 'utf8'), patch)
+  const section = JSON.parse(readFileSync(join(verifyDir(root, CHANGE), 'c8.json'), 'utf8'))
+  assert.deepEqual([section.verdict, section.reply], ['fail', `.superpowers/sdd/${CHANGE}/replies/verify-c8.json`])
+  const edited = skillEdit(root, { change: CHANGE, message: 'docs(skills): greet twice', env: {} })
+  assert.equal(edited.diff, `.superpowers/sdd/${CHANGE}/verify/c8.diff`)
+  assert.equal(readFileSync(join(root, '.claude/skills/greet/SKILL.md'), 'utf8'), '# Greet\n\nIt calls greetUser twice.\n')
+  judge(root, CHANGE, 'c8', c8Reply({ candidates: [{ file: '.claude/skills/greet/SKILL.md', line: 3, class: 'none', fact: 'greetUser runs twice', why: 'the skill now agrees' }] }))
+  assert.equal(existsSync(join(root, recorded.result.diff)), false, 'nothing CONFIRMED: no c8.diff')
+})
+
+test('a verify reply goes through dispatch.mjs reply: one retry, then stop; a new session starts the count again', () => {
+  const { root } = host()
+  runChecks(root, { change: CHANGE, env: { CLAUDE_CODE_SESSION_ID: 's1' } })
+  const file = join(root, '.superpowers', 'sdd', CHANGE, 'replies', 'verify-c4.json')
+  write(root, `.superpowers/sdd/${CHANGE}/replies/verify-c4.json`, JSON.stringify({ ...c4Reply(), verdict: 'pass' }))
+  const reply = () => dispatchCli(['reply', '--change', CHANGE, '--name', 'verify c4', '--file', file, '--root', root])
+  let out = reply()
+  assert.deepEqual([out.valid, out.next, out.mode, out.errors], [false, 'retry', 'resume', ['$: verdict is not allowed']])
+  assert.equal(existsSync(join(verifyDir(root, CHANGE), 'c4.json')), false, 'a refused reply writes no section')
+  assert.equal(reply().next, 'stop')
+  assert.throws(reply, /verify c4 stopped after 2 invalid replies/)
+  runChecks(root, { change: CHANGE, env: { CLAUDE_CODE_SESSION_ID: 's2' } })
+  write(root, `.superpowers/sdd/${CHANGE}/replies/verify-c4.json`, JSON.stringify(c4Reply()))
+  out = reply()
+  assert.deepEqual([out.valid, out.next, out.section, out.result.verdict], [true, 'proceed', `.superpowers/sdd/${CHANGE}/verify/c4.json`, 'pass'])
 })

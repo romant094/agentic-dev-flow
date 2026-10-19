@@ -31,18 +31,21 @@
 //   verify.mjs skill-edit --change <name> --message "<type(scope): description>"
 //                         [--diff-file <file>] [--root <dir>]
 //       --diff-file: apply the approved diff with `git apply` (from the file's first
-//       `diff --git` line, so the c8 output file itself can be passed), refused when a path of
-//       it lies outside .claude/skills/, when the tree already holds a change, or when it does
-//       not apply cleanly. Then commit the skill edit, refused when any staged, changed or
+//       `diff --git` line), refused when a path of it lies outside .claude/skills/, when the tree
+//       already holds a change, or when it does not apply cleanly. Without it, a clean tree takes
+//       verify/c8.diff, the CONFIRMED patches of the accepted c8 reply, when it exists, and a tree
+//       holding the edit already is committed as it is. Then commit the skill edit, refused when any staged, changed or
 //       untracked path lies outside .claude/skills/; record its sha in the ledger; run again
 //   verify.mjs skill-candidates --change <name> [--root <dir>]
 //       the lines of each host .claude/skills/*/SKILL.md and README.md that name a path,
 //       symbol, command or route the range's diff changed; the listing also goes to
-//       verify/c8-candidates.txt, the input of the verify c8 dispatch
+//       verify/c8-candidates.txt, the input of the verify c8 dispatch, and to
+//       verify/c8-candidates.json, the list its reply is checked against
 //   verify.mjs prompts --change <name> [--root <dir>]
 //       skill-candidates, then the prompt of the verify c4 and the verify c8 dispatch, each as
 //       dispatch.mjs prompt writes it: { ok, candidates, dispatches: [{ check, name, agent,
-//       sectionFiles, prompt }] }
+//       replyFile, prompt }] }; each reply is recorded with dispatch.mjs reply, which writes the
+//       section
 //   verify.mjs developer --change <name> --text-file <file> --verdict <pass|warn|fail|not-run>
 //                        [--summary <text>] [--root <dir>]
 //       write verify/developer.txt (the file's text, verbatim) and its section developer.json
@@ -152,8 +155,8 @@ export function run(argv, { cwd = process.cwd(), env = process.env } = {}) {
     case 'prompts': {
       const candidates = skillCandidates(root, { change })
       const dispatches = REQUIRED_SECTIONS.map((check) => {
-        const { name, agent, sectionFiles, prompt } = dispatchCli(['prompt', '--change', change, '--role', 'verify', '--check', check, '--root', resolve(cwd, root)], { cwd })
-        return { check, name, agent, sectionFiles, prompt }
+        const { name, agent, replyFile, prompt } = dispatchCli(['prompt', '--change', change, '--role', 'verify', '--check', check, '--root', resolve(cwd, root)], { cwd })
+        return { check, name, agent, replyFile, prompt }
       })
       return { ok: true, candidates, dispatches }
     }
