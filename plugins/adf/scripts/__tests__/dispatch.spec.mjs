@@ -514,3 +514,86 @@ test('the fixer prompt reads its finding from the round findings file, only for 
   assert.ok(f2.prompt.includes("- Developer's decision: the escape does not cover the header"))
   assert.match(f2.prompt, /the developer has ruled that the finding holds/)
 })
+
+// ---------------------------------------------------------------- archive
+
+test('archive names one spec-merge per capability and one ingest, both at architecture', () => {
+  assert.equal(dispatchName({ role: 'spec-merge', capability: 'widgets' }), 'spec-merge widgets')
+  assert.equal(dispatchName({ role: 'ingest' }), 'ingest')
+  assert.deepEqual(parseName('spec-merge new-cap'), { role: 'spec-merge', capability: 'new-cap' })
+  assert.deepEqual(parseName('ingest'), { role: 'ingest' })
+  for (const name of ['spec-merge', 'spec-merge Widgets', 'spec-merge a b', 'ingest r1']) assert.equal(parseName(name), null, name)
+  const bad = [
+    [{ role: 'spec-merge' }, /needs --capability/],
+    [{ role: 'spec-merge', capability: 'Bad_Name' }, /needs --capability/],
+    [{ role: 'spec-merge', capability: 'a', round: 1 }, /takes only --capability/],
+    [{ role: 'ingest', task: 1 }, /takes no task/],
+    [{ role: 'ingest', capability: 'a' }, /--capability belongs to spec-merge/],
+    [{ role: 'sweep', capability: 'a' }, /--capability belongs to spec-merge/]
+  ]
+  for (const [inputs, message] of bad) assert.throws(() => dispatchName(inputs), message, JSON.stringify(inputs))
+  const root = host('no plan needed')
+  const replies = join(root, '.superpowers', 'sdd', CHANGE, 'replies')
+  const merge = call(root, 'plan', '--role', 'spec-merge', '--capability', 'widgets')
+  assert.deepEqual(
+    { name: merge.name, agent: merge.agent, worktree: merge.worktree, capability: merge.capability, replyFile: merge.replyFile },
+    { name: 'spec-merge widgets', agent: 'adf:architecture', worktree: root, capability: 'widgets', replyFile: join(replies, 'spec-merge-widgets.json') }
+  )
+  const ingest = call(root, 'plan', '--role', 'ingest')
+  assert.deepEqual({ name: ingest.name, agent: ingest.agent, replyFile: ingest.replyFile }, { name: 'ingest', agent: 'adf:architecture', replyFile: join(replies, 'ingest.json') })
+})
+
+test('the spec-merge prompt names the three texts of each conflict by path, the schema and the reply file', async () => {
+  const { mergeRepo } = await import('./fixtures/spec-merge/repo.mjs')
+  const req = (name, body) => `### Requirement: ${name}\n${body}\n\n#### Scenario: Works\n- **WHEN** x\n- **THEN** y\n`
+  const main = `# widgets Specification\n\n## Purpose\nWidgets are built, stored and shipped by the system, one at a time.\n\n## Requirements\n${req('Store', 'The system SHALL store.')}`
+  const { change, onDevelop } = mergeRepo({ main: { widgets: main }, delta: { widgets: `## MODIFIED Requirements\n\n${req('Store', 'The system SHALL store widgets dry.')}` } })
+  onDevelop({ 'openspec/specs/widgets/spec.md': main.replace('SHALL store.', 'SHALL store widgets cold.') })
+  const out = run(['prompt', '--change', CHANGE, '--role', 'spec-merge', '--capability', 'widgets', '--root', change], { main: change })
+  const dir = join(change, '.superpowers', 'sdd', CHANGE, 'spec-merge', 'widgets')
+  for (const [which, text] of [['base', 'SHALL store.'], ['current', 'SHALL store widgets cold.'], ['delta', 'SHALL store widgets dry.']]) {
+    assert.ok(out.prompt.includes(`${which}: ${join(dir, `1-${which}.md`)}`), which)
+    assert.ok(readFileSync(join(dir, `1-${which}.md`), 'utf8').includes(text), which)
+  }
+  assert.match(out.prompt, /requirement: Store \(MODIFIED\), side: base-branch/)
+  assert.ok(out.prompt.includes(join(PLUGIN_ROOT, 'schema', 'spec-merge-resolution.schema.json')))
+  assert.ok(out.prompt.includes(out.replyFile))
+  assert.match(out.prompt, /read-only/)
+  assert.throws(() => run(['prompt', '--change', CHANGE, '--role', 'spec-merge', '--capability', 'other', '--root', change], { main: change }), /no unresolved conflict/)
+})
+
+test('the ingest prompt reads its input file and runs on the archived change; without the file it is refused', () => {
+  const root = host('no plan needed')
+  const archived = join(root, 'openspec', 'changes', 'archive', `2026-10-19-${CHANGE}`)
+  mkdirSync(join(archived, 'specs', 'widgets'), { recursive: true })
+  writeFileSync(join(archived, 'proposal.md'), '# x\n')
+  writeFileSync(join(archived, 'specs', 'widgets', 'spec.md'), '## ADDED Requirements\n')
+  execFileSync('rm', ['-r', join(root, 'openspec', 'changes', CHANGE)])
+  assert.throws(() => run(['prompt', '--change', CHANGE, '--role', 'ingest', '--root', root], { main: MAIN }), /run ingest\.mjs stale/)
+  assert.throws(() => run(['prompt', '--change', CHANGE, '--role', 'sweep', '--root', root], { main: MAIN }), /no change/)
+  const input = join(root, '.superpowers', 'sdd', CHANGE, 'ingest', 'input.json')
+  mkdirSync(dirname(input), { recursive: true })
+  writeFileSync(input, JSON.stringify({
+    change: CHANGE,
+    changeDir: `openspec/changes/archive/2026-10-19-${CHANGE}`,
+    base: 'abc1234',
+    knowledge: { index: '.claude/memory/index.md', instruction: '/plugins/memory/instructions/ingest.md', paths: ['.claude/memory/**'], log: ['.claude/memory/log.md'] },
+    stale: [{ path: '.claude/memory/entities/a.md', reasons: ['names src/a.mjs, which the change deleted'] }]
+  }))
+  const out = run(['prompt', '--change', CHANGE, '--role', 'ingest', '--root', root], { main: MAIN })
+  assert.equal(out.name, 'ingest')
+  for (const text of [
+    join(archived, 'proposal.md'),
+    join(archived, 'specs', 'widgets', 'spec.md'),
+    '/plugins/memory/instructions/ingest.md',
+    join(root, '.claude/memory/index.md'),
+    `${join(root, '.claude/memory/entities/a.md')}: names src/a.mjs, which the change deleted`,
+    'What invariant does this change rely on that no single file shows?',
+    'What would a future implementer most plausibly get wrong here?',
+    join(PLUGIN_ROOT, 'schema', 'ingest.schema.json'),
+    out.replyFile
+  ]) assert.ok(out.prompt.includes(text), text)
+  assert.equal(run(['attempt', '--change', CHANGE, '--name', 'ingest', '--root', root], { main: MAIN }).next, 'dispatch')
+  assert.equal(run(['attempt', '--change', CHANGE, '--name', 'ingest', '--root', root], { main: MAIN }).next, 'retry')
+  assert.equal(run(['attempt', '--change', CHANGE, '--name', 'ingest', '--root', root], { main: MAIN }).next, 'stop')
+})

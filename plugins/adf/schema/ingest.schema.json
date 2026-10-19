@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf/ingest.schema.json",
+  "title": "ADF ingest reply",
+  "description": "The ingest agent's reply at archive: the knowledge pages it changed and why, an answer for every stale entry, the two fixed answers and the log entry the core writes through the knowledge role. nothingLearned true means no pages and no log; every stale entry still needs an answer. lib/ingest.mjs checkIngestReply adds the rules a schema cannot state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["nothingLearned", "pages", "stale", "invariant", "likelyMistake"],
+  "properties": {
+    "nothingLearned": { "type": "boolean" },
+    "pages": { "type": "array", "items": { "$ref": "#/$defs/page" } },
+    "stale": { "type": "array", "items": { "$ref": "#/$defs/stale" } },
+    "invariant": { "type": "string" },
+    "likelyMistake": { "type": "string" },
+    "log": { "$ref": "#/$defs/log" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "nothingLearned": { "const": false } } },
+      "then": {
+        "required": ["log"],
+        "properties": {
+          "invariant": { "type": "string", "pattern": "\\S" },
+          "likelyMistake": { "type": "string", "pattern": "\\S" },
+          "log": { "type": "object" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "why"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "why": { "type": "string", "pattern": "\\S" }
+      }
+    },
+    "stale": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "outcome"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "outcome": { "enum": ["updated", "removed", "still-true"] },
+        "argument": { "type": "string", "pattern": "\\S" }
+      },
+      "allOf": [{ "if": { "properties": { "outcome": { "const": "still-true" } } }, "then": { "required": ["argument"] } }]
+    },
+    "log": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["title", "bullets"],
+      "properties": {
+        "title": { "type": "string", "pattern": "\\S" },
+        "bullets": { "type": "array", "items": { "type": "string", "pattern": "\\S" } }
+      }
+    }
+  }
+}

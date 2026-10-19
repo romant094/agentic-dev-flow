@@ -21,6 +21,16 @@
 //       the finding is the `next` of the round's fix plan (`review.mjs fixplan`); it names the
 //       finding's file in scope and, for a false-positive claim the developer rejected, the
 //       rejected argument and their decision.
+//   dispatch.mjs plan    --change <name> --role spec-merge --capability <capability> [--root <dir>]
+//   dispatch.mjs plan    --change <name> --role ingest [--root <dir>]
+//       archive: `spec-merge <capability>` adjudicates the capability's conflicts of the
+//       three-way spec merge check; `ingest` puts what the change taught into the knowledge
+//       base. Both at architecture, both replying in JSON under the core's schemas, checked by
+//       `specs.mjs resolution` and `ingest.mjs check`. The spec-merge prompt writes the base,
+//       current and delta text of each conflict to .superpowers/sdd/<change>/spec-merge/
+//       <capability>/ and names those files; it refuses a capability with no unresolved
+//       conflict. The ingest prompt reads `ingest.mjs stale`'s input file and refuses while it
+//       is missing; its change may already be archived.
 //   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <change worktree>]
 //       records one attempt of the dispatch and returns { ok, name, attempt, next }, next one of
 //       dispatch (the first), retry (the one retry of a refused reply), stop (BLOCKED)
@@ -38,6 +48,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  ARCHIVE_ROLES,
   countAttempts,
   DispatchError,
   nextFor,
@@ -50,10 +61,13 @@ import {
   taskBody,
   verifyDirOf
 } from './lib/dispatch.mjs'
+import { changeArtifacts, findChangeDir, ingestInputFile } from './lib/ingest.mjs'
 import { mainCheckout } from './lib/installed.mjs'
 import { isMain } from './lib/main.mjs'
 import { unplannedIn } from './lib/plan.mjs'
 import { parsePlanTasks } from './lib/plan-symbols.mjs'
+import { writeConflictTexts } from './lib/spec-merge.mjs'
+import { mergePreview } from './lib/specs.mjs'
 import { fixTarget, Refusal } from './lib/review-state.mjs'
 import { sweepInputs } from './lib/sweep.mjs'
 
@@ -61,14 +75,14 @@ export const PLUGIN_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..'
 export const PROMPTS_DIR = join(PLUGIN_ROOT, 'schema', 'prompts')
 
 export const USAGE = `usage:
-  dispatch.mjs plan --change <name> --role <role> [--task <N>] [--group <G>] [--round <k>] [--topic <word>] [--check c4|c8] [--slice <n>] [--finding F<n>] [--root <dir>]
+  dispatch.mjs plan --change <name> --role <role> [--task <N>] [--group <G>] [--round <k>] [--topic <word>] [--check c4|c8] [--slice <n>] [--finding F<n>] [--capability <capability>] [--root <dir>]
   dispatch.mjs prompt (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>]
   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <dir>]
   dispatch.mjs round --change <name> [--task <N> | --group <G>] [--root <dir>]`
 
 export class UsageError extends Error {}
 
-const FLAGS = ['--change', '--role', '--task', '--group', '--round', '--topic', '--check', '--slice', '--finding', '--root', '--question-file', '--base', '--head', '--name']
+const FLAGS = ['--change', '--role', '--task', '--group', '--round', '--topic', '--check', '--slice', '--finding', '--capability', '--root', '--question-file', '--base', '--head', '--name']
 
 function parse(argv) {
   const values = {}
@@ -129,11 +143,59 @@ function reviewFields(inputs, plan, root) {
   return [...fields, ['Reply file', plan.replyFile]]
 }
 
+const shown = (path) => path ?? 'absent'
+
+// spec-merge: the capability's unresolved conflicts, each text in a file the agent reads.
+function specMergeFields(inputs, plan, root) {
+  let preview
+  try {
+    preview = mergePreview(root, inputs.change)
+  } catch (error) {
+    throw new DispatchError(`cannot preview the spec merge: ${error.message}`)
+  }
+  const conflicts = preview.conflicts.filter((c) => c.capability === plan.capability)
+  if (conflicts.length === 0) throw new DispatchError(`${plan.capability} has no unresolved conflict in ${inputs.change}; there is nothing to adjudicate`)
+  const fields = [['Dispatch name', plan.name], ['Change', inputs.change], ['Worktree', plan.worktree], ['Capability', plan.capability]]
+  if (preview.base) fields.push(['Merge base', preview.base.sha])
+  writeConflictTexts(root, inputs.change, plan.capability, conflicts).forEach((c, i) => {
+    const what = c.operation === 'RENAMED' ? `RENAMED to "${c.to}"` : c.operation
+    fields.push([`Conflict ${i + 1}`, [`requirement: ${c.requirement} (${what}), side: ${c.side}`, `base: ${shown(c.base)}`, `current: ${shown(c.current)}`, `delta: ${shown(c.delta)}`]])
+  })
+  return [...fields, ['Reply file', plan.replyFile]]
+}
+
+// ingest: the archived change's artifacts, the knowledge base's instruction and the stale list,
+// from the input file `ingest.mjs stale` wrote.
+function ingestFields(inputs, plan, root) {
+  const file = ingestInputFile(root, inputs.change)
+  const text = readOr(file)
+  if (text === null) throw new DispatchError(`no ${file}: run ingest.mjs stale --change ${inputs.change} first`)
+  const input = JSON.parse(text)
+  const dir = join(root, input.changeDir)
+  return [
+    ['Dispatch name', plan.name],
+    ['Change', inputs.change],
+    ['Worktree', plan.worktree],
+    ['Change artifacts', existsSync(dir) ? changeArtifacts(dir) : []],
+    ['Ingest instruction', input.knowledge.instruction],
+    ['Knowledge index', input.knowledge.index ? join(root, input.knowledge.index) : undefined],
+    ['Knowledge paths', input.knowledge.paths],
+    ['Stale pages', input.stale.length === 0 ? 'none' : input.stale.map((s) => `${join(root, s.path)}: ${s.reasons.join('; ')}`)],
+    ['Reply file', plan.replyFile]
+  ]
+}
+
 function promptFor(inputs, plan, values, root, planText) {
   const { change } = inputs
   const sdd = sddDir(root, change)
   const fields = [['Dispatch name', plan.name], ['Change', change]]
   const tokens = { '${CLAUDE_PLUGIN_ROOT}': PLUGIN_ROOT, '<change>': change, '<root>': root, '<worktree>': plan.worktree }
+  if (Object.hasOwn(ARCHIVE_ROLES, inputs.role)) {
+    if (values.base !== undefined || values.head !== undefined) throw new UsageError(`--base and --head do not belong to ${inputs.role}`)
+    const question = values['question-file'] === undefined ? undefined : readQuestion(values['question-file'])
+    const archiveFields = inputs.role === 'spec-merge' ? specMergeFields(inputs, plan, root) : ingestFields(inputs, plan, root)
+    return renderPrompt({ plan, change, skeletons: skeletons(), fields: archiveFields, question, tokens })
+  }
   if (Object.hasOwn(REVIEW_ROLES, inputs.role)) {
     if (values.base !== undefined || values.head !== undefined) throw new UsageError(`--base and --head do not belong to ${inputs.role}: its range is in its input`)
     const question = values['question-file'] === undefined ? undefined : readQuestion(values['question-file'])
@@ -203,6 +265,14 @@ function promptFor(inputs, plan, values, root, planText) {
   return renderPrompt({ plan, change, skeletons: skeletons(), fields, question, tokens, testFirst, dispositions })
 }
 
+function existsArchived(root, change) {
+  try {
+    return Boolean(findChangeDir(root, change))
+  } catch {
+    return false
+  }
+}
+
 function readQuestion(file) {
   try {
     return readFileSync(file, 'utf8')
@@ -217,7 +287,9 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
   if (extra.length > 0 || !['plan', 'prompt', 'attempt', 'round'].includes(command) || !values.change) throw new UsageError(USAGE)
   const root = resolve(cwd, values.root ?? '.')
   const change = values.change
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(change) || !existsSync(join(root, 'openspec', 'changes', change))) {
+  // The ingest runs on the archived change; every other dispatch on an active one.
+  const archived = values.role === 'ingest' || values.name === 'ingest'
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(change) || !(existsSync(join(root, 'openspec', 'changes', change)) || (archived && existsArchived(root, change)))) {
     throw new DispatchError(`no change "${change}" in ${join(root, 'openspec', 'changes')}`)
   }
 
@@ -250,7 +322,8 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
     topic: values.topic,
     check: values.check,
     slice: number(values.slice),
-    finding: values.finding
+    finding: values.finding,
+    capability: values.capability
   }
   const planText = readOr(join(root, 'openspec', 'changes', change, 'plan.md'))
   const plan = planDispatch(inputs, { root, main: main ?? mainCheckout(root), planText, exists: existsSync })

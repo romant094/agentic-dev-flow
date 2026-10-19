@@ -11,6 +11,7 @@
 //   fix [<G>] [r<k>], re-review [<G>] [r<k>]
 //   verify c4 | verify c8   (schema/instructions/verify.md)
 //   ai-review r<k>, ai-review r<k> s<n>, ai-fix F<n> r<k>   (the review stage)
+//   spec-merge <capability>, ingest   (archive)
 //
 // Pure: every read of the tree is done by the caller and passed in.
 import { join } from 'node:path'
@@ -41,7 +42,15 @@ export const REVIEW_ROLES = {
   'ai-review': { level: 'architecture', schema: 'review-findings.schema.json' },
   'ai-fix': { level: 'integration', schema: 'review-fix.schema.json' }
 }
-export const ROLES = [...new Set([...TASK_ROLES, ...Object.keys(TASKLESS), 'verify', ...Object.keys(REVIEW_ROLES)])]
+// Archive: the adjudication of one capability's spec merge conflicts, and the ingest of what
+// the change taught. Both write their JSON reply under the core's schema; spec-merge writes no
+// other file (lib/spec-merge.mjs), and the ingest edits the knowledge base (lib/ingest.mjs).
+export const ARCHIVE_ROLES = {
+  'spec-merge': { level: 'architecture', schema: 'spec-merge-resolution.schema.json' },
+  ingest: { level: 'architecture', schema: 'ingest.schema.json' }
+}
+const SCHEMA_ROLES = { ...REVIEW_ROLES, ...ARCHIVE_ROLES }
+export const ROLES = [...new Set([...TASK_ROLES, ...Object.keys(TASKLESS), 'verify', ...Object.keys(REVIEW_ROLES), ...Object.keys(ARCHIVE_ROLES)])]
 // Roles whose question the orchestrator must write: the prompt refuses an empty slot.
 export const QUESTION_REQUIRED = ['review', 're-review', 'fix', 'final-review', 'merge-review', 'investigate']
 export const MAX_ATTEMPTS = 2
@@ -52,6 +61,7 @@ export const ROUNDED = ['fix', 're-review']
 const TOPIC = /^[A-Za-z0-9]+$/
 const GROUP = /^[A-Z]$/
 const FINDING = /^F[1-9]\d*$/
+const CAPABILITY = /^[a-z0-9][a-z0-9-]*$/
 
 export class DispatchError extends Error {}
 const refuse = (message) => {
@@ -127,8 +137,17 @@ export function parseGraph(planText) {
 
 // ---------------------------------------------------------------- names
 
-export function dispatchName({ role, task, group, round, topic, check, slice, finding }) {
+export function dispatchName({ role, task, group, round, topic, check, slice, finding, capability }) {
   if (!ROLES.includes(role)) refuse(`unknown role "${role}"; known: ${ROLES.join(', ')}`)
+  if (capability !== undefined && role !== 'spec-merge') refuse('--capability belongs to spec-merge')
+  if (Object.hasOwn(ARCHIVE_ROLES, role)) {
+    if (task !== undefined || group !== undefined || round !== undefined || topic !== undefined || check !== undefined || slice !== undefined || finding !== undefined) {
+      refuse(`${role} takes ${role === 'spec-merge' ? 'only --capability' : 'no task, group, round or other option'}`)
+    }
+    if (role === 'ingest') return 'ingest'
+    if (!CAPABILITY.test(capability ?? '')) refuse(`spec-merge needs --capability <capability>, a kebab-case name, not "${capability ?? ''}"`)
+    return `spec-merge ${capability}`
+  }
   if (round !== undefined && !(Number.isInteger(round) && round >= 1)) refuse(`round "${round}" is not a positive integer`)
   if (topic !== undefined && role !== 'investigate') refuse('--topic belongs to investigate')
   if (check !== undefined && role !== 'verify') refuse('--check belongs to verify')
@@ -181,6 +200,9 @@ export function parseName(name) {
   if (m) return { role: 'ai-review', round: Number(m[1]), ...(m[2] ? { slice: Number(m[2]) } : {}) }
   m = /^ai-fix (F[1-9]\d*) r([1-9]\d*)$/.exec(text)
   if (m) return { role: 'ai-fix', finding: m[1], round: Number(m[2]) }
+  m = /^spec-merge ([a-z0-9][a-z0-9-]*)$/.exec(text)
+  if (m) return { role: 'spec-merge', capability: m[1] }
+  if (text === 'ingest') return { role: 'ingest' }
   m = /^investigate ([A-Za-z0-9]+)$/.exec(text)
   if (m) return { role: 'investigate', topic: m[1] }
   m = /^(final-review|sweep)$/.exec(text)
@@ -205,7 +227,7 @@ export function replyFile(root, change, name, exists) {
 
 // ---------------------------------------------------------------- the plan of one dispatch
 
-// inputs: { change, role, task?, group?, round?, topic?, check?, slice?, finding? }
+// inputs: { change, role, task?, group?, round?, topic?, check?, slice?, finding?, capability? }
 // tree:   { root, main, planText (null when absent), exists(path) }
 export function planDispatch(inputs, { root, main, planText, exists }) {
   const name = dispatchName(inputs)
@@ -220,6 +242,14 @@ export function planDispatch(inputs, { root, main, planText, exists }) {
     out.worktree = root
     out.section = section
     out.sectionFiles = [join(dir, `${section}-agent.txt`), join(dir, `${section}.json`)]
+    return out
+  }
+
+  if (Object.hasOwn(ARCHIVE_ROLES, role)) {
+    out.agent = `adf:${ARCHIVE_ROLES[role].level}`
+    out.worktree = root
+    if (role === 'spec-merge') out.capability = inputs.capability
+    out.replyFile = replyFile(root, change, name, exists)
     return out
   }
 
@@ -303,6 +333,8 @@ export function ruleSkeletons({ role, check, round }, { testFirst = false, dispo
   // The review stage's replies are the JSON its skeletons name, so `reply` is not among them.
   if (role === 'ai-review') return round >= 2 ? ['ai-review', 'ai-review-round'] : ['ai-review']
   if (role === 'ai-fix') return ['ai-fix', 'git']
+  if (role === 'spec-merge') return ['spec-merge', 'read-only']
+  if (role === 'ingest') return ['ingest']
   const parts = []
   if (role === 'impl' || role === 'fix') parts.push('implementer')
   if (['review', 're-review', 'final-review', 'merge-review'].includes(role)) parts.push('reviewer')
@@ -326,7 +358,7 @@ export function renderPrompt({ plan, change, skeletons, fields, question, tokens
     role: plan.role,
     replyFile: plan.replyFile ?? '',
     inputFile: plan.inputFile ?? '',
-    schema: Object.hasOwn(REVIEW_ROLES, plan.role) ? join('${CLAUDE_PLUGIN_ROOT}', 'schema', REVIEW_ROLES[plan.role].schema) : '',
+    schema: Object.hasOwn(SCHEMA_ROLES, plan.role) ? join('${CLAUDE_PLUGIN_ROOT}', 'schema', SCHEMA_ROLES[plan.role].schema) : '',
     base: tokens['<base>'] ?? ''
   }
   const rules = ruleSkeletons(plan, { testFirst, dispositions }).map((n) => fill(skeletons[n], values, tokens))

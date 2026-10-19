@@ -25,6 +25,13 @@
 //       applied to the conflicts; a resolution that answers no conflict is refused. Exit 1 on
 //       an unresolved conflict or a refusal. Nothing is written: the writing merge is
 //       `archive.mjs merge`, after archive's gate.
+//   specs.mjs resolution --capability <capability> --reply <file> [--change <name>]
+//       the check of a `spec-merge <capability>` agent's reply (lib/spec-merge.mjs): valid under
+//       schema/spec-merge-resolution.schema.json and checkResolutions, every resolution of the
+//       capability, and exactly one per unresolved conflict the dry run finds in it.
+//       { ok, valid, errors, capability, conflicts, resolutions }; exit 1 when not valid. The
+//       valid replies of every capability in conflict, joined into one array, are the merge's
+//       --resolutions file; a refused reply goes back once, and a second refusal stops archive.
 //
 // Without --change, capabilities, merge and --against-main act on the one active change under the root.
 //
@@ -33,13 +40,14 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { changeAgainstMain, checkCapabilities, mergePreview, validateProject } from './lib/specs.mjs'
+import { checkSpecMergeReply } from './lib/spec-merge.mjs'
 import { inferChange } from './lib/changes.mjs'
 import { loadSchema } from './lib/schema.mjs'
 import { isMain } from './lib/main.mjs'
 
 export class UsageError extends Error {}
 
-const USAGE = 'usage: specs.mjs validate [--all | --change <name> [--against-main] | --spec <capability>] [--strict] [--root <dir>] | specs.mjs capabilities [--change <name>] [--root <dir>] | specs.mjs merge --dry-run [--change <name>] [--resolutions <file>] [--root <dir>]'
+const USAGE = 'usage: specs.mjs validate [--all | --change <name> [--against-main] | --spec <capability>] [--strict] [--root <dir>] | specs.mjs capabilities [--change <name>] [--root <dir>] | specs.mjs merge --dry-run [--change <name>] [--resolutions <file>] [--root <dir>] | specs.mjs resolution --capability <capability> --reply <file> [--change <name>] [--root <dir>]'
 
 function option(args, name) {
   const i = args.indexOf(name)
@@ -74,8 +82,25 @@ export function run(argv) {
   const againstMain = flag(args, '--against-main')
   const dryRun = flag(args, '--dry-run')
   const resolutions = option(args, '--resolutions')
+  const capability = option(args, '--capability')
+  const reply = option(args, '--reply')
   const [command, ...rest] = args
   const root = resolve(rootOption ?? process.cwd())
+  if (command === 'resolution') {
+    if (!capability || !reply || rest.length > 0 || spec || all || strict || againstMain || dryRun || resolutions !== undefined) throw new UsageError(USAGE)
+    change = inferChange(root, change, loadSchema())
+    let text
+    try {
+      text = readFileSync(reply, 'utf8')
+    } catch (error) {
+      throw new Error(`--reply ${reply}: ${error.message}`)
+    }
+    const conflicts = mergePreview(root, change).conflicts.filter((c) => c.capability === capability)
+    if (conflicts.length === 0) throw new Error(`${capability} has no unresolved conflict in ${change}; there is nothing to resolve`)
+    const checked = checkSpecMergeReply(text, { capability, conflicts })
+    return { ok: checked.valid, valid: checked.valid, errors: checked.errors, capability, conflicts: conflicts.map((c) => c.requirement), resolutions: checked.valid ? checked.reply : null }
+  }
+  if (capability !== undefined || reply !== undefined) throw new UsageError(USAGE)
   if (command === 'merge') {
     if (!dryRun || rest.length > 0 || spec || all || strict || againstMain) {
       throw new UsageError(dryRun ? USAGE : 'specs.mjs merge writes nothing: pass --dry-run (the writing merge is archive.mjs merge, after the gate)')

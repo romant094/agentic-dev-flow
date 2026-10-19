@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf/spec-merge-resolution.schema.json",
+  "title": "ADF spec merge resolutions",
+  "description": "The spec-merge agent's reply for one capability: one resolution per conflict of the three-way check. text is the whole requirement block the main spec ends up with, its header first; an empty text resolves a REMOVED conflict only and keeps the removal. lib/specs.mjs checkResolutions applies the same rules to a resolutions file.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/resolution" },
+  "$defs": {
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability", "requirement", "text", "reason"],
+      "properties": {
+        "capability": { "type": "string", "minLength": 1 },
+        "requirement": { "type": "string", "minLength": 1 },
+        "text": { "type": "string" },
+        "reason": { "type": "string", "pattern": "\\S" }
+      }
+    }
+  }
+}

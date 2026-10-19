@@ -70,7 +70,7 @@ what a change taught. The core never names a knowledge base path; it reads them 
 
 | Operation | Input | Result when `done` |
 |---|---|---|
-| `context` | `{}` | `index`: the host-relative path of the knowledge base's index; `instructions`: `{ ingest, query, lint, fix }`, absolute paths of the instructions each workflow follows; `paths`: globs relative to the host root, every path an ingest may write |
+| `context` | `{}` | `index`: the host-relative path of the knowledge base's index; `instructions`: `{ ingest, query, lint, fix }`, absolute paths of the instructions each workflow follows; `paths`: globs relative to the host root, every path an ingest may write; `log` (optional): globs of the files only the `log` operation writes, which archive's ingest check leaves out of the pages and refuses an agent's edit to |
 | `log` | `type` (`ingest`, `query`, `lint` or `task`), `title`, and either `bullets` (a list of strings) or `commit` (one or more hashes) with `reason`; `amend` (optional, boolean) | one log entry written, after the provider's own housekeeping (a rotation): `entry`, the text written; `rotated`, the months moved out of the log (`[]` when none); `amended`, whether it replaced an uncommitted entry of the same title. `amend` with no such entry is refused |
 | `check` | `{}` | `findings`: a list of `{ kind, path, ... }`, the mechanical faults of the knowledge base; `[]` when none |
 
