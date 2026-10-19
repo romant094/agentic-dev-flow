@@ -41,12 +41,14 @@ export function parseEvents(text) {
   return out
 }
 
-const readLog = (file) => (existsSync(file) ? readFileSync(file, 'utf8') : '')
+export const readLog = (file) => (existsSync(file) ? readFileSync(file, 'utf8') : '')
 
 // Where one name stands: its counts and what comes next. `next` is `dispatch` before any invalid
-// reply, `retry` after the first, `stop` from the second (MAX_ATTEMPTS refused replies).
-export function standing(text, name) {
-  const events = parseEvents(text).filter((e) => e.name === name)
+// reply, `retry` after the first, `stop` from the second (MAX_ATTEMPTS refused replies). `since`
+// (an ISO time) counts only the events at or after it: a phase that starts its run again (the
+// review stage's `start --fresh`) reuses its names, and the earlier run's events no longer count.
+export function standing(text, name, { since = null } = {}) {
+  const events = parseEvents(text).filter((e) => e.name === name && (since === null || String(e.at ?? '') >= since))
   const count = (event) => events.filter((e) => e.event === event).length
   const invalid = count('invalid')
   return { name, dispatches: count('dispatch'), invalid, valid: count('valid'), next: nextForInvalid(invalid) }
@@ -78,10 +80,11 @@ export function recordDispatch(root, change, name, { now = new Date().toISOStrin
 // computed `result` (when the checker gives one). Returns { ok, valid, errors, next, mode, invalid,
 // replyFile, log }: `next` is `proceed` for a valid reply, else `retry` or `stop`; `mode` is `resume` or
 // `fresh` on a retry (`resume: false` when the harness cannot resume the agent), null otherwise.
-// Refused once the name has stopped: nothing a stopped dispatch replies is recorded.
-export function recordReply(root, change, { name, file, errors = [], result, resume = true, now = new Date().toISOString() }) {
+// Refused once the name has stopped: nothing a stopped dispatch replies is recorded. `since` as
+// `standing` takes it.
+export function recordReply(root, change, { name, file, errors = [], result, resume = true, since = null, now = new Date().toISOString() }) {
   checkName(name)
-  const before = standing(readLog(attemptsFile(root, change)), name)
+  const before = standing(readLog(attemptsFile(root, change)), name, { since })
   if (before.next === 'stop') throw new DispatchError(`${name} stopped after ${before.invalid} invalid replies; nothing it replies is recorded`)
   if (errors.length === 0) {
     const log = append(root, change, { name, at: now, event: 'valid', file, ...(result === undefined ? {} : { result }) })

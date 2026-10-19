@@ -13,9 +13,19 @@
 //   r<k>/fixes/F<n>.json  a fixer's valid reply (fix)
 //   r<k>/fixplan.json     the round's fixes in sequential order, `next` first (fixplan)
 //   dispositions.json     F<n> -> { as: fixed | dismissed | accepted | recorded, ... }
-//   attempts.json         invalid replies per reviewer slice or fixer
-//   stopped.json          a second invalid reply stopped the stage
 //   suite.json            the suite run after the last fix (suite.mjs run --section review)
+//
+// The replies' retry count is not review state: every checked reply is an event of the change's
+// shared log, `.superpowers/sdd/<change>/attempts.jsonl` (lib/attempts.mjs), keyed by the dispatch
+// name, `ai-review r<k>[ s<n>]` or `ai-fix F<n> r<k>`, never by the reply's content. Only the
+// events at or after this run's start count, so `start --fresh` begins the count again. The stage
+// is stopped while a name of this run has two invalid replies; `dispatch.mjs reply` records into
+// the same log, so a stop it records stops the stage too.
+//
+// Legacy files: `attempts.json`, the counter of review stages started before the shared log, is
+// ignored: such a run has at most one invalid reply per key (a second wrote `stopped.json`), so
+// the worst case is one more retry than the old counter allowed. A legacy `stopped.json` is still
+// read and keeps its run stopped until `start --fresh`; nothing writes it any more.
 //
 // Finding ids run on across rounds and slices (F1.. in round 1, then on in round 2), so `F<n>`
 // names one finding of the run; a ledger ruling on a finding counts only when it was written
@@ -23,7 +33,9 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { attemptsFile, parseEvents, readLog, recordReply, standing } from './attempts.mjs'
 import { commitPaths } from './commit.mjs'
+import { MAX_ATTEMPTS, parseName } from './dispatch.mjs'
 import { readRecords } from './ledger.mjs'
 import { commentFor, coveringIgnore, parseMarker } from './marker.mjs'
 import { cell, checkFindings, checkFix, CLOSED, computeVerdict, reviewConfig, SEVERITIES, where } from './review.mjs'
@@ -82,6 +94,7 @@ function unreviewedFixes(git, state) {
 
 export function loadState(root, change) {
   const dir = reviewDir(root, change)
+  const start = readJson(join(dir, 'start.json'))
   const rounds = []
   for (let k = 1; existsSync(join(dir, `r${k}`, 'round.json')); k++) {
     const rd = join(dir, `r${k}`)
@@ -89,13 +102,30 @@ export function loadState(root, change) {
   }
   return {
     dir,
-    start: readJson(join(dir, 'start.json')),
+    start,
     rounds,
     dispositions: readJson(join(dir, 'dispositions.json'), {}),
-    attempts: readJson(join(dir, 'attempts.json'), {}),
-    stopped: readJson(join(dir, 'stopped.json')),
+    stopped: readJson(join(dir, 'stopped.json')) ?? stoppedBy(root, change, start),
     suite: readJson(join(dir, 'suite.json'))
   }
+}
+
+const REVIEW_ROLES = ['ai-review', 'ai-fix']
+// The time this run's events count from: its start, or null before any start.
+export const reviewSince = (root, change) => readJson(join(reviewDir(root, change), 'start.json'))?.at ?? null
+
+// The first name of this run, a reviewer's or a fixer's, whose second invalid reply stopped the
+// stage, read from the shared events log; null while none has.
+function stoppedBy(root, change, start) {
+  if (!start) return null
+  const text = readLog(attemptsFile(root, change))
+  const names = [...new Set(parseEvents(text).filter((e) => REVIEW_ROLES.includes(parseName(e.name)?.role)).map((e) => e.name))]
+  for (const name of names) {
+    if (standing(text, name, { since: start.at }).invalid < MAX_ATTEMPTS) continue
+    const last = parseEvents(text).filter((e) => e.name === name && e.event === 'invalid' && String(e.at) >= start.at).at(-1)
+    return { at: last.at, key: name, reason: `a second invalid reply from ${name}`, errors: last.errors ?? [] }
+  }
+  return null
 }
 
 export function liveState(root, change) {
@@ -123,14 +153,19 @@ const lastCheckRuling = (records, check) => records.filter((r) => r.check === ch
 const lastFindingRuling = (records, id) => records.filter((r) => r.finding === id && typeof r.as === 'string').at(-1) ?? null
 const rulingCommand = (change, id, text = '--reason "<the developer\'s reason, in their words>"') => `ledger.mjs ruling --change ${change} --check ${id} ${text}`
 
-// One invalid reply is retried; the second stops the stage, with no record and no dispatch.
-function invalid(state, key, errors) {
-  const n = (state.attempts[key] ?? 0) + 1
-  writeJson(join(state.dir, 'attempts.json'), { ...state.attempts, [key]: n })
-  if (n < 2) return { ok: false, valid: false, errors, attempt: n, retry: true, error: `the reply is invalid: dispatch ${key} once more with the errors` }
-  const reason = `a second invalid reply from ${key}`
-  writeJson(join(state.dir, 'stopped.json'), { at: new Date().toISOString(), key, reason, errors })
-  return { ok: false, valid: false, errors, attempt: n, stopped: true, error: `${reason} stops the stage: no record, no fix dispatch, no second reviewer` }
+// Records a checked reply of `name` in the shared events log (lib/attempts.mjs). A valid one
+// returns null. One invalid reply is retried: the same agent is resumed with the errors, or, when
+// the harness cannot resume it (`resume: false`), dispatched afresh with the errors as its
+// question; the second stops the stage, with no record and no dispatch.
+function recordChecked(root, change, state, { name, file, errors, resume = true, result }) {
+  const out = recordReply(root, change, { name, file, errors, resume, result, since: state.start.at })
+  if (out.valid) return null
+  const common = { ok: false, valid: false, name, errors, next: out.next, mode: out.mode, invalid: out.invalid, log: out.log }
+  if (out.next === 'retry') {
+    const how = out.mode === 'resume' ? `resume ${name} with the errors` : `dispatch ${name} afresh with the errors as its question (dispatch.mjs prompt --question-file)`
+    return { ...common, retry: true, error: `the reply is invalid: ${how}; one retry is all there is` }
+  }
+  return { ...common, stopped: true, error: `a second invalid reply from ${name} stops the stage: no record, no fix dispatch, no second reviewer` }
 }
 
 // ---------------------------------------------------------------- start and rounds
@@ -254,7 +289,7 @@ export const slicesApproved = (root, change, state) => lastCheckRuling(rulings(r
 // Stores a valid reply as round k's reply (of slice `slice`); once every slice is in, merges them
 // into the round's findings, numbering on from the earlier rounds: slice by slice, each in the
 // reviewer's order.
-export function storeReply(root, change, { round: k, slice = null, text }) {
+export function storeReply(root, change, { round: k, slice = null, text, file = null, resume = true }) {
   const state = liveState(root, change)
   const r = state.rounds[k - 1]
   if (!r?.input) refuse(`round ${k} has no input: run review.mjs input --round ${k} --change ${change}`)
@@ -266,8 +301,9 @@ export function storeReply(root, change, { round: k, slice = null, text }) {
   const rd = roundDir(root, change, k)
   if (existsSync(join(rd, replyName(slice)))) refuse(`the reply of round ${k}${slice === null ? '' : ` slice ${slice}`} is already stored`)
   const checked = checkFindings(text)
-  const key = `ai-review r${k}${slice === null ? '' : ` s${slice}`}`
-  if (!checked.valid) return { ...invalid(state, key, checked.errors), fenced: checked.fenced }
+  const name = `ai-review r${k}${slice === null ? '' : ` s${slice}`}`
+  const refused = recordChecked(root, change, state, { name, file, errors: checked.valid ? [] : checked.errors, resume })
+  if (refused) return { ...refused, fenced: checked.fenced }
   writeJson(join(rd, replyName(slice)), checked.reply)
   const parts = sliced ? Array.from({ length: r.input.slices }, (_, i) => i + 1) : [null]
   const missing = parts.filter((s) => !existsSync(join(rd, replyName(s))))
@@ -353,21 +389,23 @@ export function fixTarget(root, change, { round: k, finding: id }) {
   return { findingsFile, finding, rejected: plan.next.rejected ?? null }
 }
 
-// A fixer's reply: `fixed` with a commit in round k's fix range that touches the finding's file
-// and otherwise only test files closes the finding; `false-positive` leaves it open with its
-// argument, for the developer.
-export function recordFix(root, change, { round: k, text, now = new Date().toISOString() }) {
+// A fixer's reply to the fix of `finding` (the dispatch `ai-fix F<n> r<k>`, named by the command,
+// never by the reply): a reply naming another finding is invalid. `fixed` with a commit in round
+// k's fix range that touches the finding's file and otherwise only test files closes the
+// finding; `false-positive` leaves it open with its argument, for the developer.
+export function recordFix(root, change, { round: k, finding: id, text, file = null, resume = true, now = new Date().toISOString() }) {
   const state = liveState(root, change)
   const r = state.rounds[k - 1]
   if (!r?.findings) refuse(`round ${k}'s findings are not stored`)
-  const checked = checkFix(text)
-  const id = checked.reply?.finding
-  if (!checked.valid) return { ...invalid(state, `ai-fix ${typeof id === 'string' ? id : 'F?'} r${k}`, checked.errors), fenced: checked.fenced }
-  const reply = checked.reply
-  const f = r.findings.findings.find((x) => x.id === reply.finding)
-  if (!f) refuse(`${reply.finding} is not a finding of round ${k}`)
+  const f = r.findings.findings.find((x) => x.id === id)
+  if (!f) refuse(`${id} is not a finding of round ${k}`)
   const d = state.dispositions[f.id]
   if (CLOSED.includes(d?.as)) refuse(`${f.id} is already ${describe(d)}`)
+  const checked = checkFix(text)
+  const errors = !checked.valid ? checked.errors : checked.reply.finding === id ? [] : [`$.finding: ${checked.reply.finding} is not ${id}, the finding this dispatch was sent to fix`]
+  const refused = recordChecked(root, change, state, { name: fixName(id, k), file, errors, resume })
+  if (refused) return { ...refused, fenced: checked.fenced }
+  const reply = checked.reply
   const fixFile = join(roundDir(root, change, k), 'fixes', `${f.id}.json`)
   if (reply.outcome === 'false-positive') {
     writeJson(fixFile, { ...reply, at: now })

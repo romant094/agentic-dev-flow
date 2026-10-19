@@ -51,6 +51,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { archiveChange, CHANGES_DIR, changeStatus, globToRegExp, META_FILE, parseTasks } from './changes.mjs'
+import { recordReply } from './attempts.mjs'
 import { readBranches } from './branches.mjs'
 import { commitPaths } from './commit.mjs'
 import { dispatchName } from './dispatch.mjs'
@@ -467,7 +468,11 @@ export function commitSpecsStep(ctx) {
   })
 }
 
-export function ingestStep(ctx, { reply = null } = {}) {
+// The checked reply is an event of the dispatch `ingest` in the change's shared log
+// (lib/attempts.mjs): the first refused reply goes back to the agent once (resumed with the
+// errors, or afresh with them as its question when `resume` is false), the second stops archive,
+// and nothing the stopped dispatch replies afterwards is recorded or written.
+export function ingestStep(ctx, { reply = null, resume = true } = {}) {
   return runStep(ctx, 'ingest', (state) => {
     const { root, change } = ctx
     const context = ctx.knowledge()
@@ -475,11 +480,15 @@ export function ingestStep(ctx, { reply = null } = {}) {
     if (context.state !== 'done') refuse(knowledgeReport('context', context))
     if (!reply) refuse(`ingest needs --reply: run ingest.mjs stale --change ${change}, dispatch \`ingest\` at level architecture with its input, and pass the reply file`)
     const checked = checkIngestFile(root, change, reply, { exclude: settledDetail(state, 'placements').debtFiles ?? [] })
+    const recorded = recordReply(root, change, { name: 'ingest', file: resolve(reply), errors: checked.errors, resume })
     if (!checked.valid) {
+      const how = recorded.next === 'stop'
+        ? 'a second refused reply of `ingest` stops archive; the developer decides what follows'
+        : recorded.mode === 'resume' ? 'resume the `ingest` agent once with the errors' : 'dispatch `ingest` once more with the errors as its question'
       return {
         state: 'failed',
-        refusal: `the ingest reply is refused: ${checked.errors.join('; ')}; send it back once (dispatch.mjs attempt), and a second refusal stops archive`,
-        detail: { errors: checked.errors }
+        refusal: `the ingest reply is refused: ${checked.errors.join('; ')}; ${how}`,
+        detail: { errors: checked.errors, next: recorded.next, mode: recorded.mode, invalid: recorded.invalid }
       }
     }
     if (checked.log === null) return { state: 'done', detail: { nothingLearned: true, paths: [], report: 'Knowledge: nothing learned that the code and the history do not carry; no page and no log entry.' } }

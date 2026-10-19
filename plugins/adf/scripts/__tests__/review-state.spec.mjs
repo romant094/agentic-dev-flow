@@ -10,6 +10,7 @@ import { dirname, join } from 'node:path'
 import { appendRecord } from '../lib/ledger.mjs'
 import { readRegistry, writeRegistry } from '../lib/registry.mjs'
 import { checkRecord, mapLine, markerCheck, reviewDir, TEST_FILE } from '../lib/review-state.mjs'
+import { run as dispatch } from '../dispatch.mjs'
 import { run as review } from '../review.mjs'
 import { run as suite } from '../suite.mjs'
 import { commitIn, host } from './git-host.mjs'
@@ -67,7 +68,7 @@ function fix(change, round, id, files, failureMode = 'a null input crashed the p
   git(change, 'add', '--', ...Object.keys(files))
   git(change, 'commit', '-q', '-m', `fix: ${id}`)
   const sha = git(change, 'rev-parse', 'HEAD')
-  return { sha, out: R(change, 'fix', '--change', 'add-x', '--round', String(round), '--file', reply(change, `ai-fix-${id}-r${round}`, { finding: id, outcome: 'fixed', sha, failureMode })) }
+  return { sha, out: R(change, 'fix', '--change', 'add-x', '--round', String(round), '--finding', id, '--file', reply(change, `ai-fix-${id}-r${round}`, { finding: id, outcome: 'fixed', sha, failureMode })) }
 }
 
 const runSuite = (change) => suite(['run', '--change', 'add-x', '--section', 'review', '--root', change])
@@ -85,7 +86,7 @@ test('a run: start, round, input, response, fixplan, fix, recorded, a second rou
   assert.match(readFileSync(input.file, 'utf8'), /\+line2/)
 
   const bad = R(change, 'response', '--change', 'add-x', '--round', '1', '--file', reply(change, 'ai-review-r1', 'The code looks fine.'))
-  assert.deepEqual([bad.ok, bad.retry, bad.attempt], [false, true, 1])
+  assert.deepEqual([bad.ok, bad.retry, bad.invalid, bad.next, bad.mode, bad.name], [false, true, 1, 'retry', 'resume', 'ai-review r1'])
   const stored = R(change, 'response', '--change', 'add-x', '--round', '1', '--file', reply(change, 'ai-review-r1-2', findings(finding('F1', 'HIGH'), finding('F2', 'MEDIUM', { line: 3 }))))
   assert.deepEqual([stored.ok, stored.complete, stored.ids, stored.verdict, stored.blocking], [true, true, ['F1', 'F2'], 'BLOCKED', ['F1']])
   const plan = R(change, 'fixplan', '--change', 'add-x', '--round', '1')
@@ -149,6 +150,42 @@ test('a second invalid reply stops the stage until start --fresh', () => {
   assert.equal(existsSync(join(reviewDir(change, 'add-x'), 'stopped.json')), false)
   assert.equal(R(change, 'round', '--change', 'add-x').round, 1)
   assert.match(R(change, 'start', '--change', 'add-x').error, /under way \(round 1-1\)/)
+  // The fresh run counts its own events only: the earlier run's two invalid replies are history.
+  R(change, 'input', '--round', '1', '--change', 'add-x', '--prompt', PROMPT)
+  const again = R(change, 'response', '--change', 'add-x', '--round', '1', '--file', reply(change, 'd', '{}'), '--resume', 'no')
+  assert.deepEqual([again.retry, again.invalid, again.mode], [true, 1, 'fresh'])
+  assert.match(again.error, /afresh with the errors as its question/)
+  const events = readFileSync(sdd(change, 'attempts.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+  assert.deepEqual(events.map((e) => [e.name, e.event, e.next]), [['ai-review r1', 'invalid', 'retry'], ['ai-review r1', 'invalid', 'stop'], ['ai-review r1', 'invalid', 'retry']])
+  assert.equal(existsSync(join(reviewDir(change, 'add-x'), 'attempts.json')), false, 'the review stage keeps no counter of its own')
+})
+
+test('each fixer counts its own invalid replies, keyed by its dispatch name; the second of one name stops the stage', () => {
+  const change = setup({ files: { 'src/a.ts': 'a1\na2\n', 'src/b.ts': 'b1\n' } })
+  reviewed(change, finding('F1', 'HIGH', { line: 1 }), finding('F2', 'HIGH', { file: 'src/b.ts', line: 1 }))
+  const fixFile = (id, name, value) => R(change, 'fix', '--change', 'add-x', '--round', '1', '--finding', id, '--file', reply(change, name, value))
+  // Two fixers whose replies carry no valid finding: before, both were keyed `ai-fix F? r1`.
+  const first = fixFile('F1', 'f1a', '{}')
+  assert.deepEqual([first.retry, first.name, first.invalid], [true, 'ai-fix F1 r1', 1])
+  const second = fixFile('F2', 'f2a', { outcome: 'fixed' })
+  assert.deepEqual([second.retry, second.stopped, second.name, second.invalid], [true, undefined, 'ai-fix F2 r1', 1])
+  // A reply naming another finding than the command's is invalid, and counts for the command's.
+  const other = fixFile('F2', 'f2b', { finding: 'F1', outcome: 'false-positive', failureMode: 'm', argument: 'a' })
+  assert.deepEqual([other.stopped, other.name, other.errors], [true, 'ai-fix F2 r1', ['$.finding: F1 is not F2, the finding this dispatch was sent to fix']])
+  assert.match(other.error, /a second invalid reply from ai-fix F2 r1 stops the stage/)
+  assert.match(R(change, 'fixplan', '--change', 'add-x', '--round', '1').error, /stopped: a second invalid reply from ai-fix F2 r1/)
+  assert.match(fixFile('F1', 'f1b', { finding: 'F1', outcome: 'false-positive', failureMode: 'm', argument: 'a' }).error, /stopped/)
+})
+
+test('a stop that dispatch.mjs reply records in the shared log stops the review stage too', () => {
+  const change = setup()
+  R(change, 'start', '--change', 'add-x')
+  R(change, 'round', '--change', 'add-x')
+  R(change, 'input', '--round', '1', '--change', 'add-x', '--prompt', PROMPT)
+  assert.equal(R(change, 'response', '--change', 'add-x', '--round', '1', '--file', reply(change, 'a', '{}')).retry, true)
+  const out = dispatch(['reply', '--change', 'add-x', '--name', 'ai-review r1', '--file', reply(change, 'b', '{}'), '--root', change], { cwd: change, main: change })
+  assert.deepEqual([out.ok, out.next], [false, 'stop'])
+  assert.match(R(change, 'response', '--change', 'add-x', '--round', '1', '--file', reply(change, 'c', findings())).error, /stopped: a second invalid reply from ai-review r1/)
 })
 
 // ---------------------------------------------------------------- fixes
@@ -159,7 +196,7 @@ test('a fix is one commit in the fix range touching its finding file and tests o
   const plan = R(change, 'fixplan', '--change', 'add-x', '--round', '1')
   // One fixer at a time, in one worktree: same-file findings adjacent, the first file first.
   assert.deepEqual([plan.next.name, plan.fixes.map((e) => e.name)], ['ai-fix F1 r1', ['ai-fix F1 r1', 'ai-fix F3 r1', 'ai-fix F2 r1']])
-  const fixFile = (name, value) => R(change, 'fix', '--change', 'add-x', '--round', '1', '--file', reply(change, name, value))
+  const fixFile = (name, value, id = value.finding) => R(change, 'fix', '--change', 'add-x', '--round', '1', '--finding', id, '--file', reply(change, name, value))
   const old = git(change, 'rev-parse', 'HEAD~1')
   assert.match(fixFile('x1', { finding: 'F1', outcome: 'fixed', sha: old, failureMode: 'm' }).error, /is not in round 1's fix range/)
   assert.match(fixFile('x2', { finding: 'F9', outcome: 'fixed', sha: old, failureMode: 'm' }).error, /F9 is not a finding of round 1/)
@@ -176,7 +213,7 @@ test('a fix is one commit in the fix range touching its finding file and tests o
   assert.match(claim.next, /ruling --change add-x --finding F2 --as dismissed/)
   const again = R(change, 'fixplan', '--change', 'add-x', '--round', '1')
   assert.deepEqual([again.next.finding, again.fixes.map((e) => e.finding), again.awaitingDeveloper], ['F3', ['F3'], [{ finding: 'F2', argument: 'src/b.ts:1 is a constant' }]])
-  assert.match(fixFile('x6', '{"finding": "F3"}').error, /invalid/)
+  assert.match(fixFile('x6', '{"finding": "F3"}', 'F3').error, /invalid/)
   assert.equal(TEST_FILE.test('apps/x/__tests__/a.spec.mjs') && TEST_FILE.test('pkg/a_test.go') && !TEST_FILE.test('src/latest.ts'), true)
 })
 
@@ -185,7 +222,7 @@ test('a false-positive claim the developer rejects is listed again as a fix, wit
   reviewed(change, finding('F1', 'HIGH', { file: 'src/b.ts', line: 1 }), finding('F2', 'LOW', { line: 1 }))
   assert.deepEqual(R(change, 'fixplan', '--change', 'add-x', '--round', '1', '--also', 'F2').fixes.map((e) => e.finding), ['F1', 'F2'])
   const claim = { finding: 'F1', outcome: 'false-positive', failureMode: 'b1 is never null', argument: 'src/b.ts:1 is a constant' }
-  R(change, 'fix', '--change', 'add-x', '--round', '1', '--file', reply(change, 'fp1', claim))
+  R(change, 'fix', '--change', 'add-x', '--round', '1', '--finding', 'F1', '--file', reply(change, 'fp1', claim))
   const waiting = R(change, 'fixplan', '--change', 'add-x', '--round', '1')
   assert.deepEqual([waiting.next.finding, waiting.awaitingDeveloper.map((c) => c.finding)], ['F2', ['F1']])
   const ruling = rule(change, { finding: 'F1', as: 'fix', decision: 'b1 is read from the request' })
@@ -194,14 +231,14 @@ test('a false-positive claim the developer rejects is listed again as a fix, wit
   assert.deepEqual(listed.next.rejected, { argument: 'src/b.ts:1 is a constant', decision: 'b1 is read from the request', ruling: ruling.id })
   assert.match(R(change, 'disposition', '--change', 'add-x', '--finding', 'F1', '--as', 'dismissed').error, /ruled F1 fix .*, not dismissed/)
   // A second claim after the ruling waits for the developer again.
-  R(change, 'fix', '--change', 'add-x', '--round', '1', '--file', reply(change, 'fp2', claim))
+  R(change, 'fix', '--change', 'add-x', '--round', '1', '--finding', 'F1', '--file', reply(change, 'fp2', claim))
   assert.deepEqual(R(change, 'fixplan', '--change', 'add-x', '--round', '1').awaitingDeveloper.map((c) => c.finding), ['F1'])
 })
 
 test('an open blocking finding makes a BLOCKED record, not a refusal; a fix no round re-reviewed blocks it too', () => {
   const change = setup({ files: { 'src/a.ts': 'a1\na2\n', 'src/b.ts': 'b1\n' } })
   reviewed(change, finding('F1', 'HIGH'), finding('F2', 'HIGH', { file: 'src/b.ts', line: 1 }))
-  R(change, 'fix', '--change', 'add-x', '--round', '1', '--file', reply(change, 'fp', { finding: 'F2', outcome: 'false-positive', failureMode: 'm', argument: 'a' }))
+  R(change, 'fix', '--change', 'add-x', '--round', '1', '--finding', 'F2', '--file', reply(change, 'fp', { finding: 'F2', outcome: 'false-positive', failureMode: 'm', argument: 'a' }))
   fix(change, 1, 'F1', { 'src/a.ts': 'a1\na2 fixed\n' })
   runSuite(change)
   const out = R(change, 'assemble', '--change', 'add-x')

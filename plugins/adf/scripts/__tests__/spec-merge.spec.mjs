@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { unknownKeywords, readSchema } from '../lib/review.mjs'
@@ -72,4 +72,22 @@ test('specs.mjs resolution checks a reply against the conflicts the dry run find
   assert.equal(bad.out.valid, false)
   assert.equal(cli('--capability', 'other', '--reply', reply).status, 1)
   assert.equal(cli('--capability', 'widgets').status, 2)
+})
+
+test('specs.mjs resolution records each checked reply of `spec-merge <capability>`: one retry, then stop', () => {
+  const { change, onDevelop } = mergeRepo({ main: { widgets: MAIN }, delta: { widgets: `## MODIFIED Requirements\n\n${req('Store', 'The system SHALL store widgets dry.')}` } })
+  onDevelop({ 'openspec/specs/widgets/spec.md': MAIN.replace('SHALL store.', 'SHALL store widgets cold.') })
+  const cli = (...args) => JSON.parse(spawnSync(process.execPath, [SPECS, 'resolution', '--capability', 'widgets', ...args, '--change', 'add-x', '--root', change], { encoding: 'utf8' }).stdout)
+  const reply = join(change, 'reply.json')
+  writeFileSync(reply, '[]')
+  const first = cli('--reply', reply)
+  assert.deepEqual([first.valid, first.next, first.mode, first.invalid], [false, 'retry', 'resume', 1])
+  const second = cli('--reply', reply, '--resume', 'no')
+  assert.deepEqual([second.valid, second.next, second.mode, second.invalid], [false, 'stop', null, 2])
+  writeFileSync(reply, JSON.stringify([resolution('Store', req('Store', 'The system SHALL store widgets cold and dry.'))]))
+  const after = cli('--reply', reply)
+  assert.equal(after.ok, false)
+  assert.match(after.error, /spec-merge widgets stopped after 2 invalid replies; nothing it replies is recorded/)
+  const events = readFileSync(join(change, '.superpowers', 'sdd', 'add-x', 'attempts.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+  assert.deepEqual(events.map((e) => [e.name, e.event, e.next]), [['spec-merge widgets', 'invalid', 'retry'], ['spec-merge widgets', 'invalid', 'stop']])
 })

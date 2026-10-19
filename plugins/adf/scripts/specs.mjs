@@ -34,13 +34,16 @@
 //       kept, dropped }; exit 1 when a touched requirement is not in its main spec (nothing
 //       written). --check writes nothing: { ok, file, exists, touched, missing, stale, refusal? }, exit 1
 //       when a requirement has no entry or its entry was taken for another delta text.
-//   specs.mjs resolution --capability <capability> --reply <file> [--change <name>]
+//   specs.mjs resolution --capability <capability> --reply <file> [--change <name>] [--resume yes|no]
 //       the check of a `spec-merge <capability>` agent's reply (lib/spec-merge.mjs): valid under
 //       schema/spec-merge-resolution.schema.json and checkResolutions, every resolution of the
-//       capability, and exactly one per unresolved conflict the dry run finds in it.
-//       { ok, valid, errors, capability, conflicts, resolutions }; exit 1 when not valid. The
-//       valid replies of every capability in conflict, joined into one array, are the merge's
-//       --resolutions file; a refused reply goes back once, and a second refusal stops archive.
+//       capability, and exactly one per unresolved conflict the dry run finds in it. The checked
+//       reply is an event of the dispatch `spec-merge <capability>` in the change's shared log
+//       (lib/attempts.mjs). { ok, valid, errors, capability, conflicts, resolutions, next, mode,
+//       invalid }; exit 1 when not valid. The valid replies of every capability in conflict,
+//       joined into one array, are the merge's --resolutions file; a refused reply goes back once
+//       (`next: retry`, `mode: resume`, or `fresh` with --resume no), and a second refusal stops
+//       archive (`next: stop`; a later reply of the name is refused unrecorded).
 //
 // Without --change, capabilities, merge, base and --against-main act on the one active change under the root.
 //
@@ -50,13 +53,14 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { changeAgainstMain, checkCapabilities, checkSpecsBase, mergePreview, validateProject, writeSpecsBase } from './lib/specs.mjs'
 import { checkSpecMergeReply } from './lib/spec-merge.mjs'
+import { recordReply } from './lib/attempts.mjs'
 import { inferChange } from './lib/changes.mjs'
 import { loadSchema } from './lib/schema.mjs'
 import { isMain } from './lib/main.mjs'
 
 export class UsageError extends Error {}
 
-const USAGE = 'usage: specs.mjs validate [--all | --change <name> [--against-main] | --spec <capability>] [--strict] [--root <dir>] | specs.mjs capabilities [--change <name>] [--root <dir>] | specs.mjs merge --dry-run [--change <name>] [--resolutions <file>] [--root <dir>] | specs.mjs base [--check] [--change <name>] [--root <dir>] | specs.mjs resolution --capability <capability> --reply <file> [--change <name>] [--root <dir>]'
+const USAGE = 'usage: specs.mjs validate [--all | --change <name> [--against-main] | --spec <capability>] [--strict] [--root <dir>] | specs.mjs capabilities [--change <name>] [--root <dir>] | specs.mjs merge --dry-run [--change <name>] [--resolutions <file>] [--root <dir>] | specs.mjs base [--check] [--change <name>] [--root <dir>] | specs.mjs resolution --capability <capability> --reply <file> [--change <name>] [--resume yes|no] [--root <dir>]'
 
 function option(args, name) {
   const i = args.indexOf(name)
@@ -93,17 +97,19 @@ export function run(argv) {
   const resolutions = option(args, '--resolutions')
   const capability = option(args, '--capability')
   const reply = option(args, '--reply')
+  const resume = option(args, '--resume')
   const check = flag(args, '--check')
   const [command, ...rest] = args
   const root = resolve(rootOption ?? process.cwd())
   if (command === 'base') {
-    if (rest.length > 0 || spec || all || strict || againstMain || dryRun || resolutions !== undefined || capability !== undefined || reply !== undefined) throw new UsageError(USAGE)
+    if (rest.length > 0 || spec || all || strict || againstMain || dryRun || resolutions !== undefined || capability !== undefined || reply !== undefined || resume !== undefined) throw new UsageError(USAGE)
     change = inferChange(root, change, loadSchema())
     return { change, ...(check ? checkSpecsBase(root, change) : writeSpecsBase(root, change)) }
   }
   if (check) throw new UsageError(USAGE)
   if (command === 'resolution') {
     if (!capability || !reply || rest.length > 0 || spec || all || strict || againstMain || dryRun || resolutions !== undefined) throw new UsageError(USAGE)
+    if (resume !== undefined && !['yes', 'no'].includes(resume)) throw new UsageError('--resume is yes or no')
     change = inferChange(root, change, loadSchema())
     let text
     try {
@@ -114,9 +120,20 @@ export function run(argv) {
     const conflicts = mergePreview(root, change).conflicts.filter((c) => c.capability === capability)
     if (conflicts.length === 0) throw new Error(`${capability} has no unresolved conflict in ${change}; there is nothing to resolve`)
     const checked = checkSpecMergeReply(text, { capability, conflicts })
-    return { ok: checked.valid, valid: checked.valid, errors: checked.errors, capability, conflicts: conflicts.map((c) => c.requirement), resolutions: checked.valid ? checked.reply : null }
+    const recorded = recordReply(root, change, { name: `spec-merge ${capability}`, file: resolve(reply), errors: checked.errors, resume: resume !== 'no' })
+    return {
+      ok: checked.valid,
+      valid: checked.valid,
+      errors: checked.errors,
+      capability,
+      conflicts: conflicts.map((c) => c.requirement),
+      resolutions: checked.valid ? checked.reply : null,
+      next: recorded.next,
+      mode: recorded.mode,
+      invalid: recorded.invalid
+    }
   }
-  if (capability !== undefined || reply !== undefined) throw new UsageError(USAGE)
+  if (capability !== undefined || reply !== undefined || resume !== undefined) throw new UsageError(USAGE)
   if (command === 'merge') {
     if (!dryRun || rest.length > 0 || spec || all || strict || againstMain) {
       throw new UsageError(dryRun ? USAGE : 'specs.mjs merge writes nothing: pass --dry-run (the writing merge is archive.mjs merge, after the gate)')

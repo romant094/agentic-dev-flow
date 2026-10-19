@@ -26,9 +26,12 @@
 //       `docs(specs): archive <name>`: the old and new change directories and the main spec
 //       files of the change's capabilities; any other uncommitted file of the change tree, the
 //       main specs, the knowledge base or the debt tree refuses, named
-//   archive.mjs ingest --change <name> [--reply <file>]
-//       the ingest reply checked (ingest.mjs check), the log written through the knowledge
-//       role; with no knowledge provider the step is skipped and says so
+//   archive.mjs ingest --change <name> [--reply <file>] [--resume yes|no]
+//       the ingest reply checked (ingest.mjs check) and recorded as an event of the dispatch
+//       `ingest` (lib/attempts.mjs), the log written through the knowledge role; a refused
+//       reply fails the step with detail.next `retry` (detail.mode `resume`, or `fresh` with
+//       --resume no) the first time and `stop` the second, after which archive stops; with no
+//       knowledge provider the step is skipped and says so
 //   archive.mjs commit-memory --change <name>
 //       `docs(memory): ingest what <name> taught`: only the paths the ingest and the placement
 //       wrote; nothing to commit is no commit
@@ -80,7 +83,7 @@ import { claudeHome } from './lib/superpowers.mjs'
 export const USAGE = `usage:
   archive.mjs check|placements|move|commit-specs|commit-memory|remove|mr-input|state|next|report --change <name> [--root <dir>] [--home <dir>]
   archive.mjs merge --change <name> [--resolutions <file> ...] [--purpose <capability>=<file> ...] [--root <dir>]
-  archive.mjs ingest --change <name> [--reply <file>] [--root <dir>] [--home <dir>]
+  archive.mjs ingest --change <name> [--reply <file>] [--resume yes|no] [--root <dir>] [--home <dir>]
   archive.mjs mr --change <name> [--body <file> (--summary "<scope>: <description>" | --title <t>)] [--root <dir>] [--home <dir>]
   archive.mjs merge-local --change <name> [--yes | --no] [--root <dir>]`
 
@@ -93,6 +96,7 @@ const OPTIONS = {
   resolutions: { type: 'string', multiple: true },
   purpose: { type: 'string', multiple: true },
   reply: { type: 'string' },
+  resume: { type: 'string' },
   body: { type: 'string' },
   title: { type: 'string' },
   summary: { type: 'string' },
@@ -106,7 +110,7 @@ const TAKES = {
   merge: ['resolutions', 'purpose'],
   move: [],
   'commit-specs': [],
-  ingest: ['reply'],
+  ingest: ['reply', 'resume'],
   'commit-memory': [],
   'mr-input': [],
   mr: ['body', 'title', 'summary'],
@@ -156,7 +160,8 @@ export function run(argv, { cwd = process.cwd(), deps = {} } = {}) {
     case 'commit-specs':
       return commitSpecsStep(ctx)
     case 'ingest':
-      return ingestStep(ctx, { reply: values.reply ?? null })
+      if (values.resume !== undefined && !['yes', 'no'].includes(values.resume)) throw new UsageError('--resume is yes or no')
+      return ingestStep(ctx, { reply: values.reply ?? null, resume: values.resume !== 'no' })
     case 'commit-memory':
       return commitMemoryStep(ctx)
     case 'mr-input':

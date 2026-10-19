@@ -399,6 +399,32 @@ test('ingest writes the log through the knowledge role and commit-memory commits
   assert.equal(git(h.wt, 'status', '--porcelain'), '?? docs/stray.md')
 })
 
+test('a refused ingest reply goes back once, resumed, and a second refusal stops archive; the log is the shared events log', () => {
+  const MEM = '.claude/memory'
+  const h = archiveHost({ extra: { [`${MEM}/index.md`]: '# Index\n', [`${MEM}/log.md`]: '# Log\n' } })
+  const context = { state: 'done', plugin: 'memory', index: `${MEM}/index.md`, instructions: { ingest: '/p/ingest.md' }, paths: [`${MEM}/**`], log: [`${MEM}/log.md`] }
+  const logged = []
+  const deps = { ...NONE, knowledge: () => context, knowledgeLog: (input) => logged.push(input) && { state: 'done', path: `${MEM}/log.md`, entry: '', rotated: [] } }
+  for (const step of ['check', 'placements', 'merge', 'move', 'commit-specs']) assert.equal(call(h, [step], deps).ok, true, step)
+  assert.equal(ingestRun(['stale', '--change', 'add-x', '--root', h.wt], { knowledge: () => context }).state, 'done')
+  const reply = join(h.wt, '..', 'ingest-reply.json')
+  writeFileSync(reply, '{}')
+  const first = call(h, ['ingest', '--reply', reply], deps)
+  assert.equal(first.state, 'failed')
+  assert.deepEqual([first.detail.next, first.detail.mode, first.detail.invalid], ['retry', 'resume', 1])
+  assert.match(first.refusal, /resume the `ingest` agent once with the errors/)
+  const second = call(h, ['ingest', '--reply', reply, '--resume', 'no'], deps)
+  assert.deepEqual([second.state, second.detail.next, second.detail.mode, second.detail.invalid], ['failed', 'stop', null, 2])
+  assert.match(second.refusal, /a second refused reply of `ingest` stops archive/)
+  writeFileSync(reply, JSON.stringify({ nothingLearned: true, pages: [], stale: [] }))
+  const after = call(h, ['ingest', '--reply', reply], deps)
+  assert.equal(after.state, 'failed')
+  assert.match(after.refusal, /ingest stopped after 2 invalid replies; nothing it replies is recorded/)
+  assert.deepEqual(logged, [], 'a stopped ingest writes no log entry')
+  const events = readFileSync(join(h.wt, '.superpowers', 'sdd', 'add-x', 'attempts.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+  assert.deepEqual(events.map((e) => [e.name, e.event, e.next]), [['ingest', 'invalid', 'retry'], ['ingest', 'invalid', 'stop']])
+})
+
 test('mr-input gathers the tasks, the Why, the scenarios and the run evidence', () => {
   const h = archiveHost()
   const out = call(h, ['mr-input'])

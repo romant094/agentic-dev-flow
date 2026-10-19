@@ -37,13 +37,19 @@
 //       check a reply against its schema; for findings also the verdict over review.blockOn,
 //       every finding open. Exit 1 on an invalid reply and on BLOCKED.
 //       { ok, kind, valid, errors, fenced, verdict?, blocking?, counts?, blockOn? }
-//   review.mjs response --change <name> --round <k> [--slice <n>] --file <json> [--root <dir>]
+//   review.mjs response --change <name> --round <k> [--slice <n>] --file <json> [--resume yes|no]
+//                       [--root <dir>]
 //       check the reviewer's reply and store it as round k's (slice n's); once every slice is
-//       in, the round's findings are written, ids renumbered on from the earlier rounds. An
-//       invalid reply is refused with `retry: true`; a second invalid reply stops the stage
-//       (`stopped: true`) until start --fresh. `ok` is the reply stored, whatever the verdict.
+//       in, the round's findings are written, ids renumbered on from the earlier rounds. Every
+//       checked reply is an event of the dispatch `ai-review r<k>[ s<n>]` in the change's shared
+//       log (lib/attempts.mjs). An invalid reply is refused with `retry: true`, `next: retry` and
+//       `mode: resume` (resume the same agent with the errors), or `mode: fresh` with --resume
+//       no (the harness cannot resume it: dispatch it afresh with the errors as its question);
+//       a second invalid reply of the name stops the stage (`stopped: true`, `next: stop`) until
+//       start --fresh. `ok` is the reply stored, whatever the verdict.
 //       { ok, valid, round, slice, complete, missing? | findingsFile, ids, renumbered, verdict,
-//         blocking, counts }
+//         blocking, counts }; refused: { ok: false, valid: false, name, errors, next, mode,
+//         invalid, retry? | stopped?, error, fenced }
 //   review.mjs fixplan --change <name> --round <k> [--also F<n> ...] [--root <dir>]
 //       the round's open blocking findings (and --also, open findings chosen to be fixed, kept
 //       for the round's later calls) in sequential order, same-file findings adjacent: fixers
@@ -55,11 +61,14 @@
 //       { ok, round, level, also, next: entry | null, fixes: [entry], awaitingDeveloper:
 //         [{ finding, argument }] }, entry { finding, severity, file, line, title, name, level,
 //         rejected?: { argument, decision, ruling } }
-//   review.mjs fix --change <name> --round <k> --file <json> [--root <dir>]
-//       check a fixer's reply; `fixed` needs its sha in the round's fix range, one commit
-//       touching the finding's file and otherwise only test files, and records the disposition;
-//       `false-positive` leaves the finding open with its argument, for the developer. Invalid
-//       replies: one retry, as response.
+//   review.mjs fix --change <name> --round <k> --finding F<n> --file <json> [--resume yes|no]
+//                  [--root <dir>]
+//       check the reply of the fixer dispatched as `ai-fix F<n> r<k>` (the finding is the
+//       command's: a reply naming another finding is invalid); `fixed` needs its sha in the
+//       round's fix range, one commit touching the finding's file and otherwise only test
+//       files, and records the disposition; `false-positive` leaves the finding open with its
+//       argument, for the developer. Invalid replies: one retry, as response, keyed by the
+//       dispatch name.
 //       { ok, finding, outcome, sha?, files?, tests?, awaiting?, next? }
 //   review.mjs disposition --change <name> --finding F<n> --as dismissed|accepted|recorded
 //                          [--body-file <file>] [--root <dir>]
@@ -122,9 +131,9 @@ export const USAGE = `usage:
   review.mjs round --change <name> [--root <dir>]
   review.mjs input --round <k> [--slice <n>] (--change <name> | --range <A..B> [--since <sha>]) [--prompt <file>] [--out <file>] [--root <dir>]
   review.mjs response --file <json> [--kind findings|fix] [--root <dir>]
-  review.mjs response --change <name> --round <k> [--slice <n>] --file <json> [--root <dir>]
+  review.mjs response --change <name> --round <k> [--slice <n>] --file <json> [--resume yes|no] [--root <dir>]
   review.mjs fixplan --change <name> --round <k> [--also F<n> ...] [--root <dir>]
-  review.mjs fix --change <name> --round <k> --file <json> [--root <dir>]
+  review.mjs fix --change <name> --round <k> --finding F<n> --file <json> [--resume yes|no] [--root <dir>]
   review.mjs disposition --change <name> --finding F<n> --as dismissed|accepted|recorded [--body-file <file>] [--root <dir>]
   review.mjs assemble --change <name> [--not-reviewed <reason>] [--commit] [--root <dir>]
   review.mjs check --file <review.md> [--root <dir>]
@@ -134,16 +143,16 @@ export const USAGE = `usage:
 
 export class UsageError extends Error {}
 
-const VALUED = ['--change', '--range', '--root', '--round', '--slice', '--since', '--prompt', '--out', '--file', '--kind', '--line', '--end-line', '--key', '--reason', '--finding', '--as', '--body-file', '--not-reviewed', '--also']
+const VALUED = ['--change', '--range', '--root', '--round', '--slice', '--since', '--prompt', '--out', '--file', '--kind', '--line', '--end-line', '--key', '--reason', '--finding', '--as', '--body-file', '--not-reviewed', '--also', '--resume']
 const BOOLEAN = ['--fresh', '--commit']
 // The options each subcommand takes, besides --root.
 const TAKES = {
   start: ['change', 'range', 'fresh'],
   round: ['change'],
   input: ['change', 'range', 'round', 'slice', 'since', 'prompt', 'out'],
-  response: ['file', 'kind', 'change', 'round', 'slice'],
+  response: ['file', 'kind', 'change', 'round', 'slice', 'resume'],
   fixplan: ['change', 'round', 'also'],
-  fix: ['change', 'round', 'file'],
+  fix: ['change', 'round', 'finding', 'file', 'resume'],
   disposition: ['change', 'finding', 'as', 'body-file'],
   assemble: ['change', 'not-reviewed', 'commit'],
   check: ['file'],
@@ -181,6 +190,13 @@ function positive(name, value) {
   const n = Number(value)
   if (!Number.isInteger(n) || n < 1) throw new UsageError(`--${name} must be a positive integer`)
   return n
+}
+
+// --resume yes|no: whether the harness can resume the agent whose reply is refused.
+function resumable(values) {
+  if (values.resume === undefined) return true
+  if (!['yes', 'no'].includes(values.resume)) throw new UsageError('--resume is yes or no')
+  return values.resume === 'yes'
 }
 
 function readText(cwd, file) {
@@ -281,9 +297,10 @@ function response(root, cwd, values) {
   if (values.change) {
     if (kind !== 'findings') throw new UsageError("a fixer's reply for a change goes to review.mjs fix")
     if (!values.round) throw new UsageError('response --change needs --round')
-    return storeReply(root, values.change, { round: positive('round', values.round), slice: values.slice === undefined ? null : positive('slice', values.slice), text })
+    const slice = values.slice === undefined ? null : positive('slice', values.slice)
+    return storeReply(root, values.change, { round: positive('round', values.round), slice, text, file: resolve(cwd, values.file), resume: resumable(values) })
   }
-  if (values.round || values.slice) throw new UsageError('--round and --slice store a reply: they need --change')
+  if (values.round || values.slice || values.resume) throw new UsageError('--round, --slice and --resume store a reply: they need --change')
   if (kind === 'fix') {
     const { valid, errors, fenced } = checkFix(text)
     return { ok: valid, kind, valid, errors, fenced }
@@ -341,8 +358,9 @@ function dispatch(command, root, cwd, values) {
       for (const id of values.also ?? []) if (!/^F[1-9]\d*$/.test(id)) throw new UsageError(`--also takes a finding id F<n>, not "${id}"`)
       return fixPlan(root, change, { round: round(values, command), also: values.also ?? [] })
     case 'fix':
-      if (!values.file) throw new UsageError('fix needs --file')
-      return recordFix(root, change, { round: round(values, command), text: readText(cwd, values.file) })
+      if (!values.file || !values.finding) throw new UsageError('fix needs --finding and --file')
+      if (!/^F[1-9]\d*$/.test(values.finding)) throw new UsageError(`--finding takes a finding id F<n>, not "${values.finding}"`)
+      return recordFix(root, change, { round: round(values, command), finding: values.finding, text: readText(cwd, values.file), file: resolve(cwd, values.file), resume: resumable(values) })
     case 'disposition':
       if (!values.finding || !values.as) throw new UsageError('disposition needs --finding and --as')
       return dispose(root, change, { finding: values.finding, as: values.as, body: values['body-file'] === undefined ? null : readText(cwd, values['body-file']) })
