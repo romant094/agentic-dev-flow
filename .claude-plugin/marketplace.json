@@ -23,7 +23,7 @@
     {
       "name": "english-check",
       "description": "Blocks an agent's git commit when a file in scope holds non-English prose",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "source": "./plugins/english-check"
     },
     {

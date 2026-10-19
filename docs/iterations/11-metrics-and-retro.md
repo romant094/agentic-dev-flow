@@ -100,5 +100,5 @@ Settled by the developer on 2026-10-19.
   `fromV1` carries it as it is; the knowledge base is kept out of the diff figures only through
   the `knowledge` role's `paths`; `origin-ledger.mjs` and `origin-sdd.mjs` leave temporary
   directories behind; the parity suite takes about 9 minutes.
-- Versions: adf 0.11.0, gitlab 0.3.0, contract 1.4; memory 0.1.0 and english-check 0.4.0
-  unchanged.
+- Versions: adf 0.11.0, gitlab 0.3.0, english-check 0.5.0 (`retro.mjs record` joins its list
+  of committing scripts), contract 1.4; memory 0.1.0 unchanged.
