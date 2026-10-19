@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dispatchName, MAX_ROUNDS, normalize, parseGraph, parseName, planDispatch, roundOf, verbatimBlocks } from '../lib/dispatch.mjs'
 import { PLUGIN_ROOT, PROMPTS_DIR, run } from '../dispatch.mjs'
+import { appendRecord } from '../lib/ledger.mjs'
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'dispatch.mjs')
 const CHANGE = 'add-x'
@@ -173,8 +174,8 @@ test('the reply file sits in the change worktree and is never overwritten', () =
   writeFileSync(first.replyFile, '{}')
   assert.equal(call(root, 'plan', '--role', 'fix', '--task', '3', '--round', '2').replyFile, first.replyFile.replace(/\.json$/, '-2.json'))
   const v = call(root, 'plan', '--role', 'verify', '--check', 'c8')
-  assert.deepEqual(v.sectionFiles, ['c8-agent.txt', 'c8.json'].map((f) => join(root, '.superpowers', 'sdd', CHANGE, 'verify', f)))
-  assert.equal(v.replyFile, undefined)
+  assert.equal(v.replyFile, join(root, '.superpowers', 'sdd', CHANGE, 'replies', 'verify-c8.json'))
+  assert.equal(v.sectionFile, join(root, '.superpowers', 'sdd', CHANGE, 'verify', 'c8.json'))
 })
 
 test('an implementer prompt carries every fixed field and clause, with paths absolute', () => {
@@ -247,7 +248,7 @@ test('the sweep prompt names the base, the range and the fixed question; a merge
   assert.doesNotMatch(fix.prompt, /<n>/)
 })
 
-test('a verify prompt reads base and range from run.json and names its two files', () => {
+test('a verify prompt reads base and range from run.json and names its reply file and the lists it answers', () => {
   const root = host()
   assert.match(cli(root, 'prompt', '--change', CHANGE, '--role', 'verify', '--check', 'c4').out.error, /run verify\.mjs run first/)
   const verify = join(root, '.superpowers', 'sdd', CHANGE, 'verify')
@@ -255,10 +256,15 @@ test('a verify prompt reads base and range from run.json and names its two files
   writeFileSync(join(verify, 'run.json'), JSON.stringify({ base: 'origin/develop', head: 'abc123' }))
   mkdirSync(join(root, '.claude', 'skills', 'deploy'), { recursive: true })
   writeFileSync(join(root, '.claude', 'skills', 'deploy', 'SKILL.md'), 'x')
+  // The c4 prompt lists the range's hand edits of capability specs, read from git.
+  assert.match(cli(root, 'prompt', '--change', CHANGE, '--role', 'verify', '--check', 'c4').out.error, /git/)
+  for (const args of [['init', '-q', '-b', 'develop'], ['-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'init']]) spawnSync('git', args, { cwd: root })
   const c4 = call(root, 'prompt', '--role', 'verify', '--check', 'c4').prompt
   assert.ok(c4.includes('Range: origin/develop..abc123'))
-  assert.ok(c4.includes(`Output file: ${join(verify, 'c4-agent.txt')}`))
-  assert.ok(c4.includes(`Section file: ${join(verify, 'c4.json')}`))
+  assert.ok(c4.includes(`Reply file: ${join(root, '.superpowers', 'sdd', CHANGE, 'replies', 'verify-c4.json')}`))
+  assert.ok(c4.includes(`Reply schema: ${join(PLUGIN_ROOT, 'schema', 'verify-c4.schema.json')}`))
+  assert.match(c4, /- Prose edits: none\n- Removed or renamed: none\n/)
+  assert.ok(c4.includes(`write it as one JSON\nobject under \`${PLUGIN_ROOT}/schema/verify-c4.schema.json\``))
   assert.match(c4, /Every design decision traces to a requirement/)
   assert.ok(c4.includes(`git runs as \`git -C ${root}\``))
   const c8 = call(root, 'prompt', '--role', 'verify', '--check', 'c8').prompt
@@ -477,7 +483,7 @@ test('two invalid replies of one dispatch give retry, then stop; a stopped dispa
   assert.equal(exit.status, 1)
   assert.equal(exit.out.next, 'retry')
   assert.equal(cli(root, 'reply', '--change', CHANGE, '--name', 'T5 impl', '--file', bad, '--resume', 'maybe').status, 2)
-  assert.throws(() => call(root, 'reply', '--name', 'verify c4', '--file', bad), /verify\.mjs verdict/)
+  assert.throws(() => call(root, 'reply', '--name', 'verify c4', '--file', bad), /run verify\.mjs run first/)
   assert.throws(() => call(root, 'reply', '--name', 'T3 implement', '--file', bad), /fixed form/)
 })
 
@@ -679,4 +685,54 @@ test('the ingest prompt reads its input file and runs on the archived change; wi
   assert.equal(run(['attempt', '--change', CHANGE, '--name', 'ingest', '--root', root], { main: MAIN }).next, 'dispatch')
   assert.equal(run(['attempt', '--change', CHANGE, '--name', 'ingest', '--root', root], { main: MAIN }).next, 'retry')
   assert.equal(run(['attempt', '--change', CHANGE, '--name', 'ingest', '--root', root], { main: MAIN }).next, 'stop')
+})
+
+// ---------------------------------------------------------------- loop state by script
+
+const LOOP_FINDING = { severity: 'important', kind: 'quality', category: 'quality', file: 'src/t1.mjs', line: 3, title: 'Unchecked error', body: 'The error is dropped.\nIt reaches the caller.' }
+const loopReview = (findings, unverifiable = []) => ({ role: 'review', summary: 'Reviewed.', findings, unverifiable })
+const loopReReview = (previous, outOfScope = []) => ({ role: 're-review', summary: 'Checked.', previous: previous.map(([id, status]) => ({ id, status, file: 'src/t1.mjs', line: 3 })), findings: [], outOfScope })
+
+test('the fix and re-review prompts render the open findings, honour the rulings and refuse when none is open', () => {
+  const root = host()
+  const reviewed = call(root, 'reply', '--name', 'T1 review', '--file', writeReply(root, 'T1-review', loopReview([LOOP_FINDING, { ...LOOP_FINDING, title: 'Plan says so', planMandated: true }, { ...LOOP_FINDING, severity: 'minor', title: 'Naming' }])))
+  assert.deepEqual([reviewed.result.open, reviewed.result.toRule, reviewed.result.deferred], [['F1'], ['F2'], ['F3']])
+  // No question file: the findings are the question.
+  const fix = call(root, 'prompt', '--role', 'fix', '--task', '1', '--round', '1').prompt
+  assert.ok(fix.includes('- Open findings:\n  - F1 (important, quality) src/t1.mjs:3: Unchecked error\n    The error is dropped.\n    It reaches the caller.'), fix)
+  assert.doesNotMatch(fix, /F2 \(|F3 \(/)
+  assert.match(fix, /None beyond the rules below\./)
+  const rule = (finding, as) => appendRecord(root, CHANGE, 'ruling', { subject: 'T1', finding, as, decision: 'the plan is wrong here' })
+  rule('F2', 'fix')
+  rule('F1', 'accepted')
+  const ruled = call(root, 'prompt', '--role', 're-review', '--task', '1', '--round', '1').prompt
+  assert.ok(ruled.includes('  - F2 (important, quality) src/t1.mjs:3: Plan says so\n    The error is dropped.\n    It reaches the caller.\n    Ruled fix: the plan is wrong here'), ruled)
+  assert.doesNotMatch(ruled, /F1 \(/)
+  // The re-review answers the open set the rulings leave: F2, not F1.
+  const wrong = call(root, 'reply', '--name', 'T1 re-review r1', '--file', writeReply(root, 'rr-wrong', loopReReview([['F1', 'addressed']])))
+  assert.deepEqual(wrong.errors, ['$.previous[0].id: F1 is not an open finding of T1', '$.previous: the open finding F2 of T1 is not answered'])
+  const done = call(root, 'reply', '--name', 'T1 re-review r1', '--file', writeReply(root, 'rr-done', loopReReview([['F2', 'addressed']], [{ file: 'src/old.mjs', line: null, title: 'Old naming' }])))
+  assert.deepEqual([done.valid, done.result.open, done.result.result], [true, [], 'clean'])
+  assert.throws(() => call(root, 'prompt', '--role', 'fix', '--task', '1', '--round', '2'), /T1 has no open finding to fix/)
+  // A subject with no accepted review still needs the question.
+  assert.throws(() => call(root, 'prompt', '--role', 'fix', '--task', '3', '--round', '1'), /needs --question-file/)
+  // A plan-mandated finding alone is ruled first, not fixed.
+  call(root, 'reply', '--name', 'merge-review A', '--file', writeReply(root, 'mr', { ...loopReview([{ ...LOOP_FINDING, planMandated: true }]), role: 'merge-review' }))
+  assert.throws(() => call(root, 'prompt', '--role', 'fix', '--group', 'A', '--round', '1'), /A has no open finding to fix; A is not clean \(to rule F1\)/)
+})
+
+test('the deferred minors and out-of-scope items are collected into deferred.json and fed to the final review', () => {
+  const root = host()
+  const q = join(root, 'q.txt')
+  writeFileSync(q, 'Review the branch.')
+  call(root, 'reply', '--name', 'T1 review', '--file', writeReply(root, 'T1-review', loopReview([LOOP_FINDING, { ...LOOP_FINDING, severity: 'minor', title: 'Naming', body: 'Call it parse.' }])))
+  const file = join(root, '.superpowers', 'sdd', CHANGE, 'deferred.json')
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).map((i) => [i.subject, i.id, i.source, i.title]), [['T1', 'F2', 'minor', 'Naming']])
+  call(root, 'reply', '--name', 'T1 re-review r1', '--file', writeReply(root, 'rr', loopReReview([['F1', 'addressed']], [{ file: 'src/old.mjs', line: 7, title: 'Old naming' }])))
+  const items = JSON.parse(readFileSync(file, 'utf8'))
+  assert.deepEqual(items.map((i) => [i.subject, i.dispatch, i.source]), [['T1', 'T1 review', 'minor'], ['T1', 'T1 re-review r1', 'out-of-scope']])
+  const final = call(root, 'prompt', '--role', 'final-review', '--question-file', q).prompt
+  assert.ok(final.includes('- Deferred:\n  - T1 F2 (minor, quality) src/t1.mjs:3: Naming\n    Call it parse.\n  - T1 out of scope src/old.mjs:7: Old naming'), final)
+  assert.ok(final.includes(`- Deferred file: ${file}`))
+  assert.match(call(host(), 'prompt', '--role', 'final-review', '--question-file', q).prompt, /- Deferred: none/)
 })

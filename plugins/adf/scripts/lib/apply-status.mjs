@@ -13,11 +13,15 @@
 // are this module's (`recordHandoff`): the handoff takes the merged groups, the remaining items
 // and every group still blocked from the state itself, so a later handoff cannot drop a blocked
 // group by leaving it out, and a blocked group carries its reason in the handoff.
+//
+// The reuse sweep's open findings (lib/loop.mjs sweepState) are reported as `sweep.open`, and
+// apply is not complete while one is open: the one maintainability finding that blocks.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { changeDir } from './changes.mjs'
 import { groupState, pushPath } from './groups.mjs'
 import { appendRecord, readRecords, unresolvedDebt } from './ledger.mjs'
+import { sweepState } from './loop.mjs'
 import { DEFAULT_CAP, parsePlan, parseTaskItems, schedule, testFirst } from './plan.mjs'
 import { tickMessage } from './tasks.mjs'
 import { gitIn } from './workspace.mjs'
@@ -104,7 +108,8 @@ export function applyStatus(root, change, { tracks = 'tasks.md', cap = DEFAULT_C
   const remaining = items.filter((i) => !i.done).map((i) => i.id)
   const debt = unresolvedDebt(records)
   const kept = groups.filter((g) => g.kept).map((g) => g.n)
-  const complete = remaining.length === 0 && kept.length === 0 && (sched.single || groups.every((g) => g.state === 'merged'))
+  const sweep = sweepState(root, change)
+  const complete = remaining.length === 0 && kept.length === 0 && (sched.single || groups.every((g) => g.state === 'merged')) && sweep.open.length === 0
   const pushText = read(pushPath(root, change))
   let push = null
   try {
@@ -132,6 +137,7 @@ export function applyStatus(root, change, { tracks = 'tasks.md', cap = DEFAULT_C
     lastHandoff,
     push,
     suite: suiteOf(read(join(dir, TEST_RECORD))),
+    sweep: { ran: sweep.ran, open: sweep.open.map(({ id, introduced, existing, why }) => ({ id, introduced, existing, why })), cleared: sweep.cleared },
     complete
   }
 }
@@ -206,6 +212,7 @@ export function renderReport(status, { schemaName, items = [] }) {
     const g = status.groups.find((x) => x.n === n)
     return `- group ${g.letter} (${n}) is blocked; its worktree is kept`
   })
+  for (const f of status.sweep?.open ?? []) blocked.push(`- sweep finding ${f.id}: ${f.introduced} repeats ${f.existing}; consolidate it, or the developer dismisses it`)
   return [
     ...head('Paused'),
     '### Completed This Session',

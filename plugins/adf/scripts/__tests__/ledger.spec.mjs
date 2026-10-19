@@ -54,6 +54,21 @@ test('a ruling on a review finding names what the developer decided, dismissed o
   assert.equal(buildRecord('ruling', { check: 'review-round-4', reason: 'one more' }).check, 'review-round-4')
 })
 
+test('a ruling on an apply loop or sweep item names its subject, an id of that subject and what it decides', () => {
+  const r = buildRecord('ruling', { subject: 'T2', finding: 'F3', as: 'accepted', decision: 'the plan mandates it' }, { now })
+  assert.deepEqual([r.subject, r.finding, r.as], ['T2', 'F3', 'accepted'])
+  assert.equal(buildRecord('ruling', { subject: 'final', finding: 'U1', as: 'dismissed', decision: 'checked on the bench' }).finding, 'U1')
+  assert.equal(buildRecord('ruling', { subject: 'B', finding: 'F1', as: 'fix', decision: 'the plan is wrong' }).as, 'fix')
+  assert.equal(buildRecord('ruling', { subject: 'sweep', finding: 'S2', as: 'dismissed', decision: 'the wire format differs' }).finding, 'S2')
+  assert.throws(() => buildRecord('ruling', { subject: 'T2', finding: 'F3', decision: 'd' }), /ruling needs --as/)
+  assert.throws(() => buildRecord('ruling', { subject: 'task 2', finding: 'F3', as: 'accepted', decision: 'd' }), /--subject must be T<n>, a group letter, final or sweep/)
+  assert.throws(() => buildRecord('ruling', { subject: 'T2', finding: 'S1', as: 'accepted', decision: 'd' }), /--finding must be a finding id such as F3/)
+  assert.throws(() => buildRecord('ruling', { subject: 'sweep', finding: 'F1', as: 'dismissed', decision: 'd' }), /a sweep finding id such as S2/)
+  assert.throws(() => buildRecord('ruling', { subject: 'T2', finding: 'U1', as: 'fix', decision: 'd' }), /U1 is accepted or dismissed, never ruled fix/)
+  assert.throws(() => buildRecord('ruling', { subject: 'sweep', finding: 'S1', as: 'fix', decision: 'd' }), /consolidated/)
+  assert.throws(() => buildRecord('ruling', { subject: 'T2', finding: 'F3', as: 'accepted', decision: 'd', check: 'x' }), /ruling takes no --subject/)
+})
+
 test('refuses an unknown kind and a task that is not a task number', () => {
   assert.throws(() => buildRecord('dispatch', {}), /unknown kind "dispatch"; one of: session, deviation, debt, ruling, handoff, resolve/)
   assert.throws(

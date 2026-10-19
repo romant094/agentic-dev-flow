@@ -5,7 +5,9 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { commentFor, coveringMarker, parseMarker } from '../lib/dup.mjs'
-import { listRecords } from '../lib/ledger.mjs'
+import { recordReply } from '../lib/attempts.mjs'
+import { appendRecord, listRecords } from '../lib/ledger.mjs'
+import { sweepState } from '../lib/loop.mjs'
 import { removalsIn } from '../lib/sweep.mjs'
 import { run as dup } from '../dup.mjs'
 import { run as sweep } from '../sweep.mjs'
@@ -138,4 +140,36 @@ test('dup mark --commit commits the marked file alone, with the fixed message', 
   assert.equal(git(change, 'show', '--name-only', '--format=', 'HEAD'), 'src/b.ts')
   assert.equal(git(change, 'status', '--porcelain', '--', 'other.txt'), '?? other.txt')
   assert.equal(mark(change, ['--file', 'src/b.ts', '--line', '2', '--commit']).commit, null)
+})
+
+// A sweep's accepted reply in the events log, with the HEAD it ran on.
+const swept = (change, findings) =>
+  recordReply(change, 'add-x', { name: 'sweep', file: 'sweep.json', result: { verdict: findings.length ? 'FINDINGS' : 'CLEAN', findings, dropped: [], head: git(change, 'rev-parse', 'HEAD') } })
+
+test('a sweep finding stays open across sweeps until consolidated, marked or dismissed by a ruling', () => {
+  const { change } = host()
+  commitIn(change, 'src/b.ts', 'export const b = 1\n')
+  commitIn(change, 'src/c.ts', 'export const c = 1\n')
+  assert.deepEqual(sweepState(change, 'add-x'), { ran: false, ids: [], open: [], cleared: [] })
+  const b = { introduced: 'src/b.ts:1', existing: 'src/a.ts:12', why: 'Same constant.' }
+  const c = { introduced: 'src/c.ts:1', existing: 'src/a.ts:12', why: 'Same constant.' }
+  swept(change, [b, c])
+  assert.deepEqual(sweepState(change, 'add-x').open.map((f) => [f.id, f.introduced]), [['S1', 'src/b.ts:1'], ['S2', 'src/c.ts:1']])
+  // A CLEAN on an unchanged branch launders nothing.
+  swept(change, [])
+  assert.deepEqual(sweepState(change, 'add-x').open.map((f) => f.id), ['S1', 'S2'])
+  // A consolidation changes the introduced file; the next sweep no longer reports it.
+  commitIn(change, 'src/b.ts', "export { a as b } from './a.ts'\n")
+  swept(change, [c])
+  const after = sweepState(change, 'add-x')
+  assert.deepEqual([after.ids, after.open.map((f) => f.id), after.cleared], [['S1', 'S2'], ['S2'], [{ id: 'S1', by: 'consolidated' }]])
+  // The developer's dismissal: a DUP marker, or a ruling where no marker fits.
+  appendRecord(change, 'add-x', 'ruling', { subject: 'sweep', finding: 'S2', as: 'dismissed', decision: 'kept per module' })
+  assert.deepEqual(sweepState(change, 'add-x').open, [])
+  const { change: other } = host()
+  commitIn(other, 'src/c.ts', 'export const c = 1\n')
+  swept(other, [c])
+  mark(other, ['--file', 'src/c.ts', '--line', '1'])
+  const marked = sweepState(other, 'add-x')
+  assert.deepEqual([marked.open, marked.cleared], [[], [{ id: 'S1', by: 'marker', marker: 'src/c.ts:1' }]])
 })

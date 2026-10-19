@@ -37,6 +37,13 @@ export const HANDOFF_EXTRA = ['blockedReason']
 // again). The field is the port's own, kept out of KINDS like HANDOFF_EXTRA.
 export const RULING_EXTRA = ['as']
 export const RULING_AS = ['dismissed', 'accepted', 'fix']
+// A ruling on one item of an apply review loop or of the reuse sweep: `ruling --subject
+// T<n>|<G>|final|sweep --finding <id> --as dismissed|accepted|fix --decision <reason>`, where the
+// id is the computed result's F<n>, an unverifiable item's U<n> or a sweep finding's S<n>
+// (lib/loop.mjs reads it; the review stage's rulings carry no subject). An unverifiable item or a
+// sweep finding is accepted or dismissed, never ruled fix: a sweep finding is consolidated.
+export const SUBJECT_RULING = { required: ['subject', 'finding', 'as', 'decision'], optional: ['task'] }
+export const SUBJECT = /^(T[1-9]\d*|[A-Z]|final|sweep)$/
 // A recorded or accepted review finding is placed like a debt: `resolve --finding F<n> --as
 // <destination> --where <where>`, the second shape of the `resolve` kind. The origin's `resolve`
 // took debt records only, so nothing checked a recorded finding's placement; archive's
@@ -61,9 +68,10 @@ export function readLedger(text) {
 export function buildRecord(kind, fields, { existing = [], sessionId = null, now = new Date().toISOString() } = {}) {
   const checkRuling = kind === 'ruling' && ('check' in fields || 'reason' in fields)
   const findingResolve = kind === 'resolve' && 'finding' in fields
-  const spec = checkRuling ? CHECK_RULING : findingResolve ? RESOLVE_FINDING : kind === 'skill-edit' ? SKILL_EDIT : KINDS[kind]
+  const subjectRuling = kind === 'ruling' && !checkRuling && 'subject' in fields
+  const spec = checkRuling ? CHECK_RULING : subjectRuling ? SUBJECT_RULING : findingResolve ? RESOLVE_FINDING : kind === 'skill-edit' ? SKILL_EDIT : KINDS[kind]
   if (!spec) throw new Error(`unknown kind "${kind}"; one of: ${Object.keys(KINDS).join(', ')}`)
-  const extra = kind === 'handoff' ? HANDOFF_EXTRA : kind === 'ruling' && !checkRuling ? RULING_EXTRA : []
+  const extra = kind === 'handoff' ? HANDOFF_EXTRA : kind === 'ruling' && !checkRuling && !subjectRuling ? RULING_EXTRA : []
   const allowed = new Set([...spec.required, ...spec.optional, ...extra])
   for (const key of Object.keys(fields)) {
     if (!allowed.has(key)) {
@@ -76,6 +84,14 @@ export function buildRecord(kind, fields, { existing = [], sessionId = null, now
   }
   if (checkRuling && !CHECK_ID.test(fields.check)) throw new Error(`--check must be a check id such as out-of-plan, got "${fields.check}"`)
   if (kind === 'ruling' && 'as' in fields && !RULING_AS.includes(fields.as)) throw new Error(`--as must be one of: ${RULING_AS.join(', ')}`)
+  if (subjectRuling) {
+    if (!SUBJECT.test(fields.subject)) throw new Error(`--subject must be T<n>, a group letter, final or sweep, got "${fields.subject}"`)
+    const id = fields.subject === 'sweep' ? /^S[1-9]\d*$/ : /^[FU][1-9]\d*$/
+    if (!id.test(fields.finding)) throw new Error(`--finding must be ${fields.subject === 'sweep' ? 'a sweep finding id such as S2' : 'a finding id such as F3, or an unverifiable item such as U1'}, got "${fields.finding}"`)
+    if (fields.as === 'fix' && (fields.subject === 'sweep' || fields.finding.startsWith('U'))) {
+      throw new Error(`${fields.finding} is accepted or dismissed, never ruled fix: ${fields.subject === 'sweep' ? 'a sweep finding is consolidated by a fix and its re-review' : 'a defect found while checking it is a finding of its own'}`)
+    }
+  }
   if (kind === 'skill-edit' && !SHA.test(fields.sha)) throw new Error(`--sha must be a commit sha in lower-case hex, got "${fields.sha}"`)
   if ('task' in fields && !/^\d+(\.\d+)?$/.test(fields.task)) {
     throw new Error(`--task must be a task number, got "${fields.task}"`)

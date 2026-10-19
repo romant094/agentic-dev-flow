@@ -13,10 +13,11 @@
 //   investigate                   investigate.schema.json  the schema only; nothing computed
 //
 // The context (`replyContext`) is read once the schema accepts the reply:
-//   { root, change, name, parts, planText?, worktree?, scope?, history?, sweep? }
+//   { root, change, name, parts, planText?, worktree?, scope?, history?, rulings?, sweep? }
 // root is the change worktree; worktree the dispatch's own (a group worktree for a task of a
 // parallel group); scope the plan tasks whose **Files:** bound the dispatch; history the computed
-// results of the subject's accepted reviews in attempts.jsonl; sweep lib/sweep.mjs sweepInputs.
+// results of the subject's accepted reviews in attempts.jsonl; rulings the ledger's last ruling
+// of each id on the subject (lib/loop.mjs); sweep lib/sweep.mjs sweepInputs.
 //
 // The computed results:
 //
@@ -48,8 +49,9 @@
 //
 //   re-review
 //     { subject, previous, addressed: [id], findings, open, toRule, deferred, outOfScope, result }
-//     previous must answer exactly the open set of the subject's last accepted review or
-//     re-review; open is its not-addressed ids and the new open findings; result as for a review.
+//     previous must answer exactly the subject's open set (lib/loop.mjs loopState: the last
+//     accepted review's or re-review's, with the ledger's rulings on the subject applied); open is
+//     its not-addressed ids and the new open findings; result as for a review.
 //
 //   sweep
 //     { verdict: CLEAN | FINDINGS, findings, dropped, dispositions? }
@@ -58,10 +60,12 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { attemptsFile, parseEvents } from './attempts.mjs'
+import { attemptsFile } from './attempts.mjs'
 import { globToRegExp } from './changes.mjs'
 import { parseGraph, parseName, planDispatch, sddDir } from './dispatch.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
+import { readRecords } from './ledger.mjs'
+import { loopState, REVIEW_ROLES, subjectHistory, subjectOf, subjectRulings } from './loop.mjs'
 import { parsePlan, rangeCommits, taskMatchers } from './plan.mjs'
 import { readRegistry } from './registry.mjs'
 import { readTestRecord, recordName, TESTS_DIR } from './suite.mjs'
@@ -70,7 +74,7 @@ import { gitIn } from './workspace.mjs'
 
 export const SCHEMA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema')
 export const SPEC_CATEGORIES = ['missing', 'extra', 'misunderstood']
-export const REVIEW_ROLES = ['review', 'final-review', 'merge-review']
+export { REVIEW_ROLES, subjectHistory, subjectOf }
 
 export class ReplyError extends Error {}
 
@@ -90,20 +94,6 @@ const kindOf = (category) => (SPEC_CATEGORIES.includes(category) ? 'spec' : 'qua
 
 const findingErrors = (findings, path) =>
   findings.flatMap((f, i) => (kindOf(f.category) === f.kind ? [] : [`${path}[${i}].kind: category ${f.category} is a ${kindOf(f.category)} finding, not ${f.kind}`]))
-
-// The subject a review loop belongs to: T<n>, a group letter, or `final`.
-export const subjectOf = (parts) => (parts.task !== undefined ? `T${parts.task}` : parts.group !== undefined ? parts.group : 'final')
-
-// The computed results of the subject's accepted reviews and re-reviews, in log order.
-export function subjectHistory(eventsText, subject) {
-  return parseEvents(eventsText)
-    .filter((e) => e.event === 'valid' && e.result)
-    .filter((e) => {
-      const parts = parseName(e.name)
-      return parts && [...REVIEW_ROLES, 're-review'].includes(parts.role) && subjectOf(parts) === subject
-    })
-    .map((e) => e.result)
-}
 
 const highestId = (history) => Math.max(0, ...history.flatMap((r) => r.findings ?? []).map((f) => Number(/^F(\d+)$/.exec(f.id ?? '')?.[1] ?? 0)))
 
@@ -144,7 +134,7 @@ const reReview = {
   check(reply, ctx) {
     const errors = findingErrors(reply.findings, '$.findings')
     const subject = subjectOf(ctx.parts)
-    const open = ctx.history.at(-1)?.open
+    const open = ctx.history.length ? loopState(ctx.history, ctx.rulings).open : undefined
     if (open === undefined) return [...errors, `$.previous: no accepted review of ${subject} is recorded, so there is no open set to answer`]
     const seen = new Set()
     reply.previous.forEach(({ id }, i) => {
@@ -338,7 +328,10 @@ export function replyContext(root, change, name, { main = root } = {}) {
       const plan = planDispatch({ change, ...parts }, { root, main, planText, exists: existsSync })
       Object.assign(ctx, { planText, worktree: plan.worktree, scope: scopeOf(planText, parts) })
     }
-    if ([...REVIEW_ROLES, 're-review'].includes(parts.role)) ctx.history = subjectHistory(readOr(attemptsFile(root, change)) ?? '', subjectOf(parts))
+    if ([...REVIEW_ROLES, 're-review'].includes(parts.role)) {
+      ctx.history = subjectHistory(readOr(attemptsFile(root, change)) ?? '', subjectOf(parts))
+      ctx.rulings = subjectRulings(readRecords(root, change), subjectOf(parts))
+    }
     if (parts.role === 'sweep') ctx.sweep = sweepInputs(root, change)
   } catch (error) {
     throw new ReplyError(error.message)

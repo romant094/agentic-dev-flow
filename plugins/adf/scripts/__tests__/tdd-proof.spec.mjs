@@ -4,7 +4,9 @@ import { strict as assert } from 'node:assert'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { isTestFile } from '../lib/tdd-proof.mjs'
+import { run as dispatch } from '../dispatch.mjs'
+import { recordReply } from '../lib/attempts.mjs'
+import { isTestFile, sharesIn, taskProof } from '../lib/tdd-proof.mjs'
 import { run } from '../tdd-proof.mjs'
 import { commitIn, git, host } from './git-host.mjs'
 
@@ -74,4 +76,98 @@ test('refusals: no test file, a root commit, a leftover worktree; an untracked l
   assert.match(out.removeError, /left for the developer/)
   assert.throws(() => run(['--worktree', change, '--commit', dirty, '--test', 'true', '--change', 'add-x']), /leftover/)
   assert.deepEqual(['src/a.test.ts', '__tests__/x.mjs', 'pkg/tests/y.py', 'test_z.py', 'src/a.ts'].map(isTestFile), [true, true, true, true, false])
+})
+
+// ---------------------------------------------------------------- run by the orchestrator's script
+
+const PLAN = `# Plan
+
+## Execution Graph
+
+| Group | Tasks | Files | Wave |
+|---|---|---|---|
+| A | 1 | x | 1 |
+
+---
+
+### Task 1: f is 2
+
+> Implements \`tasks.md\` 1.1.
+
+**Files:**
+- Modify: \`src/f.mjs\` — the value
+- Test: \`test/f.test.mjs\` — its test
+
+**Level:** integration
+
+- [ ] **Step 1: RED** — a failing test
+- [ ] **Step 2: GREEN** — the code
+`
+
+// A test-first task done: its commit, the accepted T1 impl reply naming it and its covering run,
+// and the planning guide's shares section when `shares` is given.
+function doneTask(testText, shares) {
+  const { root, change } = host({ 'plan.md': PLAN, 'tasks.md': '- [ ] 1.1 f is 2\n' })
+  const parent = commitIn(change, 'src/f.mjs', 'export const f = () => 1\n')
+  writeFileSync(join(change, 'src/f.mjs'), 'export const f = () => 2\n')
+  mkdirSync(join(change, 'test'), { recursive: true })
+  writeFileSync(join(change, 'test/f.test.mjs'), testText)
+  git(change, 'add', 'src/f.mjs', 'test/f.test.mjs')
+  git(change, 'commit', '-q', '-m', 'feat: f is 2')
+  const sha = git(change, 'rev-parse', 'HEAD')
+  if (shares !== undefined) {
+    mkdirSync(join(change, 'openspec'), { recursive: true })
+    writeFileSync(join(change, 'openspec', 'planning.md'), `# Planning\n\n## Test-first shares\n\n<!-- untracked paths the tests need -->\n${shares}\n## Whole-suite command\n\n\`npm test\`\n`)
+  }
+  const result = { status: 'DONE', commits: [{ sha, subject: 'feat: f is 2', files: ['src/f.mjs', 'test/f.test.mjs'] }], range: { base: parent, head: sha }, tests: { result: 'pass', runs: [{ command: 'node test/f.test.mjs' }] } }
+  recordReply(change, 'add-x', { name: 'T1 impl', file: 'impl.json', result })
+  const q = join(change, 'q.txt')
+  writeFileSync(q, 'Review it.')
+  const prompt = () => dispatch(['prompt', '--change', 'add-x', '--role', 'review', '--task', '1', '--question-file', q, '--base', parent, '--head', sha, '--root', change], { main: root }).prompt
+  const review = (findings = []) => {
+    writeFileSync(join(change, 'review.json'), JSON.stringify({ role: 'review', summary: 'Reviewed.', findings, unverifiable: [] }))
+    return dispatch(['reply', '--change', 'add-x', '--name', 'T1 review', '--file', 'review.json', '--root', change], { main: root }).result
+  }
+  return { root, change, sha, prompt, review }
+}
+
+test('the shares section lists one path per line; its absence is null', () => {
+  assert.deepEqual(sharesIn('## Test-first shares\n\n<!-- c -->\n- `node_modules`\n* .venv\nvendor/lib\n\n## Next\n- x\n'), ['node_modules', '.venv', 'vendor/lib'])
+  assert.deepEqual(sharesIn('## Test-first shares\n'), [])
+  assert.equal(sharesIn('## Whole-suite command\n\n`npm test`\n'), null)
+})
+
+test('a done test-first task is proved before its review, and the review prompt carries the result', () => {
+  const { root, change, sha, prompt, review } = doneTask(TEST, '- `node_modules`\n')
+  const text = prompt()
+  const file = join(change, '.superpowers/sdd/add-x/tdd/T1.json')
+  assert.ok(text.includes('- Test-first proof:\n  - proof: true\n  - parentFails: true\n  - commitPasses: true'), text)
+  assert.ok(text.includes(`  - commit: ${sha}`) && text.includes(`  - record: ${file}`))
+  assert.match(text, /its proof has already run/)
+  assert.doesNotMatch(text, /scripts\/tdd-proof\.mjs" --worktree/)
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).proof, true)
+  // Kept while the commit and the command stay the same.
+  assert.equal(taskProof(change, 'add-x', 1, { planText: PLAN, main: root, prove: () => assert.fail('ran again') }).cached, true)
+  const result = review()
+  assert.deepEqual([result.open, result.result, result.tddProof.proof], [[], 'clean', true])
+})
+
+test('a test that passes without the code adds the critical tests finding to the review result', () => {
+  const { prompt, review } = doneTask("import { f } from '../src/f.mjs'\nif (typeof f !== 'function') process.exit(1)\n", '')
+  assert.match(prompt(), /  - proof: false\n  - parentFails: false\n  - commitPasses: true/)
+  const minor = { severity: 'minor', kind: 'quality', category: 'quality', file: 'src/f.mjs', line: 1, title: 'Naming', body: 'Call it two.' }
+  const result = review([minor])
+  assert.deepEqual([result.quality, result.open, result.deferred, result.result], ['needs-fixes', ['F2'], ['F1'], 'fix'])
+  const added = result.findings.at(-1)
+  assert.deepEqual([added.id, added.severity, added.kind, added.category, added.file, added.source], ['F2', 'critical', 'quality', 'tests', 'test/f.test.mjs', 'tdd-proof'])
+  assert.match(added.body, /parent [0-9a-f]{7}, where they passed/)
+})
+
+test('without the shares section the reviewer runs the proof, and the prompt says why', () => {
+  const { change, prompt, review } = doneTask(TEST)
+  const text = prompt()
+  assert.match(text, /- Test-first proof: not run by the flow: openspec\/planning\.md has no ## Test-first shares section/)
+  assert.match(text, /the review proves the new test can fail/)
+  assert.equal(existsSync(join(change, '.superpowers/sdd/add-x/tdd/T1.json')), false)
+  assert.equal(review().tddProof, undefined)
 })

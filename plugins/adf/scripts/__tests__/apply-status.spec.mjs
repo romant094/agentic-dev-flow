@@ -5,10 +5,11 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { blockedNames, suiteOf } from '../lib/apply-status.mjs'
 import { addGroup, finishGroup, mergeGroup } from '../lib/groups.mjs'
+import { recordReply } from '../lib/attempts.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
 import { commitTick, tickTask } from '../lib/tasks.mjs'
 import { run } from '../apply-status.mjs'
-import { commitIn, host } from './git-host.mjs'
+import { commitIn, git, host } from './git-host.mjs'
 
 const task = (n, item) =>
   [`### Task ${n}: task ${n}`, '', `> Implements \`tasks.md\` ${item}.`, '', '**Files:**', `- Modify: \`src/t${n}.ts\``, '', '**Level:** integration', '', '---', ''].join('\n')
@@ -152,4 +153,25 @@ test('the status names the test-first tasks, as plan lint does', () => {
   const red = PLAN.replace('**Level:** integration\n\n---\n\n### Task 2', '**Level:** integration\n\n- [ ] **Step 1: RED** — fail\n- [ ] **Step 2: GREEN** — pass\n\n---\n\n### Task 2')
   const { change } = host({ 'plan.md': red, 'tasks.md': TASKS })
   assert.deepEqual(run(['--change', 'add-x', '--root', change]).testFirst, [1])
+})
+
+test('an open sweep finding is shown and keeps apply from complete until the developer dismisses it', () => {
+  const { change, dir } = host({ 'plan.md': PLAN, 'tasks.md': TASKS })
+  for (const n of [1, 2, 3]) {
+    const g = addGroup(change, { change: 'add-x', group: n })
+    commitIn(g.root, `src/t${n}.ts`, `${n}\n`)
+    mergeGroup(change, { change: 'add-x', group: n })
+    finishGroup(change, { change: 'add-x', group: n }, core)
+  }
+  for (const item of ['1.1', '1.2', '2.1']) tick(change, item)
+  writeFileSync(join(dir, '.apply-test-record.md'), '**Result:** pass\n')
+  assert.deepEqual([run(['--change', 'add-x', '--root', change]).complete, run(['--change', 'add-x', '--root', change]).sweep], [true, { ran: false, open: [], cleared: [] }])
+  const finding = { introduced: 'src/t3.ts:1', existing: 'src/t1.ts:1', why: 'Same value.' }
+  recordReply(change, 'add-x', { name: 'sweep', file: 'sweep.json', result: { verdict: 'FINDINGS', findings: [finding], dropped: [], head: git(change, 'rev-parse', 'HEAD') } })
+  const s = run(['--change', 'add-x', '--root', change, '--report'])
+  assert.deepEqual([s.complete, s.sweep.open], [false, [{ id: 'S1', ...finding }]])
+  assert.match(s.report, /## Implementation Paused[\s\S]*- sweep finding S1: src\/t3\.ts:1 repeats src\/t1\.ts:1; consolidate it, or the developer dismisses it/)
+  appendRecord(change, 'add-x', 'ruling', { subject: 'sweep', finding: 'S1', as: 'dismissed', decision: 'the values differ in meaning' })
+  const done = run(['--change', 'add-x', '--root', change])
+  assert.deepEqual([done.complete, done.sweep.open, done.sweep.cleared.map((c) => c.by)], [true, [], ['ruling']])
 })

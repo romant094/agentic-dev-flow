@@ -67,8 +67,8 @@ const rel = (root, file) => toPosix(relative(root, file))
 // ---------------------------------------------------------------- the planning guide
 
 // [start, end) line indexes of the section body, or null when the heading is absent.
-function sectionBounds(lines) {
-  const at = lines.findIndex((l) => l.trim() === HEADING)
+export function sectionBounds(lines, heading = HEADING) {
+  const at = lines.findIndex((l) => l.trim() === heading)
   if (at < 0) return null
   let end = lines.findIndex((l, i) => i > at && /^#{1,2}\s/.test(l))
   if (end < 0) end = lines.length

@@ -9,7 +9,9 @@
 //   { ok, change, single, cap, groups: [{ n, letter, tasks, wave, dependsOn, state }],
 //     merged, running, blocked, startable, waitingOnBlocked, ticked, remaining,
 //     progress: { done, total }, testFirst, completedThisSession, openDebt: { count, ids },
-//     lastHandoff, push, suite: { state, commit, reason? }, complete, report? }
+//     lastHandoff, push, suite: { state, commit, reason? },
+//     sweep: { ran, open: [{ id, introduced, existing, why }], cleared: [{ id, by }] }, complete,
+//     report? }
 //
 //   apply-status.mjs handoff --change <name> --next "<dispatch>" [--block <G> --reason "<why>"]
 //                    [--root <change worktree>]
@@ -18,6 +20,10 @@
 //       { ok, handoff, blocked }
 //
 // `testFirst` lists the plan tasks carrying both a RED and a GREEN step, as plan.mjs lint does.
+// `sweep.open` lists the reuse sweep's findings still open (lib/loop.mjs sweepState): S<n> by
+// first report, cleared by a DUP marker, by a `ruling --subject sweep --finding S<n> --as
+// dismissed`, or by a later sweep's silence after the introduced file changed; `complete` stays
+// false while one is open.
 //
 // Group numbers are graph rows, the first row 1. `state` is merged, running, blocked or
 // pending (done or pending for a single-group graph). `blocked` is read from the last

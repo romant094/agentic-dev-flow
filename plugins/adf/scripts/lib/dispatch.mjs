@@ -51,7 +51,8 @@ export const ARCHIVE_ROLES = {
 }
 const SCHEMA_ROLES = { ...REVIEW_ROLES, ...ARCHIVE_ROLES }
 export const ROLES = [...new Set([...TASK_ROLES, ...Object.keys(TASKLESS), 'verify', ...Object.keys(REVIEW_ROLES), ...Object.keys(ARCHIVE_ROLES)])]
-// Roles whose question the orchestrator must write: the prompt refuses an empty slot.
+// Roles whose question the orchestrator must write: the prompt refuses an empty slot, except for a
+// fix or re-review whose prompt renders the subject's open findings (lib/loop.mjs).
 export const QUESTION_REQUIRED = ['review', 're-review', 'fix', 'final-review', 'merge-review', 'investigate']
 export const MAX_ATTEMPTS = 2
 // Task-less roles that loop in rounds: the fix and re-review after a merge review or the final
@@ -241,7 +242,9 @@ export function planDispatch(inputs, { root, main, planText, exists }) {
     out.agent = `adf:${level}`
     out.worktree = root
     out.section = section
-    out.sectionFiles = [join(dir, `${section}-agent.txt`), join(dir, `${section}.json`)]
+    // The agent writes its JSON reply; `dispatch.mjs reply` checks it and writes the section.
+    out.replyFile = replyFile(root, change, name, exists)
+    out.sectionFile = join(dir, `${section}.json`)
     return out
   }
 
@@ -327,8 +330,9 @@ export function fill(skeleton, values, tokens) {
   return text.trim()
 }
 
-// Which skeletons, in order, make up the rules of a dispatch.
-export function ruleSkeletons({ role, check, round }, { testFirst = false, dispositions = false } = {}) {
+// Which skeletons, in order, make up the rules of a dispatch. `proof`: the flow ran the test-first
+// proof before the review, so the review reads its result instead of running it.
+export function ruleSkeletons({ role, check, round }, { testFirst = false, dispositions = false, proof = false } = {}) {
   if (role === 'verify') return ['verify', `verify-${check}`]
   // The review stage's replies are the JSON its skeletons name, so `reply` is not among them.
   if (role === 'ai-review') return round >= 2 ? ['ai-review', 'ai-review-round'] : ['ai-review']
@@ -339,7 +343,7 @@ export function ruleSkeletons({ role, check, round }, { testFirst = false, dispo
   if (role === 'impl' || role === 'fix') parts.push('implementer')
   if (['review', 're-review', 'final-review', 'merge-review'].includes(role)) parts.push('reviewer')
   if (role === 'merge-review') parts.push('merge-review')
-  if (role === 'review' && testFirst) parts.push('test-first')
+  if (role === 'review' && testFirst) parts.push(proof ? 'test-first-proof' : 'test-first')
   if (role === 'sweep') parts.push('read-only', 'sweep', ...(dispositions ? ['sweep-dispositions'] : []))
   if (role === 'investigate') parts.push('read-only')
   parts.push('git', 'reply')
@@ -347,8 +351,8 @@ export function ruleSkeletons({ role, check, round }, { testFirst = false, dispo
 }
 
 // skeletons: { name: text }; fields: [[label, value]] in display order (empty values dropped).
-export function renderPrompt({ plan, change, skeletons, fields, question, tokens, testFirst, dispositions }) {
-  if (question === undefined && QUESTION_REQUIRED.includes(plan.role)) {
+export function renderPrompt({ plan, change, skeletons, fields, question, tokens, testFirst, dispositions, proof, questionOptional = false }) {
+  if (question === undefined && QUESTION_REQUIRED.includes(plan.role) && !questionOptional) {
     refuse(`${plan.role} needs --question-file: the question is the part the orchestrator writes`)
   }
   const values = {
@@ -361,7 +365,7 @@ export function renderPrompt({ plan, change, skeletons, fields, question, tokens
     schema: Object.hasOwn(SCHEMA_ROLES, plan.role) ? join('${CLAUDE_PLUGIN_ROOT}', 'schema', SCHEMA_ROLES[plan.role].schema) : '',
     base: tokens['<base>'] ?? ''
   }
-  const rules = ruleSkeletons(plan, { testFirst, dispositions }).map((n) => fill(skeletons[n], values, tokens))
+  const rules = ruleSkeletons(plan, { testFirst, dispositions, proof }).map((n) => fill(skeletons[n], values, tokens))
   const fieldText = fields
     .filter(([, v]) => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0))
     .map(([label, v]) => (Array.isArray(v) ? `${label}:\n${v.map((x) => `  - ${x}`).join('\n')}` : `${label}: ${v}`))

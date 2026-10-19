@@ -5,7 +5,8 @@
 //
 //   dispatch.mjs plan    --change <name> --role <role> [--task <N>] [--group <G>] [--round <k>]
 //                        [--topic <word>] [--check c4|c8] [--root <change worktree>]
-//       { ok, name, role, agent, worktree, replyFile | sectionFiles, ... }
+//       { ok, name, role, agent, worktree, replyFile, ... }; a verify dispatch also names the
+//       sectionFile its recorded reply becomes
 //       --round names a task's fix round, or a fix or re-review round after a merge review or
 //       the final review (fix B r2)
 //   dispatch.mjs plan    --change <name> --role ai-review --round <k> [--slice <n>] [--root <dir>]
@@ -52,8 +53,20 @@
 //       the valid event records and the output carries; review.mjs checkFindings for ai-review,
 //       checkFix for ai-fix (its finding must be the name's), spec-merge.mjs
 //       checkSpecMergeReply against the capability's conflicts,
-//       ingest.mjs checkIngestFile against the ingest input; verify sections are checked by
-//       verify.mjs verdict, not here
+//       ingest.mjs checkIngestFile against the ingest input; lib/verify-reply.mjs for `verify c4`
+//       and `verify c8`, which on a valid reply also writes the section verify.mjs verdict reads
+//       (and, for c8, verify/c8.diff), returned as `section`; their retries count from the verify
+//       session's start
+//
+// prompt reads the loop state by script (lib/loop.mjs). A `fix` or `re-review` whose subject (the
+// task, the group, or the final review) has an accepted review carries `Open findings`, rendered
+// from the results and the rulings, so its question file becomes optional; with no open finding
+// it refuses. `final-review` writes .superpowers/sdd/<change>/deferred.json and carries what the
+// earlier reviews deferred. The `review` of a test-first task runs its proof first when the
+// planning guide has a `## Test-first shares` section (lib/tdd-proof.mjs taskProof) and carries
+// the result; without it, the reviewer runs tdd-proof. reply then adds to a task review's result
+// the proof's critical finding (proof false, commitPasses true), to a sweep's the HEAD it ran
+// on, and rewrites deferred.json after every accepted review or re-review.
 //
 // prompt for a `re-review` with --base and --head (the fix's range) also returns `unplanned`:
 // the files that range touched which no task of the plan names, each with its owning task
@@ -86,6 +99,11 @@ import { checkSpecMergeReply, writeConflictTexts } from './lib/spec-merge.mjs'
 import { mergePreview } from './lib/specs.mjs'
 import { fixTarget, Refusal, reviewSince } from './lib/review-state.mjs'
 import { sweepInputs } from './lib/sweep.mjs'
+import { LOOP_ROLES, openFindings, renderDeferred, subjectHistory, subjectOf, subjectState, withProofFinding, writeDeferred } from './lib/loop.mjs'
+import { readTaskProof, taskProof } from './lib/tdd-proof.mjs'
+import { gitIn } from './lib/workspace.mjs'
+import { c4Inputs, candidatesFile, recordVerifyReply, schemaPath } from './lib/verify-reply.mjs'
+import { skillCandidates } from './lib/verify.mjs'
 
 export const PLUGIN_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const PROMPTS_DIR = join(PLUGIN_ROOT, 'schema', 'prompts')
@@ -202,7 +220,20 @@ function ingestFields(inputs, plan, root) {
   ]
 }
 
-function promptFor(inputs, plan, values, root, planText) {
+// The test-first proof the flow ran, as the review prompt's field entries.
+const proofLines = (p) => [
+  `proof: ${p.proof}`,
+  `parentFails: ${p.parentFails}`,
+  `commitPasses: ${p.commitPasses}`,
+  `commit: ${p.commit}`,
+  `test: ${p.test}`,
+  `test files: ${(p.testFiles ?? []).join(', ')}`,
+  `outputs: ${p.outputFiles?.parent}, ${p.outputFiles?.commit}`,
+  ...(p.error ? [`error: ${p.error}`] : []),
+  `record: ${p.file}`
+]
+
+function promptFor(inputs, plan, values, root, planText, main) {
   const { change } = inputs
   const sdd = sddDir(root, change)
   const fields = [['Dispatch name', plan.name], ['Change', change]]
@@ -220,6 +251,8 @@ function promptFor(inputs, plan, values, root, planText) {
   }
   let testFirst = false
   let dispositions = false
+  let proof = null
+  let questionOptional = false
   const range = values.base && values.head ? `${values.base}..${values.head}` : undefined
   if ((values.base === undefined) !== (values.head === undefined)) throw new UsageError('--base and --head go together')
 
@@ -233,6 +266,12 @@ function promptFor(inputs, plan, values, root, planText) {
     fields.push(['Worktree', plan.worktree])
     fields.push(['Files in scope', task.files.map((f) => `${f.verb}: ${join(plan.worktree, f.path)}${f.to ? ` -> ${join(plan.worktree, f.to)}` : ''}`)])
     if (inputs.role === 'impl') fields.push(['Task brief', join(sdd, `task-${inputs.task}-brief.md`)])
+    // A test-first task's proof runs here, before its review, when the planning guide names the
+    // shares (lib/tdd-proof.mjs taskProof); otherwise the reviewer runs it.
+    if (inputs.role === 'review' && testFirst) {
+      proof = taskProof(root, change, inputs.task, { planText, main })
+      fields.push(['Test-first proof', proof.ran ? proofLines(proof) : `not run by the flow: ${proof.reason}`])
+    }
   } else if (plan.tasks) {
     const tasks = parsePlanTasks(planText).filter((t) => plan.tasks.includes(t.number))
     fields.push(['Tasks', `group ${plan.group}: ${plan.tasks.map((n) => `Task ${n}`).join(', ')}`])
@@ -245,6 +284,25 @@ function promptFor(inputs, plan, values, root, planText) {
   if (inputs.task === undefined) tokens[' --task <n>'] = ''
   if (inputs.role !== 'verify') {
     fields.push(['Plan', join(root, 'openspec', 'changes', change, 'plan.md')])
+    // A fix and its re-review carry the subject's open findings, rendered from the accepted
+    // review results and the rulings, once a review of the subject is recorded.
+    if (inputs.role === 'fix' || inputs.role === 're-review') {
+      const state = subjectState(root, change, subjectOf(inputs))
+      if (state.state !== 'unreviewed') {
+        try {
+          fields.push(['Open findings', openFindings(state, change)])
+        } catch (error) {
+          throw new DispatchError(error.message)
+        }
+        questionOptional = true
+      }
+    }
+    // The final review receives what the earlier reviews deferred.
+    if (inputs.role === 'final-review') {
+      const deferred = writeDeferred(root, change)
+      const items = deferred.items.filter((i) => i.subject !== 'final')
+      fields.push(['Deferred', items.length ? items.map(renderDeferred) : 'none'], ['Deferred file', deferred.file])
+    }
     if (range) {
       fields.push(['Range', range])
       fields.push(['Review package', join(sdd, `review-${values.base.slice(0, 7)}..${values.head.slice(0, 7)}.diff`)])
@@ -274,12 +332,28 @@ function promptFor(inputs, plan, values, root, planText) {
     const { base, head } = JSON.parse(run)
     fields.push(['Base', base], ['Range', base && head ? `${base}..${head}` : undefined], ['Run record', join(verify, 'run.json')])
     const changeDir = join(root, 'openspec', 'changes', change)
-    if (inputs.check === 'c4') fields.push(['Files in scope', [join(changeDir, 'design.md'), join(changeDir, 'specs'), join(changeDir, 'tasks.md'), join(changeDir, 'plan.md')]])
-    if (inputs.check === 'c8') fields.push(['Files in scope', [join(verify, 'c8-candidates.txt')]])
-    fields.push(['Output file', plan.sectionFiles[0]], ['Section file', plan.sectionFiles[1]])
+    if (inputs.check === 'c4') {
+      fields.push(['Files in scope', [join(changeDir, 'design.md'), join(changeDir, 'specs'), join(changeDir, 'tasks.md'), join(changeDir, 'plan.md')]])
+      // The lists the reply answers entry by entry, from the script (lib/verify-reply.mjs).
+      let listed
+      try {
+        listed = c4Inputs(root, change)
+      } catch (error) {
+        throw new DispatchError(error.message)
+      }
+      const where = (p) => (p.position === 'below' ? 'at or below' : 'above')
+      fields.push(['Case', listed.case ?? 'no design and no delta specs'])
+      fields.push(['Prose edits', listed.proseEdits.length ? listed.proseEdits.map((p) => `${p.capability} ${p.commit} (${where(p)} ## Requirements)`) : 'none'])
+      fields.push(['Removed or renamed', listed.removals.length ? listed.removals.map((r) => `${r.op} ${r.requirement}${r.from ? ` (from ${r.from})` : ''} (${r.spec}): ${r.codeDisposition ?? 'no Code Disposition'}`) : 'none'])
+    }
+    if (inputs.check === 'c8') {
+      if (!existsSync(candidatesFile(root, change))) skillCandidates(root, { change })
+      fields.push(['Files in scope', [join(verify, 'c8-candidates.txt')]])
+    }
+    fields.push(['Reply schema', schemaPath(inputs.check)], ['Reply file', plan.replyFile])
   }
   const question = values['question-file'] === undefined ? undefined : readQuestion(values['question-file'])
-  return renderPrompt({ plan, change, skeletons: skeletons(), fields, question, tokens, testFirst, dispositions })
+  return renderPrompt({ plan, change, skeletons: skeletons(), fields, question, tokens, testFirst, dispositions, proof: Boolean(proof?.ran), questionOptional })
 }
 
 // The errors of one reply under its role's checker and, for an apply role, the computed result
@@ -287,7 +361,26 @@ function promptFor(inputs, plan, values, root, planText) {
 function replyCheck(parts, text, ctx) {
   if (!Object.hasOwn(REPLY_ROLES, parts.role)) return { errors: replyErrors(parts, text, ctx) }
   const checked = checkReply(parts.role, text, () => replyContext(ctx.root, ctx.change, ctx.name, { main: ctx.main }))
-  return { errors: checked.errors, ...(checked.valid && checked.result !== undefined ? { result: checked.result } : {}) }
+  const result = checked.valid && checked.result !== undefined ? withRecords(parts, checked.result, ctx) : undefined
+  return { errors: checked.errors, ...(result === undefined ? {} : { result }) }
+}
+
+// What the recorded result adds to the computed one from the change's own records: a task
+// review's test-first proof (lib/loop.mjs withProofFinding), and the HEAD a sweep ran on, against
+// which a later sweep's silence on a finding counts as a consolidation (lib/loop.mjs sweepState).
+function withRecords(parts, result, { root, change }) {
+  if (parts.role === 'review' && parts.task !== undefined) {
+    const history = subjectHistory(readOr(attemptsFile(root, change)) ?? '', `T${parts.task}`)
+    return withProofFinding(result, readTaskProof(root, change, parts.task), history)
+  }
+  if (parts.role === 'sweep') {
+    try {
+      return { ...result, head: gitIn(root)('rev-parse', 'HEAD') }
+    } catch {
+      return result
+    }
+  }
+  return result
 }
 
 // The errors of one reply of a review-stage or archive role under its checker.
@@ -318,7 +411,7 @@ function replyErrors(parts, text, { root, change, file, main }) {
       throw new DispatchError(error.message)
     }
   }
-  throw new DispatchError(`a ${role} reply is checked by verify.mjs verdict, not by dispatch.mjs reply`)
+  throw new DispatchError(`a ${role} reply has no checker here`)
 }
 
 function recordReplyOf(values, { root, change, main }) {
@@ -326,7 +419,7 @@ function recordReplyOf(values, { root, change, main }) {
   const parts = parseName(name)
   if (!parts) throw new DispatchError(`"${name}" is not a dispatch name in the fixed form`)
   if (values.resume !== undefined && !['yes', 'no'].includes(values.resume)) throw new UsageError('--resume is yes or no')
-  if (parts.role === 'verify') throw new DispatchError(`a ${name} reply is checked by verify.mjs verdict, not by dispatch.mjs reply`)
+  if (parts.role === 'verify') return recordVerifyReply(root, change, { name, file, resume: values.resume !== 'no' })
   const path = resolve(root, file)
   // The review stage counts only its current run's events (lib/review-state.mjs).
   const since = ['ai-review', 'ai-fix'].includes(parts.role) ? reviewSince(root, change) : null
@@ -339,6 +432,8 @@ function recordReplyOf(values, { root, change, main }) {
       ? { errors: [`no reply file ${path}: a reply that is prose and no file is a refusal`] }
       : replyCheck(parts, text, { root, change, name, file: path, main })
   const recorded = recordReply(root, change, { name, file: path, errors, result, resume: values.resume !== 'no', since })
+  // The deferred list follows every accepted review and re-review.
+  if (recorded.valid && LOOP_ROLES.includes(parts.role)) writeDeferred(root, change)
   return { ...recorded, ...(result === undefined ? {} : { result }) }
 }
 
@@ -402,9 +497,10 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
     capability: values.capability
   }
   const planText = readOr(join(root, 'openspec', 'changes', change, 'plan.md'))
-  const plan = planDispatch(inputs, { root, main: main ?? mainCheckout(root), planText, exists: existsSync })
+  const checkout = main ?? mainCheckout(root)
+  const plan = planDispatch(inputs, { root, main: checkout, planText, exists: existsSync })
   if (command === 'plan') return { ok: true, ...plan }
-  const prompt = promptFor(inputs, plan, values, root, planText)
+  const prompt = promptFor(inputs, plan, values, root, planText, checkout)
   if (inputs.role !== 're-review' || !values.base) return { ok: true, ...plan, prompt }
   let found
   try {

@@ -14,6 +14,7 @@ import { initRegistry } from '../lib/registry.mjs'
 import { commandIn, countLines, countsOf, failingIn, readCommand, readTestRecord, runCovering, runSuite, writeCommand } from '../lib/suite.mjs'
 import { computeVerdict, runChecks, verifyDir } from '../lib/verify.mjs'
 import { create } from '../lib/workspace.mjs'
+import { judged } from './verify-replies.mjs'
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'suite.mjs')
 const CHANGE = 'add-x'
@@ -170,10 +171,7 @@ test('a passing run writes the raw output to a file, a record verify accepts, an
   assert.equal(checks['test-record'].verdict, 'pass')
   assert.equal(r.section.file, `.superpowers/sdd/${CHANGE}/verify/test-record.json`)
   assert.deepEqual([r.section.preExisting, r.section.countWarnings], [[], []])
-  for (const id of ['c4', 'c8']) {
-    write(root, `.superpowers/sdd/${CHANGE}/verify/${id}-agent.txt`, 'agent output\n')
-    write(root, `.superpowers/sdd/${CHANGE}/verify/${id}.json`, JSON.stringify({ id, title: id, verdict: 'pass', summary: 's', output: `.superpowers/sdd/${CHANGE}/verify/${id}-agent.txt` }))
-  }
+  judged(root, CHANGE)
   const verdict = computeVerdict(root, { change: CHANGE })
   assert.equal(verdict.refusals, undefined)
   const section = verdict.checks.find((c) => c.id === 'test-record')

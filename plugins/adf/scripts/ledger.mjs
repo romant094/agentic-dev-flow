@@ -13,6 +13,14 @@
 //                                                            rejects a false-positive claim,
 //                                                            and review.mjs fixplan lists the
 //                                                            finding again
+//   ledger.mjs ruling --change <name> --subject <T<n>|G|final|sweep> --finding <id>
+//                     --as dismissed|accepted|fix --decision <text>
+//                                                            a ruling on one item of an apply
+//                                                            review loop (F<n>, or an
+//                                                            unverifiable U<n>) or of the reuse
+//                                                            sweep (S<n>), which lib/loop.mjs
+//                                                            reads: tasks.mjs tick, the fix and
+//                                                            re-review prompts, apply-status
 //   ledger.mjs ruling --change <name> --check review-<id> --reason <text>
 //                                                            a ruling of the review stage:
 //                                                            review-range, review-slices,
@@ -39,7 +47,7 @@ Kinds: ${Object.entries(KINDS)
     ([k, v]) =>
       `${k} (${v.required.map((f) => `--${f}`).join(' ')}${v.optional.length ? ` [${v.optional.map((f) => `--${f}`).join(' ')}]` : ''})`
   )
-  .join('; ')}; ruling on a verify check or a review stage step (--check --reason); ruling on a review finding (--finding --as dismissed|accepted|fix --decision); resolve of a review finding (--finding F<n> --as --where); skill-edit (--sha [--message])`
+  .join('; ')}; ruling on a verify check or a review stage step (--check --reason); ruling on a review finding (--finding --as dismissed|accepted|fix --decision); ruling on an apply loop or sweep item (--subject --finding --as --decision); resolve of a review finding (--finding F<n> --as --where); skill-edit (--sha [--message])`
 
 export function run(argv, { env = process.env, cwd = process.cwd() } = {}) {
   const [kind, ...rest] = argv

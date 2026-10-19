@@ -150,7 +150,8 @@ function rulings(root, change, state) {
   return readRecords(root, change).filter((r) => r.kind === 'ruling' && (!state.start || r.at >= state.start.at))
 }
 const lastCheckRuling = (records, check) => records.filter((r) => r.check === check).at(-1) ?? null
-const lastFindingRuling = (records, id) => records.filter((r) => r.finding === id && typeof r.as === 'string').at(-1) ?? null
+// A ruling naming a subject is an apply loop's (lib/loop.mjs), never the review stage's.
+const lastFindingRuling = (records, id) => records.filter((r) => r.finding === id && typeof r.as === 'string' && r.subject === undefined).at(-1) ?? null
 const rulingCommand = (change, id, text = '--reason "<the developer\'s reason, in their words>"') => `ledger.mjs ruling --change ${change} --check ${id} ${text}`
 
 // Records a checked reply of `name` in the shared events log (lib/attempts.mjs). A valid one

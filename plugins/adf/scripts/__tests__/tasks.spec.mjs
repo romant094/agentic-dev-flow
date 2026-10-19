@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
+import { recordReply } from '../lib/attempts.mjs'
+import { appendRecord } from '../lib/ledger.mjs'
 import { lintTasks, tickTask } from '../lib/tasks.mjs'
 import { run } from '../tasks.mjs'
 
@@ -74,6 +76,7 @@ function repo() {
   const root = host('## 1. G\n\n- [ ] 1.1 one\n- [ ] 1.2 two\n')
   const real = realpathSync(root)
   writeFileSync(join(real, 'openspec', 'changes', 'c', 'plan.md'), PLAN)
+  writeFileSync(join(real, '.gitignore'), '.superpowers/\n')
   git(real, 'init', '-q', '-b', 'main')
   git(real, 'config', 'user.email', 't@example.com')
   git(real, 'config', 'user.name', 'T')
@@ -82,8 +85,13 @@ function repo() {
   return real
 }
 
+// An accepted review of T<n> in the events log, with its computed result.
+const reviewed = (root, n, over = {}, name = `T${n} review`) =>
+  recordReply(root, 'c', { name, file: `${name}.json`, result: { subject: `T${n}`, findings: [], open: [], toRule: [], deferred: [], unverifiable: [], result: 'clean', ...over } })
+
 test('tick --plan-task resolves the item from the back-reference and --commit commits by path', () => {
   const root = repo()
+  reviewed(root, 1)
   writeFileSync(join(root, 'openspec', 'changes', 'c', 'plan.md'), `${PLAN}- added line\n`)
   writeFileSync(join(root, 'unrelated.txt'), 'left alone\n')
   const out = run(['tick', '--plan-task', '1', '--change', 'c', '--root', root, '--commit'])
@@ -117,4 +125,34 @@ test('tasks.mjs lint exits 1 on an error finding and 0 on warnings alone', () =>
   const bad = host('- [ ] 1.1 no group\n')
   assert.equal(run(['lint', '--change', 'c', '--root', bad]).code, 1)
   assert.equal(run(['lint', '--root', bad]).code, 2)
+})
+
+test('tick --plan-task refuses until the task review loop is clean or a ruling closes each item left', () => {
+  const root = repo()
+  const tick = () => run(['tick', '--plan-task', '1', '--change', 'c', '--root', root])
+  const refused = (pattern) => {
+    const out = tick()
+    assert.equal(out.code, 1)
+    assert.match(out.result.error, pattern)
+    assert.equal(read(root), '## 1. G\n\n- [ ] 1.1 one\n- [ ] 1.2 two\n')
+  }
+  refused(/Task 1 is not ticked: no accepted review of T1 is recorded/)
+  const f = (id, over = {}) => ({ id, severity: 'important', kind: 'quality', category: 'quality', file: 'src/a.mjs', line: 3, title: 't', body: 'b', planMandated: false, ...over })
+  reviewed(root, 1, { findings: [f('F1'), f('F2', { planMandated: true })], open: ['F1'], toRule: ['F2'], unverifiable: [{ requirement: 'R1', check: 'on the bench' }], result: 'rule' })
+  refused(/T1 is not clean \(open F1; to rule F2; unverifiable U1\): .*ledger\.mjs ruling --change c --subject T1 --finding <id>/)
+  const rule = (finding, as) => appendRecord(root, 'c', 'ruling', { subject: 'T1', finding, as, decision: 'why' })
+  rule('F2', 'accepted')
+  rule('U1', 'accepted')
+  refused(/open F1\)/)
+  // A re-review that leaves F1 open keeps the task open; a ruling accepting it closes it.
+  reviewed(root, 1, { previous: [{ id: 'F1', status: 'not-addressed' }], addressed: [], open: ['F1'], result: 'fix' }, 'T1 re-review r1')
+  refused(/open F1\)/)
+  rule('F1', 'accepted')
+  assert.deepEqual(tick().result, { item: '1.2', ticked: true, already: false, planTask: 1 })
+  // A ruling on another subject or a fix ruling does not close an item.
+  const other = repo()
+  recordReply(other, 'c', { name: 'T1 review', file: 'r.json', result: { subject: 'T1', findings: [f('F1')], open: ['F1'], toRule: [], deferred: [], unverifiable: [], result: 'fix' } })
+  appendRecord(other, 'c', 'ruling', { subject: 'T2', finding: 'F1', as: 'accepted', decision: 'x' })
+  appendRecord(other, 'c', 'ruling', { subject: 'T1', finding: 'F1', as: 'fix', decision: 'x' })
+  assert.match(run(['tick', '--plan-task', '1', '--change', 'c', '--root', other]).result.error, /open F1\)/)
 })

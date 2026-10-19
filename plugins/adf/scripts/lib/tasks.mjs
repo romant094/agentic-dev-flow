@@ -3,6 +3,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { changeDir } from './changes.mjs'
+import { notClean, subjectState } from './loop.mjs'
 import { lintTasks, parsePlan } from './plan.mjs'
 import { gitIn } from './workspace.mjs'
 
@@ -32,6 +33,16 @@ export function itemForPlanTask(planText, number) {
   if (!task) throw new Error(`plan.md has no Task ${number}`)
   if (!task.implements) throw new Error(`Task ${number} has no "> Implements tasks.md N.M" line`)
   return task.implements
+}
+
+// A plan task is ticked only once its review loop is clean (lib/loop.mjs loopState, from the
+// accepted review results in the change worktree's events log), each item left closed by a
+// ruling. Throws naming what is left; returns the loop state.
+export function tickGate(root, change, number) {
+  const state = subjectState(root, change, `T${Number(number)}`)
+  const why = notClean(state, change)
+  if (why) throw new Error(`Task ${number} is not ticked: ${why}`)
+  return state
 }
 
 export const tickMessage = (item, change) => `chore(openspec): tick ${item} of ${change}`

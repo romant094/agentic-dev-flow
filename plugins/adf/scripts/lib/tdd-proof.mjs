@@ -21,11 +21,20 @@
 // shell in a process group of its own, stopped past the timeout) with the throwaway worktree as
 // its working directory; its output goes to
 // `<root>/.superpowers/sdd/<change>/tdd/<sha7>-parent.txt` and `-commit.txt`.
+//
+// `taskProof` is the run the orchestrator's script makes after a done test-first task, before its
+// review (dispatch.mjs prompt for `T<n> review`): the commit and the test command come from the
+// task's accepted `T<n> impl` result (the last commit, the last covering run's command), the
+// shared paths from the planning guide's `## Test-first shares` section, one path per line. Its
+// record is `tdd/T<n>.json`, kept while the commit and the command stay the same. Without the
+// section nothing runs, and the reviewer runs tdd-proof itself.
 import { execFileSync } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, readdirSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { attemptsFile, parseEvents, readLog } from './attempts.mjs'
+import { planDispatch } from './dispatch.mjs'
 import { mainCheckout } from './installed.mjs'
-import { runOnce } from './suite.mjs'
+import { PLANNING_FILE, runOnce, sectionBounds } from './suite.mjs'
 import { gitIn, WORKTREES_DIR } from './workspace.mjs'
 
 export const TEST_FILE = /(^|\/)(__tests__|tests?|specs?)\/|[._-](test|spec)\.[^/]+$|(^|\/)test_[^/]+\.py$/
@@ -149,4 +158,69 @@ export function tddProof(worktree, { change, commit, test, testFiles = null, sha
     }
   }
   return result
+}
+
+// ---------------------------------------------------------------- the orchestrator's run
+
+export const SHARES_HEADING = '## Test-first shares'
+
+// The paths of the `## Test-first shares` section, one per line (a list item, a code span or a
+// plain line; HTML comments and fences ignored); null when the section is absent.
+export function sharesIn(text) {
+  const lines = String(text ?? '').split(/\r?\n/)
+  const bounds = sectionBounds(lines, SHARES_HEADING)
+  if (!bounds) return null
+  return lines
+    .slice(bounds.start, bounds.end)
+    .join('\n')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .split('\n')
+    .map((l) => l.trim().replace(/^[-*]\s+/, '').replace(/^`([^`]+)`\.?$/, '$1').trim())
+    .filter((l) => l && !/^(```|~~~)/.test(l))
+}
+
+export function readShares(root) {
+  const file = join(resolve(root), PLANNING_FILE)
+  return existsSync(file) ? sharesIn(readFileSync(file, 'utf8')) : null
+}
+
+export const taskProofFile = (root, change, task) => join(resolve(root), '.superpowers', 'sdd', change, 'tdd', `T${task}.json`)
+
+export function readTaskProof(root, change, task) {
+  try {
+    return JSON.parse(readFileSync(taskProofFile(root, change, task), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+// { ran: false, reason } when nothing ran, else { ran: true, cached, ...the tddProof result,
+// task, test, share, file }. A refusal of tddProof itself (no test file in the commit, a leftover
+// worktree) is `ran: false` with its message: the reviewer then runs it by hand.
+export function taskProof(root, change, task, { planText, main = mainCheckout(root), prove = tddProof } = {}) {
+  const skip = (reason) => ({ ran: false, reason })
+  const share = readShares(root)
+  if (share === null) return skip(`${PLANNING_FILE} has no ${SHARES_HEADING} section`)
+  const impl = parseEvents(readLog(attemptsFile(root, change)))
+    .filter((e) => e.event === 'valid' && e.name === `T${task} impl` && e.result)
+    .at(-1)?.result
+  if (!impl) return skip(`no accepted T${task} impl reply is recorded`)
+  if (!['DONE', 'DONE_WITH_CONCERNS'].includes(impl.status)) return skip(`T${task} impl is ${impl.status}, not done`)
+  const commit = impl.range?.head ?? impl.commits?.at(-1)?.sha
+  const test = impl.tests?.runs?.at(-1)?.command
+  if (!commit || !test) return skip(`T${task} impl names no commit or no covering run`)
+  const file = taskProofFile(root, change, task)
+  const kept = readTaskProof(root, change, task)
+  if (kept?.commit === commit && kept.test === test) return { ran: true, cached: true, ...kept }
+  const { worktree } = planDispatch({ change, role: 'impl', task }, { root, main, planText, exists: existsSync })
+  let result
+  try {
+    result = prove(worktree, { change, commit, test, share, root })
+  } catch (error) {
+    return skip(`tdd-proof refused: ${error.message}`)
+  }
+  const record = { ...result, task, test, share, file }
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  return { ran: true, cached: false, ...record }
 }

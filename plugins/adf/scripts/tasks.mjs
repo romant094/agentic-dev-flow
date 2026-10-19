@@ -4,6 +4,10 @@
 //   tasks.mjs tick <item> --change <name> [--root <dir>] [--commit]
 //   tasks.mjs tick --plan-task <N> --change <name> [--root <dir>] [--commit]
 //       Ticks task <item> (such as 1.2), or the item plan task N's back-reference names.
+//       --plan-task refuses unless task N's review loop is clean: the last accepted review or
+//       re-review of T<N> left nothing open, and every plan-mandated or unverifiable item is
+//       ruled, or a ruling (`ledger.mjs ruling --subject T<N> --finding <id> --as
+//       accepted|dismissed`) closes each item left (lib/loop.mjs).
 //       --commit then commits the tasks file, and plan.md when it changed, with the message
 //       "chore(openspec): tick <item> of <change>"; other staged paths are a refusal.
 //       { item, ticked, already, sha?, paths? }
@@ -15,7 +19,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { changeDir } from './lib/changes.mjs'
-import { commitTick, itemForPlanTask, lintTasks, tickTask } from './lib/tasks.mjs'
+import { commitTick, itemForPlanTask, lintTasks, tickGate, tickTask } from './lib/tasks.mjs'
 import { isMain } from './lib/main.mjs'
 import { loadSchema } from './lib/schema.mjs'
 
@@ -64,6 +68,7 @@ function exec(argv) {
     const plan = join(dir, 'plan.md')
     if (!existsSync(plan)) throw new Error(`${change} has no plan.md`)
     target = itemForPlanTask(readFileSync(plan, 'utf8'), planTask)
+    tickGate(root, change, planTask)
   }
   // The staged-path refusal comes before the tick, so a refused commit leaves nothing ticked.
   if (commit) commitTick(root, change, target, { tracks, dryRun: true })
