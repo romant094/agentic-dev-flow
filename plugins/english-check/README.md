@@ -40,6 +40,8 @@ command line's sight, when they are run with `node <path>/<script>` or directly:
 | `review.mjs assemble --change <name> --commit` | with `--commit` | `openspec/changes/<name>/review.md` |
 | `review.mjs mark --file <path> ... --commit` | with `--commit` | the `--file` path |
 | `plan.mjs added [--change <name>] ... --commit` | with `--commit` | `openspec/changes/<name>/plan.md`; without `--change`, every change directory |
+| `archive.mjs commit-specs --change <name>` | always | `openspec/changes/<name>/`, `openspec/changes/archive/` and `openspec/specs/` |
+| `archive.mjs commit-memory --change <name>` | always | every uncommitted file: the hook cannot read where the knowledge base and the debt tree are, and archive refuses any uncommitted file there that it did not write |
 
 Paths resolve against `--root`, or the command's directory without it. The list is
 `CORE_COMMIT_SCRIPTS` in `scripts/lib/english.mjs`: a future core script that commits must be

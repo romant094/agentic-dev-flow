@@ -335,6 +335,23 @@ test('review.mjs assemble and mark check what they commit only with --commit', (
   assert.equal(hook(`node /p/scripts/review.mjs start --change x --commit --root ${r.root}`, '/').code, 0)
 })
 
+test('archive.mjs commit-specs checks the change, the archive and the specs; commit-memory every uncommitted file', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('openspec/changes/archive/2026-10-19-x/proposal.md', `${RU}\n`)
+  r.write('openspec/specs/cap/spec.md', `${RU}\n`)
+  const specs = hook(`node /p/scripts/archive.mjs commit-specs --change x --root ${r.root}`, '/')
+  assert.equal(specs.code, 2)
+  assert.match(specs.stderr, /openspec\/changes\/archive\/2026-10-19-x\/proposal\.md:1: /)
+  assert.match(specs.stderr, /openspec\/specs\/cap\/spec\.md:1: /)
+  const memory = hook(`node /p/scripts/archive.mjs commit-memory --change x --root ${r.root}`, '/')
+  assert.equal(memory.code, 2)
+  assert.match(memory.stderr, /openspec\/specs\/cap\/spec\.md:1: /)
+  assert.equal(hook(`node /p/scripts/archive.mjs check --change x --root ${r.root}`, '/').code, 0)
+  rmSync(join(r.root, 'openspec'), { recursive: true, force: true })
+  assert.equal(hook(`node /p/scripts/archive.mjs commit-memory --change x --root ${r.root}`, '/').code, 0)
+})
+
 test('suite.mjs, dup.mjs and plan.mjs check what they commit only with --commit', (t) => {
   const r = repo()
   t.after(() => rmSync(r.root, { recursive: true, force: true }))

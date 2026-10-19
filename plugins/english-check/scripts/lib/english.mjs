@@ -262,6 +262,16 @@ export const CORE_COMMIT_SCRIPTS = {
     if (args[0] === 'mark') return optionValues(args, '--file')
     return null
   },
+  // archive.mjs commit-specs --change <name>: the change directory, the archived changes and
+  // the main specs. archive.mjs commit-memory: the knowledge base and the debt tree, whose
+  // places the host's plugins and registry hold and the hook cannot read, so the whole tree
+  // (`.`); archive refuses any uncommitted file there that it did not write.
+  'archive.mjs': (args) => {
+    const change = optionValues(args, '--change')[0]
+    if (args[0] === 'commit-specs' && change) return [`openspec/changes/${change}`, 'openspec/changes/archive', 'openspec/specs']
+    if (args[0] === 'commit-memory') return ['.']
+    return null
+  },
   // plan.mjs added [--change <name>] --commit: plan.md; without --change the one active
   // change, which the hook cannot name, so every change directory.
   'plan.mjs': (args) => {
@@ -317,7 +327,8 @@ const names = (output) => output.split('\0').filter(Boolean)
 // The repository root of one commit and the repository-relative paths it takes. Only added,
 // copied, modified or renamed paths: a deleted path has no text to check. Outside a repository
 // (or in a directory that does not exist) the commit is git's to refuse, so root is null.
-// With `paths` (relative to `dir`), only the files under them count.
+// With `paths` (relative to `dir`), only the files under them count; a path naming the
+// repository root counts every file.
 export function commitFiles({ dir, wide, paths }, git = defaultGit) {
   let root
   try {
@@ -330,9 +341,9 @@ export function commitFiles({ dir, wide, paths }, git = defaultGit) {
   let spec = []
   if (paths) {
     const prefix = relative(realpathSync(root), realpathSync(dir))
-    spec = paths.map((p) => normalizePath(join(prefix, p))).filter((p) => p && p !== '..' && !p.startsWith('../') && !isAbsolute(p))
+    spec = paths.map((p) => normalizePath(join(prefix, p))).filter((p) => p !== '..' && !p.startsWith('../') && !isAbsolute(p))
     if (!spec.length) return { root, files: [] }
-    spec = ['--', ...spec.map((p) => `:(literal)${p}`)]
+    spec = spec.includes('') ? [] : ['--', ...spec.map((p) => `:(literal)${p}`)]
   }
   const files = new Set(names(git(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', ...spec], root)))
   if (wide || paths) {
