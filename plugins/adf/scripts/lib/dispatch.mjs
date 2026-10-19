@@ -12,7 +12,8 @@
 //   verify c4 | verify c8   (schema/instructions/verify.md)
 //   ai-review r<k>, ai-review r<k> s<n>, ai-fix F<n> r<k>   (the review stage)
 //   spec-merge <capability>, ingest   (archive)
-//   retro <date>   (the retrospective, lib/retro.mjs; no change)
+//   retro <id>     (the retrospective, lib/retro.mjs; no change; <id> is <date>-window,
+//                  <date>-period or <date>-<change>)
 //
 // Pure: every read of the tree is done by the caller and passed in.
 import { join } from 'node:path'
@@ -52,7 +53,7 @@ export const ARCHIVE_ROLES = {
 }
 // The retrospective: one agent reasons over a window of archived changes and replies in JSON,
 // checked by lib/retro.mjs through the lib/reply.mjs role table. It serves no change: its state
-// lives in .superpowers/retro/<date>/ of the retrospective's worktree.
+// lives in .superpowers/retro/<id>/ of the retrospective's worktree.
 export const RETRO_ROLES = {
   retro: { level: 'architecture', schema: 'retro.schema.json' }
 }
@@ -82,7 +83,8 @@ const TOPIC = /^[A-Za-z0-9]+$/
 const GROUP = /^[A-Z]$/
 const FINDING = /^F[1-9]\d*$/
 const CAPABILITY = /^[a-z0-9][a-z0-9-]*$/
-const DATE = /^\d{4}-\d{2}-\d{2}$/
+// A retrospective's id: its date and its mode, or, for one change, the change's name.
+export const RETRO_ID = /^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*$/
 
 export class DispatchError extends Error {}
 const refuse = (message) => {
@@ -158,16 +160,16 @@ export function parseGraph(planText) {
 
 // ---------------------------------------------------------------- names
 
-export function dispatchName({ role, task, group, round, topic, check, slice, finding, capability, date }) {
+export function dispatchName({ role, task, group, round, topic, check, slice, finding, capability, id }) {
   if (!ROLES.includes(role)) refuse(`unknown role "${role}"; known: ${ROLES.join(', ')}`)
   if (capability !== undefined && role !== 'spec-merge') refuse('--capability belongs to spec-merge')
-  if (date !== undefined && role !== 'retro') refuse('--date belongs to retro')
+  if (id !== undefined && role !== 'retro') refuse('an id belongs to retro')
   if (role === 'retro') {
     if (task !== undefined || group !== undefined || round !== undefined || topic !== undefined || check !== undefined || slice !== undefined || finding !== undefined) {
-      refuse('retro takes only --date')
+      refuse('retro takes only an id')
     }
-    if (!DATE.test(date ?? '')) refuse(`retro needs --date YYYY-MM-DD, not "${date ?? ''}"`)
-    return `retro ${date}`
+    if (!RETRO_ID.test(id ?? '')) refuse(`retro needs an id <YYYY-MM-DD>-<window | period | change name>, not "${id ?? ''}"`)
+    return `retro ${id}`
   }
   if (Object.hasOwn(ARCHIVE_ROLES, role)) {
     if (task !== undefined || group !== undefined || round !== undefined || topic !== undefined || check !== undefined || slice !== undefined || finding !== undefined) {
@@ -232,8 +234,8 @@ export function parseName(name) {
   m = /^spec-merge ([a-z0-9][a-z0-9-]*)$/.exec(text)
   if (m) return { role: 'spec-merge', capability: m[1] }
   if (text === 'ingest') return { role: 'ingest' }
-  m = /^retro (\d{4}-\d{2}-\d{2})$/.exec(text)
-  if (m) return { role: 'retro', date: m[1] }
+  m = /^retro (\S+)$/.exec(text)
+  if (m && RETRO_ID.test(m[1])) return { role: 'retro', id: m[1] }
   m = /^investigate ([A-Za-z0-9]+)$/.exec(text)
   if (m) return { role: 'investigate', topic: m[1] }
   m = /^(final-review|sweep)$/.exec(text)
@@ -249,14 +251,14 @@ export const verifyDirOf = (root, change) => join(sddDir(root, change), 'verify'
 export const reviewInputFile = (root, change, round, slice) => join(sddDir(root, change), 'review', `input-r${round}${slice === undefined ? '' : `-s${slice}`}.md`)
 
 // A retrospective's state: its input file, its replies and its attempts log.
-export const retroDir = (root, date) => join(root, '.superpowers', 'retro', date)
-export const retroInputFile = (root, date) => join(retroDir(root, date), 'input.json')
+export const retroDir = (root, id) => join(root, '.superpowers', 'retro', id)
+export const retroInputFile = (root, id) => join(retroDir(root, id), 'input.json')
 
 // `<root>/.superpowers/sdd/<change>/replies/<name, spaces as hyphens>.json`, or `-2`, `-3`
 // before `.json` when the name is taken. A retro's replies are under its own directory.
 export function replyFile(root, change, name, exists) {
-  const date = parseName(name)?.date
-  const base = join(date === undefined ? sddDir(root, change) : retroDir(root, date), 'replies', name.replace(/ /g, '-'))
+  const id = parseName(name)?.id
+  const base = join(id === undefined ? sddDir(root, change) : retroDir(root, id), 'replies', name.replace(/ /g, '-'))
   if (!exists(`${base}.json`)) return `${base}.json`
   for (let k = 2; ; k++) if (!exists(`${base}-${k}.json`)) return `${base}-${k}.json`
 }
@@ -264,7 +266,7 @@ export function replyFile(root, change, name, exists) {
 // ---------------------------------------------------------------- the plan of one dispatch
 
 // inputs: { change, role, task?, group?, round?, topic?, check?, slice?, finding?, capability?,
-//           date? }   a retro takes only `date`, no change
+//           id? }   a retro takes only `id`, no change
 // tree:   { root, main, planText (null when absent), exists(path) }
 export function planDispatch(inputs, { root, main, planText, exists }) {
   const name = dispatchName(inputs)
@@ -274,8 +276,8 @@ export function planDispatch(inputs, { root, main, planText, exists }) {
   if (role === 'retro') {
     out.agent = `adf:${RETRO_ROLES.retro.level}`
     out.worktree = root
-    out.date = inputs.date
-    out.inputFile = retroInputFile(root, inputs.date)
+    out.id = inputs.id
+    out.inputFile = retroInputFile(root, inputs.id)
     out.replyFile = replyFile(root, undefined, name, exists)
     return out
   }
@@ -407,7 +409,7 @@ export function renderPrompt({ plan, change, skeletons, fields, question, tokens
     level: plan.agent.replace(/^adf:/, ''),
     change,
     // What the dispatch serves, in the frame's first sentence: a change, or a retrospective.
-    subject: plan.role === 'retro' ? `the retrospective of ${plan.date}` : `the change \`${change}\``,
+    subject: plan.role === 'retro' ? `the retrospective ${plan.id}` : `the change \`${change}\``,
     role: plan.role,
     replyFile: plan.replyFile ?? '',
     inputFile: plan.inputFile ?? '',

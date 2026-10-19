@@ -72,6 +72,7 @@ import { dispatchName } from './dispatch.mjs'
 import { checkIngestFile, findChangeDir, workingChanges } from './ingest.mjs'
 import { mainCheckout } from './installed.mjs'
 import { readRecords, unresolvedDebt } from './ledger.mjs'
+import { localMerge } from './local-merge.mjs'
 import { asV2, buildRecord, candidates, RECORD_FILE, RecordError } from './metrics.mjs'
 import { QUIET_RUN } from './metrics-records.mjs'
 import { addEntry, pricesUrl } from './prices.mjs'
@@ -725,11 +726,9 @@ export function mrStep(ctx, { body = null, title, summary } = {}) {
 
 // ---------------------------------------------------------------- the local merge
 
-const quote = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `"${s.replace(/(["\\$`])/g, '\\$1')}"`)
-
-// With no forge: merges the change branch into its base in the main checkout, on `yes` only.
-// Without `yes` and without `no` it prints the commands and records nothing; `no` records the
-// developer's choice to merge it themselves.
+// With no forge: merges the change branch into its base in the main checkout, on `yes` only,
+// through lib/local-merge.mjs. Without `yes` and without `no` it prints the commands and records
+// nothing; `no` records the developer's choice to merge it themselves.
 export function mergeLocalStep(ctx, { yes = false, no = false } = {}) {
   return runStep(ctx, 'merge-local', (state) => {
     if (settledDetail(state, 'mr').forge !== 'none') {
@@ -737,25 +736,12 @@ export function mergeLocalStep(ctx, { yes = false, no = false } = {}) {
     }
     const branch = branchOf(ctx)
     const base = baseOf(ctx)
-    const main = ctx.main
-    const commands = [`git -C ${quote(main)} checkout ${quote(base)}`, `git -C ${quote(main)} merge --no-ff ${quote(branch)}`]
-    if (gitAsk(main, 'compare the change branch with its base', 'merge-base', '--is-ancestor', branch, base)) {
-      return { state: 'done', detail: { already: true, branch, base, report: `Local merge: ${branch} is already merged into ${base}.` } }
-    }
+    const merged = localMerge(ctx.main, { branch, base, yes: yes && !no })
+    const { hold, commands, ...detail } = merged
+    if (detail.already) return { state: 'done', detail }
     if (no) return { state: 'skipped', detail: { declined: true, branch, base, commands, report: `Local merge: declined; the developer merges ${branch} into ${base}.` } }
-    if (!yes) return { hold: true, out: { branch, base, commands, waiting: `the developer's yes: archive.mjs merge-local --change ${ctx.change} --yes, or --no to merge it by hand` } }
-    const mainGit = gitReader(main)
-    const current = mainGit('read the main checkout branch', 'branch', '--show-current')
-    if (current !== base) refuse(`the main checkout ${main} has ${current || 'a detached HEAD'} checked out, not ${base}; nothing was merged. Run: ${commands.join(' && ')}`, { commands })
-    const dirty = mainGit('read the main checkout status', 'status', '--porcelain', '--untracked-files=no')
-    if (dirty) refuse(`the main checkout ${main} has uncommitted changes; nothing was merged. Once it is clean, run: ${commands[1]}`, { commands, dirty: dirty.split('\n') })
-    const merged = spawnSync('git', ['merge', '--no-ff', '--no-edit', branch], { cwd: main, encoding: 'utf8' })
-    if (merged.status !== 0) {
-      spawnSync('git', ['merge', '--abort'], { cwd: main, encoding: 'utf8' })
-      refuse(`git merge --no-ff ${branch} failed in ${main} and was aborted (${String(merged.stderr || merged.stdout).trim()}); merge it by hand: ${commands[1]}`, { commands })
-    }
-    const commit = mainGit('read the merge commit', 'rev-parse', 'HEAD')
-    return { state: 'done', detail: { merged: true, mergeCommit: commit, branch, base, report: `Local merge: ${branch} merged into ${base} at ${commit.slice(0, 7)}; nothing was pushed, and the branch is kept.` } }
+    if (hold) return { hold: true, out: { branch, base, commands, waiting: `the developer's yes: archive.mjs merge-local --change ${ctx.change} --yes, or --no to merge it by hand` } }
+    return { state: 'done', detail }
   })
 }
 

@@ -93,7 +93,8 @@ test('classify reads every fixed dispatch form exactly', () => {
     'ai-fix F3 r1': { role: 'ai-fix', finding: 'F3', round: 1 },
     'spec-merge metrics-format': { role: 'spec-merge', capability: 'metrics-format' },
     ingest: { role: 'ingest' },
-    'retro 2026-10-19': { role: 'retro', date: '2026-10-19' }
+    'retro 2026-10-19-window': { role: 'retro', id: '2026-10-19-window' },
+    'retro 2026-10-19-my-change': { role: 'retro', id: '2026-10-19-my-change' }
   }
   for (const [name, want] of Object.entries(cases)) {
     assert.deepEqual(classify(name), { role: null, task: null, group: null, round: null, ...want, exact: true }, name)

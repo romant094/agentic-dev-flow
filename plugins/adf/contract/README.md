@@ -146,8 +146,9 @@ or https URL; without it the core uses its default, and `/adf:init` does not ask
 
 - `.adf/prices/<YYYY-MM-DD>.json`: the dated price table, one entry per change of prices
   (`metrics-format.md`), written by archive's `metrics` step.
-- `.adf/retro/<YYYY-MM-DD>-<mode>.md` and `.json`: each retrospective's report and its
-  sidecar; the newest window sidecar on the integration branch starts the next window.
+- `.adf/retro/<id>.md` and `.json`, the id `<YYYY-MM-DD>-window`, `<YYYY-MM-DD>-period` or
+  `<YYYY-MM-DD>-<change>`: each retrospective's report and its sidecar; the newest window
+  sidecar on the integration branch starts the next window.
 
 ## The declaration
 

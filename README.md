@@ -63,6 +63,7 @@ Then, in the host project:
 /adf:verify [change]
 /adf:review [change]
 /adf:archive [change]
+/adf:retro [--change <name> | --from <date> --to <date>]
 /adf:add <plugin id or path>
 /adf:remove <plugin name>
 ```
@@ -95,7 +96,7 @@ the host is `.adf/`: the dated price table in `.adf/prices/` and the retrospecti
 ```
 .claude-plugin/marketplace.json   the marketplace: the core and every plugin
 plugins/adf/                      the core
-  commands/                       /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply, /adf:verify, /adf:review, /adf:archive
+  commands/                       /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply, /adf:verify, /adf:review, /adf:archive, /adf:retro
   agents/                         the capability-level subagents apply, verify, review and archive dispatch
   contract/                       the extension contract and its version
   schema/                         the artifact graph (schema.json), templates, instructions

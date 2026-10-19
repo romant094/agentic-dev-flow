@@ -2,14 +2,15 @@
 // CLI over lib/retro-run.mjs: /adf:retro's deterministic steps, each resumable. Prints one JSON
 // object on stdout; exit 1 on a refusal or a failed step, exit 2 on a usage error. --root is the
 // host checkout or the retro worktree (default: the current directory); --home names the Claude
-// Code home where the plugins are found. --date names the retrospective: for start it defaults
-// to today, for every other step to the newest retrospective started in the main checkout.
+// Code home where the plugins are found. A retrospective is named by its id, `<date>-window`,
+// `<date>-period` or `<date>-<change>`: start makes it from --date (default today) and the mode;
+// every other step takes --id, default the newest retrospective started in the main checkout.
 //
 // The steps, in this order; each runs once every step before it is settled (done, degraded or
 // skipped), a done or skipped step is reported as it is, a failed or degraded one runs again:
 //   retro.mjs start [--date <d>] [--mode window|change|period] [--change <name>] [--from <d> --to <d>]
-//       the integration ref fetched; branch chore/retro/<date> and its worktree
-//       .claude/worktrees/retro-<date> made from the integration branch; the mode kept. The
+//       the integration ref fetched; branch chore/retro/<id> and its worktree
+//       .claude/worktrees/retro-<id> made from the integration branch; the mode kept. The
 //       mode defaults to window, or to change with --change, or to period with --from and --to;
 //       window takes none of them, change takes --change only, period both dates only
 //   retro.mjs window
@@ -19,11 +20,13 @@
 //       the orchestrator dispatches (name, agent, worktree, inputFile, replyFile, promptFile)
 //   retro.mjs reply --file <reply json> [--resume yes|no]
 //       the reply checked and recorded (lib/retro.mjs recordRetroReply); refused: failed with
-//       detail.next retry, then stop; valid: detail.result, the computed reply, kept in the state
+//       detail.next retry, the retry's dispatch recorded and its plan in detail.dispatch, then
+//       stop; valid: detail.result, the computed reply, kept in the state
 //   retro.mjs render
-//       .adf/retro/<date>-<mode>.json (the sidecar and the computed reply) and .md in the worktree
+//       .adf/retro/<id>.json (the sidecar and the computed reply) and .md in the worktree
 //   retro.mjs record
-//       commit.mjs --only those two files: `docs(retro): <mode> retrospective <date>`
+//       commit.mjs --only those two files: `docs(retro): <mode> retrospective <date>`, with
+//       ` of <change>` for one change
 //   retro.mjs publish [--yes]
 //       the forge's open with draft false and ci false into the integration branch, never merged;
 //       no forge: held (pending, the commands) until --yes, then a local merge in the main
@@ -31,31 +34,36 @@
 //   retro.mjs file [--yes] [--findings R1,R2]
 //       the upstream role's file with { report, findings } (default every finding) after --yes;
 //       without it pending, with `would`; no provider: skipped, the findings stay in the sidecar
-// Each prints { ok, date, mode, step, state, detail, next, already?, pending?, refusal? }.
+//   retro.mjs remove
+//       the retro worktree removed from the main checkout (lib/workspace.mjs remove): a dirty
+//       tree refused, never forced, the branch kept; later calls take --root <main>
+// Each prints { ok, id, date, mode, step, state, detail, next, already?, pending?, refusal? }.
 //
 // Read-only:
 //   retro.mjs since       { ok, fetch, ref, fetchedAt, previous, count, changes, lintDue }: the
 //                         changes archived since the last window retrospective, after a fetch
-//   retro.mjs state       { ok, date, mode, scope, steps, next }
+//   retro.mjs state       { ok, id, date, mode, scope, startedAt, steps, next }
 import { resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { isMain } from './lib/main.mjs'
-import { fileStep, publishStep, recordStep, Refusal, renderStep, replyStep, retroContext, since, startStep, stateOf, windowStep } from './lib/retro-run.mjs'
+import { fileStep, publishStep, recordStep, Refusal, removeStep, renderStep, replyStep, retroContext, since, startStep, stateOf, windowStep } from './lib/retro-run.mjs'
+import { RETRO_ID } from './lib/dispatch.mjs'
 import { MergeRefusal } from './lib/local-merge.mjs'
 import { MODES } from './lib/window.mjs'
 
 export const USAGE = `usage:
   retro.mjs start [--date <YYYY-MM-DD>] [--mode window|change|period] [--change <name>] [--from <YYYY-MM-DD> --to <YYYY-MM-DD>] [--root <dir>] [--home <dir>]
-  retro.mjs window|render|record|state [--date <YYYY-MM-DD>] [--root <dir>] [--home <dir>]
-  retro.mjs reply --file <reply json> [--resume yes|no] [--date <YYYY-MM-DD>] [--root <dir>]
-  retro.mjs publish [--yes] [--date <YYYY-MM-DD>] [--root <dir>] [--home <dir>]
-  retro.mjs file [--yes] [--findings R1,R2] [--date <YYYY-MM-DD>] [--root <dir>] [--home <dir>]
+  retro.mjs window|render|record|remove|state [--id <id>] [--root <dir>] [--home <dir>]
+  retro.mjs reply --file <reply json> [--resume yes|no] [--id <id>] [--root <dir>]
+  retro.mjs publish [--yes] [--id <id>] [--root <dir>] [--home <dir>]
+  retro.mjs file [--yes] [--findings R1,R2] [--id <id>] [--root <dir>] [--home <dir>]
   retro.mjs since [--root <dir>]`
 
 export class UsageError extends Error {}
 
 const OPTIONS = {
   date: { type: 'string' },
+  id: { type: 'string' },
   mode: { type: 'string' },
   change: { type: 'string' },
   from: { type: 'string' },
@@ -70,14 +78,15 @@ const OPTIONS = {
 const COMMON = ['root', 'home']
 const TAKES = {
   start: ['date', 'mode', 'change', 'from', 'to'],
-  window: ['date'],
-  reply: ['date', 'file', 'resume'],
-  render: ['date'],
-  record: ['date'],
-  publish: ['date', 'yes'],
-  file: ['date', 'yes', 'findings'],
+  window: ['id'],
+  reply: ['id', 'file', 'resume'],
+  render: ['id'],
+  record: ['id'],
+  publish: ['id', 'yes'],
+  file: ['id', 'yes', 'findings'],
+  remove: ['id'],
   since: [],
-  state: ['date']
+  state: ['id']
 }
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 const isDay = (v) => DAY.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v
@@ -125,13 +134,14 @@ export function run(argv, { cwd = process.cwd(), deps = {} } = {}) {
   const stray = Object.keys(values).filter((k) => !COMMON.includes(k) && !TAKES[command].includes(k))
   if (stray.length > 0) usage(`${command} takes no --${stray[0]}`)
   if (values.date !== undefined && !isDay(values.date)) usage(`--date is YYYY-MM-DD, not "${values.date}"`)
+  if (values.id !== undefined && !(RETRO_ID.test(values.id) && isDay(values.id.slice(0, 10)))) usage(`--id is <YYYY-MM-DD>-<window | period | change name>, not "${values.id}"`)
   if (values.resume !== undefined && !['yes', 'no'].includes(values.resume)) usage('--resume is yes or no')
   if (command === 'reply' && !values.file) usage('reply needs --file <reply json>')
   const root = values.root ?? cwd
   if (command === 'since') return since(root)
   const scope = command === 'start' ? scopeOf(values) : null
   const findings = findingIds(values.findings)
-  const ctx = retroContext(root, { date: values.date, start: command === 'start', deps: { ...(values.home ? { home: values.home } : {}), ...deps } })
+  const ctx = retroContext(root, { id: values.id, date: values.date, scope, start: command === 'start', deps: { ...(values.home ? { home: values.home } : {}), ...deps } })
   switch (command) {
     case 'start':
       return startStep(ctx, scope)
@@ -147,6 +157,8 @@ export function run(argv, { cwd = process.cwd(), deps = {} } = {}) {
       return publishStep(ctx, { yes: Boolean(values.yes) })
     case 'file':
       return fileStep(ctx, { yes: Boolean(values.yes), findings })
+    case 'remove':
+      return removeStep(ctx)
     default:
       return stateOf(ctx)
   }

@@ -1,6 +1,6 @@
 ---
 description: Archive a change - merge its specs, place its debt, ingest what it taught, finalize the merge request and remove the worktree
-argument-hint: <change-name>
+argument-hint: <change-name> [--no-ci]
 effort: medium
 ---
 
@@ -20,7 +20,8 @@ than one file opened goes to a read-only agent that returns a verdict, named `in
 the replies stay in their files: read the scripts' verdicts, counts and refusals.
 
 **Input:** `$ARGUMENTS` is the change name, optional. Without it, infer the change from the
-conversation; if that is vague or ambiguous, the selection in step 1 asks.
+conversation; if that is vague or ambiguous, the selection in step 1 asks. `--no-ci` in it asks
+for the merge request pushed with no CI run.
 
 1. **Select the change and run the preflight.** Follow the resolve instruction: run
    `node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" find`, have the developer confirm the
@@ -55,7 +56,8 @@ conversation; if that is vague or ambiguous, the selection in step 1 asks.
      with no knowledge plugin, the call with no reply.
    - `mr`: `forge.mjs check`; with a forge, write the body from `archive.mjs mr-input` and pass
      `--body` and `--summary`: a call with no body holds, `pending`, and names what it needs;
-     with none, the call with no body.
+     with none, the call with no body. With `--no-ci` in the input, pass `--no-ci` to the
+     first step you run, as the instruction's `mr` rule states.
    - `merge-local`: the call shows the commands; ask the developer, then `--yes` or `--no`.
 
    On `ok: false`, show the step's `refusal` and `detail` and stop, unless the instruction's
@@ -68,4 +70,6 @@ conversation; if that is vague or ambiguous, the selection in step 1 asks.
    ```
 
    Your final message is its `report`, as it is: it names each step not finished and the next
-   one to run.
+   one to run, then the changes since the last window retrospective, the corpus lint when due,
+   the removal candidates and the record's hurt signals with a suggested `/adf:retro --change`,
+   as the instruction's report rule states.

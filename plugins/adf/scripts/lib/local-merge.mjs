@@ -3,8 +3,9 @@
 // kept. A branch already merged is done; without `yes` nothing happens and the commands are
 // returned. A merge that fails is aborted, so the main checkout is left as it was.
 //
-// The rule of archive's merge-local step (lib/archive.mjs mergeLocalStep), for a caller that is
-// not archive: the retrospective's publish (lib/retro-run.mjs).
+// One rule for both callers: archive's merge-local step (lib/archive.mjs mergeLocalStep), which
+// keeps only its own --no and forge-skip handling, and the retrospective's publish
+// (lib/retro-run.mjs).
 import { execFileSync, spawnSync } from 'node:child_process'
 
 export class MergeRefusal extends Error {

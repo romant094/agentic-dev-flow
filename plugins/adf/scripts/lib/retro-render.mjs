@@ -1,9 +1,9 @@
-// The retrospective's report, `.adf/retro/<date>-<mode>.md`, rendered by script from the sidecar
+// The retrospective's report, `.adf/retro/<id>.md`, rendered by script from the sidecar
 // (lib/window.mjs buildSidecar) and the computed reply (lib/retro.mjs compute). The agent writes
 // no number: every figure here is a value the sidecar carries or a key the reply cited, resolved
 // by compute to `{ key, value }`. Deciding nothing: it renders.
 //
-// `retroDocument` is the committed sidecar, `.adf/retro/<date>-<mode>.json`: the sidecar with the
+// `retroDocument` is the committed sidecar, `.adf/retro/<id>.json`: the sidecar with the
 // computed reply's fields added, so the next window reads its cut-off and aggregates from it and
 // the `upstream` role reads the findings from it.
 const HEADING = { window: 'Window', change: 'Change', period: 'Period' }

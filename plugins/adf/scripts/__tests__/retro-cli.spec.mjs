@@ -22,9 +22,10 @@ const here = dirname(fileURLToPath(import.meta.url))
 const CLI = join(here, '..', 'retro.mjs')
 const ARCHIVE = 'openspec/changes/archive'
 const DATE = '2026-10-19'
+const ID = `${DATE}-window`
 const NOW = new Date('2026-10-19T12:00:00Z')
-const JSON_FILE = `.adf/retro/${DATE}-window.json`
-const MD_FILE = `.adf/retro/${DATE}-window.md`
+const JSON_FILE = `.adf/retro/${ID}.json`
+const MD_FILE = `.adf/retro/${ID}.md`
 const TITLE = `docs(retro): window retrospective ${DATE}`
 const HOME = realpathSync(mkdtempSync(join(tmpdir(), 'adf-retro-cli-home-')))
 const NONE = {
@@ -110,7 +111,7 @@ function host() {
   merge(root, 'feat/two', { [`${ARCHIVE}/2026-10-05-two/tasks.md`]: '- [x] 1.1 a\n', [`${ARCHIVE}/2026-10-05-two/metrics.json`]: `${JSON.stringify(record('two'))}\n`, 'src/two.txt': 'two\n' }, '2026-10-06T10:00:00Z')
   g(root, ['remote', 'add', 'origin', remote])
   g(root, ['push', '-q', '-u', 'origin', 'develop'])
-  return { top, remote, root, wt: join(root, '.claude', 'worktrees', `retro-${DATE}`) }
+  return { top, remote, root, wt: join(root, '.claude', 'worktrees', `retro-${ID}`) }
 }
 
 const call = (h, args, deps = NONE) => run([...args, '--root', h.root], { cwd: h.root, deps })
@@ -164,13 +165,13 @@ test('a window retrospective with a forge: own worktree, checked reply, rendered
   const developBefore = g(h.root, ['rev-parse', 'develop'])
 
   const start = call(h, ['start', '--date', DATE], deps)
-  assert.deepEqual([start.ok, start.step, start.state, start.mode, start.next], [true, 'start', 'done', 'window', 'window'])
+  assert.deepEqual([start.ok, start.id, start.date, start.step, start.state, start.mode, start.next], [true, ID, DATE, 'start', 'done', 'window', 'window'])
   assert.equal(start.detail.fetch.fetched, true)
   assert.equal(start.detail.worktree, h.wt)
-  assert.deepEqual([start.detail.branch, start.detail.base, start.detail.baseRef], [`chore/retro/${DATE}`, 'develop', 'origin/develop'])
-  assert.equal(g(h.wt, ['branch', '--show-current']), `chore/retro/${DATE}`)
+  assert.deepEqual([start.detail.branch, start.detail.base, start.detail.baseRef], [`chore/retro/${ID}`, 'develop', 'origin/develop'])
+  assert.equal(g(h.wt, ['branch', '--show-current']), `chore/retro/${ID}`)
   assert.equal(g(h.root, ['branch', '--show-current']), 'develop', 'the main checkout is never switched')
-  assert.ok(existsSync(statePath(h.root, DATE)), 'the state is in the main checkout')
+  assert.ok(existsSync(statePath(h.root, ID)), 'the state is in the main checkout')
 
   const win = call(h, ['window'], deps)
   assert.equal(win.ok, true, win.refusal)
@@ -180,10 +181,10 @@ test('a window retrospective with a forge: own worktree, checked reply, rendered
   assert.equal(sidecar.changes[0].git.diffLines, 1, "the knowledge base's three lines are not the change's work")
   assert.equal(sidecar.ref, 'origin/develop')
   const plan = win.detail.dispatch
-  assert.deepEqual([plan.name, plan.agent, plan.worktree, plan.attempt], [`retro ${DATE}`, 'adf:architecture', h.wt, 1])
-  assert.equal(plan.inputFile, join(h.wt, '.superpowers', 'retro', DATE, 'input.json'))
+  assert.deepEqual([plan.name, plan.agent, plan.worktree, plan.attempt], [`retro ${ID}`, 'adf:architecture', h.wt, 1])
+  assert.equal(plan.inputFile, join(h.wt, '.superpowers', 'retro', ID, 'input.json'))
   const prompt = readFileSync(plan.promptFile, 'utf8')
-  assert.match(prompt, new RegExp(`^You are dispatched as \`retro ${DATE}\`, at the architecture capability level`))
+  assert.match(prompt, new RegExp(`^You are dispatched as \`retro ${ID}\`, at the architecture capability level`))
   assert.ok(prompt.includes(plan.inputFile) && prompt.includes(plan.replyFile))
   assert.doesNotMatch(prompt, /\{\{\w+\}\}/)
 
@@ -216,7 +217,7 @@ test('a window retrospective with a forge: own worktree, checked reply, rendered
   assert.deepEqual([pub.ok, pub.state, pub.next], [true, 'done', 'file'])
   assert.equal(calls.length, 1)
   assert.equal(calls[0].op, 'open')
-  assert.deepEqual(calls[0].input, { ci: false, change: `retro-${DATE}`, branch: `chore/retro/${DATE}`, base: 'develop', protected: ['develop'], title: TITLE, draft: false })
+  assert.deepEqual(calls[0].input, { ci: false, change: `retro-${ID}`, branch: `chore/retro/${ID}`, base: 'develop', protected: ['develop'], title: TITLE, draft: false })
   assert.equal(pub.detail.report, 'Merge request: https://forge/mr/7 (opened, ready to merge)')
   assert.deepEqual([pub.detail.url, pub.detail.ci, pub.detail.draft], ['https://forge/mr/7', false, false])
   assert.equal(g(h.root, ['rev-parse', 'develop']), developBefore, 'never merged with a forge')
@@ -226,7 +227,7 @@ test('a window retrospective with a forge: own worktree, checked reply, rendered
   assert.equal(calls.length, 1, 'a done publish opens nothing again')
   assert.equal(call(h, ['start', '--date', DATE], deps).already, true)
   const state = call(h, ['state'], deps)
-  assert.deepEqual([state.date, state.mode, state.next], [DATE, 'window', 'file'])
+  assert.deepEqual([state.id, state.date, state.mode, state.next], [ID, DATE, 'window', 'file'])
 })
 
 test('without a forge, publish holds for the developer, and --yes merges locally with nothing pushed', () => {
@@ -236,16 +237,16 @@ test('without a forge, publish holds for the developer, and --yes merges locally
   const held = call(h, ['publish'])
   assert.deepEqual([held.ok, held.state, held.pending, held.forge, held.next], [true, 'pending', true, 'none', 'publish'])
   assert.match(held.report, /no forge plugin is enabled/)
-  assert.deepEqual(held.commands, [`git -C ${h.root} checkout develop`, `git -C ${h.root} merge --no-ff chore/retro/${DATE}`])
+  assert.deepEqual(held.commands, [`git -C ${h.root} checkout develop`, `git -C ${h.root} merge --no-ff chore/retro/${ID}`])
   assert.equal(g(h.root, ['rev-parse', 'develop']), developBefore, 'nothing merged without the yes')
-  assert.equal(JSON.parse(readFileSync(statePath(h.root, DATE), 'utf8')).steps.publish.state, 'pending')
+  assert.equal(JSON.parse(readFileSync(statePath(h.root, ID), 'utf8')).steps.publish.state, 'pending')
 
   const merged = call(h, ['publish', '--yes'])
   assert.deepEqual([merged.ok, merged.state, merged.detail.forge, merged.detail.merged], [true, 'done', 'none', true])
   assert.equal(g(h.root, ['rev-list', '--parents', '-1', 'develop']).split(' ').length, 3, 'a --no-ff merge commit')
   assert.ok(existsSync(join(h.root, JSON_FILE)))
   assert.equal(g(h.root, ['rev-parse', 'origin/develop']), developBefore, 'nothing pushed')
-  assert.equal(g(h.root, ['rev-parse', '--verify', `chore/retro/${DATE}`]).length, 40, 'the branch is kept')
+  assert.equal(g(h.root, ['rev-parse', '--verify', `chore/retro/${ID}`]).length, 40, 'the branch is kept')
   assert.equal(call(h, ['publish', '--yes']).already, true)
 })
 
@@ -297,7 +298,7 @@ test('a failure injected at a step is recorded, the steps after it wait, and a r
   assert.ok(steps.every((s) => s.ok))
   const failed = call(h, ['record'], deps)
   assert.deepEqual([failed.ok, failed.state, failed.refusal, failed.next], [false, 'failed', 'injected', 'record'])
-  assert.throws(() => call(h, ['publish'], deps), /publish waits for record; run retro\.mjs record --date 2026-10-19 first/)
+  assert.throws(() => call(h, ['publish'], deps), /publish waits for record; run retro\.mjs record --id 2026-10-19-window first/)
   assert.equal(call(h, ['state'], deps).next, 'record')
   const resumed = call(h, ['record'], deps)
   assert.deepEqual([resumed.ok, resumed.state, resumed.next], [true, 'done', 'publish'])
@@ -326,11 +327,18 @@ test('an invalid reply is retried once; a second stops the retrospective and not
   const bad = writeReply(win, { ...validReply(inp), decisions: [] })
   const first = call(h, ['reply', '--file', bad])
   assert.deepEqual([first.ok, first.state, first.detail.next, first.detail.mode], [false, 'failed', 'retry', 'resume'])
-  assert.match(first.refusal, /retry once/)
+  assert.match(first.refusal, /retry once, the agent resumed/)
+  // The retry is a dispatch of its own, recorded by reply, so the metrics count both.
+  assert.deepEqual([first.detail.dispatch.name, first.detail.dispatch.attempt, first.detail.dispatch.mode], [`retro ${ID}`, 2, 'resume'])
+  assert.equal(first.detail.dispatch.promptFile, win.detail.dispatch.promptFile)
+  assert.equal(first.detail.dispatch.replyFile, join(h.wt, '.superpowers', 'retro', ID, 'replies', `retro-${ID}-2.json`))
+  const log = () => readFileSync(join(h.wt, '.superpowers', 'retro', ID, 'attempts.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l).event)
+  assert.deepEqual(log(), ['dispatch', 'invalid', 'dispatch'])
   assert.ok(first.detail.errors.some((e) => /is not answered/.test(e)))
   const second = call(h, ['reply', '--file', join(h.root, 'missing.json')])
-  assert.deepEqual([second.ok, second.detail.next], [false, 'stop'])
+  assert.deepEqual([second.ok, second.detail.next, second.detail.dispatch], [false, 'stop', undefined])
   assert.match(second.refusal, /the retrospective stops/)
+  assert.deepEqual(log(), ['dispatch', 'invalid', 'dispatch', 'invalid'], 'a stop records no further dispatch')
   const good = writeReply(win, validReply(inp))
   const third = call(h, ['reply', '--file', good])
   assert.deepEqual([third.ok, third.detail.next], [false, 'stop'])
@@ -338,7 +346,7 @@ test('an invalid reply is retried once; a second stops the retrospective and not
   assert.throws(() => call(h, ['render']), /render waits for reply/)
 })
 
-test('wrong mode arguments are usage errors, exit 2; a second start of the date with another mode is refused', () => {
+test('wrong mode arguments are usage errors, exit 2; retros of several modes share a date, each by its id', () => {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'adf-retro-cli-usage-')))
   for (const args of [
     ['start', '--mode', 'change'],
@@ -349,6 +357,9 @@ test('wrong mode arguments are usage errors, exit 2; a second start of the date 
     ['start', '--mode', 'weekly'],
     ['start', '--date', '2026-13-01'],
     ['window', '--change', 'one'],
+    ['window', '--date', DATE],
+    ['window', '--id', '2026-10-19'],
+    ['state', '--id', '2026-13-01-window'],
     ['reply'],
     ['file', '--findings', 'one'],
     ['merge']
@@ -360,13 +371,28 @@ test('wrong mode arguments are usage errors, exit 2; a second start of the date 
   assert.throws(() => run(['start', '--mode', 'period', '--from', '2026-10-01']), UsageError)
 
   const h = host()
+  const later = { ...NONE, now: () => new Date('2026-10-19T13:00:00Z') }
   const change = call(h, ['start', '--date', DATE, '--change', 'one'])
-  assert.deepEqual([change.ok, change.mode], [true, 'change'])
-  assert.throws(() => call(h, ['start', '--date', DATE]), /started as \{"mode":"change","change":"one"\}/)
-  const r = spawnSync(process.execPath, [CLI, 'start', '--date', DATE, '--root', h.root], { encoding: 'utf8', env: { ...process.env, HOME } })
-  assert.equal(r.status, 1, r.stdout)
-  const win = call(h, ['window'])
-  assert.deepEqual(win.detail.changes, ['one'])
+  assert.deepEqual([change.ok, change.id, change.mode, change.detail.branch], [true, `${DATE}-one`, 'change', `chore/retro/${DATE}-one`])
+  assert.equal(change.detail.worktree, join(h.root, '.claude', 'worktrees', `retro-${DATE}-one`))
+  const window = call(h, ['start', '--date', DATE], later)
+  assert.deepEqual([window.ok, window.id, window.detail.branch], [true, ID, `chore/retro/${ID}`])
+  assert.equal(call(h, ['state'], later).id, ID, 'without --id, the newest started')
+  const period = call(h, ['start', '--date', DATE, '--from', '2026-10-01', '--to', '2026-10-03'])
+  assert.equal(period.id, `${DATE}-period`)
+  assert.throws(() => call(h, ['start', '--date', DATE, '--from', '2026-10-01', '--to', '2026-10-09']), /started as \{"mode":"period","from":"2026-10-01","to":"2026-10-03"\}.*one retrospective per id/)
+  assert.throws(() => call(h, ['start', '--date', DATE, '--change', 'window']), /would share the id of a window retrospective/)
+  assert.throws(() => call(h, ['window', '--id', `${DATE}-two`]), /no retrospective 2026-10-19-two is started/)
+
+  const win = call(h, ['window', '--id', `${DATE}-one`])
+  assert.deepEqual([win.ok, win.id, win.detail.changes, win.detail.dispatch.name], [true, `${DATE}-one`, ['one'], `retro ${DATE}-one`])
+  call(h, ['reply', '--id', `${DATE}-one`, '--file', writeReply(win, validReply(inputOf(win)))])
+  const render = call(h, ['render', '--id', `${DATE}-one`])
+  assert.deepEqual(render.detail.files, [`.adf/retro/${DATE}-one.json`, `.adf/retro/${DATE}-one.md`])
+  const rec = call(h, ['record', '--id', `${DATE}-one`])
+  assert.equal(rec.ok, true, rec.refusal)
+  assert.equal(g(change.detail.worktree, ['log', '-1', '--format=%s']), `docs(retro): change retrospective ${DATE} of one`)
+  assert.equal(call(h, ['state', '--id', ID]).steps.window.state, 'pending', 'the window retrospective of the date is its own')
 })
 
 test('the next window starts at this retrospective once its merge request merged, read after a fetch', () => {
@@ -374,14 +400,14 @@ test('the next window starts at this retrospective once its merge request merged
   recorded(h)
   call(h, ['publish'], { ...NONE, forge: () => ({ state: 'done', plugin: 'gitlab', url: 'u' }) })
   // The forge's side: the branch pushed and the merge request merged, in another clone.
-  g(h.wt, ['push', '-q', 'origin', `chore/retro/${DATE}`])
+  g(h.wt, ['push', '-q', 'origin', `chore/retro/${ID}`])
   const unmerged = call(h, ['since'])
   assert.deepEqual([unmerged.count, unmerged.previous], [2, null], 'an unmerged retrospective does not move the window')
   const forge = join(h.top, 'forge')
   execFileSync('git', ['clone', '-q', '-b', 'develop', h.remote, forge])
   g(forge, ['config', 'user.email', 'f@example.com'])
   g(forge, ['config', 'user.name', 'F'])
-  g(forge, ['merge', '-q', '--no-ff', '-m', `Merge branch 'chore/retro/${DATE}' into 'develop'`, `origin/chore/retro/${DATE}`])
+  g(forge, ['merge', '-q', '--no-ff', '-m', `Merge branch 'chore/retro/${ID}' into 'develop'`, `origin/chore/retro/${ID}`])
   g(forge, ['push', '-q', 'origin', 'develop'])
 
   const after = call(h, ['since'])
@@ -393,12 +419,32 @@ test('the next window starts at this retrospective once its merge request merged
   const next = '2026-10-26'
   const deps = { ...NONE, now: () => new Date('2026-10-26T12:00:00Z') }
   assert.equal(call(h, ['start', '--date', next], deps).ok, true)
-  const win = call(h, ['window', '--date', next], deps)
+  const win = call(h, ['window', '--id', `${next}-window`], deps)
   assert.deepEqual(win.detail.changes, ['three'])
   const sidecar = JSON.parse(readFileSync(win.detail.sidecar, 'utf8'))
   assert.equal(sidecar.previous.date, DATE)
   assert.deepEqual(sidecar.scope, { since: sidecar.previous.cutoff.mergeSha })
-  assert.equal(call(h, ['state'], deps).date, next, 'without --date, the newest retrospective')
+  assert.equal(call(h, ['state'], deps).id, `${next}-window`, 'without --id, the newest retrospective')
+})
+
+test('remove: after file, the retro worktree goes from the main checkout, never forced, its branch kept', () => {
+  const h = host()
+  recorded(h)
+  call(h, ['publish', '--yes'])
+  assert.throws(() => call(h, ['remove']), /remove waits for file; run retro\.mjs file --id 2026-10-19-window first/)
+  assert.equal(call(h, ['file']).state, 'skipped')
+  write(h.wt, { [MD_FILE]: 'edited\n' })
+  const dirty = call(h, ['remove'])
+  assert.deepEqual([dirty.ok, dirty.state], [false, 'failed'])
+  assert.match(dirty.refusal, /has uncommitted changes; commit or move them, then remove again \(never --force\)/)
+  assert.ok(existsSync(h.wt), 'a dirty worktree is kept')
+  g(h.wt, ['checkout', '-q', '--', MD_FILE])
+  const removed = call(h, ['remove'])
+  assert.deepEqual([removed.ok, removed.state, removed.next, removed.detail.state], [true, 'done', null, 'removed'])
+  assert.equal(removed.detail.report, `Worktree ${h.wt} removed; branch chore/retro/${ID} kept.`)
+  assert.equal(existsSync(h.wt), false)
+  assert.equal(g(h.root, ['rev-parse', '--verify', `chore/retro/${ID}`]).length, 40, 'the branch is kept')
+  assert.equal(call(h, ['remove']).already, true)
 })
 
 test('renderRetro: every figure from the sidecar or a resolved key; nothing found, a named candidate, a period, the delta', () => {

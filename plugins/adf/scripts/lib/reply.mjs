@@ -342,8 +342,8 @@ export function replyContext(root, change, name, { main = root } = {}) {
     }
     if (parts.role === 'sweep') ctx.sweep = sweepInputs(root, change)
     if (parts.role === 'retro') {
-      const text = readOr(retroInputFile(root, parts.date))
-      if (text === null) throw new Error(`${retroInputFile(root, parts.date)} does not exist: write the retrospective's input first`)
+      const text = readOr(retroInputFile(root, parts.id))
+      if (text === null) throw new Error(`${retroInputFile(root, parts.id)} does not exist: write the retrospective's input first`)
       ctx.input = JSON.parse(text)
     }
   } catch (error) {

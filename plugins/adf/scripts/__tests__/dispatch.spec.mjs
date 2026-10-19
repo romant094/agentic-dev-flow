@@ -713,37 +713,42 @@ test('the ingest prompt reads its input file and runs on the archived change; wi
 
 // ---------------------------------------------------------------- the retrospective
 
-test('the retro is named by its date, at architecture, with its state under .superpowers/retro/<date>/', () => {
-  assert.equal(dispatchName({ role: 'retro', date: '2026-10-19' }), 'retro 2026-10-19')
-  assert.deepEqual(parseName('retro 2026-10-19'), { role: 'retro', date: '2026-10-19' })
-  for (const name of ['retro', 'retro 2026-10', 'retro 2026-10-19 r1']) assert.equal(parseName(name), null, name)
+test('the retro is named by its id, at architecture, with its state under .superpowers/retro/<id>/', () => {
+  assert.equal(dispatchName({ role: 'retro', id: '2026-10-19-window' }), 'retro 2026-10-19-window')
+  assert.equal(dispatchName({ role: 'retro', id: '2026-10-19-my-change' }), 'retro 2026-10-19-my-change')
+  assert.deepEqual(parseName('retro 2026-10-19-window'), { role: 'retro', id: '2026-10-19-window' })
+  assert.deepEqual(parseName('retro 2026-10-19-period'), { role: 'retro', id: '2026-10-19-period' })
+  assert.deepEqual(parseName('retro 2026-10-19-my-change'), { role: 'retro', id: '2026-10-19-my-change' })
+  for (const name of ['retro', 'retro 2026-10-19', 'retro 2026-10-window', 'retro 2026-10-19-window r1', 'retro 2026-10-19-Window', 'retro 2026-10-19-']) assert.equal(parseName(name), null, name)
   const bad = [
-    [{ role: 'retro' }, /needs --date YYYY-MM-DD/],
-    [{ role: 'retro', date: '19.10.2026' }, /needs --date YYYY-MM-DD/],
-    [{ role: 'retro', date: '2026-10-19', round: 1 }, /takes only --date/],
-    [{ role: 'ingest', date: '2026-10-19' }, /--date belongs to retro/]
+    [{ role: 'retro' }, /needs an id <YYYY-MM-DD>-<window \| period \| change name>/],
+    [{ role: 'retro', id: '2026-10-19' }, /needs an id/],
+    [{ role: 'retro', id: '19.10.2026-window' }, /needs an id/],
+    [{ role: 'retro', id: '2026-10-19-window', round: 1 }, /takes only an id/],
+    [{ role: 'ingest', id: '2026-10-19-window' }, /an id belongs to retro/]
   ]
   for (const [inputs, message] of bad) assert.throws(() => dispatchName(inputs), message, JSON.stringify(inputs))
   const root = '/host'
-  const dir = join(root, '.superpowers', 'retro', '2026-10-19')
-  const taken = new Set([join(dir, 'replies', 'retro-2026-10-19.json')])
-  const plan = planDispatch({ role: 'retro', date: '2026-10-19' }, { root, main: root, planText: null, exists: (p) => taken.has(p) })
+  const id = '2026-10-19-window'
+  const dir = join(root, '.superpowers', 'retro', id)
+  const taken = new Set([join(dir, 'replies', `retro-${id}.json`)])
+  const plan = planDispatch({ role: 'retro', id }, { root, main: root, planText: null, exists: (p) => taken.has(p) })
   assert.deepEqual(plan, {
-    name: 'retro 2026-10-19',
+    name: `retro ${id}`,
     role: 'retro',
     agent: 'adf:architecture',
     worktree: root,
-    date: '2026-10-19',
+    id,
     inputFile: join(dir, 'input.json'),
-    replyFile: join(dir, 'replies', 'retro-2026-10-19-2.json')
+    replyFile: join(dir, 'replies', `retro-${id}-2.json`)
   })
 })
 
 test('the retro prompt serves the retrospective, reads its input file, is read-only and names its schema', () => {
   const skeletons = Object.fromEntries(readdirSync(PROMPTS_DIR).filter((f) => f.endsWith('.md')).map((f) => [f.slice(0, -3), readFileSync(join(PROMPTS_DIR, f), 'utf8')]))
-  const plan = planDispatch({ role: 'retro', date: '2026-10-19' }, { root: '/host', main: '/host', planText: null, exists: () => false })
+  const plan = planDispatch({ role: 'retro', id: '2026-10-19-window' }, { root: '/host', main: '/host', planText: null, exists: () => false })
   const prompt = renderPrompt({ plan, skeletons, fields: [['Dispatch name', plan.name]], tokens: { '${CLAUDE_PLUGIN_ROOT}': PLUGIN_ROOT } })
-  assert.match(prompt, /^You are dispatched as `retro 2026-10-19`, at the architecture capability level, for the retrospective of 2026-10-19\./)
+  assert.match(prompt, /^You are dispatched as `retro 2026-10-19-window`, at the architecture capability level, for the retrospective 2026-10-19-window\./)
   assert.ok(prompt.includes(`Read the input file, \`${plan.inputFile}\`.`))
   assert.ok(prompt.includes(`JSON Schema, \`${join(PLUGIN_ROOT, 'schema', 'retro.schema.json')}\`.`))
   assert.ok(prompt.includes(plan.replyFile))

@@ -18,6 +18,7 @@ import { buildSidecar } from '../lib/window.mjs'
 
 const ARCHIVE = 'openspec/changes/archive'
 const DATE = '2026-10-19'
+const ID = `${DATE}-window`
 const AS_OF = '2026-10-19T12:00:00.000Z'
 const CORE_VERSION = JSON.parse(readFileSync(join(PLUGIN_ROOT, '.claude-plugin', 'plugin.json'), 'utf8')).version
 
@@ -277,27 +278,27 @@ test('each rule the schema cannot state refuses the reply', () => {
 
 test('a refused reply is retried once, the second stops the retro, and a stopped retro records nothing', () => {
   const { root, input: inp } = fixture()
-  mkdirSync(dirname(retroInputFile(root, DATE)), { recursive: true })
-  writeFileSync(retroInputFile(root, DATE), JSON.stringify(inp))
-  assert.equal(recordRetroDispatch(root, DATE).next, 'dispatch')
+  mkdirSync(dirname(retroInputFile(root, ID)), { recursive: true })
+  writeFileSync(retroInputFile(root, ID), JSON.stringify(inp))
+  assert.equal(recordRetroDispatch(root, ID).next, 'dispatch')
   const bad = join(root, 'bad.json')
   writeFileSync(bad, JSON.stringify({ ...validReply(inp), decisions: [] }))
 
-  const first = recordRetroReply(root, DATE, { file: bad })
-  assert.deepEqual([first.name, first.valid, first.next, first.mode], [`retro ${DATE}`, false, 'retry', 'resume'])
+  const first = recordRetroReply(root, ID, { file: bad })
+  assert.deepEqual([first.name, first.valid, first.next, first.mode], [`retro ${ID}`, false, 'retry', 'resume'])
   assert.ok(first.errors.some((e) => /handoff-threshold is not answered/.test(e)))
-  assert.equal(recordRetroDispatch(root, DATE).next, 'retry')
-  const second = recordRetroReply(root, DATE, { file: join(root, 'missing.json'), resume: false })
+  assert.equal(recordRetroDispatch(root, ID).next, 'retry')
+  const second = recordRetroReply(root, ID, { file: join(root, 'missing.json'), resume: false })
   assert.deepEqual([second.valid, second.next, second.mode], [false, 'stop', null])
   assert.match(second.errors[0], /no reply file/)
   const good = join(root, 'good.json')
   writeFileSync(good, JSON.stringify(validReply(inp)))
-  assert.throws(() => recordRetroReply(root, DATE, { file: good }), DispatchError)
+  assert.throws(() => recordRetroReply(root, ID, { file: good }), DispatchError)
 })
 
 test('a valid reply proceeds and its computed result is recorded in the retro log', () => {
   const { root, input: inp } = fixture()
-  const date = '2026-10-20'
+  const date = '2026-10-20-window'
   mkdirSync(dirname(retroInputFile(root, date)), { recursive: true })
   writeFileSync(retroInputFile(root, date), JSON.stringify(inp))
   const good = join(root, 'good-2.json')
@@ -314,5 +315,5 @@ test('a retro reply with no input file is refused by the context, not checked ag
   const { root, input: inp } = fixture()
   const good = join(root, 'good-3.json')
   writeFileSync(good, JSON.stringify(validReply(inp)))
-  assert.throws(() => recordRetroReply(root, '2026-10-21', { file: good }), /input\.json does not exist/)
+  assert.throws(() => recordRetroReply(root, '2026-10-21-window', { file: good }), /input\.json does not exist/)
 })

@@ -1,7 +1,7 @@
 // The one retry mechanism of every dispatch: an events log per change,
 // `.superpowers/sdd/<change>/attempts.jsonl`, one JSON object per line, keyed by the dispatch's
 // fixed-form name (lib/dispatch.mjs parseName), never by a reply's content. A retrospective
-// serves no change and keeps its own, `.superpowers/retro/<date>/attempts.jsonl` (lib/retro.mjs).
+// serves no change and keeps its own, `.superpowers/retro/<id>/attempts.jsonl` (lib/retro.mjs).
 //
 //   { name, at, event: "dispatch" }                           the dispatch was sent (or resent)
 //   { name, at, event: "invalid", file, errors, mode, next }  its reply was refused

@@ -1,5 +1,5 @@
 // The retrospective's agent: what it reads, how its reply is checked and what is computed from
-// it. One agent at level `architecture` (`retro <date>`, lib/dispatch.mjs) reasons over a window
+// it. One agent at level `architecture` (`retro <id>`, lib/dispatch.mjs) reasons over a window
 // of archived changes and replies in JSON under schema/retro.schema.json; it assesses how the flow
 // worked and writes no debt. Its findings stay in the sidecar; the `upstream` role files them.
 //
@@ -51,7 +51,7 @@ export const ATTEMPTS_FILE = 'attempts.jsonl'
 export const NONE = 'none'
 export const STATS = ['n', 'mean', 'median', 'perTask', 'perKloc', 'iqr', 'cv']
 export const RE_DERIVATION_REASON = 'not counted: a metrics record carries no file reads per dispatch'
-export const retroAttemptsFile = (root, date) => join(retroDir(root, date), ATTEMPTS_FILE)
+export const retroAttemptsFile = (root, id) => join(retroDir(root, id), ATTEMPTS_FILE)
 
 const num = (v) => typeof v === 'number' && Number.isFinite(v)
 const round4 = (v) => Number(v.toFixed(4))
@@ -318,18 +318,18 @@ export function compute(reply, input) {
 
 // ---------------------------------------------------------------- attempts
 
-// One dispatch of the retro of `date`, in the retrospective's own log: { name, attempt, next }.
-export function recordRetroDispatch(root, date, options) {
-  return recordDispatchAt(retroAttemptsFile(root, date), dispatchName({ role: 'retro', date }), options)
+// One dispatch of the retro `id`, in the retrospective's own log: { name, attempt, next }.
+export function recordRetroDispatch(root, id, options) {
+  return recordDispatchAt(retroAttemptsFile(root, id), dispatchName({ role: 'retro', id }), options)
 }
 
 // The retro's reply file checked (lib/reply.mjs, the input read from the retrospective's
 // input.json) and recorded: { name, ok, valid, errors, next, mode, invalid, replyFile, log,
 // result? }. A refused reply gives `retry` once, then `stop`; a stopped retro's reply is not
 // checked, and recording it is refused. A missing reply file is a refused reply.
-export function recordRetroReply(root, date, { file, resume = true, now } = {}) {
-  const name = dispatchName({ role: 'retro', date })
-  const log = retroAttemptsFile(root, date)
+export function recordRetroReply(root, id, { file, resume = true, now } = {}) {
+  const name = dispatchName({ role: 'retro', id })
+  const log = retroAttemptsFile(root, id)
   const path = resolve(root, file)
   let errors = []
   let result

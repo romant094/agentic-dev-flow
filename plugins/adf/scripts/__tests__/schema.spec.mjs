@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildOrder, GATES, loadSchema, SCHEMA_DIR, validateSchema } from '../lib/schema.mjs'
 import { STEPS } from '../lib/archive.mjs'
+import { STEPS as RETRO_STEPS } from '../lib/retro-run.mjs'
 import { checkRecord } from '../lib/review-state.mjs'
 import { CHECKS, REPLACEABLE } from '../lib/verify.mjs'
 
@@ -101,6 +102,8 @@ test('no dispatch-facing text asks for a repository-wide git mutation', () => {
     'commands/review.md',
     'schema/instructions/archive.md',
     'commands/archive.md',
+    'schema/instructions/retro.md',
+    'commands/retro.md',
     ...readdirSync(join(root, 'agents')).map((f) => `agents/${f}`),
     ...readdirSync(join(root, 'schema', 'prompts')).map((f) => `schema/prompts/${f}`)
   ]
@@ -161,4 +164,40 @@ test('the archive block points at an instruction naming every archive.mjs step, 
   assert.match(command, /archive\.mjs" next --change/)
   assert.match(command, /archive\.mjs" report --change <name> --root <main>/)
   for (const step of STEPS) assert.match(command, new RegExp(`\`${step}\``), `the command names no ${step}`)
+})
+
+// The archive surfaces carry --no-ci and the report lines the script builds after the steps.
+test('the archive instruction states --no-ci and every report line; the command points at both', () => {
+  const instruction = readFileSync(join(SCHEMA_DIR, 'instructions', 'archive.md'), 'utf8')
+  assert.match(instruction, /\*\*`--no-ci`\.\*\*/)
+  assert.match(instruction, /`ci: false`/)
+  for (const line of ['The window line', 'The corpus lint', 'Removal candidates', 'Hurt signals']) assert.match(instruction, new RegExp(`\\*\\*${line}\\*\\*`), line)
+  assert.match(instruction, /`\/adf:retro --change <change>`/)
+  assert.match(instruction, /from the states, from git and from\s+the change's metrics record/)
+  assert.doesNotMatch(instruction, /from the states alone/)
+  const command = readFileSync(join(SCHEMA_DIR, '..', 'commands', 'archive.md'), 'utf8')
+  assert.match(command, /`--no-ci`/)
+  assert.match(command, /`\/adf:retro --change`/)
+})
+
+// The retrospective generates no artifact: its state is the step file, its output the files under
+// .adf/retro/. Its instruction, the schema's `retro` block, carries the rule of every step
+// retro.mjs runs, and the command drives them in the same order.
+test('the retro block points at an instruction naming every retro.mjs step, and the command runs each in order', () => {
+  const schema = loadSchema()
+  assert.equal(schema.blocks.retro, 'retro.md')
+  assert.deepEqual(schema.artifacts.filter((a) => a.id === 'retro'), [])
+  const instruction = readFileSync(join(SCHEMA_DIR, 'instructions', 'retro.md'), 'utf8')
+  for (const step of RETRO_STEPS) assert.match(instruction, new RegExp(`^\\s*\\d+\\. \\*\\*\`${step}\``, 'm'), `the instruction gives no rule for ${step}`)
+  assert.match(instruction, /writes no debt/)
+  assert.match(instruction, /`retro <id>`/)
+  const command = readFileSync(join(SCHEMA_DIR, '..', 'commands', 'retro.md'), 'utf8')
+  assert.match(command, /^effort: medium$/m)
+  assert.match(command, /schema\/instructions\/retro\.md/)
+  const order = RETRO_STEPS.map((step) => command.search(new RegExp(`retro\\.mjs["\`]? ${step}\\b`)))
+  assert.ok(order.every((at) => at >= 0), `the command runs no ${RETRO_STEPS[order.indexOf(-1)]}`)
+  assert.deepEqual([...order].sort((a, b) => a - b), order, 'the command runs the steps in the script order')
+  assert.match(command, /record --id <id> --root <wt>/)
+  assert.match(command, /remove --id <id> --root <main>/)
+  for (const mode of ['--change <name>', '--from <YYYY-MM-DD> --to <YYYY-MM-DD>']) assert.ok(command.includes(mode), mode)
 })

@@ -246,7 +246,13 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    ```
 
    A branch with no Conventional Commits type prefix takes `--title "<type>(<scope>):
-   <description>"` in full instead, agreed with the developer. The forge role's `finalize`
+   <description>"` in full instead, agreed with the developer.
+
+   **`--no-ci`.** When the developer wants the merge request pushed with no CI run, any
+   `archive.mjs` step takes `--no-ci`: it is kept in the archive state, so a resumed run keeps
+   it, and `mr` passes it to the forge's `finalize` as `ci: false`. It is a forge option, never
+   a marker in a title or a commit message. A forge that cannot push with no CI run refuses with
+   nothing sent, and the step fails with its reason. The forge role's `finalize`
    writes the body, takes the request out of draft and pushes; archive never merges a merge
    request. `refused` fails the step with the forge's reason: correct the body and run `mr`
    again. `degraded` keeps the role's fallback commands, archive goes on, and the report says
@@ -277,7 +283,21 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
     node "${CLAUDE_PLUGIN_ROOT}/scripts/archive.mjs" report --change <change> --root <main>
     ```
 
-    Show its `report` as it is. It is built last, from the states alone: `Archive complete`
-    only when every step is done or skipped; otherwise it names each step not finished and the
-    next one to run. When `verify.md` lists hand-edited capability prose, the report names those
-    capabilities and says the corpus lint is due: the lint reports and never gates.
+    Show its `report` as it is. It is built last, by script, from the states, from git and from
+    the change's metrics record: `Archive complete` only when every step is done or skipped, or
+    `metrics` is degraded; otherwise it names each step not finished and the next one to run.
+    Then, each line only when it has content:
+
+    - **The window line**: the changes archived since the last window retrospective on the
+      integration ref, with the age of its fetch. The ref is fetched once; a failed fetch or
+      read is reported, never fatal.
+    - **The corpus lint**, due when `verify.md` lists hand-edited capability prose, which the
+      line names, or when 3 or more changes were archived since the last window retrospective.
+      The lint reports and never gates.
+    - **Removal candidates**: the layers and checks quiet over the last archived changes,
+      information only.
+    - **Hurt signals** in this change's record: a stopped dispatch, the review stage stopped,
+      the review round cap reached, a context compaction. With any of them the report suggests
+      `/adf:retro --change <change>`; the retrospective is the developer's to run. With no record,
+      because `metrics` failed or its file cannot be read, the report says the signals were not
+      read.

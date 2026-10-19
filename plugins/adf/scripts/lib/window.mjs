@@ -1,7 +1,7 @@
 // The changes a retrospective covers and every number it reasons over, computed by script and
 // written nowhere: the retro CLI writes the sidecar this module returns.
 //
-// Retrospectives are committed in the host under `.adf/retro/<date>-<mode>.json` (the sidecar)
+// Retrospectives are committed in the host under `.adf/retro/<id>.json` (the sidecar)
 // and `.md` (the report). Everything here is read from the integration ref's tree and history,
 // never from the working tree, so a retrospective committed on a branch that has not merged
 // does not move the window. Fetching the ref is the caller's: `fetchRef` does it and says when.
@@ -36,7 +36,9 @@ export const WAITING_PATH = join(PLUGIN_ROOT, 'schema', 'retro-waiting.json')
 // The corpus lint is due when this many changes were archived since the last window retro.
 export const LINT_DUE = 3
 const ARCHIVE_ROOT = `${CHANGES_DIR}/${ARCHIVE}/`
-const SIDECAR = /^(\d{4}-\d{2}-\d{2})-(window|change|period)\.json$/
+// A window sidecar's file name, `<date>-window.json`: no other id has it, since retro.mjs start
+// refuses a change named `window`.
+const SIDECAR = /^(\d{4}-\d{2}-\d{2})-(window)\.json$/
 const DATED = /^(\d{4}-\d{2}-\d{2})-(.+)$/
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 const DAY_MS = 86400000

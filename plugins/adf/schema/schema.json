@@ -76,7 +76,8 @@
   "blocks": {
     "propose": "propose.md",
     "resolve": "resolve.md",
-    "archive": "archive.md"
+    "archive": "archive.md",
+    "retro": "retro.md"
   },
   "apply": {
     "requires": ["plan"],
