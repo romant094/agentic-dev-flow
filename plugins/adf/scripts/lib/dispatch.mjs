@@ -12,6 +12,7 @@
 //   verify c4 | verify c8   (schema/instructions/verify.md)
 //   ai-review r<k>, ai-review r<k> s<n>, ai-fix F<n> r<k>   (the review stage)
 //   spec-merge <capability>, ingest   (archive)
+//   retro <date>   (the retrospective, lib/retro.mjs; no change)
 //
 // Pure: every read of the tree is done by the caller and passed in.
 import { join } from 'node:path'
@@ -49,6 +50,12 @@ export const ARCHIVE_ROLES = {
   'spec-merge': { level: 'architecture', schema: 'spec-merge-resolution.schema.json' },
   ingest: { level: 'architecture', schema: 'ingest.schema.json' }
 }
+// The retrospective: one agent reasons over a window of archived changes and replies in JSON,
+// checked by lib/retro.mjs through the lib/reply.mjs role table. It serves no change: its state
+// lives in .superpowers/retro/<date>/ of the retrospective's worktree.
+export const RETRO_ROLES = {
+  retro: { level: 'architecture', schema: 'retro.schema.json' }
+}
 // The JSON Schema under schema/ of each apply role's reply: lib/reply.mjs ROLES checks the reply
 // under it, and the role's prompt names its path in the `reply` rule.
 export const APPLY_SCHEMAS = {
@@ -61,8 +68,8 @@ export const APPLY_SCHEMAS = {
   sweep: 'sweep.schema.json',
   investigate: 'investigate.schema.json'
 }
-const SCHEMA_ROLES = { ...Object.fromEntries(Object.entries(APPLY_SCHEMAS).map(([role, schema]) => [role, { schema }])), ...REVIEW_ROLES, ...ARCHIVE_ROLES }
-export const ROLES = [...new Set([...TASK_ROLES, ...Object.keys(TASKLESS), 'verify', ...Object.keys(REVIEW_ROLES), ...Object.keys(ARCHIVE_ROLES)])]
+const SCHEMA_ROLES = { ...Object.fromEntries(Object.entries(APPLY_SCHEMAS).map(([role, schema]) => [role, { schema }])), ...REVIEW_ROLES, ...ARCHIVE_ROLES, ...RETRO_ROLES }
+export const ROLES = [...new Set([...TASK_ROLES, ...Object.keys(TASKLESS), 'verify', ...Object.keys(REVIEW_ROLES), ...Object.keys(ARCHIVE_ROLES), ...Object.keys(RETRO_ROLES)])]
 // Roles whose question the orchestrator must write: the prompt refuses an empty slot, except for a
 // fix or re-review whose prompt renders the subject's open findings (lib/loop.mjs).
 export const QUESTION_REQUIRED = ['review', 're-review', 'fix', 'final-review', 'merge-review', 'investigate']
@@ -75,6 +82,7 @@ const TOPIC = /^[A-Za-z0-9]+$/
 const GROUP = /^[A-Z]$/
 const FINDING = /^F[1-9]\d*$/
 const CAPABILITY = /^[a-z0-9][a-z0-9-]*$/
+const DATE = /^\d{4}-\d{2}-\d{2}$/
 
 export class DispatchError extends Error {}
 const refuse = (message) => {
@@ -150,9 +158,17 @@ export function parseGraph(planText) {
 
 // ---------------------------------------------------------------- names
 
-export function dispatchName({ role, task, group, round, topic, check, slice, finding, capability }) {
+export function dispatchName({ role, task, group, round, topic, check, slice, finding, capability, date }) {
   if (!ROLES.includes(role)) refuse(`unknown role "${role}"; known: ${ROLES.join(', ')}`)
   if (capability !== undefined && role !== 'spec-merge') refuse('--capability belongs to spec-merge')
+  if (date !== undefined && role !== 'retro') refuse('--date belongs to retro')
+  if (role === 'retro') {
+    if (task !== undefined || group !== undefined || round !== undefined || topic !== undefined || check !== undefined || slice !== undefined || finding !== undefined) {
+      refuse('retro takes only --date')
+    }
+    if (!DATE.test(date ?? '')) refuse(`retro needs --date YYYY-MM-DD, not "${date ?? ''}"`)
+    return `retro ${date}`
+  }
   if (Object.hasOwn(ARCHIVE_ROLES, role)) {
     if (task !== undefined || group !== undefined || round !== undefined || topic !== undefined || check !== undefined || slice !== undefined || finding !== undefined) {
       refuse(`${role} takes ${role === 'spec-merge' ? 'only --capability' : 'no task, group, round or other option'}`)
@@ -216,6 +232,8 @@ export function parseName(name) {
   m = /^spec-merge ([a-z0-9][a-z0-9-]*)$/.exec(text)
   if (m) return { role: 'spec-merge', capability: m[1] }
   if (text === 'ingest') return { role: 'ingest' }
+  m = /^retro (\d{4}-\d{2}-\d{2})$/.exec(text)
+  if (m) return { role: 'retro', date: m[1] }
   m = /^investigate ([A-Za-z0-9]+)$/.exec(text)
   if (m) return { role: 'investigate', topic: m[1] }
   m = /^(final-review|sweep)$/.exec(text)
@@ -230,22 +248,37 @@ export const verifyDirOf = (root, change) => join(sddDir(root, change), 'verify'
 // The reviewer's input file, which `review.mjs input --out` writes before the dispatch.
 export const reviewInputFile = (root, change, round, slice) => join(sddDir(root, change), 'review', `input-r${round}${slice === undefined ? '' : `-s${slice}`}.md`)
 
+// A retrospective's state: its input file, its replies and its attempts log.
+export const retroDir = (root, date) => join(root, '.superpowers', 'retro', date)
+export const retroInputFile = (root, date) => join(retroDir(root, date), 'input.json')
+
 // `<root>/.superpowers/sdd/<change>/replies/<name, spaces as hyphens>.json`, or `-2`, `-3`
-// before `.json` when the name is taken.
+// before `.json` when the name is taken. A retro's replies are under its own directory.
 export function replyFile(root, change, name, exists) {
-  const base = join(sddDir(root, change), 'replies', name.replace(/ /g, '-'))
+  const date = parseName(name)?.date
+  const base = join(date === undefined ? sddDir(root, change) : retroDir(root, date), 'replies', name.replace(/ /g, '-'))
   if (!exists(`${base}.json`)) return `${base}.json`
   for (let k = 2; ; k++) if (!exists(`${base}-${k}.json`)) return `${base}-${k}.json`
 }
 
 // ---------------------------------------------------------------- the plan of one dispatch
 
-// inputs: { change, role, task?, group?, round?, topic?, check?, slice?, finding?, capability? }
+// inputs: { change, role, task?, group?, round?, topic?, check?, slice?, finding?, capability?,
+//           date? }   a retro takes only `date`, no change
 // tree:   { root, main, planText (null when absent), exists(path) }
 export function planDispatch(inputs, { root, main, planText, exists }) {
   const name = dispatchName(inputs)
   const { change, role, task, group, round, check } = inputs
   const out = { name, role }
+
+  if (role === 'retro') {
+    out.agent = `adf:${RETRO_ROLES.retro.level}`
+    out.worktree = root
+    out.date = inputs.date
+    out.inputFile = retroInputFile(root, inputs.date)
+    out.replyFile = replyFile(root, undefined, name, exists)
+    return out
+  }
 
   if (role === 'verify') {
     const { section, level } = VERIFY_CHECKS[check]
@@ -351,6 +384,7 @@ export function ruleSkeletons({ role, check, round }, { testFirst = false, dispo
   if (role === 'ai-fix') return ['ai-fix', 'git']
   if (role === 'spec-merge') return ['spec-merge', 'read-only']
   if (role === 'ingest') return ['ingest']
+  if (role === 'retro') return ['retro', 'read-only', 'reply']
   const parts = []
   if (role === 'impl' || role === 'fix') parts.push('implementer')
   if (['review', 're-review', 'final-review', 'merge-review'].includes(role)) parts.push('reviewer')
@@ -372,6 +406,8 @@ export function renderPrompt({ plan, change, skeletons, fields, question, tokens
     name: plan.name,
     level: plan.agent.replace(/^adf:/, ''),
     change,
+    // What the dispatch serves, in the frame's first sentence: a change, or a retrospective.
+    subject: plan.role === 'retro' ? `the retrospective of ${plan.date}` : `the change \`${change}\``,
     role: plan.role,
     replyFile: plan.replyFile ?? '',
     inputFile: plan.inputFile ?? '',

@@ -116,7 +116,7 @@ export function fetchRef(root, { ref = integrationRef(root), now = () => new Dat
 }
 
 // Files of the ref's tree in one `git cat-file --batch`: a map spec -> text, null when absent.
-function readBlobs(root, ref, paths) {
+export function readBlobs(root, ref, paths) {
   const out = new Map()
   if (paths.length === 0) return out
   const buf = gitIn(root)(['cat-file', '--batch'], { input: Buffer.from(`${paths.map((p) => `${ref}:${p}`).join('\n')}\n`) })

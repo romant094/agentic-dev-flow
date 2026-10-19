@@ -102,8 +102,8 @@ const implReply = (over = {}) => ({ role: 'impl', outcome: 'done', commits: [], 
 
 // ---------------------------------------------------------------- the table
 
-test('the table holds the apply roles, the v1 spec-merge role gone, each on a schema of its own', () => {
-  assert.deepEqual(Object.keys(ROLES), ['impl', 'fix', 'review', 'final-review', 'merge-review', 're-review', 'sweep', 'investigate'])
+test('the table holds the apply roles and the retro, the v1 spec-merge role gone, each on a schema of its own', () => {
+  assert.deepEqual(Object.keys(ROLES), ['impl', 'fix', 'review', 'final-review', 'merge-review', 're-review', 'sweep', 'investigate', 'retro'])
   for (const { schema, check: c, compute } of Object.values(ROLES)) assert.ok(schema.endsWith('.schema.json') && typeof c === 'function' && typeof compute === 'function')
 })
 

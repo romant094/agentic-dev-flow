@@ -711,6 +711,48 @@ test('the ingest prompt reads its input file and runs on the archived change; wi
   assert.equal(run(['attempt', '--change', CHANGE, '--name', 'ingest', '--root', root], { main: MAIN }).next, 'stop')
 })
 
+// ---------------------------------------------------------------- the retrospective
+
+test('the retro is named by its date, at architecture, with its state under .superpowers/retro/<date>/', () => {
+  assert.equal(dispatchName({ role: 'retro', date: '2026-10-19' }), 'retro 2026-10-19')
+  assert.deepEqual(parseName('retro 2026-10-19'), { role: 'retro', date: '2026-10-19' })
+  for (const name of ['retro', 'retro 2026-10', 'retro 2026-10-19 r1']) assert.equal(parseName(name), null, name)
+  const bad = [
+    [{ role: 'retro' }, /needs --date YYYY-MM-DD/],
+    [{ role: 'retro', date: '19.10.2026' }, /needs --date YYYY-MM-DD/],
+    [{ role: 'retro', date: '2026-10-19', round: 1 }, /takes only --date/],
+    [{ role: 'ingest', date: '2026-10-19' }, /--date belongs to retro/]
+  ]
+  for (const [inputs, message] of bad) assert.throws(() => dispatchName(inputs), message, JSON.stringify(inputs))
+  const root = '/host'
+  const dir = join(root, '.superpowers', 'retro', '2026-10-19')
+  const taken = new Set([join(dir, 'replies', 'retro-2026-10-19.json')])
+  const plan = planDispatch({ role: 'retro', date: '2026-10-19' }, { root, main: root, planText: null, exists: (p) => taken.has(p) })
+  assert.deepEqual(plan, {
+    name: 'retro 2026-10-19',
+    role: 'retro',
+    agent: 'adf:architecture',
+    worktree: root,
+    date: '2026-10-19',
+    inputFile: join(dir, 'input.json'),
+    replyFile: join(dir, 'replies', 'retro-2026-10-19-2.json')
+  })
+})
+
+test('the retro prompt serves the retrospective, reads its input file, is read-only and names its schema', () => {
+  const skeletons = Object.fromEntries(readdirSync(PROMPTS_DIR).filter((f) => f.endsWith('.md')).map((f) => [f.slice(0, -3), readFileSync(join(PROMPTS_DIR, f), 'utf8')]))
+  const plan = planDispatch({ role: 'retro', date: '2026-10-19' }, { root: '/host', main: '/host', planText: null, exists: () => false })
+  const prompt = renderPrompt({ plan, skeletons, fields: [['Dispatch name', plan.name]], tokens: { '${CLAUDE_PLUGIN_ROOT}': PLUGIN_ROOT } })
+  assert.match(prompt, /^You are dispatched as `retro 2026-10-19`, at the architecture capability level, for the retrospective of 2026-10-19\./)
+  assert.ok(prompt.includes(`Read the input file, \`${plan.inputFile}\`.`))
+  assert.ok(prompt.includes(`JSON Schema, \`${join(PLUGIN_ROOT, 'schema', 'retro.schema.json')}\`.`))
+  assert.ok(prompt.includes(plan.replyFile))
+  assert.match(prompt, /This dispatch is read-only/)
+  assert.match(prompt, /None beyond the rules below\./, 'the question is optional')
+  for (const cls of ['late-caught', 're-derivation', 'premature-done']) assert.ok(prompt.includes(`\`${cls}\``), cls)
+  assert.doesNotMatch(prompt, /\{\{\w+\}\}/)
+})
+
 // ---------------------------------------------------------------- loop state by script
 
 const LOOP_FINDING = { severity: 'important', kind: 'quality', category: 'quality', file: 'src/t1.mjs', line: 3, title: 'Unchecked error', body: 'The error is dropped.\nIt reaches the caller.' }

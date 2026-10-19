@@ -1,6 +1,7 @@
 // The one retry mechanism of every dispatch: an events log per change,
 // `.superpowers/sdd/<change>/attempts.jsonl`, one JSON object per line, keyed by the dispatch's
-// fixed-form name (lib/dispatch.mjs parseName), never by a reply's content.
+// fixed-form name (lib/dispatch.mjs parseName), never by a reply's content. A retrospective
+// serves no change and keeps its own, `.superpowers/retro/<date>/attempts.jsonl` (lib/retro.mjs).
 //
 //   { name, at, event: "dispatch" }                           the dispatch was sent (or resent)
 //   { name, at, event: "invalid", file, errors, mode, next }  its reply was refused
@@ -56,8 +57,7 @@ export function standing(text, name, { since = null } = {}) {
 
 export const nextForInvalid = (invalid) => (invalid === 0 ? 'dispatch' : invalid < MAX_ATTEMPTS ? 'retry' : 'stop')
 
-function append(root, change, event) {
-  const file = attemptsFile(root, change)
+function append(file, event) {
   mkdirSync(dirname(file), { recursive: true })
   appendFileSync(file, `${JSON.stringify(event)}\n`)
   return file
@@ -69,9 +69,14 @@ const checkName = (name) => {
 
 // `dispatch.mjs attempt`: records one dispatch of `name`. `attempt` counts the dispatches of the
 // name, legacy lines included: 1 dispatches, 2 retries, 3 stops.
-export function recordDispatch(root, change, name, { now = new Date().toISOString() } = {}) {
+export function recordDispatch(root, change, name, options) {
+  return recordDispatchAt(attemptsFile(root, change), name, options)
+}
+
+// The same, into the log `file`: a dispatch that serves no change keeps its own (lib/retro.mjs).
+export function recordDispatchAt(file, name, { now = new Date().toISOString() } = {}) {
   checkName(name)
-  const file = append(root, change, { name, at: now, event: 'dispatch' })
+  append(file, { name, at: now, event: 'dispatch' })
   const attempt = countAttempts(readLog(file), name)
   return { name, attempt, next: nextFor(attempt), file }
 }
@@ -82,17 +87,22 @@ export function recordDispatch(root, change, name, { now = new Date().toISOStrin
 // `fresh` on a retry (`resume: false` when the harness cannot resume the agent), null otherwise.
 // Refused once the name has stopped: nothing a stopped dispatch replies is recorded. `since` as
 // `standing` takes it.
-export function recordReply(root, change, { name, file, errors = [], result, resume = true, since = null, now = new Date().toISOString() }) {
+export function recordReply(root, change, reply) {
+  return recordReplyAt(attemptsFile(root, change), reply)
+}
+
+// The same, into the log `logFile`.
+export function recordReplyAt(logFile, { name, file, errors = [], result, resume = true, since = null, now = new Date().toISOString() }) {
   checkName(name)
-  const before = standing(readLog(attemptsFile(root, change)), name, { since })
+  const before = standing(readLog(logFile), name, { since })
   if (before.next === 'stop') throw new DispatchError(`${name} stopped after ${before.invalid} invalid replies; nothing it replies is recorded`)
   if (errors.length === 0) {
-    const log = append(root, change, { name, at: now, event: 'valid', file, ...(result === undefined ? {} : { result }) })
+    const log = append(logFile, { name, at: now, event: 'valid', file, ...(result === undefined ? {} : { result }) })
     return { ok: true, valid: true, errors: [], next: 'proceed', mode: null, invalid: before.invalid, replyFile: file, log }
   }
   const invalid = before.invalid + 1
   const next = nextForInvalid(invalid)
   const mode = next === 'retry' ? (resume ? 'resume' : 'fresh') : null
-  const log = append(root, change, { name, at: now, event: 'invalid', file, errors, mode, next })
+  const log = append(logFile, { name, at: now, event: 'invalid', file, errors, mode, next })
   return { ok: false, valid: false, errors, next, mode, invalid, replyFile: file, log }
 }

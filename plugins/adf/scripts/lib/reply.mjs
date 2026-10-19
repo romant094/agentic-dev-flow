@@ -11,15 +11,19 @@
 //   re-review                     re-review.schema.json    the open set answered -> open set
 //   sweep                         sweep.schema.json        dispositions -> CLEAN | FINDINGS
 //   investigate                   investigate.schema.json  the schema only; nothing computed
+//   retro                         retro.schema.json        keys, waiting items, candidate,
+//                                                          plugins -> keys resolved, ordered
 //
-// The schema files are lib/dispatch.mjs APPLY_SCHEMAS, which also names each in the role's prompt.
+// The schema files are lib/dispatch.mjs APPLY_SCHEMAS (RETRO_ROLES for retro), which also names
+// each in the role's prompt. retro serves no change: lib/retro.mjs checks and records it.
 //
 // The context (`replyContext`) is read once the schema accepts the reply:
-//   { root, change, name, parts, planText?, worktree?, scope?, history?, rulings?, sweep? }
+//   { root, change, name, parts, planText?, worktree?, scope?, history?, rulings?, sweep?, input? }
 // root is the change worktree; worktree the dispatch's own (a group worktree for a task of a
 // parallel group); scope the plan tasks whose **Files:** bound the dispatch; history the computed
 // results of the subject's accepted reviews in attempts.jsonl; rulings the ledger's last ruling
-// of each id on the subject (lib/loop.mjs); sweep lib/sweep.mjs sweepInputs.
+// of each id on the subject (lib/loop.mjs); sweep lib/sweep.mjs sweepInputs; input a retro's
+// input.json (lib/retro.mjs input), whose change is undefined.
 //
 // The computed results:
 //
@@ -64,12 +68,13 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
 import { fileURLToPath } from 'node:url'
 import { attemptsFile } from './attempts.mjs'
 import { globToRegExp } from './changes.mjs'
-import { APPLY_SCHEMAS, parseGraph, parseName, planDispatch, sddDir } from './dispatch.mjs'
+import { APPLY_SCHEMAS, parseGraph, parseName, planDispatch, RETRO_ROLES, retroInputFile, sddDir } from './dispatch.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { readRecords } from './ledger.mjs'
 import { loopState, REVIEW_ROLES, subjectHistory, subjectOf, subjectRulings } from './loop.mjs'
 import { parsePlan, rangeCommits, taskMatchers } from './plan.mjs'
 import { readRegistry } from './registry.mjs'
+import { check as checkRetro, compute as computeRetro } from './retro.mjs'
 import { readTestRecord, recordName, TESTS_DIR } from './suite.mjs'
 import { dupFilter, sweepInputs } from './sweep.mjs'
 import { gitIn } from './workspace.mjs'
@@ -305,7 +310,8 @@ export const ROLES = {
   'merge-review': review,
   're-review': reReview,
   sweep,
-  investigate: { schema: APPLY_SCHEMAS.investigate, check: () => [], compute: () => undefined }
+  investigate: { schema: APPLY_SCHEMAS.investigate, check: () => [], compute: () => undefined },
+  retro: { schema: RETRO_ROLES.retro.schema, check: (reply, ctx) => checkRetro(reply, ctx.input), compute: (reply, ctx) => computeRetro(reply, ctx.input) }
 }
 
 export const schemaOf = (role) => readSchema(join(SCHEMA_DIR, ROLES[role].schema))
@@ -335,6 +341,11 @@ export function replyContext(root, change, name, { main = root } = {}) {
       ctx.rulings = subjectRulings(readRecords(root, change), subjectOf(parts))
     }
     if (parts.role === 'sweep') ctx.sweep = sweepInputs(root, change)
+    if (parts.role === 'retro') {
+      const text = readOr(retroInputFile(root, parts.date))
+      if (text === null) throw new Error(`${retroInputFile(root, parts.date)} does not exist: write the retrospective's input first`)
+      ctx.input = JSON.parse(text)
+    }
   } catch (error) {
     throw new ReplyError(error.message)
   }
