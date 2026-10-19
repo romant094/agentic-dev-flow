@@ -441,3 +441,128 @@ export function runSuite(rootArg, { change, baseCheck: withBaseArg = false, reco
   else if (section === REVIEW_SECTION) out.section = writeReviewSection(root, change, result)
   return out
 }
+
+// ---------------------------------------------------------------- covering tests
+
+// `runCovering` runs the tests that cover one dispatch's work, the command the implementer names,
+// in that dispatch's worktree, through runOnce. It writes two files under
+// `<root>/.superpowers/sdd/<change>/tests/`: `<name>-<stamp>.txt`, the raw output, and
+// `<name>-<stamp>.json`, the test-run record a reply names:
+//   { command, exit, counts: { pass, fail, skipped, total } | null, failing, outputFile, worktree,
+//     sha, timedOut?, error? }
+// `exit` is null when the run did not finish (a timeout, a spawn error). `counts` is what
+// countsOf parses from the runner's own summary, or null when the output holds none: never a
+// guess. A timed-out run has no counts, since a partial summary would read as a whole one.
+// `outputFile` is relative to <root>; `sha` is the worktree's HEAD before the run.
+// A run that happened is a record whatever its result; the reader decides what a failure means.
+export const TESTS_DIR = 'tests'
+
+// A dispatch name as a file name: spaces as hyphens, as dispatch.mjs names its reply files.
+export function recordName(name) {
+  const out = String(name ?? '').trim().replace(/ /g, '-')
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(out) || out.includes('..')) throw new Error(`the name "${name}" is not usable in a file name (letters, digits, ".", "_", "-" and spaces only)`)
+  return out
+}
+
+const ANSI = /\u001b\[[0-9;?]*[A-Za-z]/g
+const num = (s) => Number(s)
+
+// The last test summary of the output, as { pass, fail, skipped, total }, or null:
+// - node:test, TAP or spec reporter: `# tests 5`, `# pass 4`, `# fail 1`, `# skipped 0`,
+//   `# todo 0`, `# cancelled 0` (or `ℹ` for `#`); cancelled counts as fail, todo as skipped
+// - Jest: `Tests:       1 failed, 1 skipped, 4 passed, 6 total`
+// - Vitest: `Tests  1 failed | 4 passed | 1 skipped (6)`
+// The file lines (`Test Suites:`, `Test Files`) are not test counts and are ignored.
+export function countsOf(text) {
+  const lines = String(text ?? '').replace(ANSI, '').split(/\r?\n/)
+  let found = null
+  let node = null
+  const flushNode = () => {
+    if (node && node.tests !== undefined && node.pass !== undefined) {
+      found = { pass: node.pass, fail: (node.fail ?? 0) + (node.cancelled ?? 0), skipped: (node.skipped ?? 0) + (node.todo ?? 0), total: node.tests }
+    }
+    node = null
+  }
+  for (const raw of lines) {
+    const line = raw.trim()
+    const n = /^(?:#|ℹ)\s+(tests|suites|pass|fail|cancelled|skipped|todo|duration_ms)\s+(\d+(?:\.\d+)?)\s*$/.exec(line)
+    if (n) {
+      if (n[1] === 'tests' && node?.tests !== undefined) flushNode()
+      node ??= {}
+      node[n[1]] = num(n[2])
+      continue
+    }
+    flushNode()
+    const jest = /^Tests:\s+(.*\d+ total)\s*$/.exec(line)
+    if (jest) {
+      const part = (word) => num(new RegExp(`(\\d+) ${word}\\b`).exec(jest[1])?.[1] ?? 0)
+      found = { pass: part('passed'), fail: part('failed'), skipped: part('skipped') + part('todo'), total: part('total') }
+      continue
+    }
+    const vitest = /^Tests\s+(.*)\((\d+)\)\s*$/.exec(line)
+    if (vitest && /\d+ (?:passed|failed|skipped|todo)\b/.test(vitest[1])) {
+      const part = (word) => num(new RegExp(`(\\d+) ${word}\\b`).exec(vitest[1])?.[1] ?? 0)
+      found = { pass: part('passed'), fail: part('failed'), skipped: part('skipped') + part('todo'), total: num(vitest[2]) }
+    }
+  }
+  flushNode()
+  return found
+}
+
+export function runCovering(rootArg, { change, name, command, worktree, timeoutMinutes = DEFAULT_TIMEOUT_MINUTES, now = new Date().toISOString() }) {
+  const root = resolve(rootArg)
+  if (!change) throw new Error('no change name')
+  const base = recordName(name)
+  const cmd = String(command ?? '').trim()
+  if (!cmd) throw new Error('no command to run')
+  if (!worktree) throw new Error('no worktree')
+  if (!(typeof timeoutMinutes === 'number' && timeoutMinutes > 0 && Number.isFinite(timeoutMinutes))) throw new Error('the timeout must be a positive number of minutes')
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
+  const dir = resolve(worktree)
+  if (!existsSync(dir)) throw new Error(`the worktree ${dir} does not exist`)
+  const sha = attempt(() => gitIn(dir)('rev-parse', 'HEAD'))
+  if (!sha) throw new Error(`${dir} is not a git worktree with a commit`)
+  const stem = join(root, '.superpowers', 'sdd', change, TESTS_DIR, `${base}-${stampOf(now)}`)
+  const outFile = `${stem}.txt`
+  const ran = runOnce(cmd, dir, outFile, timeoutMinutes)
+  const record = {
+    command: cmd,
+    exit: ran.exit,
+    counts: ran.timedOut ? null : countsOf(ran.text),
+    failing: failingIn(ran.text),
+    outputFile: rel(root, outFile),
+    worktree: dir,
+    sha,
+    ...(ran.timedOut ? { timedOut: true } : {}),
+    ...(ran.error ? { error: ran.error } : {})
+  }
+  const file = `${stem}.json`
+  writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
+  return { file: rel(root, file), ...record }
+}
+
+// A test-run record runCovering wrote, checked for its shape; throws naming the file and the
+// first field that is wrong. The output file is not opened: it is relative to the root.
+export function readTestRecord(file) {
+  let record
+  try {
+    record = JSON.parse(readFileSync(file, 'utf8'))
+  } catch (error) {
+    throw new Error(`${file}: not a test-run record (${error.message})`)
+  }
+  const bad = (field) => {
+    throw new Error(`${file}: not a test-run record (${field})`)
+  }
+  if (!record || typeof record !== 'object' || Array.isArray(record)) bad('not an object')
+  if (typeof record.command !== 'string' || !record.command) bad('command')
+  if (!(record.exit === null || Number.isInteger(record.exit))) bad('exit')
+  if (record.counts !== null) {
+    const c = record.counts
+    if (!c || typeof c !== 'object' || !['pass', 'fail', 'skipped', 'total'].every((k) => Number.isInteger(c[k]) && c[k] >= 0)) bad('counts')
+  }
+  if (!Array.isArray(record.failing) || !record.failing.every((f) => typeof f === 'string')) bad('failing')
+  if (typeof record.outputFile !== 'string' || !record.outputFile) bad('outputFile')
+  if (typeof record.worktree !== 'string' || !record.worktree) bad('worktree')
+  if (typeof record.sha !== 'string' || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(record.sha)) bad('sha')
+  return record
+}

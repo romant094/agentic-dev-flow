@@ -25,17 +25,24 @@
 //       --base-check were given), which review.mjs assemble requires when a fix landed
 //       --timeout stops each run after that many minutes (default 30, DEFAULT_TIMEOUT_MINUTES);
 //       a stopped run is cannotRun with timedOut: true, a failure and never a pass
+//   suite.mjs covering --change <name> --name <dispatch name> --command "<cmd>" --worktree <dir>
+//                      [--root <change worktree>] [--timeout <minutes>]
+//       run the tests covering one dispatch's work in <dir>, through runOnce, its output to
+//       <root>/.superpowers/sdd/<change>/tests/<name>-<stamp>.txt and the test-run record to
+//       the .json beside it: { ok: true, file, command, exit, counts | null, failing, outputFile,
+//       worktree, sha, timedOut?, error? }. Exit 0 whenever the run happened, failing tests and
+//       a timeout included: the record says so. Exit 1 on a refusal (no change, no worktree)
 //   With no command in the guide, run reports `status: "not-run"` with the reason; never a pass.
 import { commitPaths } from './lib/commit.mjs'
 import { isMain } from './lib/main.mjs'
-import { DEFAULT_TIMEOUT_MINUTES, readCommand, recordMessage, runSuite, SECTIONS, SET_MESSAGE, writeCommand } from './lib/suite.mjs'
+import { DEFAULT_TIMEOUT_MINUTES, readCommand, recordMessage, recordName, runCovering, runSuite, SECTIONS, SET_MESSAGE, writeCommand } from './lib/suite.mjs'
 
 export const USAGE =
-  'usage: suite.mjs command [--root <dir>] | suite.mjs set --command "<cmd>" [--root <dir>] [--commit] | suite.mjs run --change <name> [--root <dir>] [--base-check] [--record [--commit]] [--section test-record|review] [--timeout <minutes>]'
+  'usage: suite.mjs command [--root <dir>] | suite.mjs set --command "<cmd>" [--root <dir>] [--commit] | suite.mjs run --change <name> [--root <dir>] [--base-check] [--record [--commit]] [--section test-record|review] [--timeout <minutes>] | suite.mjs covering --change <name> --name <dispatch name> --command "<cmd>" --worktree <dir> [--root <dir>] [--timeout <minutes>]'
 
 export class UsageError extends Error {}
 
-const VALUED = ['--change', '--root', '--command', '--section', '--timeout']
+const VALUED = ['--change', '--root', '--command', '--section', '--timeout', '--name', '--worktree']
 const FLAGS = ['--base-check', '--record', '--commit']
 
 function parse(argv) {
@@ -59,6 +66,12 @@ function parse(argv) {
     i++
   }
   return { values, rest }
+}
+
+function timeoutOf(values) {
+  const minutes = values.timeout === undefined ? DEFAULT_TIMEOUT_MINUTES : Number(values.timeout)
+  if (!(minutes > 0 && Number.isFinite(minutes))) throw new UsageError('--timeout must be a positive number of minutes')
+  return minutes
 }
 
 export function run(argv, { cwd = process.cwd() } = {}) {
@@ -86,11 +99,21 @@ export function run(argv, { cwd = process.cwd() } = {}) {
       if (!values.change) throw new UsageError('run needs --change')
       if (values.commit && !values.record) throw new UsageError('--commit commits the record; pass --record')
       if (values.section !== undefined && !SECTIONS.includes(values.section)) throw new UsageError(`--section must be one of ${SECTIONS.join(', ')}`)
-      const timeoutMinutes = values.timeout === undefined ? DEFAULT_TIMEOUT_MINUTES : Number(values.timeout)
-      if (!(timeoutMinutes > 0 && Number.isFinite(timeoutMinutes))) throw new UsageError('--timeout must be a positive number of minutes')
+      const timeoutMinutes = timeoutOf(values)
       const out = runSuite(root, { change: values.change, baseCheck: Boolean(values['base-check']), record: Boolean(values.record), section: values.section ?? null, timeoutMinutes })
       if (!values.commit) return out
       return { ...out, commit: commitPaths(root, { only: [out.record], message: recordMessage(values.change) }).commit }
+    }
+    case 'covering': {
+      only(['change', 'name', 'command', 'worktree', 'timeout'])
+      for (const key of ['change', 'name', 'command', 'worktree']) if (!values[key]) throw new UsageError(`covering needs --${key}`)
+      try {
+        recordName(values.name)
+      } catch (error) {
+        throw new UsageError(error.message)
+      }
+      const timeoutMinutes = timeoutOf(values)
+      return { ok: true, ...runCovering(root, { change: values.change, name: values.name, command: values.command, worktree: values.worktree, timeoutMinutes }) }
     }
     default:
       throw new UsageError(USAGE)

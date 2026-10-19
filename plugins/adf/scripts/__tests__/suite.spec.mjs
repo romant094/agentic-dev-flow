@@ -11,7 +11,7 @@ import { setBranches } from '../lib/branches.mjs'
 import { baseCheckPath } from '../lib/groups.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { initRegistry } from '../lib/registry.mjs'
-import { commandIn, countLines, failingIn, readCommand, runSuite, writeCommand } from '../lib/suite.mjs'
+import { commandIn, countLines, countsOf, failingIn, readCommand, readTestRecord, runCovering, runSuite, writeCommand } from '../lib/suite.mjs'
 import { computeVerdict, runChecks, verifyDir } from '../lib/verify.mjs'
 import { create } from '../lib/workspace.mjs'
 
@@ -311,4 +311,94 @@ test('--commit commits the test record, or the planning guide, alone with the fi
   assert.equal(git(root, 'log', '-1', '--format=%s'), 'docs(openspec): record the whole-suite command')
   assert.equal(git(root, 'show', '--name-only', '--format=', 'HEAD'), 'openspec/planning.md')
   assert.equal(git(root, 'status', '--porcelain', '--', 'stray.txt'), '?? stray.txt')
+})
+
+// ---------------------------------------------------------------- covering tests
+
+// What each runner prints at its end, as a fake runner replays it.
+const RUNNER_OUTPUT = {
+  'node-pass': 'TAP version 13\n# Subtest: adds\nok 1 - adds\n# Subtest: skips\nok 2 - skips # SKIP\n1..2\n# tests 2\n# suites 0\n# pass 1\n# fail 0\n# cancelled 0\n# skipped 1\n# todo 0\n# duration_ms 12.5\n',
+  'node-fail': 'TAP version 13\n# Subtest: adds\nnot ok 1 - adds\n  ---\n  error: boom\n  ...\nok 2 - subtracts\n1..2\n# tests 2\n# suites 0\n# pass 1\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 9\n',
+  'node-spec': '✔ adds (1.2ms)\n✖ subtracts (0.4ms)\nℹ tests 3\nℹ suites 0\nℹ pass 1\nℹ fail 1\nℹ cancelled 0\nℹ skipped 0\nℹ todo 1\nℹ duration_ms 30\n',
+  jest: 'FAIL src/a.test.js\n  ✕ adds (3 ms)\nPASS src/b.test.js\n\nTest Suites: 1 failed, 1 passed, 2 total\nTests:       1 failed, 1 skipped, 4 passed, 6 total\nSnapshots:   0 total\nTime:        1.2 s\n',
+  vitest: ' \u001b[31m×\u001b[39m adds 3ms\n\n\u001b[2m Test Files \u001b[22m \u001b[1m\u001b[31m1 failed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[1m\u001b[32m2 passed\u001b[39m\u001b[22m (3)\n\u001b[2m      Tests \u001b[22m \u001b[1m\u001b[31m1 failed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m\u001b[1m\u001b[32m4 passed\u001b[39m\u001b[22m\u001b[2m | \u001b[22m1 skipped (6)\n',
+  none: 'compiling...\nall good, 12 files checked\n'
+}
+
+const FAKE_RUNNER = `const outputs = ${JSON.stringify(RUNNER_OUTPUT)}
+const mode = process.argv[2]
+process.stdout.write(outputs[mode])
+process.exit(mode === 'node-pass' || mode === 'none' ? 0 : 1)
+`
+
+function coveringHost() {
+  const h = host()
+  h.head = commit(h.root, { 'runner.cjs': FAKE_RUNNER }, 'runner')
+  return h
+}
+
+test('counts come from the node:test, Jest and Vitest summaries, and none is null, not a guess', () => {
+  assert.deepEqual(countsOf(RUNNER_OUTPUT['node-pass']), { pass: 1, fail: 0, skipped: 1, total: 2 })
+  assert.deepEqual(countsOf(RUNNER_OUTPUT['node-fail']), { pass: 1, fail: 1, skipped: 0, total: 2 })
+  assert.deepEqual(countsOf(RUNNER_OUTPUT['node-spec']), { pass: 1, fail: 1, skipped: 1, total: 3 })
+  assert.deepEqual(countsOf(RUNNER_OUTPUT.jest), { pass: 4, fail: 1, skipped: 1, total: 6 })
+  assert.deepEqual(countsOf(RUNNER_OUTPUT.vitest), { pass: 4, fail: 1, skipped: 1, total: 6 })
+  assert.equal(countsOf(RUNNER_OUTPUT.none), null)
+  assert.equal(countsOf('# tests 4\n'), null)
+  // Two runs in one output: the last summary stands.
+  assert.deepEqual(countsOf(RUNNER_OUTPUT['node-fail'] + RUNNER_OUTPUT['node-pass']), { pass: 1, fail: 0, skipped: 1, total: 2 })
+})
+
+test('a passing covering run writes the raw output and a record readTestRecord accepts', () => {
+  const { root, head } = coveringHost()
+  const out = cli(['covering', '--change', CHANGE, '--name', 'Task 1 impl', '--command', 'node runner.cjs node-pass', '--worktree', root, '--root', root])
+  assert.equal(out.code, 0)
+  assert.match(out.json.file, new RegExp(`^\\.superpowers/sdd/${CHANGE}/tests/Task-1-impl-.+\\.json$`))
+  assert.equal(out.json.outputFile, out.json.file.replace(/\.json$/, '.txt'))
+  const record = readTestRecord(join(root, out.json.file))
+  assert.deepEqual(record, { command: 'node runner.cjs node-pass', exit: 0, counts: { pass: 1, fail: 0, skipped: 1, total: 2 }, failing: [], outputFile: out.json.outputFile, worktree: root, sha: head })
+  assert.equal(readFileSync(join(root, record.outputFile), 'utf8'), RUNNER_OUTPUT['node-pass'])
+})
+
+test('a failing covering run is a record that says so, exit 0', () => {
+  const { root } = coveringHost()
+  const out = cli(['covering', '--change', CHANGE, '--name', 'task-2-fix', '--command', 'node runner.cjs node-fail', '--worktree', root, '--root', root])
+  assert.equal(out.code, 0)
+  assert.deepEqual([out.json.ok, out.json.exit, out.json.counts, out.json.failing], [true, 1, { pass: 1, fail: 1, skipped: 0, total: 2 }, ['adds']])
+  const jest = runCovering(root, { change: CHANGE, name: 'jest', command: 'node runner.cjs jest', worktree: root })
+  assert.deepEqual([jest.exit, jest.counts, jest.failing], [1, { pass: 4, fail: 1, skipped: 1, total: 6 }, ['src/a.test.js', 'adds']])
+})
+
+test('a covering run past the timeout is stopped: exit null, no counts, timedOut', () => {
+  const { root } = coveringHost()
+  const started = Date.now()
+  const r = runCovering(root, { change: CHANGE, name: 'slow', command: 'node -e "console.log(\'# tests 1\'); setTimeout(() => {}, 60000)"', worktree: root, timeoutMinutes: 0.01 })
+  assert.ok(Date.now() - started < 30000)
+  assert.deepEqual([r.exit, r.counts, r.timedOut], [null, null, true])
+  assert.match(r.error, /did not finish within 0\.01 minute/)
+  assert.equal(readTestRecord(join(root, r.file)).timedOut, true)
+})
+
+test('a covering runner with no count line records counts: null', () => {
+  const { root } = coveringHost()
+  const r = runCovering(root, { change: CHANGE, name: 'lint', command: 'node runner.cjs none', worktree: root })
+  assert.deepEqual([r.exit, r.counts, r.failing], [0, null, []])
+  assert.equal(readTestRecord(join(root, r.file)).counts, null)
+})
+
+test('covering refuses with exit 1, a usage error exits 2, and readTestRecord rejects a bad record', () => {
+  const { root } = coveringHost()
+  const args = (over = {}) => ['covering', ...Object.entries({ '--change': CHANGE, '--name': 'n', '--command': 'node runner.cjs none', '--worktree': root, '--root': root, ...over }).flat()]
+  assert.equal(cli(args({ '--change': 'nope' })).code, 1)
+  assert.equal(cli(args({ '--worktree': join(root, 'missing') })).code, 1)
+  assert.equal(cli(args({ '--worktree': tmpdir() })).code, 1)
+  assert.equal(cli(args({ '--name': '../x' })).code, 2)
+  assert.equal(cli(args({ '--timeout': '0' })).code, 2)
+  assert.equal(cli(['covering', '--change', CHANGE, '--root', root]).code, 2)
+  assert.equal(cli([...args(), '--record']).code, 2)
+  const bad = join(root, 'bad.json')
+  writeFileSync(bad, JSON.stringify({ command: 'x', exit: 0, counts: { pass: 1 }, failing: [], outputFile: 'o', worktree: root, sha: 'a'.repeat(40) }))
+  assert.throws(() => readTestRecord(bad), /bad\.json: not a test-run record \(counts\)/)
+  writeFileSync(bad, 'nope')
+  assert.throws(() => readTestRecord(bad), /not a test-run record/)
 })
