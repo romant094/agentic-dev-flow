@@ -295,6 +295,22 @@ test('out-of-plan skips the registry outsidePlan globs', () => {
   assert.equal(runIn(root)['out-of-plan'].summary, '1 file(s) outside every task: logs/run.log')
 })
 
+test('out-of-plan allows the paths the knowledge provider declares, and says when there is none', () => {
+  const { root } = host()
+  commit(root, { '.claude/memory/log.md': '# Log\n', '.claude/memory/concepts/x.md': '# X\n' })
+  let check = runIn(root)['out-of-plan']
+  assert.equal(check.summary, '2 file(s) outside every task: .claude/memory/concepts/x.md, .claude/memory/log.md')
+  assert.match(readFileSync(join(root, check.output), 'utf8'), /^knowledge paths: none \(knowledge role none\)$/m)
+  // The registry change stays uncommitted: out-of-plan reads commits only.
+  const memory = join(SCRIPTS, '..', '..', 'memory')
+  writeRegistry(root, { ...readRegistry(root), extensions: [{ path: memory }] })
+  check = runIn(root)['out-of-plan']
+  assert.equal(check.verdict, 'pass')
+  assert.match(readFileSync(join(root, check.output), 'utf8'), /^knowledge paths: \.claude\/memory\/\*\*$/m)
+  commit(root, { 'notes/elsewhere.md': 'n\n' })
+  assert.equal(runIn(root)['out-of-plan'].summary, '1 file(s) outside every task: notes/elsewhere.md')
+})
+
 test('out-of-plan exempts an approved skill edit only for its files under .claude/skills/', () => {
   const { root } = host()
   const sha = commit(root, { '.claude/skills/s/SKILL.md': 'skill\n' })

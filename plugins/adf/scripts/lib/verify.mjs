@@ -18,7 +18,9 @@ import { commitPaths } from './commit.mjs'
 import { appendRecord, readRecords, SESSION_ENV, skillEditShas } from './ledger.mjs'
 import { baseRef, EXTENSIONS } from './plan-symbols.mjs'
 import { readRegistry } from './registry.mjs'
+import { CORE, knowledgePaths } from './roles.mjs'
 import { extractRequirementsSection, parseDeltaSpec, validateProject } from './specs.mjs'
+import { claudeHome } from './superpowers.mjs'
 import { gitIn } from './workspace.mjs'
 
 export const CHECKS = {
@@ -340,7 +342,9 @@ export function pathMatcher(entry) {
   return (file) => file === entry || file.startsWith(dir)
 }
 
-function checkOutOfPlan(root, change, git, base, skillEdits) {
+// The knowledge provider's declared paths (lib/roles.mjs knowledgePaths) are allowed like the
+// registry's outsidePlan globs: an ingest writes the knowledge base, which no plan names.
+function checkOutOfPlan(root, change, git, base, skillEdits, knowledge) {
   if (base.error) return { verdict: 'not-run', summary: `no commit range: ${base.error}`, text: base.error }
   const planPath = join(changeDir(root, change), 'plan.md')
   if (!existsSync(planPath)) return { verdict: 'fail', summary: `${change} has no plan.md`, text: `${planPath} is missing` }
@@ -348,6 +352,7 @@ function checkOutOfPlan(root, change, git, base, skillEdits) {
   const entries = planned.paths
   const matchers = entries.map(pathMatcher)
   const allowed = (readRegistry(root)?.outsidePlan ?? []).map((g) => globToRegExp(g))
+  const known = knowledge.paths.map((g) => globToRegExp(g))
   const prefix = changePrefix(change)
   const exempt = skillEdits.map(({ sha, from }) => {
     const full = attempt(() => git('rev-parse', '--verify', '--quiet', `${sha}^{commit}`))
@@ -361,6 +366,7 @@ function checkOutOfPlan(root, change, git, base, skillEdits) {
       if (file.startsWith(prefix)) continue
       if (skillEdit && file.startsWith('.claude/skills/')) continue
       if (allowed.some((re) => re.test(file))) continue
+      if (known.some((re) => re.test(file))) continue
       if (matchers.some((covers) => covers(file))) continue
       findings.push({ sha, file, why: skillEdit ? 'an approved skill edit touched a file outside .claude/skills/' : 'no task names it' })
     }
@@ -368,6 +374,7 @@ function checkOutOfPlan(root, change, git, base, skillEdits) {
   const { unparsed } = planned
   const lines = [
     `range ${base.ref}..HEAD; plan tasks: ${planned.tasks}; plan paths: ${entries.length}; outsidePlan globs: ${allowed.length}; skill-edit commits: ${exempt.length}`,
+    `knowledge paths: ${knowledge.state === 'done' ? knowledge.paths.join(', ') || 'none' : `none (knowledge role ${knowledge.state})`}${knowledge.error ? `; ${knowledge.error}` : ''}`,
     `out of plan: ${findings.length === 0 ? 'none' : ''}`,
     ...findings.map((f) => `  ${f.sha} ${f.file} (${f.why})`),
     `unparsed Files bullets: ${unparsed.length === 0 ? 'none' : ''}`,
@@ -379,7 +386,7 @@ function checkOutOfPlan(root, change, git, base, skillEdits) {
     return { verdict: 'fail', summary: `${files.length} file(s) outside every task: ${files.join(', ')}`, text, findings }
   }
   if (unparsed.length > 0) return { verdict: 'warn', summary: `every file is in the plan; unparsed Files bullets: ${unparsed.map((u) => `Task ${u.task}: ${u.line}`).join('; ')}`, text }
-  return { verdict: 'pass', summary: 'every file the range touched is named by a task, the change directory or outsidePlan', text }
+  return { verdict: 'pass', summary: 'every file the range touched is named by a task, the change directory, outsidePlan or the knowledge paths', text }
 }
 
 // ---------------------------------------------------------------- run
@@ -392,7 +399,7 @@ function checkOutOfPlan(root, change, git, base, skillEdits) {
 //
 // The approved skill edits are the ledger's `skill-edit` records, read on every run, plus any
 // `skillEdits` the caller names.
-export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md', fresh = false, env = process.env, now = new Date().toISOString() }) {
+export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md', fresh = false, env = process.env, now = new Date().toISOString(), home = claudeHome(env) }) {
   const root = resolve(rootArg)
   if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
   const git = gitIn(root)
@@ -420,7 +427,7 @@ export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md
     tree: guard(() => checkTree(git, base)),
     'test-record': guard(() => checkTestRecord(root, change, git)),
     worktrees: guard(() => checkWorktrees(root, change, git)),
-    'out-of-plan': guard(() => checkOutOfPlan(root, change, git, base, edits))
+    'out-of-plan': guard(() => checkOutOfPlan(root, change, git, base, edits, knowledgePaths(root, { ...CORE, home })))
   }
   const checks = Object.entries(results).map(([id, { verdict, summary, text, countWarnings }]) => {
     writeFileSync(join(outDir, `${id}.txt`), `${text}\n`)

@@ -2,11 +2,17 @@
 // one JSON object on stdin ({ root, config, input }) and prints one on stdout, whose `state`
 // is `done`, `degraded` or `refused` (contract/README.md). The core reads fields, never prose.
 import { spawnSync } from 'node:child_process'
-import { realpathSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, realpathSync } from 'node:fs'
+import { dirname, isAbsolute, join, normalize } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { enabledPlugins } from './registry.mjs'
 
 export const STATES = ['done', 'degraded', 'refused']
+
+// The contract this core runs, in the shape the registry functions take ({ coreContract,
+// points }); a caller adds `home`.
+const contract = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'contract', 'contract.json'), 'utf8'))
+export const CORE = { coreContract: contract.version, points: contract.points }
 
 export function provider(root, point, core) {
   return enabledPlugins(root, core).find((p) => Object.hasOwn(p.declaration.provides, point)) ?? null
@@ -102,4 +108,45 @@ export function forgeReport(operation, result) {
   if (operation === 'push') return `Push: done${result.url ? `; merge request ${result.url}` : ''}`
   const what = operation === 'finalize' ? 'out of draft' : result.reused ? 'reused' : 'opened as a draft'
   return `${label}: ${result.url ?? (result.number ? `!${result.number}` : 'no link returned')} (${what})`
+}
+
+// ---------------------------------------------------------------- the knowledge role
+
+// The globs an ingest may write, from the knowledge provider's `context`, for verify's
+// out-of-plan check. With no provider, or a provider that fails, there are none, and `state`
+// and `error` say why. A glob that is not relative to the host root is dropped and named.
+export function knowledgePaths(root, core) {
+  let result
+  try {
+    result = callRole(root, 'knowledge', 'context', {}, core)
+  } catch (error) {
+    return { state: 'refused', paths: [], error: error.message }
+  }
+  if (result.state !== 'done') return { state: result.state, paths: [], ...(result.error ? { error: result.error } : {}) }
+  const given = Array.isArray(result.paths) ? result.paths : []
+  const valid = (g) => typeof g === 'string' && g !== '' && g.trim() === g && !isAbsolute(g) && !normalize(g).startsWith('..')
+  const dropped = given.filter((g) => !valid(g))
+  return { state: 'done', plugin: result.plugin, paths: given.filter(valid), ...(dropped.length ? { error: `not relative to the host root: ${dropped.map(String).join(', ')}` } : {}) }
+}
+
+// The line a command shows for a knowledge result; the defaults with no provider are stated
+// here once, so no command words them itself.
+export function knowledgeReport(operation, result) {
+  if (result.state === 'none') {
+    return {
+      context: 'Knowledge: none; no knowledge plugin is enabled, so brainstorm reads no index and archive skips the ingest.',
+      log: 'Knowledge log: none; no knowledge plugin is enabled, so no log entry was written and archive skipped the ingest.',
+      check: 'Knowledge check: none; no knowledge plugin is enabled.'
+    }[operation]
+  }
+  if (result.state === 'refused') return `Knowledge ${operation}: refused; ${result.error ?? 'no reason given'}`
+  if (result.state === 'degraded') return `Knowledge ${operation}: not done. ${result.hint ?? ''}`.trim()
+  if (operation === 'context') return `Knowledge: index ${result.index ?? 'not named'}${result.exists === false ? ' (missing)' : ''}`
+  if (operation === 'log') {
+    const header = String(result.entry ?? '').split('\n')[0]
+    const rotated = result.rotated?.length ? `; rotated ${result.rotated.join(', ')}` : ''
+    return `Knowledge log: ${result.amended ? 'amended' : 'written'} ${header}${rotated}`
+  }
+  const findings = result.findings ?? []
+  return findings.length ? `Knowledge check: ${findings.length} finding(s)` : 'Knowledge check: no findings'
 }

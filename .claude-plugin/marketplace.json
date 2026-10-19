@@ -25,6 +25,12 @@
       "description": "Blocks an agent's git commit when a file in scope holds non-English prose",
       "version": "0.3.0",
       "source": "./plugins/english-check"
+    },
+    {
+      "name": "memory",
+      "description": "ADF knowledge plugin: an indexed wiki memory, a log rotated monthly, and the ingest, query and lint workflows",
+      "version": "0.1.0",
+      "source": "./plugins/memory"
     }
   ]
 }

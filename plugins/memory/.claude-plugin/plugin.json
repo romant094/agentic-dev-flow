@@ -1,0 +1,8 @@
+{
+  "name": "memory",
+  "description": "Wiki memory for the Agentic Dev Flow: an indexed knowledge base, a log rotated monthly, and the ingest, query and lint workflows",
+  "version": "0.1.0",
+  "author": { "name": "Anton Romankov" },
+  "license": "MIT",
+  "keywords": ["memory", "knowledge-base", "workflow"]
+}

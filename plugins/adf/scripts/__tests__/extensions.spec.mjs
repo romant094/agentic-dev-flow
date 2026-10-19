@@ -38,7 +38,7 @@ test('init, add, check, remove on a fresh host', () => {
   assert.equal(adf(root, 'check').code, 1)
   const init = adf(root, 'init').out
   assert.equal(init.created, true)
-  assert.equal(init.contract, '1.2')
+  assert.equal(init.contract, '1.3')
   assert.deepEqual(init.settings.added, ['enabledPlugins.adf@agentic-dev-flow'])
   assert.deepEqual(init.planningGuide, { path: 'openspec/planning.md', created: true })
   assert.deepEqual(init.reviewPrompt, { path: 'openspec/review-prompt.md', created: true, registered: true })
@@ -164,4 +164,21 @@ test('the review prompt goes to the registry\'s review.prompt, and an existing o
   registry({ prompt: '../outside.md' })
   assert.deepEqual(createReviewPrompt(root), { path: '../outside.md', created: false, registered: false, invalid: true })
   assert.equal(existsSync(join(root, '..', 'outside.md')), false)
+})
+
+test('the memory plugin enables as the one knowledge provider and copies its skeleton', () => {
+  const root = host()
+  adf(root, 'init')
+  adf(root, 'branches', '--integration', 'develop')
+  const memory = join(here, '..', '..', '..', 'memory')
+  const added = adf(root, 'add', memory)
+  assert.equal(added.code, 0)
+  assert.deepEqual(added.out.points, ['knowledge'])
+  assert.deepEqual(added.out.hostFiles.copied, ['.claude/memory/index.md', '.claude/memory/log.md', '.claude/memory/system.md'])
+  assert.equal(added.out.check.ok, true)
+  // A second knowledge provider is refused: a role has at most one.
+  const other = join(root, 'plugins', 'other-memory')
+  mkdirSync(other, { recursive: true })
+  writeFileSync(join(other, 'adf-extension.json'), JSON.stringify({ name: 'other-memory', contract: '1.3', provides: { knowledge: { script: 's.mjs', operations: ['context', 'log', 'check'] } } }))
+  assert.match(adf(root, 'add', 'plugins/other-memory').out.error, /role knowledge is already provided by memory/)
 })

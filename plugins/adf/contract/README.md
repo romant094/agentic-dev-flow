@@ -24,7 +24,7 @@ A plugin declares, per point, the `script` that runs it (deterministic, runs und
 runtime) and the `operations` it implements: every operation the point defines.
 
 Each point arrives with the first plugin that needs it. Version `1.0` defined none; `1.1` adds
-the `forge` role; `1.2` adds its `push` operation.
+the `forge` role; `1.2` adds its `push` operation; `1.3` adds the `knowledge` role.
 
 ## Calling convention
 
@@ -63,6 +63,22 @@ A provider refuses a branch that is empty or in `protected`. `body` holds the se
 plugin's merge request template. Default with no provider: nothing is pushed, no merge request
 exists; archive offers to merge the change into its base, and merges only on the developer's yes.
 
+### `knowledge` (role, since 1.3)
+
+The project's knowledge base: what the core reads before it designs, and where archive puts
+what a change taught. The core never names a knowledge base path; it reads them from `context`.
+
+| Operation | Input | Result when `done` |
+|---|---|---|
+| `context` | `{}` | `index`: the host-relative path of the knowledge base's index; `instructions`: `{ ingest, query, lint, fix }`, absolute paths of the instructions each workflow follows; `paths`: globs relative to the host root, every path an ingest may write |
+| `log` | `type` (`ingest`, `query`, `lint` or `task`), `title`, and either `bullets` (a list of strings) or `commit` (one or more hashes) with `reason`; `amend` (optional, boolean) | one log entry written, after the provider's own housekeeping (a rotation): `entry`, the text written; `rotated`, the months moved out of the log (`[]` when none); `amended`, whether it replaced an uncommitted entry of the same title. `amend` with no such entry is refused |
+| `check` | `{}` | `findings`: a list of `{ kind, path, ... }`, the mechanical faults of the knowledge base; `[]` when none |
+
+The provider states its own time rule; the core passes no time. Verify's out-of-plan check
+allows every path `paths` names, so an ingest no plan names is not a finding. Default with no
+provider: brainstorm reads no index, archive skips the ingest and says so in its report, and
+no log entry is written.
+
 ## Versioning
 
 The version is `major.minor`.
@@ -82,7 +98,7 @@ plugin and name both versions.
 
 ```json
 {
-  "contract": "1.2",
+  "contract": "1.3",
   "branches": { "integration": "develop", "protected": ["develop", "main"] },
   "extensions": [
     { "plugin": "gitlab@agentic-dev-flow", "config": { "host": "gitlab.example.com" } },

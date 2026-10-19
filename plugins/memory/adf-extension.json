@@ -1,0 +1,15 @@
+{
+  "name": "memory",
+  "contract": "1.3",
+  "provides": {
+    "knowledge": {
+      "script": "scripts/memory.mjs",
+      "operations": ["context", "log", "check"]
+    }
+  },
+  "hostFiles": [
+    { "from": "host/index.md", "to": ".claude/memory/index.md" },
+    { "from": "host/log.md", "to": ".claude/memory/log.md" },
+    { "from": "host/system.md", "to": ".claude/memory/system.md" }
+  ]
+}
