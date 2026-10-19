@@ -136,13 +136,17 @@ account of it. Every fabricated report this flow has recorded was such a claim f
 cheapest level. Which model runs a level is the runtime's choice; flow text never names a model
 or a vendor.
 
-You write only the question, into `--question-file`: for a review, what to look at; for a fix,
-the findings; for a merge resolver or a merge review, the conflict list or the context. The
-skeletons carry every fixed rule an agent follows (`implementer`, `reviewer`, `merge-review`,
-`test-first`, `sweep`, `read-only`, `git`, `reply`), among them the implementer's duty to
-state the task's Files, Interfaces and acceptance criteria before the first edit; a question
-restates none of them. A continuation sentence is not a prompt: a fresh agent holds none of the prior
-context and spends its output rediscovering it. One more step of earlier work goes to the agent
+You write only the question, into `--question-file`: for a review, what to look at; for a
+merge resolver or a merge review, the conflict list or the context. A `fix` or `re-review` needs
+no question once a review of its subject (the task, the group, or the final review) is
+recorded: its prompt carries `Open findings`, which the script renders from the recorded results
+and the rulings, and with no open finding the prompt is refused. Before that, the question holds
+the findings. The skeletons carry every fixed rule an agent follows (`implementer`, `reviewer`,
+`re-review`, `merge-review`, `test-first`, `test-first-proof`, `sweep`, `sweep-dispositions`,
+`read-only`, `git`, `reply`), among them the implementer's duty to state the task's Files,
+Interfaces and acceptance criteria before the first edit; a question restates none of them. A
+continuation sentence is not a prompt: a fresh agent holds none of the prior context and spends
+its output rediscovering it. One more step of earlier work goes to the agent
 that holds that context, by resuming it, not to a new dispatch. A read-only question about the
 branch gets no worktree isolation of its own: it writes nothing. A read-only verdict that does
 not answer gets a second, wider read-only dispatch, never the orchestrator opening the files.
@@ -160,36 +164,89 @@ review. It counts the rounds from the recorded attempts, a round being one `fix`
 
 - `fix`: dispatch `fix`, then `reReview`, the round's two names, with `--round` set to `round`;
 - `adjudicate`: a task at the breaker. Rule on each open finding as the skill's breaker does and
-  record each as a `ruling`; a load-bearing finding you cannot rule on blocks the task's group,
-  or pauses a single-group pass;
+  record each as a ruling on the task (below); a load-bearing finding you cannot rule on blocks
+  the task's group, or pauses a single-group pass;
 - `escalate-to-developer`: a group's loop or the final review's at the breaker. Stop and put
   the open findings to the developer.
 
-**The reply is a file of its role's shape.**
+**The reply is a file of its role's shape; a script computes its result.**
 
 The prompt names the reply file, an absolute path into the change worktree, never a group
 worktree, which is removed after its merge and takes its files along. A reply file is never
 overwritten: the script takes `-2`, `-3` when the name is taken. This replaces the report
-formats of the Superpowers prompts for these roles; the plugin's files are never edited. Before
-acting on a reply, validate it:
+formats of the Superpowers prompts for these roles; the plugin's files are never edited. One call
+checks a reply and records it:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/reply.mjs" --role <role> <reply file> --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" reply --change <change> --name "<name>" --file <replyFile> [--resume no] --root <root>
 ```
 
-Act on no reply it refuses. Record an attempt before every dispatch and every retry: `next`
-`dispatch` sends it; on a refusal, `retry` means it goes back once, to the same agent, resumed,
-with the `reasons`; `stop` means the dispatch is `BLOCKED`: it produced no result, and nothing it
-reported is recorded. A reply that is prose and no file is a refusal.
+It reads the role from the name, checks the reply against the role's schema under
+`${CLAUDE_PLUGIN_ROOT}/schema/` and against git, the test-run records and the loop state, and
+records a `valid` or `invalid` event of the name in `.superpowers/sdd/<change>/attempts.jsonl`.
+For a valid reply it returns `result`, computed by the script; act on that result, never on the
+reply file, and record no reply a second time through another call. Route on `next`:
+
+- `proceed`: the reply is accepted. Route on `result` by role:
+  - `impl`, `fix`: `result.status` is `DONE`, `DONE_WITH_CONCERNS`, `BLOCKED` or `NEEDS_CONTEXT`,
+    and `result.next` what follows: `review` (after an `impl`) or `re-review` (after a `fix`),
+    over `result.range`, the review package's base and head; `read-concerns`, read
+    `result.concerns` first, each marked `agent` or `script` (a file outside the task's
+    `**Files:**`, a covering run with no count line); `provide-context`, answer
+    `result.blocker` and resume the agent; `blocked`, assess `result.blocker` as the skill's
+    BLOCKED handling does. `result.commits` and `result.tests` are read from git and from the
+    test-run records, not from the reply.
+  - `review`, `final-review`, `merge-review`: `result.spec` (`pass` or `fail`), `result.quality`
+    (`approved` or `needs-fixes`) and `result.result`: `clean`; `fix`, the ids in `result.open`
+    go to the fix loop; `rule`, rule on each id of `result.toRule` and each item of
+    `result.unverifiable` first. `result.deferred` are the minor quality findings, kept for the
+    final review.
+  - `re-review`: `result.addressed`, `result.open` and `result.result`, as for a review.
+  - `sweep`: `result.verdict` (`CLEAN` or `FINDINGS`), `result.findings` and `result.dropped`,
+    the findings a `DUP` marker accepts.
+  - `investigate`: the script checks the shape only; the reply's `answer` is yours to read.
+- `retry`: the reply is refused, the first time, and goes back once, to the same agent, resumed,
+  with `errors` (`mode: resume`); where the harness cannot resume it, pass `--resume no` and
+  dispatch the prompt afresh with the errors as its question (`mode: fresh`).
+- `stop`: the second refusal of the name. The dispatch is `BLOCKED`: it produced no result, and
+  nothing it reported is recorded.
+
+A missing reply file is a refusal: a reply that is prose and no file is one. Record an attempt
+before every dispatch and every retry; `round` counts the rounds from those records. To show a
+reply to the developer, at an escalation or with the sweep's findings, render it rather than
+retelling it:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/reply.mjs" render --file <replyFile> --name "<name>" --change <change> --root <root>
+```
 
 **Rulings over the Superpowers defaults.** Inside an apply run these override the skills that
 load beside `subagent-driven-development`:
 
-- **The report is the evidence.** An `impl` or `fix` reply whose `tests` names the covering
-  tests' command and carries its output is the evidence that the task's tests pass. You do not
-  re-run them, and the independent re-checks of `superpowers:verification-before-completion`
-  and `superpowers:dispatching-parallel-agents` do not apply to it. A reply missing the command
-  or its output goes back to its implementer.
+- **The test-run record is the evidence.** The implementer runs its covering tests through
+  `suite.mjs covering`, which records each run in the dispatch's worktree; an `impl` or `fix`
+  result with `tests.result` `pass` comes from the last such record, and it is the evidence that
+  the task's tests pass. You do not re-run them, and the independent re-checks of
+  `superpowers:verification-before-completion` and `superpowers:dispatching-parallel-agents` do
+  not apply to it. A done reply with no passing run is refused by the script.
+- **The controller reads the computed result.** The skill's decision points map onto the result
+  of `dispatch.mjs reply`: its implementer statuses are `result.status`; "spec ✅ and quality
+  approved" is `result.spec` `pass` with `result.quality` `approved`, and a result carries both
+  verdicts; its ⚠️ items are `result.unverifiable`; a finding that conflicts with the plan text
+  is in `result.toRule`; its Minor findings are `result.deferred`, which the script keeps in
+  `.superpowers/sdd/<change>/deferred.json` and gives to the final review's prompt, in place of
+  the skill's ledger line; ADDRESSED and NOT ADDRESSED are a re-review's `previous[].status`,
+  summed up in `result.addressed` and `result.open`. The review package's BASE is
+  `result.range.base`, so no BASE is recorded before a dispatch.
+- **A ruling settles one item of a loop.** Rule on an item of `toRule` or `unverifiable`, or on
+  an open finding at the breaker, and record it:
+
+  ```bash
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/ledger.mjs" ruling --change <change> --subject <T<n>|G|final|sweep> --finding <F<n>|U<n>|S<n>> --as accepted|dismissed|fix --decision "<what and why>" --root <root>
+  ```
+
+  `accepted` and `dismissed` close the item; `fix` sends it into the fix loop, whose next prompt
+  lists it among the open findings. The last ruling of an id wins.
 - **Per task, the covering tests; once, the whole suite.** The whole suite runs once, at the end.
 - **One task, one commit,** also when the skill batches small same-shape tasks into one
   dispatch.
@@ -202,8 +259,13 @@ load beside `subagent-driven-development`:
 first only "if task says to". Before Task 1, say which tasks are test-driven: `testFirst` of
 `apply-status.mjs`, the plan's tasks carrying both a RED and a GREEN step. A task that should be (a behaviour change whose
 failing test can be written before the code) and is not listed is corrected in the plan text
-before it is dispatched. The `review` prompt of a test-first task carries the `test-first`
-skeleton; pass `--base` and `--head` so it names the task's commit.
+before it is dispatched. Pass `--base` and `--head` to the `review` prompt of a test-first task
+so it names the task's commit. When the planning guide has a `## Test-first shares` section, the
+`prompt` call runs the test-first proof itself, before the review: the commit and the test
+command from the task's accepted `impl` result, the shared paths from that section. The prompt
+carries the proof's result, and `dispatch.mjs reply` adds the `critical` finding of category
+`tests` to the review's result when the proof is false and the commit passes. Without the section,
+the reviewer runs the proof.
 
 The per-task code review and the final whole-branch review come with
 `subagent-driven-development`; do not invoke them by hand. The final whole-branch review runs at
@@ -212,13 +274,15 @@ review saw.
 
 **Tick a task when its last dispatch returns.**
 
-A task is complete when its review, or its last re-review, passes, or when the skill's breaker
-parks its findings with a ruling. Then, after the round's guard compare:
+A task is complete when its review loop is clean: its last accepted review or re-review left
+nothing open, and every plan-mandated or unverifiable item is ruled, or a ruling closes each item
+left, as at the breaker. Then, after the round's guard compare:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/tasks.mjs" tick --plan-task <N> --change <change> --root <root> --commit
 ```
 
+It refuses a task whose loop is not clean, naming the items left: fix them, or rule on them.
 It ticks the `tasks.md` item the plan task's back-reference names and commits it, with
 `plan.md` when it changed. No agent edits a checkbox by hand. Ticks land in the change worktree,
 never a group's, so two groups never conflict over `tasks.md`, and committing at once leaves the
@@ -264,7 +328,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" group-merge --change <change>
   run `group-merge` again for the package.
 
 Either way, the merge is done only when a scoped `merge-review` with `--group` over that
-package passes. A load-bearing finding is fixed forward in the change branch, one `fix` and one
+package leaves the group's loop clean. A load-bearing finding is fixed forward in the change branch, one `fix` and one
 scoped `re-review` per round, both with `--group` and `--round`, the mechanism of a task's own
 fix loop; the merge is never reverted, since a rollback discards the other groups' merged work.
 At the breaker, `round --group` says `escalate-to-developer`. Then:
@@ -317,20 +381,25 @@ requirement's `**Code Disposition:**`, all read by `sweep.mjs inputs`. It holds 
 and no fix authority, and dispatches no agent; its tree access widens no other reviewer's
 scope.
 
-Read the reply through the filter, not `reply.mjs`:
+Its reply is recorded like every other, with `dispatch.mjs reply`, which drops every finding
+whose introduced location carries a `DUP` marker naming that existing location, computes the
+verdict from what is left, and records the HEAD the sweep ran on. A sweep with no accepted reply
+after its retry is no verdict, never `CLEAN`. An accepted reply's `dispositions` are recorded as
+debt by a call that records no reply event:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/sweep.mjs" filter <reply file> --record --change <change> --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/sweep.mjs" filter <replyFile> --record --change <change> --root <root>
 ```
 
-It validates the reply and drops every finding whose introduced location carries a `DUP`
-marker naming that existing location. A sweep with no accepted reply after its retry is no
-verdict, never `CLEAN`. `--record` writes each entry of an accepted reply's `dispositions` as a
-`debt` carrying the sweep's answer as its reason; it never blocks apply.
+It writes each entry of `dispositions` as a `debt` carrying the sweep's answer as its reason; it
+never blocks apply.
 
 **A sweep finding naming both locations blocks apply from concluding.** It is the only
-maintainability finding that blocks; every other stays advisory. Resolution is one of two
-things: consolidate on the existing code, or the developer dismisses the finding. Re-running
+maintainability finding that blocks; every other stays advisory. `apply-status.mjs` lists the
+open ones as `sweep.open`, each `S<n>` by its first report, and reports `complete` false while
+one is open. Resolution is one of two things: consolidate on the existing code, or the developer
+dismisses the finding. A consolidation clears it when a later sweep no longer reports it and its
+introduced file changed between the sweep that last reported it and that later one. Re-running
 the sweep does not clear it: a second `CLEAN` on an unchanged branch would launder the first
 finding.
 
@@ -348,8 +417,9 @@ It places the `DUP` marker on the introduced location, records the accepted debt
 archive resolves as `accepted`, and commits the marked file alone. The marker stops a
 later sweep re-reporting an acceptance already made; the debt record stops the acceptance being
 forgotten. A format with no comment syntax is refused before anything is written: consolidate
-instead, or the debt record alone carries the acceptance (`ledger.mjs debt ... --accepted`), and
-a later sweep may report the pair again.
+instead, or record the developer's dismissal as a ruling on the sweep, `ledger.mjs ruling
+--subject sweep --finding S<n> --as dismissed`, with the acceptance as a debt record
+(`ledger.mjs debt ... --accepted`); a later sweep may report the pair again.
 
 **The `DUP` marker grammar.** This instruction owns it; the review stage reads it from here, and
 `lib/dup.mjs` writes it. The marker is one comment, in the file's own comment syntax, on the
@@ -409,7 +479,8 @@ whatever worktree the writer works in.
   inapplicable is not a deviation.
 - `debt --what <compromise> --reason <why> [--task <n>] [--accepted <reason>]` for every code
   compromise; archive refuses to leave one unresolved.
-- `ruling --finding <finding> --decision <what and why> [--task <n>]` for every adjudication.
+- `ruling --subject <subject> --finding <id> --as accepted|dismissed|fix --decision <what and
+  why>` for every adjudication of a review loop's or the sweep's item, as stated above.
 - a `handoff` at a handoff, written by `apply-status.mjs handoff --change <change> --next
   "<dispatch>" --root <root>`, which takes the merged groups, the remaining items and the
   blocked groups from the state.

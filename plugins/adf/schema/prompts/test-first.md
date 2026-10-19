@@ -1,4 +1,4 @@
-<!-- review of a task whose plan text states RED and GREEN: added after the reviewer rules. -->
+<!-- review of a task whose plan text states RED and GREEN, when the flow did not run its proof (the Test-first proof field says why): added after the reviewer rules. -->
 This task is test-first, so the review proves the new test can fail. Run:
 
 `node "${CLAUDE_PLUGIN_ROOT}/scripts/tdd-proof.mjs" --worktree <worktree> --commit <the task's commit> --test "<the command that runs the new test>" --change <change> --root <root>`
@@ -11,8 +11,8 @@ where it must fail, then on the commit, where it must pass; it never touches `<w
 - `proof` true: the test can fail. Whether it tests the behaviour the task names is your
   judgement, and part of the review.
 - `proof` false with `commitPasses` true: the test passes without the task's code. That is a
-  `critical` finding naming the output files. Four tests on one branch once passed against
-  their own unfixed code, and no reviewer noticed.
+  `critical` finding of category `tests` naming the output files. Four tests on one branch once
+  passed against their own unfixed code, and no reviewer noticed.
 - `proof` false with `commitPasses` false: the commit does not pass in a clean tree (a missing
   dependency, a missing `--share`), which says nothing about the test. Report it as a finding
   with the output files.

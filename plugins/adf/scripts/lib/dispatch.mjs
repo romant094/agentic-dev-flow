@@ -343,6 +343,7 @@ export function ruleSkeletons({ role, check, round }, { testFirst = false, dispo
   if (role === 'impl' || role === 'fix') parts.push('implementer')
   if (['review', 're-review', 'final-review', 'merge-review'].includes(role)) parts.push('reviewer')
   if (role === 'merge-review') parts.push('merge-review')
+  if (role === 're-review') parts.push('re-review')
   if (role === 'review' && testFirst) parts.push(proof ? 'test-first-proof' : 'test-first')
   if (role === 'sweep') parts.push('read-only', 'sweep', ...(dispositions ? ['sweep-dispositions'] : []))
   if (role === 'investigate') parts.push('read-only')

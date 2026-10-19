@@ -147,11 +147,15 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
      spec; it replies. Check each reply:
 
      ```bash
-     node "${CLAUDE_PLUGIN_ROOT}/scripts/specs.mjs" resolution --change <change> --capability <capability> --reply <replyFile> --root <root>
+     node "${CLAUDE_PLUGIN_ROOT}/scripts/specs.mjs" resolution --change <change> --capability <capability> --reply <replyFile> [--resume no] --root <root>
      ```
 
-     On a refusal record another attempt: `retry` sends the reply back once, to the same agent,
-     resumed, with its `errors`; `stop` stops archive. Then run `merge` again with every valid
+     It records the reply as an event of the dispatch `spec-merge <capability>` in the change's
+     shared attempts log; that is the reply's one record, so it never also goes to
+     `dispatch.mjs reply`. On a refusal record another attempt: `next: retry` sends the reply back
+     once, to the same agent, resumed, with its `errors` (`mode: resume`); where the harness
+     cannot resume it, pass `--resume no` and dispatch the prompt afresh with the errors as its
+     question (`mode: fresh`). `next: stop` stops archive. Then run `merge` again with every valid
      reply, one `--resolutions` per file: the script joins them into one list. A conflict may
      instead be settled by rebasing the stale delta, with the developer.
    - **A new capability** gets a spec skeleton whose Purpose is a placeholder, and the step
@@ -195,13 +199,16 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    It writes no log entry and commits nothing. Then:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/archive.mjs" ingest --change <change> --reply <replyFile> --root <root>
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/archive.mjs" ingest --change <change> --reply <replyFile> [--resume no] --root <root>
    ```
 
    The script checks that the pages the reply lists are exactly the files changed under the
    knowledge base and that every stale entry has an answer, then writes the log entry through
-   the knowledge role. On a refusal record another attempt: `retry` sends the reply back once,
-   to the same agent, resumed, with the step's `errors`; `stop` stops archive. `nothingLearned` writes no page, no log entry and
+   the knowledge role. It records the reply as an event of the dispatch `ingest`, its one record.
+   On a refusal record another attempt: `detail.next` `retry` sends the reply back once, to the
+   same agent, resumed, with the step's `errors` (`detail.mode` `resume`); where the harness
+   cannot resume it, pass `--resume no` and dispatch the prompt afresh with the errors as its
+   question (`fresh`). `stop` stops archive. `nothingLearned` writes no page, no log entry and
    no commit; an empty ingest is worse than none.
 
 8. **`commit-memory`.** `archive.mjs commit-memory`: one commit, `docs(memory): ingest what

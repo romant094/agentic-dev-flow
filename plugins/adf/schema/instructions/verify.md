@@ -101,20 +101,22 @@ under.
 
 **Test counts are reconciled by count, not by verdict.**
 
-`verify.mjs run` reads every `impl` and `fix` reply in the change's SDD workspace. A reply whose
-test summary carries no count, or counts more than the apply record shows, is a warning. A
-summary line that cannot show a suite that never loaded once read as green over one. The
-re-run's section carries these warning lines over.
+`verify.mjs run` reads the computed result of every accepted `impl` and `fix` reply in the
+change's attempts log, and the test-run record of each one's last covering run, which
+`suite.mjs covering` wrote. A done reply that names no covering run, a run that printed no count
+line, or one that counts more tests than the apply record shows, is a warning. A free-text
+summary that cannot show a suite that never loaded once read as green over one; the counts come
+from the records, never from a reply's prose. The re-run's section carries these warning lines
+over.
 
 **The judgement checks are dispatches; each writes a section file.**
 
 A verify dispatch is read-only: it edits no file of the change or of the project, commits
-nothing, and dispatches no agent. It writes exactly two files into `<verify>`: its raw output,
-`<id>-agent.txt`, and its section, `<id>.json`, one JSON object `{ "id", "title", "verdict",
-"summary", "output" }` with `verdict` one of `pass`, `warn`, `fail`, `not-run` and `output` the
-output file's path relative to `<root>`. It returns the section's path, not a report. The
-section is what `verify.mjs verdict` validates, so a verify dispatch has no reply role and
-writes no reply file. A section may replace a script check only for `test-record`.
+nothing, and dispatches no agent. Its reply is one JSON object under
+`${CLAUDE_PLUGIN_ROOT}/schema/verify-<id>.schema.json`, written to the reply file its prompt
+names, and it returns that path, not a report. The reply states no verdict and writes no section:
+the script checks the reply, computes the verdict and writes the section from it. A section may
+replace a script check only for `test-record`.
 
 Name each dispatch in the fixed form the metrics read, and choose its level by the work:
 
@@ -126,19 +128,37 @@ Name each dispatch in the fixed form the metrics read, and choose its level by t
 
 The number in a name is a fixed identifier, not a position or a count. One call lists the stale
 skill candidates and writes both prompts, each with every fixed field filled (the change, `<root>`
-as an absolute path, the base and range from `run.json`, the files in scope, the two file paths
-to write), and names each agent:
+as an absolute path, the base and range from `run.json`, the files in scope, the reply file to
+write, and for `verify c4` the prose edits and the removed or renamed requirements the script
+listed), and names each agent:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" prompts --change <change> --root <root>
 ```
 
-Each entry of its `dispatches` carries `name`, `agent` and `prompt`; dispatch the prompt as it
-is. A single section is written again from its own prompt, the `dispatch.mjs prompt` command
-the verdict's `redispatchCommands` names.
+Each entry of its `dispatches` carries `name`, `agent`, `replyFile` and `prompt`; dispatch the
+prompt as it is. A single section is written again from its own prompt, the `dispatch.mjs prompt`
+command the verdict's `redispatchCommands` names.
 
 git runs as `git -C <root>`. No dispatch text asks for a repository-wide git mutation.
 `verify c4` and `verify c8` run in parallel, in one response.
+
+**Each reply is recorded by one call, which writes the section.**
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" reply --change <change> --name "verify <id>" --file <replyFile> [--resume no] --root <root>
+```
+
+It checks the reply against its schema and against what the script itself listed, records the
+reply's event in the change's attempts log, and on a valid reply computes the verdict and writes
+the section `<verify><id>.json` from it, returned as `section`; for `verify c8` it also joins the
+CONFIRMED patches into `<verify>c8.diff`. `verify.mjs verdict` accepts a `c4` or `c8` section only
+as the section of the last accepted reply of this verify session, with its computed verdict: a
+section written by hand is refused. On a refusal, `next` is `retry` the first time: resume the same
+agent with the `errors` (`mode: resume`), or, where the harness cannot resume it, pass `--resume
+no` and dispatch the prompt afresh with the errors as its question (`mode: fresh`). The second
+refusal of a name is `stop`: verify stops there and reports the errors to the developer. The count
+starts again with each verify session, at `started` in `run.json`.
 
 **`verify c4`: design and specs against each other and against the code.**
 
@@ -160,11 +180,20 @@ git runs as `git -C <root>`. No dispatch text asks for a repository-wide git mut
   disposition apply's sweep recorded.
 - New mechanisms: for each one the change adds, which of its paths a test or a recorded run
   exercised and which nothing exercised. A green gate never stands in for a path that ran.
-- The section carries three more fields, which the record renders as written, each a string or
-  a list of strings: `proseEdits`, each hand-edited capability with its reason, or `none`;
-  `removalAccounting`, each `REMOVED` or `RENAMED` requirement's disposition against the code,
-  or `N/A: no REMOVED or RENAMED requirement`; `exercised`, one entry per path of a new
-  mechanism with what exercised it or that nothing did, or `none`.
+
+The script lists the commits of the range that edit a capability's `spec.md`, each with the
+edit's position against `## Requirements`, and the `REMOVED` and `RENAMED` requirements of the
+deltas; the reply's `proseEdits` and `removalAccounting` answer each listed entry exactly once,
+and its `case` is the one the change's files give. The verdict is computed from the reply: it
+fails on an `exec-contradiction`, a `prose-edit-below-requirements`, a `disposition-contradicted`,
+a `disposition-missing` or an `old-path-reachable` finding, on an edit at or below `##
+Requirements`, and on a removal with no disposition, one the code does not hold, or one whose old
+path is still reachable; it warns on a `doc-drift`, a `prose-edit-unstated`, a
+`decision-untraced` or a `requirement-contradicts-decision` finding, on an edit with no stated
+reason, and on a path of a new mechanism nothing exercised (`exercisedBy: null`); it passes
+otherwise. The record renders the section from the reply: the case, the findings, the
+hand-edited capability prose with each edit's position and reason, and the removal accounting,
+or `N/A: no REMOVED or RENAMED requirement`.
 
 **`verify c8`: stale skills.**
 
@@ -174,24 +203,28 @@ diff changed. Only the host's own skills are read, never an installed plugin's. 
 judges each candidate line, reading the skill around it and the diff: does the skill state, as
 current fact, a behaviour the diff changed?
 
-- **CONFIRMED**: a skill's stated fact is contradicted by the diff. The check fails. The
-  dispatch ends its output file with the proposed edit of every CONFIRMED finding as one
-  unified diff that `git apply` accepts in `<root>`: `diff --git a/<path> b/<path>` headers with
-  paths relative to `<root>`, context lines copied exactly, nothing after the last hunk. It
-  edits nothing.
+- **CONFIRMED**: a skill's stated fact is contradicted by the diff. The item carries its
+  proposed edit as `patch`, a unified diff that `git apply` accepts in `<root>`:
+  `diff --git a/<path> b/<path>` headers with paths relative to `<root>`, context lines copied
+  exactly, nothing after the last hunk. It edits nothing.
 - **PLAUSIBLE**: the skill may be affected but is not clearly contradicted. A warning.
 - **None**: no candidate line, or none that the diff contradicts. A pass.
+
+A CONFIRMED item fails the check. The reply answers each candidate line exactly once; a CONFIRMED
+item's patch touches its own skill file, stays under `.claude/skills/` and passes `git apply
+--check` in `<root>`, alone and joined with the others, and no other item carries a patch. A
+patch that does not apply is a refused reply, retried before the developer sees it.
 
 Show each CONFIRMED finding's proposed edit to the developer and ask whether to apply it. No
 skill file is edited without an explicit approval; silence is not approval, and an automatic
 dismissal looks exactly like a missed defect.
 
-- **Approved**: apply the diff and commit it on its own, in one call. Pass the c8 output file;
-  when the developer approved only part of it, or changed it, write that diff to a file and
-  pass that instead:
+- **Approved**: apply the diff and commit it on its own, in one call. Without `--diff-file` it
+  takes `<verify>c8.diff`, the CONFIRMED patches of the accepted reply; when the developer
+  approved only part of it, or changed it, write that diff to a file and pass it as `--diff-file`:
 
   ```bash
-  node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" skill-edit --change <change> --message "<type(scope): description>" --diff-file <file> --root <root>
+  node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" skill-edit --change <change> --message "<type(scope): description>" [--diff-file <file>] --root <root>
   ```
 
   It applies the diff with `git apply` from its first `diff --git` line, and refuses, changing
@@ -259,8 +292,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" assemble --change <change> --roo
 ```
 
 It renders `openspec/changes/<change>/verify.md` from the template, `run.json`, the sections in
-the template's order with the verbatim content of each output file, the verdict, the rulings and
-the approved skill edits, deciding nothing; the record's last line is the verdict's `line`. It
+the template's order (a script check with the verbatim content of its output file, `c4` and `c8`
+from their recorded replies), the verdict, the rulings and the approved skill edits, deciding
+nothing; the record's last line is the verdict's `line`. It
 refuses while the verdict refuses, and when HEAD moved since the run: run the checks again. The
 commit holds `verify.md` and nothing else; an approved skill edit is its own commit. Show the
 result's `report`. Verify calls no forge operation: the record reaches the remote with a later

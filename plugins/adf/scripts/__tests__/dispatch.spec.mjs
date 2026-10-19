@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { dispatchName, MAX_ROUNDS, normalize, parseGraph, parseName, planDispatch, roundOf, verbatimBlocks } from '../lib/dispatch.mjs'
 import { PLUGIN_ROOT, PROMPTS_DIR, run } from '../dispatch.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
+import { ROLES as REPLY_ROLES } from '../lib/reply.mjs'
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'dispatch.mjs')
 const CHANGE = 'add-x'
@@ -195,7 +196,9 @@ test('an implementer prompt carries every fixed field and clause, with paths abs
   assert.ok(prompt.includes(`\`git -C ${wt}\``))
   assert.ok(prompt.includes(`node "${PLUGIN_ROOT}/scripts/commit.mjs" --root ${wt} --only <path>`))
   assert.match(prompt, /which tests cover a file\s+is your call/)
-  assert.ok(prompt.includes(`${PLUGIN_ROOT}/scripts/lib/reply.mjs`))
+  assert.ok(prompt.includes(`${PLUGIN_ROOT}/schema/\`: \`impl.schema.json\` for \`impl\``))
+  assert.ok(prompt.includes(`node "${PLUGIN_ROOT}/scripts/suite.mjs" covering --change ${CHANGE} --name "T3 impl" --command "<the command>" --worktree ${wt} --root ${root}`))
+  assert.match(prompt, /in the reply's\s+`testRuns`/)
   assert.ok(prompt.includes(join(root, '.superpowers', 'sdd', CHANGE, 'replies', 'T3-impl.json')))
   assert.doesNotMatch(prompt, /\$\{CLAUDE_PLUGIN_ROOT\}|<change>|<root>|<worktree>|<!--/)
 })
@@ -213,7 +216,14 @@ test('a review proves the test can fail only for a test-first task; its question
   assert.doesNotMatch(plain, proof)
   assert.ok(plain.includes(`review-aaaaaaa..bbbbbbb.diff`))
   assert.match(plain, /A reviewer that accepts a compromise records it/)
-  assert.match(plain, /do not re-run them to\s+confirm it/)
+  assert.match(plain, /so do not\s+re-run them to confirm it/)
+  assert.match(plain, /state no verdict: the script assigns the ids/)
+  assert.doesNotMatch(plain, /`previous`/)
+  // A re-review carries its own skeleton after the reviewer rules: the open set and outOfScope.
+  const reReview = call(root, 'prompt', '--role', 're-review', '--task', '1', '--round', '1', '--question-file', q).prompt
+  assert.match(reReview, /You review; you do not fix/)
+  assert.match(reReview, /Answer each of them\s+once in `previous`/)
+  assert.match(reReview, /`outOfScope`/)
   const refused = cli(root, 'prompt', '--change', CHANGE, '--role', 'review', '--task', '1')
   assert.equal(refused.status, 1)
   assert.match(refused.out.error, /needs --question-file/)
@@ -374,6 +384,18 @@ test('the apply instruction and command restate no sentence of an apply prompt s
     }
   }
   assert.deepEqual(restated, [])
+})
+
+// The reply skeleton names the schema file of every apply role as lib/reply.mjs checks it, so a
+// role moved to another schema cannot leave the agent reading the old shape.
+test('the reply skeleton names each apply role with the schema its checker reads', () => {
+  const text = normalize(readFileSync(join(PROMPTS_DIR, 'reply.md'), 'utf8'))
+  for (const [role, { schema }] of Object.entries(REPLY_ROLES)) {
+    const at = text.indexOf(`\`${schema}\``)
+    assert.ok(at >= 0, `reply.md names no ${schema}`)
+    const clause = text.slice(at).split(/, `[a-z-]+\.schema\.json`|\.\s/)[0]
+    assert.ok(clause.includes(`\`${role}\``), `reply.md does not name ${role} beside ${schema}: ${clause}`)
+  }
 })
 
 // The orchestrator's own rules never reach an agent: a prompt is what the agent does.

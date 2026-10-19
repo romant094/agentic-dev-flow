@@ -35,10 +35,12 @@ conversation; if that is vague or ambiguous, the selection in step 1 asks.
 
 4. **Dispatch `verify c4` and `verify c8`** in one response. Run `verify.mjs prompts` and
    dispatch each entry of `dispatches`: its `prompt` as it is, to its `agent`, named `name`.
+   Record each reply with `dispatch.mjs reply`, which writes its section; retry a refused reply
+   once, as the instruction states.
 
 5. **Resolve stale skills.** Show each CONFIRMED finding's proposed edit to the developer and
-   ask. On an approval, run `verify.mjs skill-edit --diff-file`, then step 4 again for `verify
-   c8`; on a decline, record a ruling.
+   ask. On an approval, run `verify.mjs skill-edit`, with `--diff-file` for an approved part,
+   then step 4 again for `verify c8`; on a decline, record a ruling.
 
 6. **Run the checks that need the developer,** if the plan assigns any to verify, and record
    each with `verify.mjs developer`.

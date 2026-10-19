@@ -120,15 +120,21 @@ are `review-range`, `review-slices`, `review-suite`, `review-round-<k>` on a che
 7. **Store the reply.**
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" response --change <change> --round <k> --file <replyFile> --root <root>
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" response --change <change> --round <k> [--slice <n>] --file <replyFile> [--resume no] --root <root>
    ```
 
-   It checks the reply against the core's schema, stores it and, once every slice is in,
-   numbers the round's findings on from the earlier rounds and computes the verdict over them.
-   - `retry: true`: write its `errors` to a file, run step 6 again with `--question-file
-     <file>`, and store the new reply. One retry is all there is.
-   - `stopped: true`: the stage stops. Nothing is recorded, fixed or reviewed again; report the
-     reason to the developer. Only `start --fresh` begins a new run.
+   It checks the reply against the core's schema, records it as an event of the dispatch
+   `ai-review r<k>` (`ai-review r<k> s<n>` for a slice) in the change's shared attempts log,
+   stores it and, once every slice is in, numbers the round's findings on from the earlier
+   rounds and computes the verdict over them. This call is the reply's one record: never also
+   pass it to `dispatch.mjs reply`.
+   - `retry: true` (`next: retry`): resume the same reviewer with its `errors` (`mode: resume`)
+     and store the new reply. Where the harness cannot resume it, pass `--resume no` and the
+     result says `mode: fresh`: write the `errors` to a file, run step 6 again with
+     `--question-file <file>`, and store the new reply. One retry is all there is.
+   - `stopped: true` (`next: stop`): the second invalid reply of the name stops the stage.
+     Nothing is recorded, fixed or reviewed again; report the reason to the developer. Only
+     `start --fresh` begins a new run.
    - `complete: false`: the slices it lists in `missing` are still to come.
 
    On a complete round, read `verdict`, `blocking` and `counts`. Nothing blocking and no fix to
@@ -153,11 +159,13 @@ are `review-range`, `review-slices`, `review-suite`, `review-round-<k>` on a che
    and dispatch its `prompt` as it is. Then store the fixer's reply:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" fix --change <change> --round <k> --file <replyFile> --root <root>
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" fix --change <change> --round <k> --finding F<n> --file <replyFile> [--resume no] --root <root>
    ```
 
-   `fixed` is checked against the round's fix range and the finding's file, and closes the
-   finding. An invalid reply follows step 7's retry rule. Then run `fixplan` again; the fixes
+   `--finding` is the finding the fixer was dispatched for: the retry count is kept by the
+   dispatch name `ai-fix F<n> r<k>`, never by the reply's content, and a reply naming another
+   finding is invalid. `fixed` is checked against the round's fix range and the finding's file,
+   and closes the finding. An invalid reply follows step 7's retry rule. Then run `fixplan` again; the fixes
    are done when `next` is null.
 
 9. **Settle what is not fixed.**

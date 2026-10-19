@@ -29,6 +29,15 @@ current code. Apply runs it once, at the end. When this section is empty, apply 
 command in the project's own files, proposes it, and writes it here once the developer
 confirms. -->
 
+## Test-first shares
+
+<!-- The untracked paths a test-first task's new test needs to run in a fresh checkout, one per
+line, such as node_modules or a local environment file. With this section, the flow proves each
+test-first task itself before its review: the new test runs in a throwaway worktree of the
+commit's parent, where it must fail, then on the commit, where it must pass, with these paths
+linked into it and nothing installed. Leave the section empty when the tests need no untracked
+path. Delete it to leave that proof to the task's reviewer. -->
+
 ## Checks that need the developer
 
 <!-- Checks an implementer cannot run on its own, such as a pass against a live environment or
