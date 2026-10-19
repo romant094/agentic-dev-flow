@@ -14,6 +14,9 @@ import {
   addExtension,
   removeExtension,
   checkRegistry,
+  validateDebtSettings,
+  readDebtRoot,
+  setDebtRoot,
 } from '../lib/registry.mjs'
 
 const CORE = '1.0'
@@ -163,4 +166,27 @@ test('validateDeclaration needs a script inside the plugin and every operation o
 test('validateRegistry needs exactly one of plugin or path per entry', () => {
   const errors = validateRegistry({ contract: '1.2', extensions: [{ plugin: 'a@b', path: 'x' }, { plugin: 'Not An Id' }, { plugin: 'a@b' }] })
   assert.equal(errors.length, 2)
+})
+
+test('validateDebtSettings takes debt.root as a path inside the project and nothing else', () => {
+  assert.deepEqual(validateDebtSettings({ root: 'docs/tech-debt' }), [])
+  assert.deepEqual(validateDebtSettings({}), [])
+  assert.deepEqual(validateDebtSettings([]), ['debt must be an object'])
+  assert.deepEqual(validateDebtSettings({ root: '../out', status: 'x' }), [
+    'debt.status is not a debt setting (root)',
+    'debt.root must be a path relative to the project root'
+  ])
+  assert.deepEqual(validateRegistry({ contract: '1.0', extensions: [], debt: { root: '/abs' } }), ['debt.root must be a path relative to the project root'])
+})
+
+test('setDebtRoot records debt.root, readDebtRoot reads it, and a registry is required', () => {
+  const root = host()
+  assert.throws(() => setDebtRoot(root, 'debt'), /run \/adf:init first/)
+  initRegistry(root, CORE)
+  assert.equal(readDebtRoot(root), null)
+  assert.equal(setDebtRoot(root, 'docs/debt'), 'docs/debt')
+  assert.equal(readDebtRoot(root), 'docs/debt')
+  assert.deepEqual(readRegistry(root).extensions, [])
+  assert.throws(() => setDebtRoot(root, ' x'), /debt\.root must be a path/)
+  assert.equal(readDebtRoot(root), 'docs/debt')
 })

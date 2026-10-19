@@ -80,6 +80,7 @@ export function validateRegistry(registry) {
   // The review stage's settings (lib/review.mjs): the host prompt, globs added to or taken back
   // from the default exclusion list, the diff size one reviewer takes, the blocking severities.
   if (registry.review !== undefined) errors.push(...validateReviewSettings(registry.review))
+  if (registry.debt !== undefined) errors.push(...validateDebtSettings(registry.debt))
   return errors
 }
 
@@ -101,6 +102,37 @@ export function validateReviewSettings(review) {
     errors.push(`review.blockOn must list distinct severities of ${SEVERITIES.join(', ')}`)
   }
   return errors
+}
+
+// ---------------------------------------------------------------- debt
+
+// The technical debt store (lib/debt.mjs): `debt.root`, the tree's directory relative to the
+// project root, asked by /adf:init.
+const DEBT_KEYS = ['root']
+
+export function validateDebtSettings(debt) {
+  if (debt === null || typeof debt !== 'object' || Array.isArray(debt)) return ['debt must be an object']
+  const errors = []
+  for (const key of Object.keys(debt)) if (!DEBT_KEYS.includes(key)) errors.push(`debt.${key} is not a debt setting (${DEBT_KEYS.join(', ')})`)
+  if (debt.root !== undefined && !(inside(debt.root) && debt.root.trim() === debt.root)) errors.push('debt.root must be a path relative to the project root')
+  return errors
+}
+
+// The tree's path relative to the project root, or null when the registry sets none.
+export function readDebtRoot(root) {
+  const debt = readRegistry(root)?.debt
+  if (debt === undefined || validateDebtSettings(debt).length > 0) return null
+  return debt.root ?? null
+}
+
+export function setDebtRoot(root, path) {
+  const registry = readRegistry(root)
+  if (!registry) throw new Error('this project has no ADF registry; run /adf:init first')
+  const debt = { ...registry.debt, root: path }
+  const errors = validateDebtSettings(debt)
+  if (errors.length > 0) throw new Error(errors.join('; '))
+  writeRegistry(root, { ...registry, debt })
+  return path
 }
 
 export function readRegistry(root) {

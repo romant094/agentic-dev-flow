@@ -27,10 +27,26 @@ missing and changes nothing that exists.
 
    If `branches` is not null, change nothing.
 
-3. Show the `report` of step 1 as it is, with the `report` of step 2 when it ran in place of its
-   branch policy line. When Superpowers is not available, continue: setup does not need
+3. Read where the technical debt store lives:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/debt.mjs" root
+   ```
+
+   If `root` is null, ask the developer which directory, relative to the project root, holds
+   the debt tree; offer `docs/tech-debt`. Then run:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/debt.mjs" root --set <path>
+   ```
+
+   If `root` is not null, change nothing.
+
+4. Show the `report` of step 1 as it is, with the `report` of step 2 when it ran in place of its
+   branch policy line, and one line `Debt store: <root>`, with `(root index created)` when step 3
+   created it. When Superpowers is not available, continue: setup does not need
    Superpowers, but every command that changes a change does.
 
 Do not commit: the developer commits the registry, the settings, `.gitignore`, the planning
-guide and the review prompt. A change's worktree forks from the integration branch, so it sees them only after they
+guide, the review prompt and the debt tree's root index. A change's worktree forks from the integration branch, so it sees them only after they
 reach it.

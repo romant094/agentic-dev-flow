@@ -1,0 +1,330 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import {
+  addAnchor,
+  addEntry,
+  addFlowRecord,
+  checkTree,
+  ensureRootIndex,
+  listTree,
+  markFiled,
+  parsePage,
+  removeEntry,
+  splitCells
+} from '../lib/debt.mjs'
+import { run } from '../debt.mjs'
+import { initRegistry, readRegistry } from '../lib/registry.mjs'
+
+const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'debt.mjs')
+const tmp = () => mkdtempSync(join(tmpdir(), 'adf-debt-'))
+const entry = (over = {}) => ({ block: 'snmp', title: 'Trailing index extracted in three places', anchors: ['a.ts:1', 'b.ts:2'], class: 'debt', source: 'some-change', ...over })
+const flowInput = (over = {}) => ({ plugin: 'adf', pluginVersion: '0.9.0', class: 'defect', title: 'Verify reads the whole repository', body: 'The check validates every change.\n\nIt should validate one.', ...over })
+
+function write(tree, files) {
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(tree, path)), { recursive: true })
+    writeFileSync(join(tree, path), text)
+  }
+  return tree
+}
+
+const HEADER = '| ID | Title | Anchors | Class | Source | Tracker |\n|---|---|---|---|---|---|\n'
+const ROOT = '# Technical Debt\n\n## Blocks\n\n| Block | Covers |\n|---|---|\n| [`snmp`](snmp/index.md) | SNMP |\n'
+
+test('splitCells keeps an escaped pipe and a pipe inside a code span', () => {
+  assert.deepEqual(splitCells('| a \\| b | `x|y` | c |'), ['a | b', '`x|y`', 'c'])
+})
+
+test('parsePage groups a table under the last sub-block heading, never under the page title', () => {
+  const page = parsePage(`# Title\n\n${HEADER}| \`s-01\` | t | | debt | s | |\n\n### Sessions\n\n${HEADER}| \`s-02\` | t | | debt | s | |\n`)
+  assert.deepEqual(
+    page.tables.map((t) => [t.subBlock, t.rows.length]),
+    [
+      [null, 1],
+      ['Sessions', 1]
+    ]
+  )
+})
+
+test('add creates the root index, the block and its root row, and allocates the first id', () => {
+  const tree = join(tmp(), 'debt')
+  const r = addEntry(tree, entry({ covers: 'SNMP transport' }))
+  assert.equal(r.created, true)
+  assert.equal(r.newBlock, true)
+  assert.deepEqual(r.files, ['index.md', 'snmp/index.md'])
+  assert.equal(r.entry.id, 'snmp-01')
+  assert.deepEqual(r.entry.anchors, ['a.ts:1', 'b.ts:2'])
+  assert.match(readFileSync(join(tree, 'index.md'), 'utf8'), /\| \[`snmp`\]\(snmp\/index\.md\) \| SNMP transport \|/)
+  assert.equal(readFileSync(join(tree, 'snmp/index.md'), 'utf8'), `${HEADER}| \`snmp-01\` | Trailing index extracted in three places | \`a.ts:1\`, \`b.ts:2\` | debt | some-change |  |\n`)
+  assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
+})
+
+test('add allocates the next id of its block and appends to a sub-block, creating its heading', () => {
+  const tree = tmp()
+  addEntry(tree, entry())
+  const second = addEntry(tree, entry({ title: 'Second' }))
+  const third = addEntry(tree, entry({ title: 'Third', subBlock: 'Session lifecycle' }))
+  const fourth = addEntry(tree, entry({ title: 'Fourth', subBlock: 'Session lifecycle' }))
+  assert.deepEqual([second.entry.id, third.entry.id, fourth.entry.id], ['snmp-02', 'snmp-03', 'snmp-04'])
+  assert.equal(second.newBlock, false)
+  assert.deepEqual(second.files, ['snmp/index.md'])
+  const { blocks, entries } = listTree(tree)
+  assert.deepEqual(blocks[0].subBlocks, ['Session lifecycle'])
+  assert.deepEqual(
+    entries.map((e) => [e.id, e.subBlock]),
+    [
+      ['snmp-01', null],
+      ['snmp-02', null],
+      ['snmp-03', 'Session lifecycle'],
+      ['snmp-04', 'Session lifecycle']
+    ]
+  )
+  assert.equal(checkTree(tree).ok, true)
+})
+
+test('add is idempotent on block, title and source', () => {
+  const tree = tmp()
+  addEntry(tree, entry())
+  const again = addEntry(tree, entry({ anchors: ['c.ts:3'] }))
+  assert.equal(again.created, false)
+  assert.equal(again.entry.id, 'snmp-01')
+  assert.equal(listTree(tree).entries.length, 1)
+})
+
+test('add refuses a class outside the vocabulary, no anchor, a bad block and the flow block', () => {
+  const tree = tmp()
+  assert.throws(() => addEntry(tree, entry({ class: 'chore' })), /class "chore" is not one of defect, debt, decision/)
+  assert.throws(() => addEntry(tree, entry({ anchors: [] })), /at least one anchor/)
+  assert.throws(() => addEntry(tree, entry({ block: 'Bad Block' })), /kebab-case/)
+  assert.throws(() => addEntry(tree, entry({ block: 'flow' })), /debt\.mjs flow/)
+  assert.throws(() => addEntry(tree, entry({ title: 'two\nlines' })), /one line/)
+})
+
+test('an id is never renumbered, and an id the tree still names is not allocated again', () => {
+  const tree = tmp()
+  addEntry(tree, entry({ title: 'One' }))
+  addEntry(tree, entry({ title: 'Two' }))
+  addEntry(tree, entry({ title: 'Three, see snmp-03 elsewhere' }))
+  removeEntry(tree, { id: 'snmp-02' })
+  assert.deepEqual(
+    listTree(tree).entries.map((e) => e.id),
+    ['snmp-01', 'snmp-03']
+  )
+  removeEntry(tree, { id: 'snmp-03' })
+  write(tree, { 'snmp/notes.md': 'Background for snmp-03.\n' })
+  assert.equal(addEntry(tree, entry({ title: 'Four' })).entry.id, 'snmp-04')
+})
+
+test('anchor adds a site once and refuses an unknown id', () => {
+  const tree = tmp()
+  addEntry(tree, entry())
+  const r = addAnchor(tree, { id: 'snmp-01', anchor: 'c.ts:9' })
+  assert.equal(r.added, true)
+  assert.deepEqual(r.entry.anchors, ['a.ts:1', 'b.ts:2', 'c.ts:9'])
+  assert.equal(addAnchor(tree, { id: 'snmp-01', anchor: 'c.ts:9' }).added, false)
+  assert.deepEqual(listTree(tree).entries[0].anchors, ['a.ts:1', 'b.ts:2', 'c.ts:9'])
+  assert.throws(() => addAnchor(tree, { id: 'snmp-07', anchor: 'x' }), /no entry snmp-07/)
+  assert.throws(() => removeEntry(tree, { id: 'nonsense' }), /not an entry id/)
+})
+
+test('list reads an origin-shaped tree: columns, sub-blocks, body files, dash keys', () => {
+  const tree = write(tmp(), {
+    'index.md': ROOT,
+    'snmp/index.md': `${HEADER}| \`snmp-01\` | One | \`a.ts:187,207\`, \`b.ts\` | defect | todos.md | KEY-1 |\n\n### Pool\n\n${HEADER}| \`snmp-02\` | Two | \`c.ts\` | decision | x | — |\n`,
+    'snmp/background.md': '# Background\n'
+  })
+  const r = listTree(tree)
+  assert.deepEqual(r.blocks, [{ id: 'snmp', kind: 'debt', covers: 'SNMP', index: 'snmp/index.md', columns: ['ID', 'Title', 'Anchors', 'Class', 'Source', 'Tracker'], subBlocks: ['Pool'], bodyFiles: ['snmp/background.md'] }])
+  assert.deepEqual(r.entries[0], { id: 'snmp-01', kind: 'debt', block: 'snmp', subBlock: null, title: 'One', anchors: ['a.ts:187,207', 'b.ts'], class: 'defect', source: 'todos.md', tracker: 'KEY-1' })
+  assert.equal(r.entries[1].tracker, null)
+  assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
+})
+
+test('check names every rule a tree breaks', () => {
+  const tree = write(tmp(), {
+    'index.md': `${ROOT}\nThere are 12 open entries.\n`,
+    'snmp/index.md': [
+      HEADER.trim(),
+      '| `snmp-01` | One | `a` | chore | s | K-1 |',
+      '| `snmp-01` | Again | `a` | debt | s | K-1 |',
+      '| **Pool** | | | | | |',
+      '| `snmp-02` | Two, unlike snmp-09 | `a` | debt |  | |',
+      '',
+      '| ID | Title | Anchors | Class | Source | Tracker | Status |',
+      '|---|---|---|---|---|---|---|',
+      ''
+    ].join('\n'),
+    'orphan/index.md': HEADER
+  })
+  const messages = checkTree(tree).errors.map((e) => `${e.file}:${e.line} ${e.message}`)
+  const expect = [
+    /^index\.md:\d+ a count of entries/,
+    /^snmp\/index\.md:3 snmp-01: class "chore"/,
+    /^snmp\/index\.md:4 id snmp-01 is already used at snmp\/index\.md:3/,
+    /^snmp\/index\.md:4 snmp-01 shares the tracker key K-1 with snmp-01/,
+    /^snmp\/index\.md:5 "\*\*Pool\*\*" is not an id of block snmp; a sub-block is a heading/,
+    /^snmp\/index\.md:6 snmp-02 has no source/,
+    /^snmp\/index\.md:6 snmp-09 is named but no row carries it/,
+    /^snmp\/index\.md:8 columns Status hold planning or a count/,
+    /^snmp\/index\.md:8 the columns must be/,
+    /^index\.md:null block orphan has no row in the root index/
+  ]
+  for (const pattern of expect) assert.ok(messages.some((m) => pattern.test(m)), `missing ${pattern}\n${messages.join('\n')}`)
+  assert.equal(messages.length, expect.length, messages.join('\n'))
+})
+
+test('check accepts an absent tree and refuses a tree without a root index', () => {
+  assert.deepEqual(checkTree(join(tmp(), 'none')), { ok: true, errors: [] })
+  const tree = write(tmp(), { 'snmp/index.md': HEADER })
+  assert.deepEqual(
+    checkTree(tree).errors.map((e) => e.message),
+    ['the tree has no root index']
+  )
+})
+
+test('a flow record lands in the flow block with its body file, once', () => {
+  const tree = tmp()
+  addEntry(tree, entry())
+  const r = addFlowRecord(tree, 'my-change', flowInput())
+  assert.equal(r.created, true)
+  assert.deepEqual(r.files, ['index.md', 'flow/index.md', 'flow/flow-01.md'])
+  assert.deepEqual(r.record, {
+    id: 'flow-01',
+    kind: 'flow',
+    block: 'flow',
+    title: 'Verify reads the whole repository',
+    plugin: 'adf',
+    pluginVersion: '0.9.0',
+    change: 'my-change',
+    class: 'defect',
+    source: 'my-change',
+    filed: null,
+    body: 'The check validates every change.\n\nIt should validate one.'
+  })
+  assert.equal(addFlowRecord(tree, 'my-change', flowInput({ body: 'other' })).created, false)
+  const second = addFlowRecord(tree, 'my-change', flowInput({ class: 'deferred wording', title: 'A rule stated twice', source: 'ledger deviation-1' }))
+  assert.equal(second.record.id, 'flow-02')
+  assert.deepEqual(
+    listTree(tree, { kind: 'flow' }).entries.map((e) => e.id),
+    ['flow-01', 'flow-02']
+  )
+  assert.deepEqual(
+    listTree(tree, { kind: 'debt' }).entries.map((e) => e.id),
+    ['snmp-01']
+  )
+  assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
+})
+
+test('a flow record refuses a wrong class, a missing field, an unknown field and another change', () => {
+  const tree = tmp()
+  assert.throws(() => addFlowRecord(tree, 'c', flowInput({ class: 'debt' })), /not one of defect, deferred wording, decision/)
+  assert.throws(() => addFlowRecord(tree, 'c', flowInput({ pluginVersion: '' })), /pluginVersion is required/)
+  assert.throws(() => addFlowRecord(tree, 'c', flowInput({ body: ' ' })), /body is required/)
+  assert.throws(() => addFlowRecord(tree, 'c', flowInput({ status: 'open' })), /unknown fields status/)
+  assert.throws(() => addFlowRecord(tree, 'c', flowInput({ change: 'd' })), /names change d, not c/)
+  assert.throws(() => addFlowRecord(tree, 'c', []), /JSON object/)
+  assert.equal(existsSync(join(tree, 'flow')), false)
+})
+
+test('mark-filed records the issue once and removing a flow record deletes its body', () => {
+  const tree = tmp()
+  addFlowRecord(tree, 'c', flowInput())
+  addEntry(tree, entry())
+  assert.throws(() => markFiled(tree, { id: 'flow-01', url: 'not a url' }), /not a URL/)
+  assert.throws(() => markFiled(tree, { id: 'snmp-01', url: 'https://x/1' }), /not a flow record/)
+  assert.equal(markFiled(tree, { id: 'flow-01', url: 'https://forge/issues/1' }).changed, true)
+  assert.equal(markFiled(tree, { id: 'flow-01', url: 'https://forge/issues/1' }).changed, false)
+  assert.throws(() => markFiled(tree, { id: 'flow-01', url: 'https://forge/issues/2' }), /already filed as https:\/\/forge\/issues\/1/)
+  assert.equal(listTree(tree, { kind: 'flow' }).entries[0].filed, 'https://forge/issues/1')
+  assert.equal(checkTree(tree).ok, true)
+  const r = removeEntry(tree, { id: 'flow-01' })
+  assert.deepEqual(r.files, ['flow/index.md', 'flow/flow-01.md'])
+  assert.equal(existsSync(join(tree, 'flow/flow-01.md')), false)
+  assert.equal(checkTree(tree).ok, true)
+})
+
+test('check refuses a flow record with no body file and a duplicate filed issue', () => {
+  const tree = tmp()
+  addFlowRecord(tree, 'c', flowInput())
+  addFlowRecord(tree, 'c', flowInput({ title: 'Other' }))
+  const index = join(tree, 'flow/index.md')
+  writeFileSync(index, readFileSync(index, 'utf8').replace(/\|  \|\n/g, '| https://f/1 |\n'))
+  writeFileSync(join(tree, 'flow/flow-02.md'), '')
+  const before = checkTree(tree).errors.map((e) => e.message)
+  assert.deepEqual(before, ['flow-02 shares the filed issue https://f/1 with flow-01'])
+})
+
+test('ensureRootIndex writes the template once', () => {
+  const tree = join(tmp(), 'debt')
+  assert.deepEqual(ensureRootIndex(tree), { created: true })
+  assert.deepEqual(ensureRootIndex(tree), { created: false })
+  assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
+})
+
+// ---------------------------------------------------------------- CLI
+
+function hostWithRegistry() {
+  const root = tmp()
+  initRegistry(root, '1.0')
+  return root
+}
+
+test('root reads and sets debt.root and creates the root index', () => {
+  const root = hostWithRegistry()
+  assert.deepEqual(run(['root', '--root', root]), { ok: true, root: null, created: false })
+  assert.deepEqual(run(['root', '--set', 'docs/tech-debt', '--root', root]), { ok: true, root: 'docs/tech-debt', created: true })
+  assert.equal(readRegistry(root).debt.root, 'docs/tech-debt')
+  assert.ok(existsSync(join(root, 'docs/tech-debt/index.md')))
+  assert.deepEqual(run(['root', '--root', root]), { ok: true, root: 'docs/tech-debt', created: false })
+  assert.throws(() => run(['root', '--set', '../outside', '--root', root]), /debt\.root must be a path relative/)
+})
+
+test('the CLI reads the tree from the registry, and --tree overrides it', () => {
+  const root = hostWithRegistry()
+  assert.throws(() => run(['list', '--root', root]), /sets no debt\.root; run \/adf:init/)
+  run(['root', '--set', 'debt', '--root', root])
+  const added = run(['add', '--block', 'snmp', '--title', 'T', '--anchors', 'a.ts:187,207, b.ts', '--class', 'debt', '--source', 's', '--covers', 'SNMP', '--root', root])
+  assert.equal(added.entry.id, 'snmp-01')
+  assert.deepEqual(added.entry.anchors, ['a.ts:187,207', 'b.ts'])
+  const listed = run(['list', '--root', root])
+  assert.equal(listed.root, 'debt')
+  assert.deepEqual(
+    listed.entries.map((e) => e.id),
+    ['snmp-01']
+  )
+  const other = tmp()
+  assert.deepEqual(run(['list', '--tree', other, '--root', root]).entries, [])
+})
+
+test('the CLI exits 2 on a usage error, 1 on a refusal and a failing check, 0 otherwise', () => {
+  const root = hostWithRegistry()
+  run(['root', '--set', 'debt', '--root', root])
+  const call = (...args) => {
+    const r = spawnSync(process.execPath, [cli, ...args, '--root', root], { encoding: 'utf8' })
+    return { code: r.status, out: JSON.parse(r.stdout) }
+  }
+  assert.equal(call('nonsense').code, 2)
+  assert.equal(call('add', '--block', 'snmp').code, 2)
+  assert.equal(call('remove', '--id', 'snmp-01', '--url', 'x').code, 2)
+  assert.equal(call('list', '--kind', 'other').code, 2)
+  const refused = call('remove', '--id', 'snmp-01')
+  assert.equal(refused.code, 1)
+  assert.match(refused.out.error, /no entry snmp-01/)
+  const file = join(root, 'flow.json')
+  writeFileSync(file, JSON.stringify(flowInput()))
+  const flow = call('flow', '--change', 'c', '--file', file)
+  assert.equal(flow.code, 0)
+  assert.equal(flow.out.record.id, 'flow-01')
+  assert.equal(call('mark-filed', '--id', 'flow-01', '--url', 'https://f/1').out.changed, true)
+  assert.deepEqual(call('list', '--kind', 'flow').out.entries.map((e) => e.filed), ['https://f/1'])
+  assert.equal(call('check').code, 0)
+  writeFileSync(join(root, 'debt/index.md'), `${readFileSync(join(root, 'debt/index.md'), 'utf8')}\nSee flow-07.\n`)
+  const failing = call('check')
+  assert.equal(failing.code, 1)
+  assert.equal(failing.out.ok, false)
+})

@@ -1,0 +1,79 @@
+# Debt store format
+
+The core keeps the host's open technical debt as a Markdown tree at the registry's `debt.root`
+(`.claude/adf-extensions.json`, `{ "debt": { "root": "docs/tech-debt" } }`), set by `/adf:init`.
+`scripts/debt.mjs` writes the tree and `debt.mjs check` checks it; `scripts/lib/debt.mjs` is the
+parser. The tree owns the content of the debt; a tracker plugin owns its planning.
+
+## Layout
+
+```
+<debt.root>/
+  index.md              the root index: a "| Block | Covers |" table, one row per block
+  <block>/index.md      the block's entries, as table rows
+  <block>/<topic>.md    optional body file, only for an area that needs explaining
+  flow/index.md         the records of kind flow
+  flow/<id>.md          one body file per flow record
+```
+
+A root row links its block: ``| [`snmp`](snmp/index.md) | SNMP transport |``. A block id is
+kebab-case. `debt.mjs add --block <id>` creates a missing block and its root row.
+
+## Entries
+
+A block index holds tables with exactly these columns:
+
+| ID | Title | Anchors | Class | Source | Tracker |
+|---|---|---|---|---|---|
+| `snmp-01` | Trailing index extracted in three places | `a.ts:12`, `b.ts:40,52` | debt | `some-change` | |
+
+- **ID** is `<block>-<number>`, at least two digits, allocated by `debt.mjs add` as one more
+  than the highest number the tree names for that block, in a row or in prose. Nothing
+  renumbers an id, and an id still named anywhere in the tree is never allocated again.
+- **Anchors** are the code sites of the one action the entry is: the same edit at twelve
+  places is one entry with twelve anchors (`debt.mjs anchor`).
+- **Class** is `defect` (the code is wrong), `debt` (a compromise taken knowingly) or
+  `decision` (a decision still to be made). An accepted item is not work and gets no row.
+- **Source** is the change or the store the entry came from.
+- **Tracker** is the tracker's key once a tracker plugin has mirrored the entry, its identity:
+  empty (or a dash) until then, and one key per row.
+
+A **sub-block** is a heading (level two or deeper) above a table in the block index; the
+entries of that table belong to it. It is never a row and never a file.
+
+The tree carries no status, assignee, priority, estimate or other planning column, and no
+count. An entry is deleted when its debt is resolved (`debt.mjs remove`); git keeps it.
+
+## Flow records
+
+The block `flow` holds the records of kind `flow`: defects of the flow's own plugins found while
+a host used them. They stay on this machine; no core script sends them anywhere. The
+maintainer's plugin reads them with `debt.mjs list --kind flow`, files each upstream and records
+the issue with `debt.mjs mark-filed --id <id> --url <url>`.
+
+| ID | Title | Plugin | Version | Change | Class | Source | Filed |
+|---|---|---|---|---|---|---|---|
+| `flow-01` | Verify reads the whole repository | `adf` | `0.9.0` | `my-change` | defect | `my-change` | |
+
+- **Class** is `defect` (the code or the check is wrong), `deferred wording` (a rule stated
+  twice whose deduplication changes what a surface says) or `decision` (a decision still to be
+  made).
+- **Filed** is the URL of the issue the record was filed as, once; empty until then.
+- The body is `flow/<id>.md`: a heading naming the id and title, then the body text.
+
+`debt.mjs flow --change <name> --file <json>` writes one record from
+`{ plugin, pluginVersion, class, title, body, source? }`; `source` defaults to the change.
+
+## What `debt.mjs check` refuses
+
+- a root index missing, or without its `Block | Covers` table; a block with no root row, a root
+  row not linking `<block>/index.md`, a block with no `index.md`;
+- a table whose columns are not exactly the block's columns, naming any planning or count
+  column;
+- a row whose ID is not an id of its block (a sub-block written as a row);
+- a duplicate id, a duplicate tracker key or filed URL;
+- an empty title or source, a class outside the block's vocabulary;
+- a flow record without plugin, version, change or body file, or with a filed value that is
+  not a URL;
+- a count of entries in an index's prose or headings;
+- an id of a block named anywhere in the tree that no row carries.
