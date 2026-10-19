@@ -23,7 +23,7 @@ import { copyFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, realp
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { classify, computedDiffers, makeFixture, portCheck, V1_ROLES } from './lib/reply-v1.mjs'
+import { asV1Reply, classify, computedDiffers, makeFixture, portCheck, replyBodies } from './lib/reply-v1.mjs'
 
 const origin = process.argv[2]
 const originSource = origin && join(origin, '.claude', 'scripts', 'check-reply.mjs')
@@ -52,15 +52,8 @@ if (transcripts.length === 0) {
 const replies = new Map()
 const sources = {}
 function take(text, source, expanded = false) {
-  const t = String(text).trim()
-  if (!t.startsWith('{')) return
-  let value
-  try {
-    value = JSON.parse(t)
-  } catch {
-    return
-  }
-  if (value === null || typeof value !== 'object' || Array.isArray(value) || !V1_ROLES.includes(value.role)) return
+  const value = asV1Reply(text)
+  if (value === null) return
   const key = JSON.stringify(value)
   if (replies.has(key)) return
   replies.set(key, expanded ? expandShas(value) : value)
@@ -77,7 +70,6 @@ function expandShas(value) {
   })
   return { ...value, commits }
 }
-const HEREDOC = /<<-?\s*(['"]?)(\w+)\1[^\n]*\n([\s\S]*?)\n\2(?=\s|$)/g
 for (const file of transcripts) {
   for (const line of readFileSync(file, 'utf8').split('\n')) {
     if (!line.includes('role')) continue
@@ -87,13 +79,7 @@ for (const file of transcripts) {
     } catch {
       continue
     }
-    const content = entry?.message?.content
-    if (!Array.isArray(content)) continue
-    for (const part of content) {
-      if (part?.type !== 'tool_use') continue
-      if (part.name === 'Write') take(part.input?.content ?? '', 'write')
-      if (part.name === 'Bash') for (const m of String(part.input?.command ?? '').matchAll(HEREDOC)) take(m[3], 'heredoc', m[1] === '')
-    }
+    for (const body of replyBodies(entry)) take(body.text, body.source, body.expanded)
   }
 }
 

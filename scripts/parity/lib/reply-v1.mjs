@@ -30,6 +30,43 @@ import { dirname, join } from 'node:path'
 import { checkReply, replyContext } from '../../../plugins/adf/scripts/lib/reply.mjs'
 import { runCovering } from '../../../plugins/adf/scripts/lib/suite.mjs'
 
+// A text that parses as a JSON object whose `role` is a v1 role, as that object; else null.
+export function asV1Reply(text) {
+  const t = String(text).trim()
+  if (!t.startsWith('{')) return null
+  let value
+  try {
+    value = JSON.parse(t)
+  } catch {
+    return null
+  }
+  return value !== null && typeof value === 'object' && !Array.isArray(value) && V1_ROLES.includes(value.role) ? value : null
+}
+
+// The texts of one transcript record a reply may be in: the body of a `Write` tool call, and of
+// every Bash heredoc (`expanded` when its delimiter is unquoted, so the shell expanded it). `path`
+// is the file written: the Write's `file_path`, or the redirection target on the heredoc's line,
+// unexpanded (`command` is the heredoc's whole command, for its variable assignments).
+const HEREDOC = /<<-?\s*(['"]?)(\w+)\1[^\n]*\n([\s\S]*?)\n\2(?=\s|$)/g
+const REDIRECT = />\s*['"]?([^\s'"<>;|&]+)/
+export function replyBodies(entry) {
+  const content = entry?.message?.content
+  if (!Array.isArray(content)) return []
+  const out = []
+  for (const part of content) {
+    if (part?.type !== 'tool_use') continue
+    if (part.name === 'Write') out.push({ text: part.input?.content ?? '', source: 'write', expanded: false, path: part.input?.file_path ?? null })
+    if (part.name === 'Bash') {
+      const command = String(part.input?.command ?? '')
+      for (const m of command.matchAll(HEREDOC)) {
+        const line = command.slice(command.lastIndexOf('\n', m.index) + 1, command.indexOf('\n', m.index))
+        out.push({ text: m[3], source: 'heredoc', expanded: m[1] === '', path: REDIRECT.exec(line)?.[1] ?? null, command })
+      }
+    }
+  }
+  return out
+}
+
 export const V1_ROLES = ['impl', 'fix', 'review', 're-review', 'final-review', 'merge-review', 'sweep', 'investigate', 'spec-merge']
 export const CHANGE = 'add-x'
 // The dispatch name each v1 role is checked under in the fixture.
