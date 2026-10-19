@@ -278,7 +278,10 @@ export const CORE_COMMIT_SCRIPTS = {
     if (args[0] !== 'added' || !args.includes('--commit')) return null
     const change = optionValues(args, '--change')[0]
     return [change ? `openspec/changes/${change}/plan.md` : 'openspec/changes']
-  }
+  },
+  // retro.mjs record --root <retro worktree>: the retrospective's report and sidecar. The
+  // hook resolves them under --root, so the run names the retro worktree, where they are.
+  'retro.mjs': (args) => (args[0] === 'record' ? ['.adf/retro'] : null)
 }
 
 function coreCommit(words, dir) {

@@ -352,6 +352,18 @@ test('archive.mjs commit-specs checks the change, the archive and the specs; com
   assert.equal(hook(`node /p/scripts/archive.mjs commit-memory --change x --root ${r.root}`, '/').code, 0)
 })
 
+test('retro.mjs record checks the retrospective it commits, under the retro worktree --root names', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'english-check', contract: '1.1', provides: {} }))
+  r.write('.claude/adf-extensions.json', JSON.stringify({ contract: '1.1', extensions: [{ path: 'vendor/ec', config: { include: ['.adf/**'] } }] }))
+  r.write('.adf/retro/2026-10-19-window.md', `${RU}\n`)
+  const record = hook(`node /p/scripts/retro.mjs record --date 2026-10-19 --root ${r.root}`, '/')
+  assert.equal(record.code, 2)
+  assert.match(record.stderr, /\.adf\/retro\/2026-10-19-window\.md:1: /)
+  assert.equal(hook(`node /p/scripts/retro.mjs render --root ${r.root}`, '/').code, 0)
+})
+
 test('suite.mjs, dup.mjs and plan.mjs check what they commit only with --commit', (t) => {
   const r = repo()
   t.after(() => rmSync(r.root, { recursive: true, force: true }))

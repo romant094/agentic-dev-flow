@@ -96,8 +96,9 @@ const LABEL = { check: 'Forge', open: 'Merge request', push: 'Push', finalize: '
 
 // The lines a command shows for a forge result, so no caller renders the forge's JSON itself:
 // what happened to the merge request (or the push), the hint and fallback commands of a degraded
-// forge, and the refusal's reason. Nothing is claimed that the result does not carry.
-export function forgeReport(operation, result) {
+// forge, and the refusal's reason. Nothing is claimed that the result does not carry. `draft` is
+// what the caller asked `open` for: false opens it ready to merge (the retrospective's).
+export function forgeReport(operation, result, { draft = true } = {}) {
   const label = LABEL[operation] ?? 'Forge'
   if (result.state === 'none') return `${label}: none; no forge plugin is enabled, so nothing was pushed and no merge request exists.`
   if (result.state === 'refused') return `${label}: refused; ${result.error ?? 'no reason given'}`
@@ -106,7 +107,7 @@ export function forgeReport(operation, result) {
   }
   if (operation === 'check') return `Forge: ${result.tool ?? 'ready'}`
   if (operation === 'push') return `Push: done${result.url ? `; merge request ${result.url}` : ''}`
-  const what = operation === 'finalize' ? 'out of draft, ready to merge' : result.reused ? 'reused' : 'opened as a draft'
+  const what = operation === 'finalize' ? 'out of draft, ready to merge' : result.reused ? 'reused' : draft ? 'opened as a draft' : 'opened, ready to merge'
   return `${label}: ${result.url ?? (result.number ? `!${result.number}` : 'no link returned')} (${what})`
 }
 
