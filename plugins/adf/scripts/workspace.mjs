@@ -21,6 +21,11 @@
 //       .superpowers/sdd/<change>/push.json
 //   workspace.mjs groups --change <name>
 //       the change's group worktrees
+//   workspace.mjs remove --change <name>
+//       archive's last step, from the main checkout: remove the change's worktree, never
+//       forced, keeping its branch: { ok, state: removed|in-place|absent, change, path?,
+//       branch? }. A change made in place, or whose worktree is already gone, is reported, not
+//       failed; a worktree with uncommitted changes is refused with its `git status --porcelain`
 //   workspace.mjs base-check-add|base-check-remove --change <name>
 //       from the change worktree: make a detached worktree of the change's base (the
 //       .adf.json base, the remote-tracking ref when it exists) to check whether a whole-suite
@@ -33,7 +38,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { create, suggest } from './lib/workspace.mjs'
+import { create, remove, suggest } from './lib/workspace.mjs'
 import { addBaseCheck, addGroup, finishGroup, listGroups, mergeGroup, removeBaseCheck, removeGroup } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
 import { reviewPackage } from './lib/sdd.mjs'
@@ -88,12 +93,14 @@ export function run(argv) {
       return removeGroup(root, { change, group })
     case 'groups':
       return { groups: listGroups(root, change) }
+    case 'remove':
+      return remove(root, { change })
     case 'base-check-add':
       return addBaseCheck(root, { change })
     case 'base-check-remove':
       return removeBaseCheck(root, { change })
     default:
-      throw new Error('usage: workspace.mjs suggest|create|group-add|group-merge|group-remove|group-finish|groups|base-check-add|base-check-remove --change <name> [--root <dir>]')
+      throw new Error('usage: workspace.mjs suggest|create|group-add|group-merge|group-remove|group-finish|groups|base-check-add|base-check-remove|remove --change <name> [--root <dir>]')
   }
 }
 

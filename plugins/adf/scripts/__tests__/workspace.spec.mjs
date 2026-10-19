@@ -2,13 +2,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { spawnSync } from 'node:child_process'
 import { detectIntegration, readBranches, setBranches } from '../lib/branches.mjs'
 import { createPlanningGuide, ignoreLocalDirs } from '../lib/host-files.mjs'
 import { initRegistry } from '../lib/registry.mjs'
-import { branchType, create, gitIn, suggest } from '../lib/workspace.mjs'
+import { branchType, create, gitIn, remove, suggest } from '../lib/workspace.mjs'
 
 const quiet = (cwd, ...args) => execFileSync('git', args, { cwd, stdio: 'ignore' })
 
@@ -148,4 +150,72 @@ test('ignoreLocalDirs and createPlanningGuide add only what is missing', () => {
   assert.deepEqual(ignoreLocalDirs(root), { added: [] })
   assert.equal(createPlanningGuide(root).created, true)
   assert.equal(createPlanningGuide(root).created, false)
+})
+
+// ---------------------------------------------------------------- remove
+
+const WORKSPACE = join(dirname(fileURLToPath(import.meta.url)), '..', 'workspace.mjs')
+
+// A host with the change add-x proposed in its worktree and committed there.
+function withChange() {
+  const root = host({ remote: false })
+  const made = create(root, { change: 'add-x', branch: 'feat/add-x', base: 'integration' })
+  mkdirSync(join(made.root, 'openspec', 'changes', 'add-x'), { recursive: true })
+  writeFileSync(join(made.root, 'openspec', 'changes', 'add-x', 'proposal.md'), '# add-x\n')
+  quiet(made.root, 'add', '.')
+  quiet(made.root, 'commit', '-q', '-m', 'propose')
+  return { root, worktree: made.root }
+}
+
+test('remove takes the change worktree away from the main checkout, keeps the branch, and a re-run reports absent', () => {
+  const { root, worktree } = withChange()
+  const result = remove(root, { change: 'add-x' })
+  assert.deepEqual(result, { ok: true, state: 'removed', change: 'add-x', path: worktree, branch: 'feat/add-x' })
+  assert.equal(existsSync(worktree), false)
+  assert.equal(gitIn(root)('branch', '--list', 'feat/add-x').trim(), 'feat/add-x', 'the branch is kept')
+  assert.deepEqual(remove(root, { change: 'add-x' }), { ok: true, state: 'absent', change: 'add-x' })
+})
+
+test('remove finds a worktree outside the default path by the change it holds, archived too', () => {
+  const root = host({ remote: false })
+  const elsewhere = join(dirname(root), 'elsewhere')
+  quiet(root, 'worktree', 'add', '-q', '-b', 'feat/add-y', elsewhere)
+  mkdirSync(join(elsewhere, 'openspec', 'changes', 'archive', '2026-10-19-add-y'), { recursive: true })
+  writeFileSync(join(elsewhere, 'openspec', 'changes', 'archive', '2026-10-19-add-y', 'proposal.md'), '# add-y\n')
+  quiet(elsewhere, 'add', '.')
+  quiet(elsewhere, 'commit', '-q', '-m', 'archive add-y')
+  assert.equal(remove(root, { change: 'add-y' }).state, 'removed')
+  assert.equal(existsSync(elsewhere), false)
+})
+
+test('remove refuses a dirty worktree with its status lines and never forces', () => {
+  const { root, worktree } = withChange()
+  writeFileSync(join(worktree, 'README.md'), 'edited\n')
+  writeFileSync(join(worktree, 'stray.txt'), 'new\n')
+  assert.throws(() => remove(root, { change: 'add-x' }), (error) => /uncommitted changes/.test(error.message) && error.message.includes(' M README.md') && error.message.includes('?? stray.txt'))
+  assert.equal(existsSync(worktree), true)
+})
+
+test('remove reports a change made in place, refuses to run inside a worktree, and reports a vanished directory as absent', () => {
+  const root = host({ remote: false })
+  mkdirSync(join(root, 'openspec', 'changes', 'archive', '2026-10-19-add-z'), { recursive: true })
+  assert.deepEqual(remove(root, { change: 'add-z' }), { ok: true, state: 'in-place', change: 'add-z' })
+  const { root: main, worktree } = withChange()
+  assert.throws(() => remove(worktree, { change: 'add-x' }), /not the main checkout/)
+  rmSync(worktree, { recursive: true, force: true })
+  const gone = remove(main, { change: 'add-x' })
+  assert.equal(gone.state, 'absent')
+  assert.match(gone.hint, /git worktree prune/)
+})
+
+test('workspace.mjs remove prints one JSON object and exits 1 on a refusal', () => {
+  const { root, worktree } = withChange()
+  writeFileSync(join(worktree, 'stray.txt'), 'new\n')
+  const refused = spawnSync(process.execPath, [WORKSPACE, 'remove', '--change', 'add-x', '--root', root], { encoding: 'utf8' })
+  assert.equal(refused.status, 1)
+  assert.match(JSON.parse(refused.stdout).error, /\?\? stray\.txt/)
+  rmSync(join(worktree, 'stray.txt'))
+  const done = spawnSync(process.execPath, [WORKSPACE, 'remove', '--change', 'add-x', '--root', root], { encoding: 'utf8' })
+  assert.equal(done.status, 0)
+  assert.equal(JSON.parse(done.stdout).state, 'removed')
 })
