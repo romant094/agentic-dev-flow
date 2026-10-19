@@ -11,6 +11,7 @@ import { sweepState } from '../lib/loop.mjs'
 import { removalsIn } from '../lib/sweep.mjs'
 import { run as dup } from '../dup.mjs'
 import { run as sweep } from '../sweep.mjs'
+import { run as dispatch } from '../dispatch.mjs'
 import { commitIn, git, host } from './git-host.mjs'
 
 const mark = (root, extra) =>
@@ -128,6 +129,24 @@ test('sweep filter --record turns each disposition into a debt record, once', ()
   writeFileSync(join(change, 'r/bad.json'), '{"role":"sweep"}')
   assert.equal(sweep(['filter', 'r/bad.json', '--record', '--change', 'add-x', '--root', change]).ok, false)
   assert.equal(listRecords(change, 'add-x').length, 2)
+})
+
+test('dispatch.mjs reply records an accepted sweep and its dispositions as debt in one call', () => {
+  const spec = '## REMOVED Requirements\n\n### Requirement: Old thing\n\n**Reason**: gone\n\n**Code Disposition:** deleted\n'
+  const { change } = host({ 'specs/cap/spec.md': spec })
+  mkdirSync(join(change, 'r'), { recursive: true })
+  const reply = (body) => {
+    writeFileSync(join(change, 'r/s.json'), JSON.stringify(body))
+    return dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/s.json', '--root', change], { main: change })
+  }
+  // A refused reply records no debt.
+  const refused = reply({ role: 'sweep', findings: [] })
+  assert.deepEqual([refused.valid, refused.debt], [false, undefined])
+  assert.equal(listRecords(change, 'add-x').length, 0)
+  const disposition = 'deleted with its route; the old path is unreachable'
+  const out = reply({ role: 'sweep', findings: [], dispositions: [{ requirement: 'Old thing', disposition }] })
+  assert.deepEqual([out.valid, out.result.verdict, out.debt], [true, 'CLEAN', [{ requirement: 'Old thing', id: 'debt-1' }]])
+  assert.deepEqual(listRecords(change, 'add-x').map((d) => [d.kind, d.what, d.reason]), [['debt', 'the Code Disposition of the removed or renamed requirement "Old thing"', disposition]])
 })
 
 test('dup mark --commit commits the marked file alone, with the fixed message', () => {

@@ -49,7 +49,19 @@ export const ARCHIVE_ROLES = {
   'spec-merge': { level: 'architecture', schema: 'spec-merge-resolution.schema.json' },
   ingest: { level: 'architecture', schema: 'ingest.schema.json' }
 }
-const SCHEMA_ROLES = { ...REVIEW_ROLES, ...ARCHIVE_ROLES }
+// The JSON Schema under schema/ of each apply role's reply: lib/reply.mjs ROLES checks the reply
+// under it, and the role's prompt names its path in the `reply` rule.
+export const APPLY_SCHEMAS = {
+  impl: 'impl.schema.json',
+  fix: 'impl.schema.json',
+  review: 'task-review.schema.json',
+  'final-review': 'task-review.schema.json',
+  'merge-review': 'task-review.schema.json',
+  're-review': 're-review.schema.json',
+  sweep: 'sweep.schema.json',
+  investigate: 'investigate.schema.json'
+}
+const SCHEMA_ROLES = { ...Object.fromEntries(Object.entries(APPLY_SCHEMAS).map(([role, schema]) => [role, { schema }])), ...REVIEW_ROLES, ...ARCHIVE_ROLES }
 export const ROLES = [...new Set([...TASK_ROLES, ...Object.keys(TASKLESS), 'verify', ...Object.keys(REVIEW_ROLES), ...Object.keys(ARCHIVE_ROLES)])]
 // Roles whose question the orchestrator must write: the prompt refuses an empty slot, except for a
 // fix or re-review whose prompt renders the subject's open findings (lib/loop.mjs).

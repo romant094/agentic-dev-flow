@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFil
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { dispatchName, MAX_ROUNDS, normalize, parseGraph, parseName, planDispatch, roundOf, verbatimBlocks } from '../lib/dispatch.mjs'
+import { dispatchName, MAX_ROUNDS, normalize, parseGraph, parseName, planDispatch, renderPrompt, roundOf, verbatimBlocks } from '../lib/dispatch.mjs'
 import { PLUGIN_ROOT, PROMPTS_DIR, run } from '../dispatch.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
 import { ROLES as REPLY_ROLES } from '../lib/reply.mjs'
@@ -196,7 +196,7 @@ test('an implementer prompt carries every fixed field and clause, with paths abs
   assert.ok(prompt.includes(`\`git -C ${wt}\``))
   assert.ok(prompt.includes(`node "${PLUGIN_ROOT}/scripts/commit.mjs" --root ${wt} --only <path>`))
   assert.match(prompt, /which tests cover a file\s+is your call/)
-  assert.ok(prompt.includes(`${PLUGIN_ROOT}/schema/\`: \`impl.schema.json\` for \`impl\``))
+  assert.ok(prompt.includes(`JSON Schema, \`${PLUGIN_ROOT}/schema/impl.schema.json\`.`))
   assert.ok(prompt.includes(`node "${PLUGIN_ROOT}/scripts/suite.mjs" covering --change ${CHANGE} --name "T3 impl" --command "<the command>" --worktree ${wt} --root ${root}`))
   assert.match(prompt, /in the reply's\s+`testRuns`/)
   assert.ok(prompt.includes(join(root, '.superpowers', 'sdd', CHANGE, 'replies', 'T3-impl.json')))
@@ -386,15 +386,17 @@ test('the apply instruction and command restate no sentence of an apply prompt s
   assert.deepEqual(restated, [])
 })
 
-// The reply skeleton names the schema file of every apply role as lib/reply.mjs checks it, so a
-// role moved to another schema cannot leave the agent reading the old shape.
-test('the reply skeleton names each apply role with the schema its checker reads', () => {
-  const text = normalize(readFileSync(join(PROMPTS_DIR, 'reply.md'), 'utf8'))
+// Each apply role's prompt names the schema file its checker (lib/reply.mjs) reads, so a role
+// moved to another schema cannot leave the agent reading the old shape.
+test('each apply role prompt names the schema its checker reads', () => {
+  const skeletons = Object.fromEntries(readdirSync(PROMPTS_DIR).filter((f) => f.endsWith('.md')).map((f) => [f.slice(0, -3), readFileSync(join(PROMPTS_DIR, f), 'utf8')]))
+  assert.match(skeletons.reply, /\{\{schema\}\}/)
+  assert.doesNotMatch(skeletons.reply, /[a-z-]+\.schema\.json/)
   for (const [role, { schema }] of Object.entries(REPLY_ROLES)) {
-    const at = text.indexOf(`\`${schema}\``)
-    assert.ok(at >= 0, `reply.md names no ${schema}`)
-    const clause = text.slice(at).split(/, `[a-z-]+\.schema\.json`|\.\s/)[0]
-    assert.ok(clause.includes(`\`${role}\``), `reply.md does not name ${role} beside ${schema}: ${clause}`)
+    assert.ok(existsSync(join(PLUGIN_ROOT, 'schema', schema)), `no schema/${schema}`)
+    const plan = { name: role, role, agent: 'adf:integration', replyFile: 'r.json' }
+    const prompt = renderPrompt({ plan, change: 'c', skeletons, fields: [], question: 'q', tokens: {} })
+    assert.ok(prompt.includes(`JSON Schema, \`\${CLAUDE_PLUGIN_ROOT}/schema/${schema}\`.`), `the ${role} prompt does not name ${schema}`)
   }
 })
 

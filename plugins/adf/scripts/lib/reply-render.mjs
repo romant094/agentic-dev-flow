@@ -129,7 +129,7 @@ export function c4Lines(reply, result) {
     removalAccounting: reply.removalAccounting.map(
       (r) => `${r.op} ${r.requirement}: ${r.disposition ?? 'no Code Disposition'}; ${r.holds ? 'the code holds it' : 'the code contradicts it'}; the old path is ${r.oldPathReachable ? 'still reachable' : 'unreachable'}`
     ),
-    exercised: reply.exercised.map((e) => `${e.mechanism}, ${e.path}: ${e.exercisedBy === null ? 'nothing exercised it' : `exercised by ${e.exercisedBy}`}`)
+    exercised: reply.exercised.map((e) => `${e.mechanism}, ${e.path}: ${e.exercisedBy === null ? 'not exercised (warning)' : `exercised by ${e.exercisedBy}`}`)
   }
 }
 

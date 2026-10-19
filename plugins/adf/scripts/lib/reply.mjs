@@ -12,6 +12,8 @@
 //   sweep                         sweep.schema.json        dispositions -> CLEAN | FINDINGS
 //   investigate                   investigate.schema.json  the schema only; nothing computed
 //
+// The schema files are lib/dispatch.mjs APPLY_SCHEMAS, which also names each in the role's prompt.
+//
 // The context (`replyContext`) is read once the schema accepts the reply:
 //   { root, change, name, parts, planText?, worktree?, scope?, history?, rulings?, sweep? }
 // root is the change worktree; worktree the dispatch's own (a group worktree for a task of a
@@ -62,7 +64,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:pat
 import { fileURLToPath } from 'node:url'
 import { attemptsFile } from './attempts.mjs'
 import { globToRegExp } from './changes.mjs'
-import { parseGraph, parseName, planDispatch, sddDir } from './dispatch.mjs'
+import { APPLY_SCHEMAS, parseGraph, parseName, planDispatch, sddDir } from './dispatch.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { readRecords } from './ledger.mjs'
 import { loopState, REVIEW_ROLES, subjectHistory, subjectOf, subjectRulings } from './loop.mjs'
@@ -111,7 +113,7 @@ function routeFindings(findings, history) {
 const resultOf = ({ open, toRule, unverifiable = [] }) => (toRule.length || unverifiable.length ? 'rule' : open.length ? 'fix' : 'clean')
 
 const review = {
-  schema: 'task-review.schema.json',
+  schema: APPLY_SCHEMAS.review,
   check: (reply) => findingErrors(reply.findings, '$.findings'),
   compute(reply, ctx) {
     const routed = routeFindings(reply.findings, ctx.history)
@@ -130,7 +132,7 @@ const review = {
 }
 
 const reReview = {
-  schema: 're-review.schema.json',
+  schema: APPLY_SCHEMAS['re-review'],
   check(reply, ctx) {
     const errors = findingErrors(reply.findings, '$.findings')
     const subject = subjectOf(ctx.parts)
@@ -252,7 +254,7 @@ const STATUS = { blocked: 'BLOCKED', 'needs-context': 'NEEDS_CONTEXT' }
 const NEXT = { BLOCKED: 'blocked', NEEDS_CONTEXT: 'provide-context', DONE_WITH_CONCERNS: 'read-concerns' }
 
 const impl = {
-  schema: 'impl.schema.json',
+  schema: APPLY_SCHEMAS.impl,
   check: (reply, ctx) => implFacts(reply, ctx).errors,
   compute(reply, ctx) {
     const { commits, runs, last, concerns, outOfScope } = implFacts(reply, ctx)
@@ -274,7 +276,7 @@ const impl = {
 // ---------------------------------------------------------------- sweep
 
 const sweep = {
-  schema: 'sweep.schema.json',
+  schema: APPLY_SCHEMAS.sweep,
   check(reply, ctx) {
     const listed = ctx.sweep.removedOrRenamed.map((r) => r.requirement ?? r.from)
     const given = reply.dispositions ?? []
@@ -303,7 +305,7 @@ export const ROLES = {
   'merge-review': review,
   're-review': reReview,
   sweep,
-  investigate: { schema: 'investigate.schema.json', check: () => [], compute: () => undefined }
+  investigate: { schema: APPLY_SCHEMAS.investigate, check: () => [], compute: () => undefined }
 }
 
 export const schemaOf = (role) => readSchema(join(SCHEMA_DIR, ROLES[role].schema))

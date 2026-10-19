@@ -203,7 +203,7 @@ reply file, and record no reply a second time through another call. Route on `ne
     final review.
   - `re-review`: `result.addressed`, `result.open` and `result.result`, as for a review.
   - `sweep`: `result.verdict` (`CLEAN` or `FINDINGS`), `result.findings` and `result.dropped`,
-    the findings a `DUP` marker accepts.
+    the findings a `DUP` marker accepts; `debt`, the debt records its `dispositions` became.
   - `investigate`: the script checks the shape only; the reply's `answer` is yours to read.
 - `retry`: the reply is refused, the first time, and goes back once, to the same agent, resumed,
   with `errors` (`mode: resume`); where the harness cannot resume it, pass `--resume no` and
@@ -384,15 +384,9 @@ scope.
 Its reply is recorded like every other, with `dispatch.mjs reply`, which drops every finding
 whose introduced location carries a `DUP` marker naming that existing location, computes the
 verdict from what is left, and records the HEAD the sweep ran on. A sweep with no accepted reply
-after its retry is no verdict, never `CLEAN`. An accepted reply's `dispositions` are recorded as
-debt by a call that records no reply event:
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/sweep.mjs" filter <replyFile> --record --change <change> --root <root>
-```
-
-It writes each entry of `dispositions` as a `debt` carrying the sweep's answer as its reason; it
-never blocks apply.
+after its retry is no verdict, never `CLEAN`. The same call writes each entry of an accepted
+reply's `dispositions` as a `debt` carrying the sweep's answer as its reason, listed in its
+output as `debt`; it never blocks apply.
 
 **A sweep finding naming both locations blocks apply from concluding.** It is the only
 maintainability finding that blocks; every other stays advisory. `apply-status.mjs` lists the

@@ -193,7 +193,8 @@ path is still reachable; it warns on a `doc-drift`, a `prose-edit-unstated`, a
 reason, and on a path of a new mechanism nothing exercised (`exercisedBy: null`); it passes
 otherwise. The record renders the section from the reply: the case, the findings, the
 hand-edited capability prose with each edit's position and reason, and the removal accounting,
-or `N/A: no REMOVED or RENAMED requirement`.
+or `N/A: no REMOVED or RENAMED requirement`; under `## Exercised and not exercised`, each entry
+of `exercised` as its mechanism, its path and what exercised it, or `not exercised (warning)`.
 
 **`verify c8`: stale skills.**
 

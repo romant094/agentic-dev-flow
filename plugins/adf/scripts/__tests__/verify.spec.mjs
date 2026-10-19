@@ -240,7 +240,7 @@ test('test-record fails with no record and with a record naming no commit', () =
   assert.equal(runIn(root)['test-record'].summary, 'the apply test record names no commit: run the suite')
 })
 
-test('test-record warns on an impl or fix reply with no count, or one the record contradicts', () => {
+test('test-record warns on an impl or fix covering run with no count line, or one the record contradicts', () => {
   const { root } = host()
   implRun(root, 'T1 impl', '# tests 4\n# pass 4\n')
   recordReply(root, CHANGE, { name: 'T1 review', file: 'r.json', result: { result: 'clean' } })
@@ -723,7 +723,7 @@ test('assemble renders the record from the sections, ends on the verdict line an
   assert.match(text, /## Design and specs coherence\n\n\*\*Result:\*\* WARN: warns: doc-drift at design\.md:3, specs\/greeting\/spec\.md:5; nothing exercised greet: the retry\. one drift, with ```js x``` quoted\n\n\*\*Case:\*\* no-design\n\n\*\*Findings:\*\*\n\n- doc-drift at design\.md:3 and specs\/greeting\/spec\.md:5: the two disagree\n\n\*\*Hand-edited capability prose:\*\* none\n\n\*\*Removal accounting:\*\* N\/A: no REMOVED or RENAMED requirement\n\n## /)
   assert.doesNotMatch(text, /"role": "verify-c4"/, 'the reply is rendered, never pasted')
   assert.match(text, /## Stale skills\n\n\*\*Result:\*\* PASS: no stale skill\n\n\*\*CONFIRMED:\*\* none\n\n\*\*PLAUSIBLE:\*\* none\n\n\*\*Not contradicted:\*\* none\n\n\*\*Proposed edits:\*\* none/)
-  assert.match(text, /## Exercised and not exercised\n\n- greet, the CLI: exercised by a\.spec\n- greet, the retry: nothing exercised it/)
+  assert.match(text, /## Exercised and not exercised\n\n- greet, the CLI: exercised by a\.spec\n- greet, the retry: not exercised \(warning\)\n\n## /)
   assert.match(text, /\*\*Scope that ran:\*\* the record cited, not re-run/)
   assert.match(text, /## Checks run with the developer\n\nnone/)
   assert.match(text, /## Rulings\n\nnone/)

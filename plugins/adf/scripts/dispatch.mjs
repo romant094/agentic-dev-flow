@@ -56,7 +56,9 @@
 //       ingest.mjs checkIngestFile against the ingest input; lib/verify-reply.mjs for `verify c4`
 //       and `verify c8`, which on a valid reply also writes the section verify.mjs verdict reads
 //       (and, for c8, verify/c8.diff), returned as `section`; their retries count from the verify
-//       session's start
+//       session's start. A valid `sweep` reply's dispositions are written as `debt` records in
+//       the same call (lib/sweep.mjs recordDispositions), listed as `debt`: each id, or why it
+//       was skipped
 //
 // prompt reads the loop state by script (lib/loop.mjs). A `fix` or `re-review` whose subject (the
 // task, the group, or the final review) has an accepted review carries `Open findings`, rendered
@@ -98,7 +100,7 @@ import { checkFindings, checkFix } from './lib/review.mjs'
 import { checkSpecMergeReply, writeConflictTexts } from './lib/spec-merge.mjs'
 import { mergePreview } from './lib/specs.mjs'
 import { fixTarget, Refusal, reviewSince } from './lib/review-state.mjs'
-import { sweepInputs } from './lib/sweep.mjs'
+import { recordDispositions, sweepInputs } from './lib/sweep.mjs'
 import { LOOP_ROLES, openFindings, renderDeferred, subjectHistory, subjectOf, subjectState, withProofFinding, writeDeferred } from './lib/loop.mjs'
 import { readTaskProof, taskProof } from './lib/tdd-proof.mjs'
 import { gitIn } from './lib/workspace.mjs'
@@ -434,7 +436,9 @@ function recordReplyOf(values, { root, change, main }) {
   const recorded = recordReply(root, change, { name, file: path, errors, result, resume: values.resume !== 'no', since })
   // The deferred list follows every accepted review and re-review.
   if (recorded.valid && LOOP_ROLES.includes(parts.role)) writeDeferred(root, change)
-  return { ...recorded, ...(result === undefined ? {} : { result }) }
+  // An accepted sweep's dispositions become debt records in the same call (lib/sweep.mjs).
+  const debt = recorded.valid && parts.role === 'sweep' && result?.dispositions ? recordDispositions(root, change, result.dispositions) : undefined
+  return { ...recorded, ...(result === undefined ? {} : { result }), ...(debt === undefined ? {} : { debt }) }
 }
 
 function existsArchived(root, change) {
