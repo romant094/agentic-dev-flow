@@ -361,3 +361,15 @@ test('the token total counts thinking once, inside output', () => {
   const values = changeValues({ record: { tokens: { total } }, coverage: { tokens: 'record' }, tasks: 1 })
   assert.equal(values['cost.tokens'], 118)
 })
+
+test('every waiting item names a lessons row that exists', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { WAITING_PATH } = await import('../lib/window.mjs')
+  const repo = join(dirname(WAITING_PATH), '..', '..', '..')
+  const parsed = JSON.parse(readFileSync(WAITING_PATH, 'utf8'))
+  for (const item of Array.isArray(parsed) ? parsed : parsed.items) {
+    const text = readFileSync(join(repo, item.lessons.file), 'utf8')
+    const rows = text.split('\n').filter((line) => line.startsWith(`| ${item.lessons.row}`))
+    assert.equal(rows.length, 1, `${item.id}: ${item.lessons.file} row "${item.lessons.row}"`)
+  }
+})
