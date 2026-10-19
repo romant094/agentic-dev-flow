@@ -56,5 +56,5 @@ conversation; if that is vague or ambiguous, the selection in step 1 asks.
    calls they name and assemble again. Push nothing.
 
 9. **Report.** Show the `report` that `assemble` returned. End with what is blocked on the
-   developer, if anything; on `PASS` the next step is archive, on `BLOCKED` the outstanding
+   developer, if anything; on `PASS` the next step is `/adf:archive`, on `BLOCKED` the outstanding
    findings the report names and then `/adf:review` again.

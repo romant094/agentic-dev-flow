@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildOrder, GATES, loadSchema, SCHEMA_DIR, validateSchema } from '../lib/schema.mjs'
+import { STEPS } from '../lib/archive.mjs'
 import { checkRecord } from '../lib/review-state.mjs'
 import { CHECKS, REPLACEABLE } from '../lib/verify.mjs'
 
@@ -98,6 +99,8 @@ test('no dispatch-facing text asks for a repository-wide git mutation', () => {
     'commands/verify.md',
     'schema/instructions/review.md',
     'commands/review.md',
+    'schema/instructions/archive.md',
+    'commands/archive.md',
     ...readdirSync(join(root, 'agents')).map((f) => `agents/${f}`),
     ...readdirSync(join(root, 'schema', 'prompts')).map((f) => `schema/prompts/${f}`)
   ]
@@ -141,4 +144,21 @@ test('the review template documents the sections assemble renders, and its unfil
   const parsed = checkRecord(template)
   assert.equal(parsed.ok, false)
   assert.equal(parsed.verdict, null)
+})
+
+// Archive generates no artifact: its state is the step file, and the ledger it copies is a plain
+// file. Its instruction, the schema's `archive` block, carries the rule of every step the script
+// runs, and the command drives them through `archive.mjs next`.
+test('the archive block points at an instruction naming every archive.mjs step, and archive generates no artifact', () => {
+  const schema = loadSchema()
+  assert.equal(schema.blocks.archive, 'archive.md')
+  assert.deepEqual(schema.artifacts.filter((a) => a.id === 'archive' || /ledger/.test(a.generates)), [])
+  const instruction = readFileSync(join(SCHEMA_DIR, 'instructions', 'archive.md'), 'utf8')
+  for (const step of STEPS) assert.match(instruction, new RegExp(`^\\s*\\d+\\. \\*\\*\`${step}\``, 'm'), `the instruction gives no rule for ${step}`)
+  const command = readFileSync(join(SCHEMA_DIR, '..', 'commands', 'archive.md'), 'utf8')
+  assert.match(command, /^effort: medium$/m)
+  assert.match(command, /preflight\.mjs --phase archive/)
+  assert.match(command, /archive\.mjs" next --change/)
+  assert.match(command, /archive\.mjs" report --change <name> --root <main>/)
+  for (const step of STEPS) assert.match(command, new RegExp(`\`${step}\``), `the command names no ${step}`)
 })

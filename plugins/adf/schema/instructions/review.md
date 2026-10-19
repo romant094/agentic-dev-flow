@@ -216,6 +216,6 @@ fails with no ruling; PASS otherwise. A blocking finding is closed by its fix, b
 the developer ruled and the marker carries, or by the developer's acceptance. Review calls no
 forge operation and pushes nothing: the record reaches the remote with a later push.
 
-**The next step follows the verdict.** `PASS`: archive, which reads the record's verdict and
+**The next step follows the verdict.** `PASS`: `/adf:archive`, which reads the record's verdict and
 reviewed commit. `BLOCKED`: the outstanding findings go to the developer, whose rulings or a
 further round resolve them; then assemble again.

@@ -17,7 +17,9 @@ The brainstorming skill will:
 5. Output the validated design
 
 **Read first, and name what you read.** Before proposing anything, read the project's knowledge
-base, if the host has one, and the pages it points at for this area; then read the code that area
+base: the index `changes.mjs next` returns under `knowledge.index`, which the knowledge role's
+`context` names, and the pages it points at for this area. With no knowledge plugin the index
+is null and `knowledge.report` says so; there is no index to read. Then read the code that area
 actually contains. Name what you read. An approach accepted only because it was stated, or an
 alternative invented without looking, is what this step prevents.
 

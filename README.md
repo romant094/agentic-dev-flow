@@ -22,9 +22,9 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Verify: the mechanical checks and the verdict by script, read-only judgement dispatches, developer rulings, the base check as a workspace operation | done (iteration 08) |
 | Scripts first: every deterministic step of propose, apply and verify is a script; the LLM keeps the reasoning work | done (iteration 08a) |
 | Review: the reviewer and the fixer reply in JSON, the verdict, the rounds, the dispositions, the markers and the record by script; `input`, `response` and `render` run standalone for a CI job | done (iteration 09) |
-| Archive | not ported |
+| Archive: `/adf:archive`, resumable; the spec merge, the placements, the ingest, the merge request or a local merge and the worktree removal by script; the LLM keeps the conflicts, a new capability's Purpose, the ingest and the merge request's prose | in progress (iteration 10) |
 | Metrics, retrospective | not ported |
-| Wiki memory and technical debt | not ported |
+| Wiki memory and technical debt: the `memory` plugin (the `knowledge` role, contract `1.3`) and the core's debt store | in progress (iteration 10) |
 | Plugins: tracker (Jira), project stack | not started |
 | `/adf:quick`, a small fix or feature without the full artifact set | not started |
 | `/adf:update` | not started |
@@ -61,16 +61,19 @@ Then, in the host project:
 /adf:apply [change]
 /adf:verify [change]
 /adf:review [change]
+/adf:archive [change]
 /adf:add <plugin id or path>
 /adf:remove <plugin name>
 ```
 
 A plugin is installed for the project, then enabled by its id. For example, GitLab merge
-requests and the English check:
+requests, the wiki memory and the English check:
 
 ```
 claude plugin install gitlab@agentic-dev-flow --scope project
 /adf:add gitlab@agentic-dev-flow
+claude plugin install memory@agentic-dev-flow --scope project
+/adf:add memory@agentic-dev-flow
 claude plugin install english-check@agentic-dev-flow --scope project
 ```
 
@@ -83,8 +86,8 @@ scope (`plugins/english-check/README.md`).
 ```
 .claude-plugin/marketplace.json   the marketplace: the core and every plugin
 plugins/adf/                      the core
-  commands/                       /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply, /adf:verify, /adf:review
-  agents/                         the capability-level subagents apply, verify and review dispatch
+  commands/                       /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply, /adf:verify, /adf:review, /adf:archive
+  agents/                         the capability-level subagents apply, verify, review and archive dispatch
   contract/                       the extension contract and its version
   schema/                         the artifact graph (schema.json), templates, instructions
   host/                           templates of files /adf:init adds to the host (planning guide)
@@ -93,6 +96,7 @@ plugins/adf/                      the core
                                   their library and tests
 plugins/gitlab/                   the forge role for GitLab, through glab; the merge request template
 plugins/english-check/            a PreToolUse hook that blocks a commit with non-English text
+plugins/memory/                   the wiki memory: the knowledge role, its log and its workflows
 scripts/parity/                   dev tools: compare the ported scripts with the origin's and the
                                   openspec CLI on the origin project (npm run parity -- <root>)
 test/fixtures/                    a host project and a plugin for end-to-end tests

@@ -20,7 +20,11 @@
 //                                                    artifact fails one of its gates. Records the
 //                                                    propose session in the ledger once per
 //                                                    session (`ledger`), so a change continued in
-//                                                    a later session is recorded too
+//                                                    a later session is recorded too. For
+//                                                    brainstorm also `knowledge`: { state, index,
+//                                                    report }, the knowledge base's index from the
+//                                                    knowledge role's `context`, absolute; null
+//                                                    with no provider
 //   changes.mjs done <artifact> [--change <name>]    moves a Superpowers skill's default-folder
 //                                                    output into the change, reports copied
 //                                                    project guidance, runs the artifact's gates
@@ -39,7 +43,7 @@
 // Without --change the change is the one active change under the root. next, done, skip and
 // archive write, and refuse the main checkout unless --allow-main is given.
 import { execFileSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import {
   applyInstructions,
   archiveChange,
@@ -59,6 +63,8 @@ import { isMain } from './lib/main.mjs'
 import { findChanges } from './lib/resolve.mjs'
 import { recordSessionOnce } from './lib/ledger.mjs'
 import { markDone, nextArtifact } from './lib/propose.mjs'
+import { callRole, CORE, knowledgeReport } from './lib/roles.mjs'
+import { claudeHome } from './lib/superpowers.mjs'
 
 function option(args, name) {
   const i = args.indexOf(name)
@@ -82,8 +88,24 @@ function branchOf(root) {
   }
 }
 
-// Returns the result, or a promise of it for next and done, which run gates.
-export function run(argv, { schemaDir, env = process.env } = {}) {
+// Brainstorm reads the knowledge base first: its index, from the knowledge role's `context`.
+// With no provider, or one that fails, there is no index, and `report` says why.
+function knowledgeIndex(root, read) {
+  let context
+  try {
+    context = read(root)
+  } catch (error) {
+    context = { state: 'refused', error: error.message }
+  }
+  const index = context.state === 'done' && typeof context.index === 'string' && context.index !== '' ? join(root, context.index) : null
+  return { state: context.state, index, report: knowledgeReport('context', context) }
+}
+
+const readKnowledge = (root) => callRole(root, 'knowledge', 'context', {}, { ...CORE, home: claudeHome() })
+
+// Returns the result, or a promise of it for next and done, which run gates. `knowledge(root)`
+// is the knowledge role's `context` call; the tests inject it.
+export function run(argv, { schemaDir, env = process.env, knowledge = readKnowledge } = {}) {
   const args = [...argv]
   const root = option(args, '--root') ?? process.cwd()
   const given = option(args, '--change')
@@ -121,7 +143,11 @@ export function run(argv, { schemaDir, env = process.env } = {}) {
       writing()
       const name = change()
       // Recorded after nextArtifact has found the change, so no ledger is made for a typo.
-      return nextArtifact(resolve(root), name, schema).then((result) => ({ ...result, ledger: recordSessionOnce(resolve(root), name, 'propose', { env }) }))
+      return nextArtifact(resolve(root), name, schema).then((result) => ({
+        ...result,
+        ...(result.artifact === 'brainstorm' ? { knowledge: knowledgeIndex(resolve(root), knowledge) } : {}),
+        ledger: recordSessionOnce(resolve(root), name, 'propose', { env })
+      }))
     }
     case 'done':
       if (!target) throw new Error('usage: done <artifact> [--change <name>]')

@@ -350,6 +350,29 @@ test('next records the propose session of a continued change once per session', 
   assert.equal(existsSync(join(root, '.superpowers', 'sdd', 'no-such')), false, 'no ledger for a change that does not exist')
 })
 
+test('next gives brainstorm the knowledge index from the knowledge role, and no index without a provider', async () => {
+  const { root, dir } = started()
+  const done = (index) => () => ({ state: 'done', plugin: 'memory', index })
+  const first = await changesCli(['next', '--root', root], { env, knowledge: done('.claude/memory/index.md') })
+  assert.equal(first.artifact, 'brainstorm')
+  assert.deepEqual(first.knowledge, { state: 'done', index: join(root, '.claude/memory/index.md'), report: 'Knowledge: index .claude/memory/index.md' })
+  const none = await changesCli(['next', '--root', root], { env, knowledge: () => ({ state: 'none', point: 'knowledge' }) })
+  assert.equal(none.knowledge.index, null)
+  assert.match(none.knowledge.report, /brainstorm reads no index/)
+  const failed = await changesCli(['next', '--root', root], {
+    env,
+    knowledge: () => {
+      throw new Error('boom')
+    }
+  })
+  assert.deepEqual([failed.knowledge.state, failed.knowledge.index], ['refused', null])
+  write(dir, 'brainstorm.md', '# B\n')
+  await markDone(root, 'add-thing', 'brainstorm', schema)
+  const later = await changesCli(['next', '--root', root], { env, knowledge: done('x.md') })
+  assert.notEqual(later.artifact, 'brainstorm')
+  assert.equal('knowledge' in later, false, 'only brainstorm reads the index')
+})
+
 test('the forge input comes from state: branch, base, protected, and the title type from the branch', () => {
   assert.equal(titleFrom('feat/add-x', 'core: add x'), 'feat(core): add x')
   assert.equal(titleFrom('fix/DEV-1/y', 'repair y'), 'fix: repair y')
