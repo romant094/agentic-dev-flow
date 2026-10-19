@@ -63,3 +63,42 @@ Settled by the developer on 2026-10-19.
 - Port fixes of origin defects: wave-1 "performed" from the dispatch log, not from `git worktree
   list` after the group worktrees are gone; phases from the ledger, not only from command tags;
   one extraction, so no ledger refresh that forgets to recompute `rulings`.
+
+## Result
+
+- `npm test`: 878 tests, 877 pass, 0 failures, 1 skipped (the live openspec parity, with
+  `OPENSPEC_DIST` not set); `check-lessons.mjs`: ok, 759 rows, 40 pending, no row pending on
+  iteration 11.
+- `npm run parity -- <origin>`: all 21 tools PASS. The four new ones:
+  - `origin-metrics-records.mjs`: 28 of 28 origin records convert through `fromV1` and
+    validate; the review-stage findings (17), the ledger section (18) and the task counts (16)
+    equal the port's readers on the archived files; removal candidates `[]` on both sides.
+    Maintainability is printed for information only: 0 of 28 records can be reproduced from
+    git (10 backfilled against another checkout's HEAD, 18 squash merges).
+  - `origin-metrics-transcripts.mjs`: 18 changes with surviving sessions; token totals by actor
+    and model, 619 dispatches (actor, type, model, turns, tokens), cache hit, autonomy, active
+    time and outliers equal; the differences are explained classes (phase source, command
+    launches counted as messages, v1 dispatch names, multi-word `investigate` topics, rounding,
+    no prices).
+  - `origin-window.mjs`: membership and cut-off equal (the whole origin history as the
+    baseline); the since-retro count equal; differences only where the origin re-measures or
+    zero-fills unresolved sessions, both deliberate.
+  - `origin-metrics-findings.mjs` (the 10a open item): 8 of 17 records' replies rebuilt from
+    the transcripts; 34 of 40 layers equal, 6 short by files written by generated scripts.
+- Port defect found by parity and fixed: the window's token total added `thinking`, which
+  `output` already holds (20 records over by their thinking total).
+- Decisions changed while building: several retrospectives on one date, by id
+  (`<date>-window`, `<date>-period`, `<date>-<change>`); `reply` records the retry dispatch
+  itself; `publish --no` declines the local merge and keeps the branch; a `remove` step deletes
+  the retro worktree; a `degraded` `metrics` step (no transcripts) does not keep archive from
+  completing; archive's `merge-local` and the retro's `publish` share `lib/local-merge.mjs`.
+- `claude plugin validate .`: not run here; run by the developer.
+- Not run: `/adf:retro` and `/adf:archive` end to end by an agent (iteration 14); `ci: false`
+  against a real GitLab (iteration 18); the price fetch against the live page.
+- Open: the `upstream` provider is iteration 10b; re-derivation is not measured (no record keeps
+  file reads per dispatch); the origin's cost baseline before 2026-09-30 double-counted, and
+  `fromV1` carries it as it is; the knowledge base is kept out of the diff figures only through
+  the `knowledge` role's `paths`; `origin-ledger.mjs` and `origin-sdd.mjs` leave temporary
+  directories behind; the parity suite takes about 9 minutes.
+- Versions: adf 0.11.0, gitlab 0.3.0, contract 1.4; memory 0.1.0 and english-check 0.4.0
+  unchanged.
