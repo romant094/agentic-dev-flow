@@ -243,17 +243,23 @@ export function readLedger(root, change) {
   } catch (error) {
     return absent(`${rel(change, 'ledger.jsonl')} does not parse: ${error.message}`)
   }
+  return present(summarizeLedger(records))
+}
+
+// The ledger group of a record from the ledger's records (lib/ledger.mjs), also used to convert
+// an origin record that kept them.
+export function summarizeLedger(records) {
   const counts = {}
   for (const r of records) counts[r.kind] = (counts[r.kind] ?? 0) + 1
   const pick = (r, keys) => Object.fromEntries(keys.filter((k) => r[k] !== undefined).map((k) => [k, r[k]]))
-  return present({
+  return {
     counts,
     unresolvedDebt: unresolvedDebt(records).map((r) => pick(r, ['id', 'what', 'reason', 'task'])),
     deviations: records.filter((r) => r.kind === 'deviation').map((r) => pick(r, ['id', 'rule', 'reason', 'task'])),
     handoffs: counts.handoff ?? 0,
     rulings: counts.ruling ?? 0,
     sessions: records.filter((r) => r.kind === 'session').map((r) => pick(r, ['id', 'sessionId', 'phase', 'at']))
-  })
+  }
 }
 
 // ---------------------------------------------------------------- all of them

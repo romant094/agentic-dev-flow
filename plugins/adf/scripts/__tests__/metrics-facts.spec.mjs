@@ -10,6 +10,7 @@ import {
   classify,
   coldResumes,
   computeFacts,
+  dayOf,
   levelOf,
   maxTurnsFromAgents,
   outliers,
@@ -233,6 +234,26 @@ test('tokens by actor, phase, model and level, each summing to the total', () =>
   assert.deepEqual(Object.fromEntries(Object.entries(t.byPhase).map(([k, v]) => [k, v.output])), { propose: 120, apply: 7 + 9 + 40 + 10 + 3, verify: 2 })
   assert.deepEqual(f.phases, { s1: 'ledger', s2: 'commands' })
   assert.deepEqual(f.warnings, [])
+})
+
+test('tokens by model and UTC day of the response, summing to the model figures', () => {
+  const late = '2026-10-01T23:59:00.000Z'
+  const next = '2026-10-02T00:01:00.000Z'
+  const s = session('s1', {
+    responses: [resp(late, { input: 1, output: 10 }), resp(next, { input: 2, output: 20 }), resp(null, { output: 5 })],
+    subagents: [agent('a1', 'T1 impl', 'adf:integration', [resp(next, { model: 'claude-sonnet-5-5', cacheWrite5m: 7 })])]
+  })
+  const t = computeFacts({ sessions: [s] }).tokens
+  assert.deepEqual(Object.keys(t.byModelDay).sort(), ['claude-opus-5-5', 'claude-sonnet-5-5'])
+  assert.deepEqual(t.byModelDay['claude-opus-5-5']['2026-10-01'], { input: 1, output: 10, thinking: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 })
+  assert.equal(t.byModelDay['claude-opus-5-5']['2026-10-02'].output, 20)
+  assert.equal(t.byModelDay['claude-opus-5-5'].undated.output, 5, 'a response with no time is undated, never dropped')
+  assert.equal(t.byModelDay['claude-sonnet-5-5']['2026-10-02'].cacheWrite5m, 7)
+  for (const [model, days] of Object.entries(t.byModelDay)) {
+    for (const f of TOKEN_FIELDS) assert.equal(Object.values(days).reduce((n, d) => n + d[f], 0), t.byModel[model][f], `${model}.${f}`)
+  }
+  assert.equal(dayOf('2026-10-01T23:59:59.999Z'), '2026-10-01')
+  assert.equal(dayOf('nonsense'), 'undated')
 })
 
 test('dispatches: classified, levelled, a missing transcript named with null figures', () => {

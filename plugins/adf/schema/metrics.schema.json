@@ -1,0 +1,703 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf/metrics.schema.json",
+  "title": "ADF metrics record",
+  "description": "One change's metrics record, schemaVersion 2 (contract/metrics-format.md): tokens and never prices or cost; an absent group is null and its coverage entry names the reason, a present group's coverage entry is record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "change", "branch", "base", "range", "generatedAt", "generator", "sources", "dispatches", "tokens", "context", "cacheTtl", "outliers", "timing", "autonomy", "replies", "impl", "tests", "findings", "review", "verify", "ledger", "isolation", "compliance", "maintainability"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "change": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+    "branch": { "type": ["string", "null"] },
+    "base": { "type": ["string", "null"] },
+    "range": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["base", "head"],
+      "properties": { "base": { "type": "string", "minLength": 1 }, "head": { "type": ["string", "null"] } }
+    },
+    "generatedAt": { "$ref": "#/$defs/time" },
+    "generator": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["plugin", "version", "plugins"],
+      "properties": {
+        "plugin": { "const": "adf" },
+        "version": { "type": "string", "minLength": 1 },
+        "plugins": { "type": "object" }
+      }
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transcripts", "disagreements", "coverage", "warnings"],
+      "properties": {
+        "transcripts": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["runtime", "sessions", "unresolved"],
+          "properties": {
+            "runtime": { "type": "string", "minLength": 1 },
+            "sessions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "source", "resolved", "scope", "first", "last", "phaseSource"],
+                "properties": {
+                  "id": { "type": "string", "minLength": 1 },
+                  "source": { "enum": ["ledger", "branch", "both"] },
+                  "resolved": { "type": "boolean" },
+                  "scope": { "type": ["string", "null"] },
+                  "first": { "type": ["string", "null"] },
+                  "last": { "type": ["string", "null"] },
+                  "phaseSource": { "enum": ["ledger", "commands", "none", null] }
+                }
+              }
+            },
+            "unresolved": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "disagreements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sessionId", "issue"],
+            "properties": { "sessionId": { "type": "string" }, "issue": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["transcripts", "range", "generator", "dispatches", "tokens", "context", "cacheTtl", "outliers", "timing", "autonomy", "replies", "impl", "tests", "findings", "review", "verify", "ledger", "isolation", "compliance", "maintainability"],
+          "properties": {
+            "transcripts": { "$ref": "#/$defs/coverage" },
+            "range": { "$ref": "#/$defs/coverage" },
+            "generator": { "$ref": "#/$defs/coverage" },
+            "dispatches": { "$ref": "#/$defs/coverage" },
+            "tokens": { "$ref": "#/$defs/coverage" },
+            "context": { "$ref": "#/$defs/coverage" },
+            "cacheTtl": { "$ref": "#/$defs/coverage" },
+            "outliers": { "$ref": "#/$defs/coverage" },
+            "timing": { "$ref": "#/$defs/coverage" },
+            "autonomy": { "$ref": "#/$defs/coverage" },
+            "replies": { "$ref": "#/$defs/coverage" },
+            "impl": { "$ref": "#/$defs/coverage" },
+            "tests": { "$ref": "#/$defs/coverage" },
+            "findings": { "$ref": "#/$defs/coverage" },
+            "review": { "$ref": "#/$defs/coverage" },
+            "verify": { "$ref": "#/$defs/coverage" },
+            "ledger": { "$ref": "#/$defs/coverage" },
+            "isolation": { "$ref": "#/$defs/coverage" },
+            "compliance": { "$ref": "#/$defs/coverage" },
+            "maintainability": { "$ref": "#/$defs/coverage" }
+          }
+        },
+        "warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "convertedFrom": { "const": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["transcripts"], "properties": { "transcripts": { "type": "null" } } },
+          "then": { "properties": { "coverage": { "properties": { "transcripts": { "type": "object" } } } } }
+        },
+        {
+          "if": { "required": ["transcripts"], "properties": { "transcripts": { "type": "object" } } },
+          "then": { "properties": { "coverage": { "properties": { "transcripts": { "const": "record" } } } } }
+        }
+      ]
+    },
+    "dispatches": { "type": ["array", "null"], "items": { "$ref": "#/$defs/dispatch" } },
+    "tokens": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["total", "byActor", "byPhase", "byModel", "byLevel", "byModelDay", "dayBasis"],
+      "properties": {
+        "total": { "$ref": "#/$defs/bucket" },
+        "byActor": { "type": "object" },
+        "byPhase": { "type": "object" },
+        "byModel": { "type": "object" },
+        "byLevel": { "type": "object" },
+        "byModelDay": { "type": "object" },
+        "dayBasis": { "enum": ["response", "generatedAt"] }
+      }
+    },
+    "context": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["peakBySession", "compactions"],
+      "properties": { "peakBySession": { "type": "object" }, "compactions": { "$ref": "#/$defs/count" } }
+    },
+    "cacheTtl": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["coldResumes", "beyondOneHour", "rewrittenTokens", "write5m", "byModel"],
+      "properties": {
+        "coldResumes": { "$ref": "#/$defs/count" },
+        "beyondOneHour": { "$ref": "#/$defs/count" },
+        "rewrittenTokens": { "$ref": "#/$defs/count" },
+        "write5m": { "type": ["integer", "null"], "minimum": 0 },
+        "byModel": { "type": ["object", "null"] }
+      }
+    },
+    "outliers": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["agentId", "name", "role", "level", "turns", "maxTurns", "roleMedian", "reasons"],
+        "properties": {
+          "agentId": { "type": "string" },
+          "name": { "type": ["string", "null"] },
+          "role": { "type": ["string", "null"] },
+          "level": { "type": ["string", "null"] },
+          "turns": { "$ref": "#/$defs/count" },
+          "maxTurns": { "type": ["integer", "null"] },
+          "roleMedian": { "type": ["number", "null"] },
+          "reasons": { "type": "array", "minItems": 1, "items": { "enum": ["near-ceiling", "above-role-median"] } }
+        }
+      }
+    },
+    "timing": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["proposedAt", "extractedAt", "elapsedMinutes", "first", "last", "activeMinutes", "tasks", "minutesPerTask"],
+      "properties": {
+        "proposedAt": { "type": ["string", "null"] },
+        "extractedAt": { "$ref": "#/$defs/time" },
+        "elapsedMinutes": { "type": ["number", "null"] },
+        "first": { "type": ["string", "null"] },
+        "last": { "type": ["string", "null"] },
+        "activeMinutes": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["total", "byPhase"],
+          "properties": { "total": { "type": "number", "minimum": 0 }, "byPhase": { "type": "object" } }
+        },
+        "tasks": { "type": ["integer", "null"], "minimum": 0 },
+        "minutesPerTask": { "type": ["object", "null"] }
+      }
+    },
+    "autonomy": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["developerMessages", "askUserQuestion", "clears", "sessions", "rulings"],
+      "properties": {
+        "developerMessages": { "$ref": "#/$defs/count" },
+        "askUserQuestion": { "$ref": "#/$defs/count" },
+        "clears": { "$ref": "#/$defs/count" },
+        "sessions": { "$ref": "#/$defs/count" },
+        "rulings": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "replies": { "type": ["object", "null"] },
+    "impl": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["DONE", "DONE_WITH_CONCERNS", "BLOCKED", "NEEDS_CONTEXT"],
+      "properties": {
+        "DONE": { "$ref": "#/$defs/count" },
+        "DONE_WITH_CONCERNS": { "$ref": "#/$defs/count" },
+        "BLOCKED": { "$ref": "#/$defs/count" },
+        "NEEDS_CONTEXT": { "$ref": "#/$defs/count" }
+      }
+    },
+    "tests": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["runs", "failed", "uncounted", "unreadable"],
+      "properties": {
+        "runs": { "$ref": "#/$defs/count" },
+        "failed": { "$ref": "#/$defs/count" },
+        "uncounted": { "$ref": "#/$defs/count" },
+        "unreadable": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "findings": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "review": { "$ref": "#/$defs/layer" },
+        "re-review": { "$ref": "#/$defs/layer" },
+        "final-review": { "$ref": "#/$defs/layer" },
+        "merge-review": { "$ref": "#/$defs/layer" },
+        "sweep": { "$ref": "#/$defs/layer" },
+        "ai-review": { "$ref": "#/$defs/layer" }
+      }
+    },
+    "review": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["verdict", "rounds", "dispositions", "stopped"],
+      "properties": {
+        "verdict": { "type": ["string", "null"] },
+        "rounds": { "$ref": "#/$defs/count" },
+        "dispositions": { "type": "object" },
+        "stopped": { "type": "boolean" }
+      }
+    },
+    "verify": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["verdict", "checks", "warnings", "filesOutsidePlan"],
+      "properties": {
+        "verdict": { "type": ["string", "null"] },
+        "checks": { "type": "object" },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["check", "summary"],
+            "properties": { "check": { "type": "string" }, "summary": { "type": ["string", "null"] } }
+          }
+        },
+        "filesOutsidePlan": { "type": ["array", "null"], "items": { "type": "string" } }
+      }
+    },
+    "ledger": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["counts", "unresolvedDebt", "deviations", "handoffs", "rulings", "sessions"],
+      "properties": {
+        "counts": { "type": "object" },
+        "unresolvedDebt": { "type": "array", "items": { "type": "object" } },
+        "deviations": { "type": "array", "items": { "type": "object" } },
+        "handoffs": { "$ref": "#/$defs/count" },
+        "rulings": { "$ref": "#/$defs/count" },
+        "sessions": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "isolation": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["filesOutsidePlan", "foreignBranchRecords", "strayWorktrees"],
+      "properties": {
+        "filesOutsidePlan": { "type": ["array", "null"], "items": { "type": "string" } },
+        "foreignBranchRecords": { "type": ["integer", "null"], "minimum": 0 },
+        "strayWorktrees": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "branch"],
+            "properties": { "path": { "type": "string", "minLength": 1 }, "branch": { "type": "string", "minLength": 1 } }
+          }
+        }
+      }
+    },
+    "compliance": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule", "required", "performed"],
+        "properties": {
+          "rule": { "type": "string", "minLength": 1 },
+          "required": { "type": "array", "items": { "type": "string" } },
+          "performed": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "maintainability": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["insertions", "deletions", "perFile", "capabilities"],
+      "properties": {
+        "insertions": { "$ref": "#/$defs/count" },
+        "deletions": { "$ref": "#/$defs/count" },
+        "perFile": {
+          "type": ["array", "null"],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "insertions", "deletions"],
+            "properties": {
+              "file": { "type": "string", "minLength": 1 },
+              "insertions": { "type": ["integer", "null"], "minimum": 0 },
+              "deletions": { "type": ["integer", "null"], "minimum": 0 }
+            }
+          }
+        },
+        "capabilities": { "type": ["object", "null"] }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "required": ["range"], "properties": { "range": { "type": "null" } } },
+      "then": {
+        "properties": { "sources": { "properties": { "coverage": { "properties": { "range": { "type": "object" } } } } } }
+      }
+    },
+    {
+      "if": { "required": ["range"], "properties": { "range": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": { "sources": { "properties": { "coverage": { "properties": { "range": { "const": "record" } } } } } }
+      }
+    },
+    {
+      "if": { "required": ["generator"], "properties": { "generator": { "type": "null" } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "generator": { "type": "object" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["generator"], "properties": { "generator": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "generator": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["dispatches"], "properties": { "dispatches": { "type": "null" } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "dispatches": { "type": "object" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["dispatches"], "properties": { "dispatches": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "dispatches": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["tokens"], "properties": { "tokens": { "type": "null" } } },
+      "then": {
+        "properties": { "sources": { "properties": { "coverage": { "properties": { "tokens": { "type": "object" } } } } } }
+      }
+    },
+    {
+      "if": { "required": ["tokens"], "properties": { "tokens": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "tokens": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["context"], "properties": { "context": { "type": "null" } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "context": { "type": "object" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["context"], "properties": { "context": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "context": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["cacheTtl"], "properties": { "cacheTtl": { "type": "null" } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "cacheTtl": { "type": "object" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["cacheTtl"], "properties": { "cacheTtl": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "cacheTtl": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["outliers"], "properties": { "outliers": { "type": "null" } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "outliers": { "type": "object" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["outliers"], "properties": { "outliers": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "outliers": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["timing"], "properties": { "timing": { "type": "null" } } },
+      "then": {
+        "properties": { "sources": { "properties": { "coverage": { "properties": { "timing": { "type": "object" } } } } } }
+      }
+    },
+    {
+      "if": { "required": ["timing"], "properties": { "timing": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "timing": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["autonomy"], "properties": { "autonomy": { "type": "null" } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "autonomy": { "type": "object" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["autonomy"], "properties": { "autonomy": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "autonomy": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["replies"], "properties": { "replies": { "type": "null" } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "replies": { "type": "object" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["replies"], "properties": { "replies": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "replies": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["impl"], "properties": { "impl": { "type": "null" } } },
+      "then": {
+        "properties": { "sources": { "properties": { "coverage": { "properties": { "impl": { "type": "object" } } } } } }
+      }
+    },
+    {
+      "if": { "required": ["impl"], "properties": { "impl": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": { "sources": { "properties": { "coverage": { "properties": { "impl": { "const": "record" } } } } } }
+      }
+    },
+    {
+      "if": { "required": ["tests"], "properties": { "tests": { "type": "null" } } },
+      "then": {
+        "properties": { "sources": { "properties": { "coverage": { "properties": { "tests": { "type": "object" } } } } } }
+      }
+    },
+    {
+      "if": { "required": ["tests"], "properties": { "tests": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": { "sources": { "properties": { "coverage": { "properties": { "tests": { "const": "record" } } } } } }
+      }
+    },
+    {
+      "if": { "required": ["findings"], "properties": { "findings": { "type": "null" } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "findings": { "type": "object" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["findings"], "properties": { "findings": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "findings": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["review"], "properties": { "review": { "type": "null" } } },
+      "then": {
+        "properties": { "sources": { "properties": { "coverage": { "properties": { "review": { "type": "object" } } } } } }
+      }
+    },
+    {
+      "if": { "required": ["review"], "properties": { "review": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "review": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["verify"], "properties": { "verify": { "type": "null" } } },
+      "then": {
+        "properties": { "sources": { "properties": { "coverage": { "properties": { "verify": { "type": "object" } } } } } }
+      }
+    },
+    {
+      "if": { "required": ["verify"], "properties": { "verify": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "verify": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["ledger"], "properties": { "ledger": { "type": "null" } } },
+      "then": {
+        "properties": { "sources": { "properties": { "coverage": { "properties": { "ledger": { "type": "object" } } } } } }
+      }
+    },
+    {
+      "if": { "required": ["ledger"], "properties": { "ledger": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "ledger": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["isolation"], "properties": { "isolation": { "type": "null" } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "isolation": { "type": "object" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["isolation"], "properties": { "isolation": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "isolation": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["compliance"], "properties": { "compliance": { "type": "null" } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "compliance": { "type": "object" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["compliance"], "properties": { "compliance": { "type": ["object", "array"] } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "compliance": { "const": "record" } } } } }
+        }
+      }
+    },
+    {
+      "if": { "required": ["maintainability"], "properties": { "maintainability": { "type": "null" } } },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "maintainability": { "type": "object" } } } } }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["maintainability"],
+        "properties": { "maintainability": { "type": ["object", "array"] } }
+      },
+      "then": {
+        "properties": {
+          "sources": { "properties": { "coverage": { "properties": { "maintainability": { "const": "record" } } } } }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "time": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T" },
+    "count": { "type": "integer", "minimum": 0 },
+    "coverage": {
+      "type": ["string", "object"],
+      "allOf": [
+        { "if": { "type": "string" }, "then": { "const": "record" } },
+        {
+          "if": { "type": "object" },
+          "then": {
+            "additionalProperties": false,
+            "required": ["none"],
+            "properties": { "none": { "type": "string", "minLength": 1 } }
+          }
+        }
+      ]
+    },
+    "bucket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "output", "thinking", "cacheRead", "cacheWrite5m", "cacheWrite1h", "turns", "placeholderTurns"],
+      "properties": {
+        "input": { "$ref": "#/$defs/count" },
+        "output": { "$ref": "#/$defs/count" },
+        "thinking": { "$ref": "#/$defs/count" },
+        "cacheRead": { "$ref": "#/$defs/count" },
+        "cacheWrite5m": { "$ref": "#/$defs/count" },
+        "cacheWrite1h": { "$ref": "#/$defs/count" },
+        "turns": { "$ref": "#/$defs/count" },
+        "placeholderTurns": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "layer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dispatches", "findings", "native", "mapped"],
+      "properties": {
+        "dispatches": { "$ref": "#/$defs/count" },
+        "findings": { "$ref": "#/$defs/count" },
+        "native": { "type": ["object", "null"] },
+        "mapped": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+          "properties": {
+            "CRITICAL": { "$ref": "#/$defs/count" },
+            "HIGH": { "$ref": "#/$defs/count" },
+            "MEDIUM": { "$ref": "#/$defs/count" },
+            "LOW": { "$ref": "#/$defs/count" }
+          }
+        },
+        "uncounted": { "$ref": "#/$defs/count" }
+      }
+    },
+    "dispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "agentId", "parentAgentId", "name", "role", "task", "group", "round", "exact", "actor", "agentType", "level", "missing", "reason", "model", "effort", "phase", "turns", "tokens", "startedAt", "endedAt", "coldResumes", "activeMinutes"],
+      "properties": {
+        "sessionId": { "type": "string" },
+        "agentId": { "type": "string" },
+        "parentAgentId": { "type": ["string", "null"] },
+        "name": { "type": ["string", "null"] },
+        "role": { "type": ["string", "null"] },
+        "task": { "type": ["integer", "null"] },
+        "group": { "type": ["string", "null"] },
+        "round": { "type": ["integer", "null"] },
+        "exact": { "type": "boolean" },
+        "actor": { "enum": ["controller", "worker"] },
+        "agentType": { "type": ["string", "null"] },
+        "level": { "type": ["string", "null"] },
+        "missing": { "type": "boolean" },
+        "reason": { "type": ["string", "null"] },
+        "model": { "type": ["string", "null"] },
+        "effort": { "type": ["string", "null"] },
+        "phase": { "type": ["string", "null"] },
+        "turns": { "type": ["integer", "null"], "minimum": 0 },
+        "tokens": {
+          "type": ["object", "null"],
+          "allOf": [{ "if": { "type": "object" }, "then": { "$ref": "#/$defs/bucket" } }]
+        },
+        "startedAt": { "type": ["string", "null"] },
+        "endedAt": { "type": ["string", "null"] },
+        "coldResumes": { "type": ["integer", "null"], "minimum": 0 },
+        "activeMinutes": { "type": ["number", "null"] }
+      }
+    }
+  }
+}

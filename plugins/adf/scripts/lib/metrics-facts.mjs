@@ -7,7 +7,8 @@
 // name as their parent) and `worker` (every other subagent, and a sidechain record of the
 // session's own transcript). Levels: the flow's agent types `adf:<level>` (or the origin's
 // `adf-<level>`); the session's own responses are `orchestrator`, any other agent type `other`.
-// Every breakdown sums to the total.
+// Every breakdown sums to the total. `byModelDay` keeps the token fields per model and per UTC
+// day of the response, so cost can take the price entry in force on each day.
 import { parseName } from './dispatch.mjs'
 
 export const TOKEN_FIELDS = ['input', 'output', 'thinking', 'cacheRead', 'cacheWrite5m', 'cacheWrite1h']
@@ -26,6 +27,13 @@ const add = (bucket, r) => {
   if (r.outputFinal === false) bucket.placeholderTurns += 1
 }
 const minutes = (ms) => Number((ms / 60000).toFixed(1))
+// The UTC day a response was made, the key the dated price table is read by; a response with no
+// readable time is `undated` (lib/prices.mjs prices it at no entry).
+export const UNDATED = 'undated'
+export function dayOf(at) {
+  const t = typeof at === 'string' ? Date.parse(at) : Number.NaN
+  return Number.isNaN(t) ? UNDATED : new Date(t).toISOString().slice(0, 10)
+}
 
 // ---------------------------------------------------------------- classify
 
@@ -261,12 +269,15 @@ export function computeFacts(transcripts, { ledger = [], maxTurns = {}, rulings 
   const byPhase = {}
   const byModel = {}
   const byLevel = {}
+  const byModelDay = {}
   const count = (r, { actor, phase, level }) => {
     add(total, r)
     add((byActor[actor] ??= zero()), r)
     add((byPhase[phase] ??= zero()), r)
     add((byModel[r.model] ??= zero()), r)
     add((byLevel[level] ??= zero()), r)
+    const day = ((byModelDay[r.model] ??= {})[dayOf(r.at)] ??= Object.fromEntries(TOKEN_FIELDS.map((f) => [f, 0])))
+    for (const f of TOKEN_FIELDS) day[f] += r[f]
   }
   const dispatches = []
   const phaseMs = new Map()
@@ -310,7 +321,7 @@ export function computeFacts(transcripts, { ledger = [], maxTurns = {}, rulings 
   const strip = ({ responses: _r, coldResumes: cr, activeMs: ms, ...d }) => ({ ...d, coldResumes: cr.length, activeMinutes: ms === null ? null : minutes(ms) })
   return {
     dispatches: dispatches.map(strip),
-    tokens: { total, byActor, byPhase, byModel, byLevel },
+    tokens: { total, byActor, byPhase, byModel, byLevel, byModelDay },
     phases: phaseSources,
     context: { peakBySession, compactions },
     cacheTtl: cacheTtlEvidence(dispatches.filter((d) => !d.missing)),
