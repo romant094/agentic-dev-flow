@@ -16,6 +16,7 @@ import {
   validateChangeDeltaSpecs,
   validateSpecContent
 } from '../lib/specs.mjs'
+import { git, mergeRepo } from './fixtures/spec-merge/repo.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const cli = join(here, '..', 'specs.mjs')
@@ -258,4 +259,42 @@ test('validate prints the openspec --json report and exits 1 on an invalid item'
   const unknown = adf(root, 'validate', '--change', 'no-proposal')
   assert.equal(unknown.code, 1)
   assert.deepEqual(unknown.out, { ok: false, error: "Unknown change 'no-proposal'." })
+})
+
+test('merge --dry-run previews the spec merge, writes nothing, and exits 1 on a conflict', () => {
+  const main = `# widgets Specification\n\n## Purpose\nWidgets are built and stored by the system, one widget at a time.\n\n## Requirements\n${req('Build')}\n${req('Store', 'The system SHALL store it.')}`
+  const { change, onDevelop } = mergeRepo({
+    main: { widgets: main },
+    delta: { widgets: `## MODIFIED Requirements\n\n${req('Store', 'The system SHALL store dry.')}`, 'new-cap': `## ADDED Requirements\n\n${req('Label')}` }
+  })
+  const clean = adf(change, 'merge', '--dry-run', '--change', 'add-x')
+  assert.equal(clean.code, 0)
+  assert.equal(clean.out.ok, true)
+  assert.equal(clean.out.merged, false)
+  assert.deepEqual(clean.out.totals, { added: 1, modified: 1, removed: 0, renamed: 0 })
+  assert.deepEqual(clean.out.newCapabilities, ['new-cap'])
+  assert.deepEqual(clean.out.conflicts, [])
+  assert.deepEqual(adf(change, 'merge', '--dry-run').out, clean.out, 'the one active change is inferred')
+
+  onDevelop({ 'openspec/specs/widgets/spec.md': main.replace('SHALL store it.', 'SHALL store it cold.') })
+  const conflicted = adf(change, 'merge', '--dry-run', '--change', 'add-x')
+  assert.equal(conflicted.code, 1)
+  assert.deepEqual(conflicted.out.conflicts.map((c) => [c.capability, c.requirement, c.operation, c.side]), [['widgets', 'Store', 'MODIFIED', 'base-branch']])
+
+  const file = join(mkdtempSync(join(tmpdir(), 'adf-resolutions-')), 'resolutions.json')
+  writeFileSync(file, JSON.stringify([{ capability: 'widgets', requirement: 'Store', text: req('Store', 'The system SHALL store dry and cold.'), reason: 'both kept' }]))
+  const resolved = adf(change, 'merge', '--dry-run', '--change', 'add-x', '--resolutions', file)
+  assert.equal(resolved.code, 0)
+  assert.deepEqual(resolved.out.capabilities.find((c) => c.capability === 'widgets').conflicts.map((c) => c.resolved), [true])
+  writeFileSync(file, JSON.stringify([{ capability: 'new-cap', requirement: 'Label', text: req('Label'), reason: 'r' }]))
+  const refused = adf(change, 'merge', '--dry-run', '--change', 'add-x', '--resolutions', file)
+  assert.equal(refused.code, 1)
+  assert.match(refused.out.error, /answer no conflict: new-cap "Label"/)
+  assert.equal(git(change, 'status', '--porcelain'), '', 'the dry run writes nothing')
+
+  const writing = adf(change, 'merge', '--change', 'add-x')
+  assert.equal(writing.code, 2)
+  assert.match(writing.out.error, /pass --dry-run/)
+  assert.equal(adf(change, 'merge', '--dry-run', '--spec', 'widgets').code, 2)
+  assert.equal(adf(change, 'validate', '--dry-run').code, 2)
 })

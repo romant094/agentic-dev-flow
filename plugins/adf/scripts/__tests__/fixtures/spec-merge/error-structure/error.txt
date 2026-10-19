@@ -1,0 +1,3 @@
+error-structure: target spec is structurally invalid and cannot be updated until fixed:
+line 30: Main spec contains delta header "## MODIFIED Requirements". Delta headers are only valid inside openspec/changes/<name>/specs/<capability>/spec.md and truncate the parsed ## Requirements section.
+line 32: Requirement header "### Requirement: Hidden" appears outside the main ## Requirements section. Main specs only parse requirements inside that section, so this requirement is currently invisible to validate, list, and archive.

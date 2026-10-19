@@ -1,0 +1,19 @@
+## ADDED Requirements
+
+### Requirement: Label
+The system SHALL label every widget.
+
+#### Scenario: Labelled
+- **WHEN** a widget is built
+- **THEN** it carries a label
+
+### Requirement: Weigh
+The system MUST weigh every widget.
+
+#### Scenario: Weighed
+- **WHEN** a widget is labelled
+- **THEN** its weight is recorded
+
+## REMOVED Requirements
+
+- `### Requirement: Ghost`

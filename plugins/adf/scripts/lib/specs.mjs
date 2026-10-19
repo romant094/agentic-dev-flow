@@ -3,8 +3,14 @@
 // that `openspec validate --json` and this module agree on every item, issue level, path and
 // message. Quirks of the original are kept on purpose; scripts/parity/openspec-validate.mjs
 // checks the two against a real corpus. Node standard library only.
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+//
+// The archive merge at the end (buildUpdatedSpec and the rest) ports core/specs-apply.js of the
+// same CLI and adds the three-way check against the change's merge base.
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { changeDir, changeMeta } from './changes.mjs'
+import { baseRef } from './plan-symbols.mjs'
 
 export const MIN_PURPOSE_LENGTH = 50
 export const MAX_REQUIREMENT_TEXT_LENGTH = 500
@@ -742,4 +748,407 @@ export function changeAgainstMain(root, change) {
     return { capability, mainSpec: mainText !== null, findings: deltaAgainstMain(readFileSync(join(specsDir, capability, 'spec.md'), 'utf8'), mainText) }
   })
   return { ok: capabilities.every((c) => c.findings.length === 0), capabilities }
+}
+
+// ---- The archive merge (specs-apply.js) and the three-way check ----
+
+// The Purpose a new capability's skeleton carries until archive writes the real one from
+// proposal.md. It is longer than MIN_PURPOSE_LENGTH so the strict validation of the rebuilt
+// spec passes; the caller detects it with hasPlaceholderPurpose and refuses to commit it.
+export const PURPOSE_PLACEHOLDER = 'ADF-PURPOSE-PLACEHOLDER: archive replaces this line with the capability Purpose from proposal.md.'
+
+export const hasPlaceholderPurpose = (content) => content.includes(PURPOSE_PLACEHOLDER)
+
+// openspec's skeleton for a new capability, with the Purpose line given (openspec writes
+// "TBD - created by archiving change <name>. Update Purpose after archive.").
+export function buildSpecSkeleton(capability, purpose = PURPOSE_PLACEHOLDER) {
+  return `# ${capability} Specification\n\n## Purpose\n${purpose}\n\n## Requirements\n`
+}
+
+const collapseBlankRuns = (text) => normalizeLineEndings(text).replace(/\n{3,}/g, '\n\n')
+// Two requirement blocks are the same when they differ only in line endings, trailing spaces
+// and runs of blank lines, which the rebuild collapses.
+const sameBlock = (a, b) => (a === null || b === null ? a === b : sameText(collapseBlankRuns(a), collapseBlankRuns(b)))
+
+const operationCount = (plan) => plan.added.length + plan.modified.length + plan.removed.length + plan.renamed.length
+const countsOf = (plan) => ({ added: plan.added.length, modified: plan.modified.length, removed: plan.removed.length, renamed: plan.renamed.length })
+
+function blocksByName(mainText) {
+  if (mainText === null) return new Map()
+  return new Map(extractRequirementsSection(mainText).bodyBlocks.map((b) => [normalizeRequirementName(b.name), b.raw]))
+}
+
+// openspec's checks of a delta before it touches the main spec: no requirement twice in one
+// section, none in two sections, a MODIFIED naming a rename's new header, no ADDED colliding
+// with a RENAMED target, at least one operation. Throws on the first failure.
+export function checkDeltaPlan(capability, plan) {
+  const key = normalizeRequirementName
+  const fail = (message) => {
+    throw new Error(message)
+  }
+  const unique = (names, section) => {
+    const seen = new Set()
+    for (const name of names) {
+      if (seen.has(key(name))) fail(`${capability} validation failed - duplicate requirement in ${section} for header "### Requirement: ${name}"`)
+      seen.add(key(name))
+    }
+    return seen
+  }
+  const added = unique(plan.added.map((b) => b.name), 'ADDED')
+  const modified = unique(plan.modified.map((b) => b.name), 'MODIFIED')
+  const removed = unique(plan.removed, 'REMOVED')
+  const renamedFrom = new Set()
+  const renamedTo = new Set()
+  for (const { from, to } of plan.renamed) {
+    if (renamedFrom.has(key(from))) fail(`${capability} validation failed - duplicate FROM in RENAMED for header "### Requirement: ${from}"`)
+    if (renamedTo.has(key(to))) fail(`${capability} validation failed - duplicate TO in RENAMED for header "### Requirement: ${to}"`)
+    renamedFrom.add(key(from))
+    renamedTo.add(key(to))
+  }
+  const conflicts = []
+  for (const n of modified) {
+    if (removed.has(n)) conflicts.push({ name: n, a: 'MODIFIED', b: 'REMOVED' })
+    if (added.has(n)) conflicts.push({ name: n, a: 'MODIFIED', b: 'ADDED' })
+  }
+  for (const n of added) if (removed.has(n)) conflicts.push({ name: n, a: 'ADDED', b: 'REMOVED' })
+  for (const { from, to } of plan.renamed) {
+    if (modified.has(key(from))) fail(`${capability} validation failed - when a rename exists, MODIFIED must reference the NEW header "### Requirement: ${to}"`)
+    if (added.has(key(to))) fail(`${capability} validation failed - RENAMED TO header collides with ADDED for "### Requirement: ${to}"`)
+  }
+  if (conflicts.length > 0) {
+    const c = conflicts[0]
+    fail(`${capability} validation failed - requirement present in multiple sections (${c.a} and ${c.b}) for header "### Requirement: ${c.name}"`)
+  }
+  if (operationCount(plan) === 0) {
+    fail(`Delta parsing found no operations for ${capability}. Provide ADDED/MODIFIED/REMOVED/RENAMED sections in change spec.`)
+  }
+}
+
+// The rebuilt main spec of one capability, as openspec 1.5.0's buildUpdatedSpec makes it, with
+// its messages: the delta's sections checked for duplicates and cross-section conflicts, then
+// RENAMED, REMOVED, MODIFIED and ADDED applied in that order; a MODIFIED block replaces the
+// whole requirement; kept blocks stay in their original order and the rest (added, and renamed:
+// a quirk of the original) are appended. `plan` is parseDeltaSpec's; `mainText` is null for a
+// new capability, which starts from buildSpecSkeleton(capability, purpose). Throws on a refusal.
+// Returns { rebuilt, counts, isNew, warnings }.
+export function buildUpdatedSpec({ capability, plan, mainText, purpose = PURPOSE_PLACEHOLDER }) {
+  checkDeltaPlan(capability, plan)
+  const key = normalizeRequirementName
+  const fail = (message) => {
+    throw new Error(message)
+  }
+  const warnings = []
+  const isNew = mainText === null
+  let target = mainText
+  if (isNew) {
+    if (plan.modified.length > 0 || plan.renamed.length > 0) {
+      fail(`${capability}: target spec does not exist; only ADDED requirements are allowed for new specs. MODIFIED and RENAMED operations require an existing spec.`)
+    }
+    if (plan.removed.length > 0) warnings.push(`${capability} - ${plan.removed.length} REMOVED requirement(s) ignored for new spec (nothing to remove).`)
+    target = buildSpecSkeleton(capability, purpose)
+  }
+  const structure = findMainSpecStructureIssues(target)
+  if (structure.length > 0) {
+    fail(`${capability}: target spec is structurally invalid and cannot be updated until fixed:\n${structure.map((i) => `line ${i.line}: ${i.message}`).join('\n')}`)
+  }
+  const parts = extractRequirementsSection(target)
+  const blocks = new Map(parts.bodyBlocks.map((b) => [key(b.name), b]))
+  for (const r of plan.renamed) {
+    const from = key(r.from)
+    const to = key(r.to)
+    if (!blocks.has(from)) fail(`${capability} RENAMED failed for header "### Requirement: ${r.from}" - source not found`)
+    if (blocks.has(to)) fail(`${capability} RENAMED failed for header "### Requirement: ${r.to}" - target already exists`)
+    const lines = blocks.get(from).raw.split('\n')
+    lines[0] = `### Requirement: ${to}`
+    blocks.delete(from)
+    blocks.set(to, { headerLine: lines[0], name: to, raw: lines.join('\n') })
+  }
+  for (const name of plan.removed) {
+    if (!blocks.has(key(name))) {
+      if (!isNew) fail(`${capability} REMOVED failed for header "### Requirement: ${name}" - not found`)
+      continue
+    }
+    blocks.delete(key(name))
+  }
+  for (const mod of plan.modified) {
+    const k = key(mod.name)
+    if (!blocks.has(k)) fail(`${capability} MODIFIED failed for header "### Requirement: ${mod.name}" - not found`)
+    const header = mod.raw.split('\n')[0].match(REQUIREMENT_HEADER)
+    if (!header || key(header[1]) !== k) fail(`${capability} MODIFIED failed for header "### Requirement: ${mod.name}" - header mismatch in content`)
+    blocks.set(k, mod)
+  }
+  for (const add of plan.added) {
+    const k = key(add.name)
+    if (blocks.has(k)) fail(`${capability} ADDED failed for header "### Requirement: ${add.name}" - already exists`)
+    blocks.set(k, add)
+  }
+  const ordered = []
+  const seen = new Set()
+  for (const block of parts.bodyBlocks) {
+    const replacement = blocks.get(key(block.name))
+    if (replacement) {
+      ordered.push(replacement)
+      seen.add(key(block.name))
+    }
+  }
+  for (const [k, block] of blocks) if (!seen.has(k)) ordered.push(block)
+  const body = [parts.preamble && parts.preamble.trim() ? parts.preamble.trimEnd() : '']
+    .filter(Boolean)
+    .concat(ordered.map((b) => b.raw))
+    .join('\n\n')
+    .trimEnd()
+  const rebuilt = [parts.before.trimEnd(), parts.headerLine, body, parts.after]
+    .filter((s, i) => !(i === 0 && s === ''))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+  return { rebuilt, counts: countsOf(plan), isNew, warnings }
+}
+
+// Whether the main spec already holds everything the delta says: every ADDED and MODIFIED block
+// with the same text, no REMOVED name, every RENAMED target and no source. Such a delta is
+// `merged`: a re-run writes nothing instead of refusing an ADDED name that already exists.
+export function deltaAlreadyMerged(plan, mainText) {
+  if (mainText === null || operationCount(plan) === 0) return false
+  const main = blocksByName(mainText)
+  const key = normalizeRequirementName
+  const holds = (block) => main.has(key(block.name)) && sameBlock(main.get(key(block.name)), block.raw)
+  return plan.added.every(holds) &&
+    plan.modified.every(holds) &&
+    plan.removed.every((name) => !main.has(key(name))) &&
+    plan.renamed.every(({ from, to }) => !main.has(key(from)) && main.has(key(to)))
+}
+
+// The requirements a delta changes in the main spec, by their name there: a MODIFIED and a
+// REMOVED by name, a RENAMED by its FROM name; a MODIFIED of a RENAMED target belongs to the
+// rename. `delta` is the delta's own text for the requirement, shown to whoever resolves it.
+function touchedRequirements(plan, deltaText) {
+  const key = normalizeRequirementName
+  const sections = splitTopLevelSections(normalizeLineEndings(deltaText))
+  const removedBlocks = new Map(parseRequirementBlocks(sectionCaseInsensitive(sections, 'REMOVED Requirements').body).map((b) => [key(b.name), b.raw]))
+  const modified = new Map(plan.modified.map((b) => [key(b.name), b.raw]))
+  const renameTargets = new Set(plan.renamed.map((r) => key(r.to)))
+  return [
+    ...plan.modified.filter((b) => !renameTargets.has(key(b.name))).map((b) => ({ requirement: key(b.name), operation: 'MODIFIED', delta: b.raw })),
+    ...plan.removed.map((name) => ({ requirement: key(name), operation: 'REMOVED', delta: removedBlocks.get(key(name)) ?? `### Requirement: ${key(name)}` })),
+    ...plan.renamed.map(({ from, to }) => ({
+      requirement: key(from),
+      operation: 'RENAMED',
+      to: key(to),
+      delta: [`- FROM: \`### Requirement: ${key(from)}\``, `- TO: \`### Requirement: ${key(to)}\``, ...(modified.has(key(to)) ? ['', modified.get(key(to))] : [])].join('\n')
+    }))
+  ]
+}
+
+// The three-way check of one capability: every requirement the delta modifies, removes or
+// renames whose main-spec text at `nowText` differs from its text at `baseText` (the change's
+// merge base). Each conflict carries the base text, the current text (null where the
+// requirement is absent) and the delta's text; `side` names where the current text was read.
+export function findConflicts(plan, deltaText, { baseText, nowText, side }) {
+  const base = blocksByName(baseText)
+  const now = blocksByName(nowText)
+  return touchedRequirements(plan, deltaText)
+    .filter(({ requirement }) => !sameBlock(base.get(requirement) ?? null, now.get(requirement) ?? null))
+    .map((t) => ({ ...t, side, base: base.get(t.requirement) ?? null, current: now.get(t.requirement) ?? null }))
+}
+
+const RESOLUTION_FIELDS = ['capability', 'requirement', 'text', 'reason']
+
+// A resolutions file's content: an array of { capability, requirement, text, reason }, at most
+// one per requirement. `text` is the whole requirement block the main spec ends up with, its
+// header first; an empty text is allowed for a REMOVED conflict only and keeps the removal.
+export function checkResolutions(resolutions) {
+  if (!Array.isArray(resolutions)) throw new Error('resolutions must be a JSON array of { capability, requirement, text, reason }')
+  const seen = new Set()
+  resolutions.forEach((r, i) => {
+    for (const field of RESOLUTION_FIELDS) {
+      if (typeof r?.[field] !== 'string') throw new Error(`resolution ${i}: "${field}" must be a string`)
+    }
+    if (!r.reason.trim()) throw new Error(`resolution ${i}: "reason" is empty`)
+    const id = `${r.capability}\n${normalizeRequirementName(r.requirement)}`
+    if (seen.has(id)) throw new Error(`resolution ${i}: ${r.capability} "${r.requirement}" is resolved twice`)
+    seen.add(id)
+  })
+  return resolutions
+}
+
+// The plan with one conflict's resolved text in place of the delta's operation on it.
+function resolvePlan(plan, conflict, resolution) {
+  const key = normalizeRequirementName
+  const text = normalizeLineEndings(resolution.text).trim()
+  const where = `resolution for ${resolution.capability} "${conflict.requirement}"`
+  if (!text) {
+    if (conflict.operation !== 'REMOVED') throw new Error(`${where}: an empty text resolves a REMOVED conflict only`)
+    return plan
+  }
+  const header = text.split('\n')[0].match(REQUIREMENT_HEADER)
+  const expected = conflict.operation === 'RENAMED' ? conflict.to : conflict.requirement
+  if (!header || key(header[1]) !== expected) throw new Error(`${where}: the text must start with "### Requirement: ${expected}"`)
+  const block = { headerLine: text.split('\n')[0], name: expected, raw: text }
+  if (conflict.operation === 'MODIFIED') return { ...plan, modified: plan.modified.map((b) => (key(b.name) === expected ? block : b)) }
+  if (conflict.operation === 'REMOVED') {
+    return { ...plan, removed: plan.removed.filter((n) => key(n) !== expected), modified: [...plan.modified, block] }
+  }
+  return { ...plan, modified: [...plan.modified.filter((b) => key(b.name) !== expected), block] }
+}
+
+// ---- The merge over a change: read, check, build, validate; write only when all is well ----
+
+const SPECS_DIR = join('openspec', 'specs')
+const mainSpecPath = (root, capability) => join(root, SPECS_DIR, capability, 'spec.md')
+const readOrNull = (path) => (existsSync(path) ? readFileSync(path, 'utf8') : null)
+
+function gitText(root, ...args) {
+  return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28 })
+}
+
+// The change's base branch as a ref (`origin/<base>` when the remote has it) and its merge base
+// with HEAD: { ref, sha }.
+export function changeMergeBase(root, change) {
+  const meta = changeMeta(root, change)
+  if (typeof meta.base !== 'string' || !meta.base.trim()) throw new Error(`openspec/changes/${change}/.adf.json has no "base" branch; the three-way check needs it`)
+  const ref = baseRef(meta, (name) => {
+    try {
+      gitText(root, 'rev-parse', '--verify', '--quiet', name)
+      return true
+    } catch {
+      return false
+    }
+  })
+  try {
+    return { ref, sha: gitText(root, 'merge-base', ref, 'HEAD').trim() }
+  } catch {
+    throw new Error(`${ref} and HEAD have no merge base`)
+  }
+}
+
+// A capability's main spec at a commit; null when it has none there.
+function mainSpecAt(root, rev, capability) {
+  try {
+    return gitText(root, 'show', `${rev}:./openspec/specs/${capability}/spec.md`)
+  } catch {
+    return null
+  }
+}
+
+const deltaCapabilities = (root, change) => {
+  const dir = join(changeDir(root, change), 'specs')
+  return listDirs(dir, (name) => existsSync(join(dir, name, 'spec.md')))
+}
+
+// The merge of every delta spec of `change` into the main specs under `root`, nothing written:
+// per capability its counts, `new`, `merged` (the main spec already holds the delta), the
+// conflicts of the three-way check and any refusal. The three-way check reads the main text at
+// the change's merge base against the text on the base branch now (`side: 'base-branch'`) and
+// in the working tree (`side: 'worktree'`); a conflict with a resolution is applied, one without
+// leaves the capability unbuilt. A resolution that answers no conflict is refused (throws).
+// `purposes` gives a new capability's Purpose line; the default is PURPOSE_PLACEHOLDER.
+// Returns { preview, rebuilt: Map(capability -> text) }.
+function prepareMerge(root, change, { resolutions = [], purposes = {} } = {}) {
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in openspec/changes`)
+  checkResolutions(resolutions)
+  const used = new Set()
+  const rebuilt = new Map()
+  const capabilities = []
+  let base = null
+  for (const capability of deltaCapabilities(root, change)) {
+    const deltaText = readFileSync(join(changeDir(root, change), 'specs', capability, 'spec.md'), 'utf8')
+    let plan = parseDeltaSpec(deltaText)
+    const mainText = readOrNull(mainSpecPath(root, capability))
+    const entry = { capability, new: mainText === null, merged: false, counts: countsOf(plan), conflicts: [] }
+    capabilities.push(entry)
+    try {
+      checkDeltaPlan(capability, plan)
+    } catch (error) {
+      entry.error = error.message
+      continue
+    }
+    if (deltaAlreadyMerged(plan, mainText)) {
+      entry.merged = true
+      continue
+    }
+    if (mainText !== null && plan.modified.length + plan.removed.length + plan.renamed.length > 0) {
+      base ??= changeMergeBase(root, change)
+      const baseText = mainSpecAt(root, base.sha, capability)
+      const found = findConflicts(plan, deltaText, { baseText, nowText: mainSpecAt(root, base.ref, capability), side: 'base-branch' })
+      const named = new Set(found.map((c) => c.requirement))
+      found.push(...findConflicts(plan, deltaText, { baseText, nowText: mainText, side: 'worktree' }).filter((c) => !named.has(c.requirement)))
+      for (const conflict of found) {
+        const resolution = resolutions.find((r) => r.capability === capability && normalizeRequirementName(r.requirement) === conflict.requirement)
+        if (resolution) {
+          used.add(resolution)
+          plan = resolvePlan(plan, conflict, resolution)
+          entry.conflicts.push({ ...conflict, resolved: true, reason: resolution.reason })
+        } else {
+          entry.conflicts.push({ ...conflict, resolved: false })
+        }
+      }
+    }
+    if (entry.conflicts.some((c) => !c.resolved)) continue
+    // A re-run with the same resolutions finds the resolved text already in place.
+    if (entry.conflicts.length > 0 && deltaAlreadyMerged(plan, mainText)) {
+      entry.merged = true
+      continue
+    }
+    try {
+      const built = buildUpdatedSpec({ capability, plan, mainText, purpose: purposes[capability] })
+      if (built.warnings.length > 0) entry.warnings = built.warnings
+      const report = validateSpecContent(built.rebuilt, { name: capability, strict: true })
+      if (!report.valid) {
+        entry.error = `Validation errors in rebuilt spec for ${capability}`
+        entry.issues = report.issues.filter((i) => i.level !== 'INFO')
+        continue
+      }
+      if (hasPlaceholderPurpose(built.rebuilt)) entry.placeholderPurpose = true
+      rebuilt.set(capability, built.rebuilt)
+    } catch (error) {
+      entry.error = error.message
+    }
+  }
+  const unused = resolutions.filter((r) => !used.has(r))
+  if (unused.length > 0) {
+    throw new Error(`resolutions answer no conflict: ${unused.map((r) => `${r.capability} "${r.requirement}"`).join(', ')}; a resolution applies to a conflict of the three-way check only`)
+  }
+  const totals = { added: 0, modified: 0, removed: 0, renamed: 0 }
+  for (const c of capabilities) for (const k of Object.keys(totals)) totals[k] += c.counts[k]
+  const conflicts = capabilities.flatMap((c) => c.conflicts.filter((x) => !x.resolved).map((x) => ({ capability: c.capability, ...x })))
+  const errors = capabilities.filter((c) => c.error).map(({ capability, error, issues }) => ({ capability, error, ...(issues ? { issues } : {}) }))
+  const preview = {
+    ok: conflicts.length === 0 && errors.length === 0,
+    change,
+    noChanges: capabilities.length === 0,
+    merged: capabilities.length > 0 && capabilities.every((c) => c.merged),
+    base,
+    capabilities,
+    totals,
+    newCapabilities: capabilities.filter((c) => c.new && !c.merged).map((c) => c.capability),
+    placeholderPurpose: capabilities.filter((c) => c.placeholderPurpose).map((c) => c.capability),
+    conflicts,
+    errors
+  }
+  return { preview, rebuilt }
+}
+
+// The read-only preview of the merge (`specs.mjs merge --dry-run`): prepareMerge's result.
+// { ok, change, noChanges, merged, base: { ref, sha } | null, capabilities: [{ capability, new,
+//   merged, counts, conflicts, warnings?, error?, issues?, placeholderPurpose? }], totals,
+//   newCapabilities, placeholderPurpose, conflicts, errors }
+export function mergePreview(root, change, options = {}) {
+  return prepareMerge(root, change, options).preview
+}
+
+// The writing merge, for archive.mjs after its gate: all or nothing. Nothing is written while
+// any capability has an unresolved conflict or a refusal, or a rebuilt spec fails the strict
+// validation; otherwise every capability not already merged gets its rebuilt main spec.
+// Returns the preview plus `written`, the repository-relative paths written.
+export function writeMerge(root, change, options = {}) {
+  const { preview, rebuilt } = prepareMerge(root, change, options)
+  if (!preview.ok) return { ...preview, written: [] }
+  const written = []
+  for (const [capability, text] of rebuilt) {
+    const path = mainSpecPath(root, capability)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, text)
+    written.push(`openspec/specs/${capability}/spec.md`)
+  }
+  return { ...preview, written }
 }

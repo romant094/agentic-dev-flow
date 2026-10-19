@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // CLI over lib/specs.mjs. Prints one JSON object on stdout with the fields of
 // `openspec validate --all --json` (items, summary, version, root) and exits 1 when any item
-// is invalid or the command is refused.
+// is invalid or the command is refused, 2 on a usage error.
 //
 //   specs.mjs validate [--all]              every active change and every main spec
 //   specs.mjs validate --change <name>      one active change's delta specs
@@ -16,23 +16,45 @@
 //       the proposal's Capabilities section against the change's spec folders and the main
 //       specs: { ok, new, modified, missingSpec, unlistedSpec, modifiedNotFound, newCollides,
 //       badName, listedTwice }. Exit 1 when not ok.
+//   specs.mjs merge --dry-run [--change <name>] [--resolutions <file>]
+//       the read-only preview of archive's spec merge (lib/specs.mjs mergePreview): per
+//       capability the counts added, modified, removed and renamed, `new`, `merged` (the main
+//       spec already holds the delta), the conflicts of the three-way check against the change's
+//       merge base, refusals; and the totals, newCapabilities, placeholderPurpose, conflicts and
+//       errors. --resolutions previews a JSON array of { capability, requirement, text, reason }
+//       applied to the conflicts; a resolution that answers no conflict is refused. Exit 1 on
+//       an unresolved conflict or a refusal. Nothing is written: the writing merge is
+//       `archive.mjs merge`, after archive's gate.
 //
-// Without --change, capabilities and --against-main act on the one active change under the root.
+// Without --change, capabilities, merge and --against-main act on the one active change under the root.
 //
 // --strict also fails an item on a WARNING, as the CLI's --strict does. --root <dir> names the
 // project holding openspec/ (default: the current directory).
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { changeAgainstMain, checkCapabilities, validateProject } from './lib/specs.mjs'
+import { changeAgainstMain, checkCapabilities, mergePreview, validateProject } from './lib/specs.mjs'
 import { inferChange } from './lib/changes.mjs'
 import { loadSchema } from './lib/schema.mjs'
 import { isMain } from './lib/main.mjs'
+
+export class UsageError extends Error {}
+
+const USAGE = 'usage: specs.mjs validate [--all | --change <name> [--against-main] | --spec <capability>] [--strict] [--root <dir>] | specs.mjs capabilities [--change <name>] [--root <dir>] | specs.mjs merge --dry-run [--change <name>] [--resolutions <file>] [--root <dir>]'
 
 function option(args, name) {
   const i = args.indexOf(name)
   if (i === -1) return undefined
   const [, value] = args.splice(i, 2)
-  if (value === undefined) throw new Error(`${name} needs a value`)
+  if (value === undefined) throw new UsageError(`${name} needs a value`)
   return value
+}
+
+function readResolutions(file) {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'))
+  } catch (error) {
+    throw new Error(`--resolutions ${file}: ${error.message}`)
+  }
 }
 
 function flag(args, name) {
@@ -50,14 +72,24 @@ export function run(argv) {
   const strict = flag(args, '--strict')
   const all = flag(args, '--all')
   const againstMain = flag(args, '--against-main')
+  const dryRun = flag(args, '--dry-run')
+  const resolutions = option(args, '--resolutions')
   const [command, ...rest] = args
   const root = resolve(rootOption ?? process.cwd())
+  if (command === 'merge') {
+    if (!dryRun || rest.length > 0 || spec || all || strict || againstMain) {
+      throw new UsageError(dryRun ? USAGE : 'specs.mjs merge writes nothing: pass --dry-run (the writing merge is archive.mjs merge, after the gate)')
+    }
+    change = inferChange(root, change, loadSchema())
+    return mergePreview(root, change, { resolutions: resolutions === undefined ? [] : readResolutions(resolutions) })
+  }
+  if (dryRun || resolutions !== undefined) throw new UsageError(USAGE)
   if (command === 'capabilities' && rest.length === 0 && !spec && !all && !strict && !againstMain) {
     change = inferChange(root, change, loadSchema())
     return { change, ...checkCapabilities(root, change) }
   }
   if (command !== 'validate' || rest.length > 0 || [all, change, spec].filter((x) => x).length > 1 || (againstMain && (all || spec))) {
-    throw new Error('usage: specs.mjs validate [--all | --change <name> [--against-main] | --spec <capability>] [--strict] [--root <dir>] | specs.mjs capabilities [--change <name>] [--root <dir>]')
+    throw new UsageError(USAGE)
   }
   if (againstMain) change = inferChange(root, change, loadSchema())
   const result = validateProject(root, { change, spec, strict })
@@ -77,7 +109,7 @@ if (isMain(import.meta.url)) {
     process.stdout.write(`${JSON.stringify(result)}\n`)
     process.exitCode = failed(result) ? 1 : 0
   } catch (error) {
-    process.stdout.write(`${JSON.stringify({ ok: false, error: error.message })}\n`)
-    process.exitCode = 1
+    process.stdout.write(`${JSON.stringify({ ok: false, error: error.message, ...(error instanceof UsageError ? { usage: USAGE } : {}) })}\n`)
+    process.exitCode = error instanceof UsageError ? 2 : 1
   }
 }
