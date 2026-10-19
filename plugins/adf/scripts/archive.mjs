@@ -9,8 +9,9 @@
 //   archive.mjs check --change <name>
 //       the review record PASS only (BLOCKED refused), committed, its reviewed commit an ancestor
 //       of HEAD, no commit after it touching anything but the record, the refusal naming the
-//       change root and the repository root; artifacts not done and unchecked tasks as
-//       detail.warnings
+//       change root and the repository root; a missing or stale specs-base.json entry refused,
+//       no specs-base.json at all a warning; artifacts not done and unchecked tasks as
+//       detail.warnings; the hand-edited capabilities verify.md lists as detail.handEdited
 //   archive.mjs placements --change <name>
 //       detail.unplaced: every debt with no resolve, every recorded or accepted review finding
 //       with no `resolve --finding`, every deviation cited by no debt and no ruling, each with
@@ -32,7 +33,8 @@
 //       `docs(memory): ingest what <name> taught`: only the paths the ingest and the placement
 //       wrote; nothing to commit is no commit
 //   archive.mjs mr --change <name> [--body <file> --summary "<scope>: <description>" | --title <t>]
-//       the forge role's finalize; no forge: skipped (no --body needed); degraded: the role's
+//       the forge role's finalize; no forge: skipped (no --body needed); a forge and no --body:
+//       held, pending, nothing recorded, with bodyFile and waiting; degraded: the role's
 //       fallback kept and the step degraded
 //   archive.mjs merge-local --change <name> [--yes | --no]
 //       with no forge only: without a flag, the commands, nothing recorded; --yes merges with
@@ -49,9 +51,10 @@
 //         text }] }, bodyFile }
 //   archive.mjs state --change <name>     { ok, change, steps: { <step>: { state, at, detail } }, next }
 //   archive.mjs next --change <name>      { ok, change, next: <step> | null, state }
-//   archive.mjs report --change <name>    { ok, change, complete, next, steps, report }: built last,
-//                                         from the states; complete only when every step is done
-//                                         or skipped
+//   archive.mjs report --change <name>    { ok, change, complete, next, steps, handEdited, report }:
+//                                         built last, from the states; complete only when every
+//                                         step is done or skipped; the corpus lint named as due
+//                                         when verify.md lists hand-edited capability prose
 import { parseArgs } from 'node:util'
 import {
   archiveContext,

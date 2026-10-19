@@ -41,7 +41,8 @@ conversation; if that is vague or ambiguous, the selection in step 1 asks.
 
 3. **Run the step**, one `archive.mjs <step>` call, with what the instruction's rule for that
    step gives it:
-   - `check`: show `detail.warnings`, if any, and ask whether to archive anyway.
+   - `check`: show `detail.warnings`, if any, and ask whether to archive anyway. A stale or
+     missing spec base entry refuses: `specs.mjs base`, commit, and run `check` again.
    - `placements`: put each `detail.unplaced` item to the developer with the destination you
      propose; place it with the commands the instruction names; run `placements` again.
    - `merge`: show `specs.mjs merge --dry-run` first. Dispatch `spec-merge <capability>` for
@@ -52,7 +53,8 @@ conversation; if that is vague or ambiguous, the selection in step 1 asks.
    - `ingest`: `ingest.mjs stale`, then dispatch `ingest` and pass its reply as `--reply`;
      with no knowledge plugin, the call with no reply.
    - `mr`: `forge.mjs check`; with a forge, write the body from `archive.mjs mr-input` and pass
-     `--body` and `--summary`; with none, the call with no body.
+     `--body` and `--summary`: a call with no body holds, `pending`, and names what it needs;
+     with none, the call with no body.
    - `merge-local`: the call shows the commands; ask the developer, then `--yes` or `--no`.
 
    On `ok: false`, show the step's `refusal` and `detail` and stop, unless the instruction's

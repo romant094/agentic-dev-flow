@@ -106,7 +106,7 @@ export function forgeReport(operation, result) {
   }
   if (operation === 'check') return `Forge: ${result.tool ?? 'ready'}`
   if (operation === 'push') return `Push: done${result.url ? `; merge request ${result.url}` : ''}`
-  const what = operation === 'finalize' ? 'out of draft' : result.reused ? 'reused' : 'opened as a draft'
+  const what = operation === 'finalize' ? 'out of draft, ready to merge' : result.reused ? 'reused' : 'opened as a draft'
   return `${label}: ${result.url ?? (result.number ? `!${result.number}` : 'no link returned')} (${what})`
 }
 

@@ -11,11 +11,12 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { run, UsageError } from '../archive.mjs'
 import { run as ingestRun } from '../ingest.mjs'
-import { deltaScenarios, statePath, STEPS, unplaced } from '../lib/archive.mjs'
+import { deltaScenarios, handEditedProse, statePath, STEPS, unplaced } from '../lib/archive.mjs'
 import { setBranches } from '../lib/branches.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
 import { initRegistry, setDebtRoot } from '../lib/registry.mjs'
+import { writeSpecsBase } from '../lib/specs.mjs'
 import { create } from '../lib/workspace.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -67,8 +68,9 @@ function reviewRecord(sha, { verdict = 'PASS', change = 'add-x', findings = [['F
 const VERIFY = '# Verify\n\n## Apply test record\n\n**Result:** PASS, 12 tests\n\n## Checks run with the developer\n\nnone\n\n## Exercised and not exercised\n\nThe store path ran.\n\nVerdict: PASS\n'
 
 // The host, the change worktree, and the reviewed commit. `delta` maps capability -> delta text;
-// `ledger` writes the ledger; `debt` sets the registry's debt root.
-function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widgets dry\n', verdict = 'PASS', ledger = placedLedger, debt = null, extra = {}, meta = {}, omit = [] } = {}) {
+// `ledger` writes the ledger; `debt` sets the registry's debt root; `specsBase` writes the
+// change's specs-base.json, as propose does; `verify` is verify.md's text.
+function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widgets dry\n', verdict = 'PASS', ledger = placedLedger, debt = null, extra = {}, meta = {}, omit = [], specsBase = true, verify = VERIFY } = {}) {
   const top = realpathSync(mkdtempSync(join(tmpdir(), 'adf-archive-')))
   const root = join(top, 'host')
   execFileSync('git', ['init', '-q', '-b', 'develop', root])
@@ -91,11 +93,13 @@ function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widg
       ...Object.fromEntries(Object.entries(delta).map(([c, t]) => [`${dir}/specs/${c}/spec.md`, t])),
       [`${dir}/tasks.md`]: tasks,
       [`${dir}/plan.md`]: '# Plan\n',
-      [`${dir}/verify.md`]: VERIFY,
+      [`${dir}/verify.md`]: verify,
       'src/x.txt': 'dry\n'
   }
   for (const name of omit) delete files[`${dir}/${name}`]
-  const reviewed = commit(wt, files, 'feat: store widgets dry')
+  put(wt, files)
+  if (specsBase) assert.equal(writeSpecsBase(wt, 'add-x').ok, true)
+  const reviewed = commit(wt, {}, 'feat: store widgets dry')
   commit(wt, { [`${dir}/review.md`]: reviewRecord(reviewed, { verdict }) }, 'docs(openspec): review add-x')
   ledger?.(wt)
   return { root, wt, reviewed, dir }
@@ -414,8 +418,13 @@ test('mr finalizes through the forge role; degraded keeps the fallback and re-ru
   const calls = []
   const deps = { ...NONE, forge: (op, input) => (calls.push({ op, input }), answer) }
   for (const step of STEPS.slice(0, 7)) assert.equal(call(h, [step], deps).ok, true, step)
-  assert.match(call(h, ['mr'], deps).refusal, /mr needs --body/)
   const body = join(h.root, '.superpowers', 'sdd', 'add-x', 'archive', 'merge-request.md')
+  const before = readState(h)
+  const held = call(h, ['mr'], deps)
+  assert.deepEqual([held.ok, held.state, held.bodyFile, held.next], [true, 'pending', body, 'mr'])
+  assert.match(held.waiting, /run archive\.mjs mr-input --change add-x, write the body from it to .*merge-request\.md, then archive\.mjs mr --change add-x --body /)
+  assert.deepEqual(readState(h), before, 'a held mr records nothing')
+  assert.equal(call(h, ['next'], deps).next, 'mr')
   writeFileSync(body, '## What\n\n- dry\n\n## Why\n\nrot\n\n## QA\n\n1. store one\n')
   const degraded = call(h, ['mr', '--body', body, '--summary', 'widgets: store dry'], deps)
   assert.equal(degraded.state, 'degraded')
@@ -465,6 +474,62 @@ test('merge-local waits for the yes, refuses a main checkout off its base or dir
   assert.equal(declined.detail.declined, true)
   assert.equal(git(h.root, 'rev-list', '--count', 'develop'), '1', 'nothing merged')
   assert.equal(call(h, ['remove']).detail.state, 'removed')
+})
+
+test('check refuses a stale or missing spec base entry, and warns of a change with no specs-base.json', () => {
+  const stale = archiveHost()
+  const file = join(stale.wt, stale.dir, 'specs-base.json')
+  const data = JSON.parse(readFileSync(file, 'utf8'))
+  const [requirement] = Object.keys(data.capabilities.widgets)
+  data.capabilities.widgets[requirement].delta = '0'.repeat(64)
+  commit(stale.wt, { [`${stale.dir}/specs-base.json`]: `${JSON.stringify(data, null, 2)}\n` }, 'docs: a base for another delta')
+  commit(stale.wt, { [`${stale.dir}/review.md`]: reviewRecord(git(stale.wt, 'rev-parse', 'HEAD')) }, 'docs(openspec): review add-x again')
+  const refused = call(stale, ['check'])
+  assert.equal(refused.state, 'failed')
+  assert.match(refused.refusal, new RegExp(`a base taken for another delta text for widgets "${requirement}".*the merge must not use a base the delta was not written against`))
+  assert.deepEqual(refused.detail.specsBase.stale, [{ capability: 'widgets', requirement }])
+  delete data.capabilities.widgets[requirement]
+  commit(stale.wt, { [`${stale.dir}/specs-base.json`]: `${JSON.stringify(data, null, 2)}\n` }, 'docs: drop a base')
+  commit(stale.wt, { [`${stale.dir}/review.md`]: reviewRecord(git(stale.wt, 'rev-parse', 'HEAD')) }, 'docs(openspec): review add-x again')
+  assert.deepEqual(call(stale, ['check']).detail.specsBase.missing, [{ capability: 'widgets', requirement }])
+  const none = archiveHost({ specsBase: false })
+  const out = call(none, ['check'])
+  assert.equal(out.ok, true, out.refusal)
+  assert.deepEqual(out.detail.warnings, ['no openspec/changes/add-x/specs-base.json: the change was made before the spec base snapshot, so the merge\'s three-way check falls back to the merge base, which a rebase moves'])
+})
+
+test('the report names the capabilities verify.md lists as hand-edited and says the corpus lint is due', () => {
+  assert.deepEqual(handEditedProse('**Hand-edited capability prose:** none\n'), [])
+  assert.deepEqual(handEditedProse('**Hand-edited capability prose:** not stated in the c4 section\n'), [])
+  assert.deepEqual(handEditedProse('# Verify\n'), [])
+  assert.deepEqual(handEditedProse('**Hand-edited capability prose:**\n\n- widgets: Purpose reworded\n- labels: scope\n\n**Removal accounting:** none\n'), ['widgets: Purpose reworded', 'labels: scope'])
+  const h = archiveHost({ verify: VERIFY.replace('## Apply test record', '**Hand-edited capability prose:** widgets: the Purpose names the dry store\n\n## Apply test record') })
+  assert.deepEqual(call(h, ['check']).detail.handEdited, ['widgets: the Purpose names the dry store'])
+  const out = call(h, ['report'])
+  assert.deepEqual(out.handEdited, ['widgets: the Purpose names the dry store'])
+  assert.match(out.report, /Corpus lint due: verify\.md lists hand-edited capability prose \(widgets: the Purpose names the dry store\); run the spec corpus lint/)
+  assert.doesNotMatch(call(archiveHost(), ['report']).report, /Corpus lint/)
+})
+
+test('a failed git read refuses the guard that reads it, and an empty branch read never passes as a branch', () => {
+  const h = archiveHost()
+  const rel = git(h.wt, 'rev-parse', '--git-path', 'index')
+  const index = rel.startsWith('/') ? rel : join(h.wt, rel)
+  writeFileSync(index, 'not an index\n')
+  const out = call(h, ['check'])
+  assert.equal(out.state, 'failed')
+  assert.match(out.refusal, /^git failed to read the status of the review record \(.*\); check that .* is a git working tree and run again$/s)
+  rmSync(index)
+  git(h.wt, 'reset', '-q')
+  assert.equal(call(h, ['check']).ok, true)
+  for (const step of STEPS.slice(1, 7)) assert.equal(call(h, [step]).ok, true, step)
+  git(h.wt, 'checkout', '-q', '--detach')
+  const body = join(h.wt, '..', 'body.md')
+  writeFileSync(body, 'x\n')
+  const deps = { ...NONE, forge: () => ({ state: 'done', plugin: 'gitlab' }) }
+  const detached = call(h, ['mr', '--body', body, '--title', 'feat: x'], deps)
+  assert.equal(detached.state, 'failed')
+  assert.match(detached.refusal, /HEAD is detached; check out the change branch in the worktree/)
 })
 
 test('the CLI: usage errors exit 2, a step out of order exits 1, a pass exits 0', () => {

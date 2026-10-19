@@ -62,9 +62,16 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    developer's ruling with a reason at review, which makes the computed verdict `PASS`. The
    record is committed, its reviewed commit is an ancestor of HEAD, and no commit after it
    touches anything but the record; the refusal names the change root and the repository root,
-   so a wrong `--root` shows itself. `detail.warnings` names the artifacts not done and the
-   unchecked tasks: show them and ask the developer whether to archive anyway. An incomplete
-   change may be archived on purpose. On a no, stop; a later run resumes at `placements`.
+   so a wrong `--root` shows itself. The spec base is checked as `specs.mjs base --check`
+   checks it: a requirement the deltas modify, remove or rename with no entry in
+   `specs-base.json`, or with an entry taken for another delta text, refuses archive, since the
+   merge must not use a base the delta was not written against; run `specs.mjs base` and commit
+   the file with the edit. A change with no `specs-base.json` at all was made before the
+   snapshot: it is not refused, and a warning names the fallback to the merge base.
+   `detail.warnings` names that fallback, the artifacts not done and the unchecked tasks: show
+   them and ask the developer whether to archive anyway. An incomplete change may be archived
+   on purpose. On a no, stop; a later run resumes at `placements`. `detail.handEdited` keeps the
+   capabilities `verify.md` lists as hand-edited, for the report.
 
 3. **`placements`: every deferred item reaches a store.**
 
@@ -208,10 +215,13 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    ```
 
    With `state: none`, run `archive.mjs mr --change <change> --root <root>` with no body: the
-   step is `skipped`, and `merge-local` follows. Otherwise run `archive.mjs mr-input`, and from
+   step is `skipped`, and `merge-local` follows. With a forge, `mr` with no body holds: the step
+   stays `pending`, records nothing, and returns the `bodyFile` and what it is `waiting` for.
+   Run `archive.mjs mr-input`, and from
    its `tasks`, `why`, `scenarios` and `evidence` write the merge request body to its `bodyFile`:
    the sections of the forge plugin's merge request template, the steps a tester follows taken
-   from the scenarios, and the evidence `verify.md` recorded. Then:
+   from the scenarios, and the evidence `verify.md` recorded. Write the body in English: it is
+   an ignored file outside the change, so no commit hook checks it. Then:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/archive.mjs" mr --change <change> --body <bodyFile> --summary "<scope>: <description>" --root <root>
@@ -251,4 +261,5 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
 
     Show its `report` as it is. It is built last, from the states alone: `Archive complete`
     only when every step is done or skipped; otherwise it names each step not finished and the
-    next one to run.
+    next one to run. When `verify.md` lists hand-edited capability prose, the report names those
+    capabilities and says the corpus lint is due: the lint reports and never gates.

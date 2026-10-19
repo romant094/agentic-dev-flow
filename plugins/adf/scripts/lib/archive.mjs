@@ -15,7 +15,12 @@
 //                 PASS), the record committed, the reviewed commit read and an ancestor of HEAD,
 //                 no commit after it touching anything but the record (`git log <sha>..HEAD --
 //                 . ':(exclude)<record>'`), the refusal naming the change root and the
-//                 repository root; artifacts not done and unchecked tasks are `warnings`.
+//                 repository root; then lib/specs.mjs checkSpecsBase: a missing or stale entry in
+//                 specs-base.json refuses, since the merge must not use a base the delta was not
+//                 written against, and a change with no specs-base.json at all (made before the
+//                 snapshot) is a warning naming the fallback to the merge base. Artifacts not done
+//                 and unchecked tasks are `warnings`; the capabilities verify.md lists as
+//                 hand-edited are kept for the report, which says the corpus lint is due.
 //   placements    every debt record with no `resolve`, every recorded or accepted review finding
 //                 with no `resolve --finding`, and every `deviation` cited by no `debt` (its
 //                 `what` or `reason` names the deviation id, as in "forced deviation-1") and no
@@ -32,7 +37,8 @@
 //   commit-memory `docs(memory): ingest what <name> taught`: only the paths the ingest and the
 //                 placement wrote.
 //   mr            the forge role's `finalize`; `none` is `skipped`, `degraded` keeps the role's
-//                 fallback file and the step is `degraded`.
+//                 fallback file and the step is `degraded`. With a forge and no `--body` the step
+//                 holds, `pending`, and returns what it needs: mr-input, then the body file.
 //   merge-local   with no forge only, after the developer's yes: `git merge --no-ff <branch>` in
 //                 the main checkout when it has the base checked out and is clean; nothing pushed,
 //                 the branch kept.
@@ -54,7 +60,7 @@ import { readRecords, unresolvedDebt } from './ledger.mjs'
 import { readDebtRoot } from './registry.mjs'
 import { checkRecord } from './review-state.mjs'
 import { callRole, CORE, forgeInput, forgeReport, knowledgeReport } from './roles.mjs'
-import { checkResolutions, mergePreview, writeMerge } from './specs.mjs'
+import { checkResolutions, checkSpecsBase, mergePreview, writeMerge } from './specs.mjs'
 import { writeConflictTexts } from './spec-merge.mjs'
 import { loadSchema } from './schema.mjs'
 import { remove as removeWorktree } from './workspace.mjs'
@@ -244,6 +250,26 @@ function commitOwn(ctx, { mine, later = new Set(), message }) {
 
 const settledDetail = (state, step) => state.steps[step].detail ?? {}
 
+// Pure: the entries of verify.md's `**Hand-edited capability prose:**` field, inline or as the
+// bullets under it; none for `none`, for the c4 fallback `not stated ...`, or with no field.
+export function handEditedProse(verifyText) {
+  const lines = String(verifyText ?? '').replace(/\r\n?/g, '\n').split('\n')
+  const at = lines.findIndex((l) => l.startsWith('**Hand-edited capability prose:**'))
+  if (at < 0) return []
+  const inline = lines[at].slice('**Hand-edited capability prose:**'.length).trim()
+  const entries = []
+  if (inline) entries.push(inline)
+  else {
+    for (const line of lines.slice(at + 1)) {
+      if (!line.trim() && entries.length === 0) continue
+      const item = /^\s*[-*]\s+(.+?)\s*$/.exec(line)
+      if (!item) break
+      entries.push(item[1])
+    }
+  }
+  return entries.filter((e) => !/^(none|not stated\b)/i.test(e))
+}
+
 // ---------------------------------------------------------------- check
 
 export function checkStep(ctx) {
@@ -275,7 +301,13 @@ export function checkStep(ctx) {
         { roots, stale: after.split('\n') }
       )
     }
+    const base = checkSpecsBase(root, change)
     const warnings = []
+    if (!base.exists && base.touched > 0) {
+      warnings.push(`no ${base.file}: the change was made before the spec base snapshot, so the merge's three-way check falls back to the merge base, which a rebase moves`)
+    } else if (!base.ok) {
+      refuse(`${base.refusal}; the merge must not use a base the delta was not written against`, { roots, specsBase: { missing: base.missing, stale: base.stale } })
+    }
     const dir = join(root, CHANGES_DIR, change)
     const skipped = new Set(readMeta(dir).skipped ?? [])
     for (const a of changeStatus(root, change, loadSchema()).artifacts) {
@@ -287,7 +319,9 @@ export function checkStep(ctx) {
       if (open.length > 0) warnings.push(`${open.length} task(s) unchecked in tasks.md: ${open.map((t) => t.description).join('; ')}`)
     }
     warnings.push(...parsed.warnings.map((w) => `review record: ${w}`))
-    return { state: 'done', detail: { verdict: parsed.verdict, commit, rounds: parsed.rounds, counts: parsed.counts, roots, warnings } }
+    const verifyFile = join(dir, 'verify.md')
+    const handEdited = existsSync(verifyFile) ? handEditedProse(readFileSync(verifyFile, 'utf8')) : []
+    return { state: 'done', detail: { verdict: parsed.verdict, commit, rounds: parsed.rounds, counts: parsed.counts, roots, warnings, handEdited } }
   })
 }
 
@@ -547,7 +581,15 @@ export function mrStep(ctx, { body = null, title, summary } = {}) {
     if (!body) {
       const probe = ctx.forge('check', {})
       if (probe.state === 'none') return { state: 'skipped', detail: { forge: 'none', report: forgeReport('finalize', probe) } }
-      refuse(`mr needs --body: write the merge request body from archive.mjs mr-input to ${bodyPath(ctx.main, ctx.change)} and pass it`)
+      const bodyFile = bodyPath(ctx.main, ctx.change)
+      return {
+        hold: true,
+        out: {
+          forge: probe.plugin ?? null,
+          bodyFile,
+          waiting: `the merge request body: run archive.mjs mr-input --change ${ctx.change}, write the body from it to ${bodyFile}, then archive.mjs mr --change ${ctx.change} --body ${bodyFile} --summary "<scope>: <description>"`
+        }
+      }
     }
     let text
     try {
@@ -655,6 +697,10 @@ export function report(ctx) {
     lines.push(`- ${step}: ${s}${text ? ` — ${text}` : ''}`)
   }
   const open = STEPS.filter((s) => !FINAL.has(state.steps[s].state))
+  const handEdited = state.steps.check.detail?.handEdited ?? []
+  const lint = handEdited.length
+    ? ['', `Corpus lint due: verify.md lists hand-edited capability prose (${handEdited.join('; ')}); run the spec corpus lint over openspec/specs/, which reports and never gates.`]
+    : []
   const mr = state.steps.mr
   const heading = complete ? `## Archive complete: ${ctx.change}` : `## Archive not complete: ${ctx.change}`
   const tail = complete
@@ -665,5 +711,5 @@ export function report(ctx) {
         ...(mr.state === 'degraded' ? ['The merge request is not ready: run the fallback the mr step recorded, then archive.mjs mr again.'] : []),
         ...(nextStep(state) ? [`Next: archive.mjs ${nextStep(state)} --change ${ctx.change}.`] : [])
       ]
-  return { ok: true, change: ctx.change, complete, next: nextStep(state), steps: state.steps, report: [heading, '', ...lines, ...tail].join('\n') }
+  return { ok: true, change: ctx.change, complete, next: nextStep(state), steps: state.steps, handEdited, report: [heading, '', ...lines, ...lint, ...tail].join('\n') }
 }

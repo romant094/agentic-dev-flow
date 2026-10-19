@@ -327,7 +327,7 @@ test('find choices label every change and unresolved worktree, and name duplicat
 test('forge.mjs renders its own report for each forge state', () => {
   assert.equal(forgeReport('open', { state: 'done', url: 'https://mr/1', reused: true }), 'Merge request: https://mr/1 (reused)')
   assert.equal(forgeReport('open', { state: 'done', url: 'https://mr/1', reused: false }), 'Merge request: https://mr/1 (opened as a draft)')
-  assert.equal(forgeReport('finalize', { state: 'done', number: 7 }), 'Merge request: !7 (out of draft)')
+  assert.equal(forgeReport('finalize', { state: 'done', number: 7 }), 'Merge request: !7 (out of draft, ready to merge)')
   assert.equal(forgeReport('push', { state: 'done' }), 'Push: done')
   assert.equal(forgeReport('open', { state: 'degraded', hint: 'log in', fallback: ['git push'] }), 'Merge request: not done yet. log in\n  git push')
   assert.equal(forgeReport('open', { state: 'refused', error: 'boom' }), 'Merge request: refused; boom')
