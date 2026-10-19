@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { run, UsageError } from '../archive.mjs'
 import { run as ingestRun } from '../ingest.mjs'
-import { deltaScenarios, handEditedProse, statePath, STEPS, unplaced } from '../lib/archive.mjs'
+import { ago, deltaScenarios, handEditedProse, hurtSignals, statePath, STEPS, unplaced } from '../lib/archive.mjs'
 import { recordDispatch } from '../lib/attempts.mjs'
 import { entryFromPage } from '../lib/prices.mjs'
 import { encodeKeys } from '../lib/transcripts.mjs'
@@ -700,6 +700,105 @@ test('the report names the capabilities verify.md lists as hand-edited and says 
   assert.deepEqual(out.handEdited, ['widgets: the Purpose names the dry store'])
   assert.match(out.report, /Corpus lint due: verify\.md lists hand-edited capability prose \(widgets: the Purpose names the dry store\); run the spec corpus lint/)
   assert.doesNotMatch(call(archiveHost(), ['report']).report, /Corpus lint/)
+})
+
+// Three archived v1 records, oldest first: the sweep found nothing in any, the review in two.
+const ARCHIVED = Object.fromEntries(
+  ['01', '02', '03'].map((day, i) => [
+    `openspec/changes/archive/2026-10-${day}-c${i}/metrics.json`,
+    JSON.stringify({ schemaVersion: 1, change: `c${i}`, branch: `feat/c${i}`, generatedAt: `2026-10-${day}T10:00:00.000Z`, sessions: [], cost: { total: {} }, facts: { rows: [], dispatches: [] }, ledger: { dispatches: {}, deviations: {} }, compliance: [], maintainability: {}, findings: { sweep: { dispatches: 1, findings: 0 }, review: { dispatches: 1, findings: i } } })
+  ])
+)
+const FETCHED = (at) => (root, { now }) => ({ ref: 'develop', fetched: true, fetchedAt: at ?? now().toISOString(), reason: null })
+
+test('the report: changes since the last window retro with the ref and its fetch age, the corpus lint due at three in one line, removal candidates', () => {
+  const h = archiveHost({ extra: ARCHIVED, verify: VERIFY.replace('## Apply test record', '**Hand-edited capability prose:** widgets: the Purpose names the dry store\n\n## Apply test record') })
+  call(h, ['check'])
+  const out = call(h, ['report'], { ...NONE, fetchRef: FETCHED('2026-10-19T09:55:00.000Z') })
+  assert.equal(out.ok, true)
+  assert.match(out.report, /\nSince the first archive \(no window retro yet\): 3 changes archived \(c0, c1, c2\) on develop \(fetched 5 min ago\)\.\n/)
+  assert.equal(out.report.match(/Corpus lint due/g).length, 1, 'one corpus lint line for both reasons')
+  assert.match(out.report, /Corpus lint due: verify\.md lists hand-edited capability prose \(widgets: the Purpose names the dry store\); 3 changes archived and no window retro yet \(3 or more\); run the spec corpus lint over openspec\/specs\/, which reports and never gates\./)
+  assert.match(out.report, /\nRemoval candidates, quiet for 3 changes \(information only\): layers sweep\.\n/)
+  assert.deepEqual(out.candidates, { layers: ['sweep'], checks: [] })
+  assert.equal(out.lintDue, true)
+  assert.equal(out.window.since.count, 3)
+  assert.doesNotMatch(out.report, /Hurt signals|No metrics record/, 'the metrics step has not run')
+  // A window retro anchors the next window: one change archived after its cut-off, no lint due.
+  const cutoff = git(h.root, 'rev-parse', 'HEAD')
+  commit(h.root, { '.adf/retro/2026-10-10-window.json': JSON.stringify({ cutoff: { mergeSha: cutoff, mergedAt: '2026-10-10T00:00:00Z' } }) }, 'docs(retro): window retrospective 2026-10-10')
+  commit(h.root, { 'openspec/changes/archive/2026-10-12-c3/metrics.json': '{}' }, 'chore: archive c3')
+  const after = call(h, ['report'], { ...NONE, fetchRef: FETCHED() })
+  assert.match(after.report, /\nSince the last window retro \(2026-10-10\): 1 change archived \(c3\) on develop \(fetched just now\)\.\n/)
+  assert.match(after.report, /Corpus lint due: verify\.md lists hand-edited capability prose \(widgets: the Purpose names the dry store\); run the spec corpus lint/)
+  assert.equal(after.lintDue, true)
+})
+
+test('the report with nothing to say has the window line alone, and a failed fetch is reported, never fatal', () => {
+  const h = archiveHost()
+  const plain = call(h, ['report'])
+  assert.match(plain.report, /\nSince the first archive \(no window retro yet\): no change archived on develop \(not fetched: develop is a local branch\)\.\n/)
+  assert.doesNotMatch(plain.report, /Corpus lint|Removal candidates|Hurt signals|No metrics record|Suggested/)
+  assert.deepEqual([plain.lintDue, plain.candidates, plain.signals], [false, { layers: [], checks: [] }, null])
+  const stale = call(h, ['report'], { ...NONE, fetchRef: () => ({ ref: 'develop', fetched: false, fetchedAt: '2026-10-19T07:00:00.000Z', reason: 'git fetch failed: offline' }) })
+  assert.match(stale.report, /on develop \(not fetched: git fetch failed: offline; last fetched 3 h ago\)\./)
+  const thrown = call(h, ['report'], {
+    ...NONE,
+    fetchRef: () => {
+      throw new Error('boom')
+    }
+  })
+  assert.equal(thrown.ok, true)
+  assert.match(thrown.report, /on develop \(not fetched: the fetch failed: boom\)\./)
+  // A real remote that cannot be reached: the remote-tracking ref is read as it is.
+  git(h.root, 'remote', 'add', 'origin', join(h.root, 'no-such-remote'))
+  git(h.root, 'update-ref', 'refs/remotes/origin/develop', 'HEAD')
+  const real = call(h, ['report'])
+  assert.equal(real.ok, true)
+  assert.equal(real.window.fetch.fetched, false)
+  assert.match(real.report, /no change archived on origin\/develop \(not fetched: git fetch failed: /)
+  assert.deepEqual([ago('2026-10-17T10:00:00Z', NOW), ago('2026-10-19T09:30:00Z', NOW), ago('not a time', NOW)], ['2 days ago', '30 min ago', 'at an unknown time'])
+})
+
+test('the report names the hurt signals of the change record and suggests a retro of the change; a failed metrics step says there is no record', () => {
+  assert.deepEqual(hurtSignals({ schemaVersion: 2, replies: { implementer: { stops: 0 } }, review: { rounds: 2, stopped: false }, context: { compactions: 0 } }), [])
+  assert.deepEqual(hurtSignals({ schemaVersion: 2, replies: null, review: null, context: null }), [])
+  const h = archiveHost()
+  let fired = false
+  const deps = {
+    ...measured(h),
+    fault: (s) => {
+      if (s === 'commit-metrics' && !fired) {
+        fired = true
+        throw new Error('injected at commit-metrics')
+      }
+    }
+  }
+  drive(h, deps)
+  const quiet = call(h, ['report'], deps)
+  assert.deepEqual(quiet.signals, [])
+  assert.doesNotMatch(quiet.report, /Hurt signals|No metrics record|Suggested/)
+  const file = join(h.wt, TARGET, 'metrics.json')
+  const record = JSON.parse(readFileSync(file, 'utf8'))
+  record.replies = { ingest: { dispatches: 2, valid: 0, invalid: 2, retries: 1, stops: 1 }, reviewer: { dispatches: 1, valid: 1, invalid: 0, retries: 0, stops: 0 } }
+  record.review = { verdict: 'PASS', rounds: 3, dispositions: {}, stopped: true }
+  record.context = { ...record.context, compactions: 2 }
+  writeFileSync(file, JSON.stringify(record))
+  const signals = 'Hurt signals in the record: a stopped dispatch \\(ingest 1\\); the review stage stopped on a second invalid reply; the review reached its round cap \\(3 rounds, cap 3\\); 2 context compactions\\.\nSuggested: /adf:retro --change add-x\\.'
+  assert.match(call(h, ['report'], deps).report, new RegExp(signals))
+  // Once committed and the worktree removed, the record is read from the metrics commit.
+  assert.ok(drive(h, deps).every((r) => r.ok))
+  assert.equal(existsSync(h.wt), false)
+  const done = call(h, ['report'], deps)
+  assert.equal(done.complete, true)
+  assert.match(done.report, new RegExp(signals))
+  assert.equal(done.signals.length, 4)
+  // No record: the metrics step failed.
+  const g = archiveHost()
+  drive(g, { ...measured(g), fault: (s) => { if (s === 'metrics') throw new Error('injected at metrics') } })
+  const none = call(g, ['report'])
+  assert.match(none.report, /\nNo metrics record: the metrics step failed \(injected at metrics\); the hurt signals were not read\./)
+  assert.equal(none.signals, null)
 })
 
 test('a failed git read refuses the guard that reads it, and an empty branch read never passes as a branch', () => {

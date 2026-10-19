@@ -82,6 +82,14 @@ The English check works as soon as it is installed: it is a Claude Code hook on 
 `git commit`. `/adf:add english-check@agentic-dev-flow '{"include":[...]}'` only changes its
 scope (`plugins/english-check/README.md`).
 
+## Host files
+
+`/adf:init` writes the registry, `.claude/adf-extensions.json` (its keys are in
+`plugins/adf/contract/README.md`), and `.gitignore` lines for the flow's local state
+(`.claude/worktrees/`, `.superpowers/`, `docs/superpowers/`). The core's committed directory in
+the host is `.adf/`: the dated price table in `.adf/prices/` and the retrospectives in
+`.adf/retro/`.
+
 ## Layout
 
 ```

@@ -17,7 +17,12 @@ import {
   validateDebtSettings,
   readDebtRoot,
   setDebtRoot,
+  validateMetricsSettings,
 } from '../lib/registry.mjs'
+import { execFileSync } from 'node:child_process'
+import { ignoreLocalDirs } from '../lib/host-files.mjs'
+import { pricesUrl } from '../lib/prices.mjs'
+import { DEFAULT_PRICES_URL } from '../lib/transcripts.mjs'
 
 const CORE = '1.0'
 
@@ -177,6 +182,32 @@ test('validateDebtSettings takes debt.root as a path inside the project and noth
     'debt.root must be a path relative to the project root'
   ])
   assert.deepEqual(validateRegistry({ contract: '1.0', extensions: [], debt: { root: '/abs' } }), ['debt.root must be a path relative to the project root'])
+})
+
+test('validateMetricsSettings takes metrics.pricesUrl as an optional http(s) URL and nothing else', () => {
+  assert.deepEqual(validateMetricsSettings({ pricesUrl: 'https://example.com/pricing.md' }), [])
+  assert.deepEqual(validateMetricsSettings({}), [])
+  assert.deepEqual(validateMetricsSettings(null), ['metrics must be an object'])
+  assert.deepEqual(validateMetricsSettings({ pricesUrl: 'pricing.md', cost: true }), [
+    'metrics.cost is not a metrics setting (pricesUrl)',
+    'metrics.pricesUrl must be an http or https URL'
+  ])
+  assert.deepEqual(validateRegistry({ contract: '1.0', extensions: [], metrics: { pricesUrl: 42 } }), ['metrics.pricesUrl must be an http or https URL'])
+  assert.deepEqual(validateRegistry({ contract: '1.0', extensions: [], metrics: { pricesUrl: 'http://prices.example/x' } }), [])
+})
+
+test('init asks for no metrics.pricesUrl: the default stands, and .adf/ stays out of .gitignore', () => {
+  const root = host()
+  execFileSync('git', ['init', '-q', root])
+  initRegistry(root, CORE)
+  assert.equal(readRegistry(root).metrics, undefined)
+  assert.equal(pricesUrl(root), DEFAULT_PRICES_URL)
+  ignoreLocalDirs(root)
+  execFileSync('git', ['check-ignore', '-q', '.superpowers/sdd/x'], { cwd: root, stdio: 'ignore' })
+  for (const path of ['.adf/retro/2026-10-19-window.json', '.adf/prices/2026-10-19.json']) {
+    const probe = () => execFileSync('git', ['check-ignore', '-q', path], { cwd: root, stdio: 'ignore' })
+    assert.throws(probe, undefined, `${path} is committed, never ignored`)
+  }
 })
 
 test('setDebtRoot records debt.root, readDebtRoot reads it, and a registry is required', () => {

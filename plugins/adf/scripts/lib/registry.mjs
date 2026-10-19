@@ -81,6 +81,7 @@ export function validateRegistry(registry) {
   // from the default exclusion list, the diff size one reviewer takes, the blocking severities.
   if (registry.review !== undefined) errors.push(...validateReviewSettings(registry.review))
   if (registry.debt !== undefined) errors.push(...validateDebtSettings(registry.debt))
+  if (registry.metrics !== undefined) errors.push(...validateMetricsSettings(registry.metrics))
   return errors
 }
 
@@ -133,6 +134,21 @@ export function setDebtRoot(root, path) {
   if (errors.length > 0) throw new Error(errors.join('; '))
   writeRegistry(root, { ...registry, debt })
   return path
+}
+
+// ---------------------------------------------------------------- metrics
+
+// The metrics settings (lib/prices.mjs): `metrics.pricesUrl`, the page the price table is
+// fetched from, an http(s) URL. Optional, with its default in lib/transcripts.mjs; /adf:init
+// does not ask for it.
+const METRICS_KEYS = ['pricesUrl']
+
+export function validateMetricsSettings(metrics) {
+  if (metrics === null || typeof metrics !== 'object' || Array.isArray(metrics)) return ['metrics must be an object']
+  const errors = []
+  for (const key of Object.keys(metrics)) if (!METRICS_KEYS.includes(key)) errors.push(`metrics.${key} is not a metrics setting (${METRICS_KEYS.join(', ')})`)
+  if (metrics.pricesUrl !== undefined && !(typeof metrics.pricesUrl === 'string' && /^https?:\/\/\S+$/.test(metrics.pricesUrl))) errors.push('metrics.pricesUrl must be an http or https URL')
+  return errors
 }
 
 export function readRegistry(root) {

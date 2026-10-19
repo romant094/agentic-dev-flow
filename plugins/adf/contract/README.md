@@ -133,6 +133,22 @@ so it survives a plugin update and works in every worktree. The order of `extens
 call order for hooks; a role has at most one provider. `config` is opaque to the core and is
 passed to the plugin's operations.
 
+`metrics.pricesUrl` (optional) is the page archive fetches the model price table from, an http
+or https URL; without it the core uses its default, and `/adf:init` does not ask for it:
+
+```json
+{ "metrics": { "pricesUrl": "https://platform.claude.com/docs/en/about-claude/pricing.md" } }
+```
+
+## The core's host directory
+
+`.adf/` in the host project is the core's own directory, committed and never ignored:
+
+- `.adf/prices/<YYYY-MM-DD>.json`: the dated price table, one entry per change of prices
+  (`metrics-format.md`), written by archive's `metrics` step.
+- `.adf/retro/<YYYY-MM-DD>-<mode>.md` and `.json`: each retrospective's report and its
+  sidecar; the newest window sidecar on the integration branch starts the next window.
+
 ## The declaration
 
 `adf-extension.json` at the plugin root:

@@ -65,11 +65,19 @@
 //         text }] }, bodyFile }
 //   archive.mjs state --change <name>     { ok, change, ci, steps: { <step>: { state, at, detail } }, next }
 //   archive.mjs next --change <name>      { ok, change, next: <step> | null, state }
-//   archive.mjs report --change <name>    { ok, change, complete, next, steps, handEdited, report }:
-//                                         built last, from the states; complete only when every
-//                                         step is done or skipped, metrics degraded allowed; the
-//                                         corpus lint named as due
-//                                         when verify.md lists hand-edited capability prose
+//   archive.mjs report --change <name>    { ok, change, complete, next, steps, handEdited, window,
+//                                         lintDue, candidates, signals, report }: built last, from
+//                                         the states; complete only when every step is done or
+//                                         skipped, metrics degraded allowed. Then, each only when
+//                                         it has content: the changes archived since the last
+//                                         window retro on the integration ref, with its fetch age
+//                                         (one fetch; a failed one reported, never fatal); one
+//                                         corpus lint line, due when verify.md lists hand-edited
+//                                         capability prose or 3 or more changes are counted; the
+//                                         removal candidates; the record's hurt signals (a stopped
+//                                         dispatch, the review round cap, a compaction) with a
+//                                         suggested /adf:retro --change; no record when metrics
+//                                         failed
 import { parseArgs } from 'node:util'
 import {
   archiveContext,

@@ -7,7 +7,10 @@
 // `failed` step, and a `degraded` one, runs again. The state is kept per change in the main
 // checkout's `.superpowers/sdd/<change>/archive/state.json`: the change directory moves at
 // `move`, and the worktree, with its own `.superpowers/`, is removed at `remove`; the main
-// checkout's copy outlives both. The final report is built last, from the states alone.
+// checkout's copy outlives both. The final report is built last, from the states and git, with
+// no LLM: after the steps, the changes archived since the last window retro (lib/window.mjs,
+// after one fetch of the integration ref), the corpus lint when due, the removal candidates and
+// the hurt signals of this change's record.
 //
 // What each step reads and writes:
 //   check         the review record through review-state's checkRecord: PASS only (one
@@ -69,15 +72,17 @@ import { dispatchName } from './dispatch.mjs'
 import { checkIngestFile, findChangeDir, workingChanges } from './ingest.mjs'
 import { mainCheckout } from './installed.mjs'
 import { readRecords, unresolvedDebt } from './ledger.mjs'
-import { buildRecord, RECORD_FILE, RecordError } from './metrics.mjs'
+import { asV2, buildRecord, candidates, RECORD_FILE, RecordError } from './metrics.mjs'
+import { QUIET_RUN } from './metrics-records.mjs'
 import { addEntry, pricesUrl } from './prices.mjs'
 import { readDebtRoot } from './registry.mjs'
-import { checkRecord } from './review-state.mjs'
+import { checkRecord, ROUND_CAP } from './review-state.mjs'
 import { callRole, CORE, forgeInput, forgeReport, knowledgeReport } from './roles.mjs'
 import { checkResolutions, checkSpecsBase, mergePreview, writeMerge } from './specs.mjs'
 import { writeConflictTexts } from './spec-merge.mjs'
 import { loadSchema } from './schema.mjs'
 import { defaultProjectsDir } from './transcripts.mjs'
+import { fetchRef, LINT_DUE, sinceLastRetro } from './window.mjs'
 import { remove as removeWorktree } from './workspace.mjs'
 
 export const STEPS = ['check', 'placements', 'merge', 'move', 'commit-specs', 'ingest', 'commit-memory', 'metrics', 'commit-metrics', 'mr', 'merge-local', 'remove']
@@ -158,7 +163,8 @@ function gitAsk(root, what, ...args) {
 
 // deps: { now() -> Date, home, knowledge() -> context result, knowledgeLog(input) -> log result,
 // forge(operation, input) -> role result, projectsDir, fetchPrices(url, now) -> fetchEntry result,
-// fault(step) }. `fault` lets a test fail a step; `projectsDir` is the transcript directory.
+// fetchRef(root, { now }) -> lib/window.mjs fetchRef result, fault(step) }. `fault` lets a test
+// fail a step; `projectsDir` is the transcript directory; `fetchRef` runs once, in the report.
 export function archiveContext(rootArg, change, deps = {}) {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(change ?? '')) refuse(`change name "${change}" is not kebab-case; pass the resolved change name`)
   const given = resolve(rootArg)
@@ -178,7 +184,8 @@ export function archiveContext(rootArg, change, deps = {}) {
     forge: deps.forge ?? ((operation, input) => callRole(root, 'forge', operation, input, core)),
     home: deps.home,
     projectsDir: deps.projectsDir ?? defaultProjectsDir(),
-    fetchPrices: deps.fetchPrices ?? fetchPricesSync
+    fetchPrices: deps.fetchPrices ?? fetchPricesSync,
+    fetchRef: deps.fetchRef ?? fetchRef
   }
   return ctx
 }
@@ -782,10 +789,93 @@ const summary = {
   remove: (d) => (d.state === 'removed' ? `worktree ${d.path} removed; branch ${d.branch} kept` : d.state === 'in-place' ? 'made in place; no worktree to remove' : 'no worktree left')
 }
 
-// The final report, built from the states alone. `complete` only when every step is done or
+// The final report, built from the states. `complete` only when every step is done or
 // skipped, or is metrics degraded: its record is written and committed with the gap named, and a
 // re-run does not bring the transcripts back. A pending, failed or other degraded step is named.
 const finished = (state, step) => FINAL.has(state.steps[step].state) || (step === 'metrics' && state.steps[step].state === 'degraded')
+
+// How long ago an ISO time was, for the fetch age.
+export function ago(iso, now) {
+  const minutes = Math.floor((now.getTime() - Date.parse(iso)) / 60000)
+  if (!Number.isFinite(minutes)) return 'at an unknown time'
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
+  if (minutes < 48 * 60) return `${Math.floor(minutes / 60)} h ago`
+  return `${Math.floor(minutes / 1440)} days ago`
+}
+
+// The integration ref fetched once (lib/window.mjs fetchRef), then the changes archived on it
+// since the last window retro. Neither a failed fetch nor a failed read fails the report.
+function sinceRetro(ctx) {
+  let fetched
+  try {
+    fetched = ctx.fetchRef(ctx.root, { now: ctx.now })
+  } catch (error) {
+    fetched = { ref: null, fetched: false, fetchedAt: null, reason: `the fetch failed: ${error.message}` }
+  }
+  const now = ctx.now()
+  const age = fetched.fetched
+    ? `fetched ${ago(fetched.fetchedAt, now)}`
+    : `not fetched: ${fetched.reason}${fetched.fetchedAt ? `; last fetched ${ago(fetched.fetchedAt, now)}` : ''}`
+  try {
+    const since = sinceLastRetro(ctx.root, { ...(fetched.ref ? { ref: fetched.ref } : {}), ...(fetched.fetchedAt ? { fetchedAt: fetched.fetchedAt } : {}) })
+    const anchor = since.previous ? `Since the last window retro (${since.previous.date})` : 'Since the first archive (no window retro yet)'
+    const what = since.count === 0 ? 'no change archived' : `${since.count} change${since.count === 1 ? '' : 's'} archived (${since.changes.join(', ')})`
+    return { fetch: fetched, since, line: `${anchor}: ${what} on ${since.ref} (${age}).` }
+  } catch (error) {
+    return { fetch: fetched, since: null, line: `Changes since the last window retro: not read (${error.message}); ${fetched.ref ?? 'the integration ref'} ${age}.` }
+  }
+}
+
+// The layers and checks quiet for QUIET_RUN changes, read from the archived records under the
+// report's root; information only.
+function removalLine(ctx) {
+  let got
+  try {
+    got = candidates(ctx.root)
+  } catch (error) {
+    return { candidates: null, line: `Removal candidates: not read (${error.message}).` }
+  }
+  const parts = [...(got.layers.length ? [`layers ${got.layers.join(', ')}`] : []), ...(got.checks.length ? [`checks ${got.checks.join(', ')}`] : [])]
+  return { candidates: { layers: got.layers, checks: got.checks }, line: parts.length ? `Removal candidates, quiet for ${QUIET_RUN} changes (information only): ${parts.join('; ')}.` : null }
+}
+
+// Pure: what in a change's record says the flow hurt: a stopped dispatch, the review round cap
+// reached, a context compaction.
+export function hurtSignals(input) {
+  const record = asV2(input) ?? {}
+  const out = []
+  const stops = Object.entries(record.replies ?? {}).filter(([, r]) => r?.stops > 0)
+  if (stops.length) out.push(`a stopped dispatch (${stops.map(([role, r]) => `${role} ${r.stops}`).join(', ')})`)
+  if (record.review?.stopped) out.push('the review stage stopped on a second invalid reply')
+  if (record.review?.rounds >= ROUND_CAP) out.push(`the review reached its round cap (${record.review.rounds} rounds, cap ${ROUND_CAP})`)
+  if (record.context?.compactions > 0) out.push(`${record.context.compactions} context compaction${record.context.compactions === 1 ? '' : 's'}`)
+  return out
+}
+
+// This change's record: from the commit-metrics commit when there is one (the worktree may be
+// gone), else from the report's root. Null while the metrics step is pending.
+function recordSignals(ctx, state) {
+  const metrics = state.steps.metrics
+  if (metrics.state === 'pending') return { signals: null, lines: [] }
+  if (metrics.state === 'failed') return { signals: null, lines: [`No metrics record: the metrics step failed (${metrics.detail?.error ?? 'no reason recorded'}); the hurt signals were not read.`] }
+  const file = metrics.detail?.file
+  const commit = state.steps['commit-metrics'].detail?.commit
+  let text = null
+  if (file && commit) {
+    const shown = spawnSync('git', ['show', `${commit}:${file}`], { cwd: ctx.root, encoding: 'utf8', maxBuffer: 1 << 26 })
+    if (shown.status === 0) text = shown.stdout
+  }
+  if (text === null && file && existsSync(join(ctx.root, file))) text = readFileSync(join(ctx.root, file), 'utf8')
+  let record = null
+  try {
+    record = text === null ? null : JSON.parse(text)
+  } catch {}
+  if (!record) return { signals: null, lines: [`No metrics record: ${file ?? 'the metrics step named no file'} could not be read; the hurt signals were not read.`] }
+  const signals = hurtSignals(record)
+  if (!signals.length) return { signals, lines: [] }
+  return { signals, lines: [`Hurt signals in the record: ${signals.join('; ')}.`, `Suggested: /adf:retro --change ${ctx.change}.`] }
+}
 
 export function report(ctx) {
   const state = readArchiveState(ctx.main, ctx.change)
@@ -806,9 +896,19 @@ export function report(ctx) {
   }
   const open = STEPS.filter((s) => !finished(state, s))
   const handEdited = state.steps.check.detail?.handEdited ?? []
-  const lint = handEdited.length
-    ? ['', `Corpus lint due: verify.md lists hand-edited capability prose (${handEdited.join('; ')}); run the spec corpus lint over openspec/specs/, which reports and never gates.`]
-    : []
+  const window = sinceRetro(ctx)
+  const due = [
+    ...(handEdited.length ? [`verify.md lists hand-edited capability prose (${handEdited.join('; ')})`] : []),
+    ...(window.since?.lintDue ? [`${window.since.count} changes archived ${window.since.previous ? 'since the last window retro' : 'and no window retro yet'} (${LINT_DUE} or more)`] : [])
+  ]
+  const removal = removalLine(ctx)
+  const hurt = recordSignals(ctx, state)
+  const notes = [
+    window.line,
+    ...(due.length ? [`Corpus lint due: ${due.join('; ')}; run the spec corpus lint over openspec/specs/, which reports and never gates.`] : []),
+    ...(removal.line ? [removal.line] : []),
+    ...hurt.lines
+  ]
   const mr = state.steps.mr
   const heading = complete ? `## Archive complete: ${ctx.change}` : `## Archive not complete: ${ctx.change}`
   const tail = complete
@@ -819,5 +919,17 @@ export function report(ctx) {
         ...(mr.state === 'degraded' ? ['The merge request is not ready: run the fallback the mr step recorded, then archive.mjs mr again.'] : []),
         ...(nextStep(state) ? [`Next: archive.mjs ${nextStep(state)} --change ${ctx.change}.`] : [])
       ]
-  return { ok: true, change: ctx.change, complete, next: nextStep(state), steps: state.steps, handEdited, report: [heading, '', ...lines, ...lint, ...tail].join('\n') }
+  return {
+    ok: true,
+    change: ctx.change,
+    complete,
+    next: nextStep(state),
+    steps: state.steps,
+    handEdited,
+    window: { fetch: window.fetch, since: window.since },
+    lintDue: due.length > 0,
+    candidates: removal.candidates,
+    signals: hurt.signals,
+    report: [heading, '', ...lines, '', ...notes, ...tail].join('\n')
+  }
 }
