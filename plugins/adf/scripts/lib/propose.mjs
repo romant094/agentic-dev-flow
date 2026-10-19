@@ -5,7 +5,9 @@
 // A gate is bound to its artifact in schema.json (`gates`), not to the agent's memory: `done`
 // runs the artifact's gates, `next` runs the gates of every artifact already written before it
 // hands out a later one, and `commit` runs them all again. Nothing records that a gate passed;
-// it is run again, so an artifact edited after its gate passed is checked as it is now.
+// it is run again, so an artifact edited after its gate passed is checked as it is now. One gate
+// also writes: `specs-base` takes the delta specs' base snapshot (specs-base.json), keeping the
+// entries of unchanged delta blocks, so the commit holds it as the deltas are at that moment.
 //
 // `done` also does two things the instructions asked the agent to remember: it moves what a
 // Superpowers skill wrote to its own default folder into the change, and it reports any project
@@ -26,7 +28,7 @@ import {
 import { commitPaths } from './commit.mjs'
 import { mainCheckout } from './installed.mjs'
 import { appendRecord } from './ledger.mjs'
-import { changeAgainstMain, checkCapabilities, validateProject } from './specs.mjs'
+import { changeAgainstMain, checkCapabilities, validateProject, writeSpecsBase } from './specs.mjs'
 import { create as createWorkspace } from './workspace.mjs'
 import { run as tasksCli } from '../tasks.mjs'
 import { run as planCli } from '../plan.mjs'
@@ -52,6 +54,13 @@ const RUNNERS = {
   'specs-against-main': (root, change) => {
     const result = changeAgainstMain(root, change)
     return { ok: result.ok, findings: result.capabilities.flatMap((c) => c.findings.map((f) => ({ capability: c.capability, ...f }))) }
+  },
+  'specs-base': (root, change) => {
+    try {
+      return writeSpecsBase(root, change)
+    } catch (error) {
+      return { ok: false, error: error.message }
+    }
   },
   'tasks-lint': (root, change) => cliGate(tasksCli(['lint', '--change', change, '--root', root])),
   'plan-symbols': async (root, change) => cliGate(await planSymbolsCli([change, '--root', root])),

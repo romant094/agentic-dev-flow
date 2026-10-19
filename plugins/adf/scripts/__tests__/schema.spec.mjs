@@ -72,7 +72,7 @@ test('gates must name known checks, once each', () => {
 test('the shipped schema gates specs, tasks and plan with the checks propose used to run by hand', () => {
   const gates = Object.fromEntries(loadSchema().artifacts.filter((a) => a.gates).map((a) => [a.id, a.gates]))
   assert.deepEqual(gates, {
-    specs: ['specs-validate', 'specs-capabilities', 'specs-against-main'],
+    specs: ['specs-validate', 'specs-capabilities', 'specs-against-main', 'specs-base'],
     tasks: ['tasks-lint'],
     plan: ['plan-symbols', 'plan-lint']
   })

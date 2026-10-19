@@ -12,8 +12,9 @@ const GUIDE = /^[a-z0-9][a-z0-9-]*\.md$/
 
 // The checks an artifact may declare in `gates`, run by `changes.mjs done` and by every later
 // `next` (lib/propose.mjs runs them). A gate names a script's check, so the schema states which
-// check guards which artifact and the agent never decides whether to run one.
-export const GATES = ['specs-validate', 'specs-capabilities', 'specs-against-main', 'tasks-lint', 'plan-symbols', 'plan-lint']
+// check guards which artifact and the agent never decides whether to run one. `specs-base` also
+// writes the change's specs-base.json (lib/specs.mjs writeSpecsBase).
+export const GATES = ['specs-validate', 'specs-capabilities', 'specs-against-main', 'specs-base', 'tasks-lint', 'plan-symbols', 'plan-lint']
 
 const isText = (value) => typeof value === 'string' && value.length > 0
 

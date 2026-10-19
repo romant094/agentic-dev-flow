@@ -19,12 +19,21 @@
 //   specs.mjs merge --dry-run [--change <name>] [--resolutions <file>]
 //       the read-only preview of archive's spec merge (lib/specs.mjs mergePreview): per
 //       capability the counts added, modified, removed and renamed, `new`, `merged` (the main
-//       spec already holds the delta), the conflicts of the three-way check against the change's
-//       merge base, refusals; and the totals, newCapabilities, placeholderPurpose, conflicts and
-//       errors. --resolutions previews a JSON array of { capability, requirement, text, reason }
+//       spec already holds the delta), the conflicts of the three-way check against the base in
+//       the change's specs-base.json (its merge base when it has none, with a warning), refusals;
+//       and the totals, newCapabilities, placeholderPurpose, conflicts, errors and warnings. --resolutions previews a JSON array of { capability, requirement, text, reason }
 //       applied to the conflicts; a resolution that answers no conflict is refused. Exit 1 on
 //       an unresolved conflict or a refusal. Nothing is written: the writing merge is
 //       `archive.mjs merge`, after archive's gate.
+//   specs.mjs base [--check] [--change <name>]
+//       writes openspec/changes/<name>/specs-base.json (lib/specs.mjs writeSpecsBase): the main
+//       spec's text of every requirement a delta modifies, removes or renames, with the hash of
+//       the delta block it was taken for, so a rebase cannot move the three-way check's base.
+//       An entry whose delta block is unchanged keeps its text; a changed one is taken again
+//       from the main spec; one no delta touches is dropped. { ok, file, added, refreshed,
+//       kept, dropped }; exit 1 when a touched requirement is not in its main spec (nothing
+//       written). --check writes nothing: { ok, file, exists, touched, missing, stale, refusal? }, exit 1
+//       when a requirement has no entry or its entry was taken for another delta text.
 //   specs.mjs resolution --capability <capability> --reply <file> [--change <name>]
 //       the check of a `spec-merge <capability>` agent's reply (lib/spec-merge.mjs): valid under
 //       schema/spec-merge-resolution.schema.json and checkResolutions, every resolution of the
@@ -33,13 +42,13 @@
 //       valid replies of every capability in conflict, joined into one array, are the merge's
 //       --resolutions file; a refused reply goes back once, and a second refusal stops archive.
 //
-// Without --change, capabilities, merge and --against-main act on the one active change under the root.
+// Without --change, capabilities, merge, base and --against-main act on the one active change under the root.
 //
 // --strict also fails an item on a WARNING, as the CLI's --strict does. --root <dir> names the
 // project holding openspec/ (default: the current directory).
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { changeAgainstMain, checkCapabilities, mergePreview, validateProject } from './lib/specs.mjs'
+import { changeAgainstMain, checkCapabilities, checkSpecsBase, mergePreview, validateProject, writeSpecsBase } from './lib/specs.mjs'
 import { checkSpecMergeReply } from './lib/spec-merge.mjs'
 import { inferChange } from './lib/changes.mjs'
 import { loadSchema } from './lib/schema.mjs'
@@ -47,7 +56,7 @@ import { isMain } from './lib/main.mjs'
 
 export class UsageError extends Error {}
 
-const USAGE = 'usage: specs.mjs validate [--all | --change <name> [--against-main] | --spec <capability>] [--strict] [--root <dir>] | specs.mjs capabilities [--change <name>] [--root <dir>] | specs.mjs merge --dry-run [--change <name>] [--resolutions <file>] [--root <dir>] | specs.mjs resolution --capability <capability> --reply <file> [--change <name>] [--root <dir>]'
+const USAGE = 'usage: specs.mjs validate [--all | --change <name> [--against-main] | --spec <capability>] [--strict] [--root <dir>] | specs.mjs capabilities [--change <name>] [--root <dir>] | specs.mjs merge --dry-run [--change <name>] [--resolutions <file>] [--root <dir>] | specs.mjs base [--check] [--change <name>] [--root <dir>] | specs.mjs resolution --capability <capability> --reply <file> [--change <name>] [--root <dir>]'
 
 function option(args, name) {
   const i = args.indexOf(name)
@@ -84,8 +93,15 @@ export function run(argv) {
   const resolutions = option(args, '--resolutions')
   const capability = option(args, '--capability')
   const reply = option(args, '--reply')
+  const check = flag(args, '--check')
   const [command, ...rest] = args
   const root = resolve(rootOption ?? process.cwd())
+  if (command === 'base') {
+    if (rest.length > 0 || spec || all || strict || againstMain || dryRun || resolutions !== undefined || capability !== undefined || reply !== undefined) throw new UsageError(USAGE)
+    change = inferChange(root, change, loadSchema())
+    return { change, ...(check ? checkSpecsBase(root, change) : writeSpecsBase(root, change)) }
+  }
+  if (check) throw new UsageError(USAGE)
   if (command === 'resolution') {
     if (!capability || !reply || rest.length > 0 || spec || all || strict || againstMain || dryRun || resolutions !== undefined) throw new UsageError(USAGE)
     change = inferChange(root, change, loadSchema())

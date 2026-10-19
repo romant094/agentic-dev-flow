@@ -33,7 +33,7 @@
       "description": "Detailed specifications for the change",
       "template": "spec.md",
       "instruction": "specs.md",
-      "gates": ["specs-validate", "specs-capabilities", "specs-against-main"],
+      "gates": ["specs-validate", "specs-capabilities", "specs-against-main", "specs-base"],
       "requires": ["proposal"]
     },
     {

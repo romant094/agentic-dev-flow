@@ -19,7 +19,7 @@ import { appendRecord, readRecords, SESSION_ENV, skillEditShas } from './ledger.
 import { baseRef, EXTENSIONS } from './plan-symbols.mjs'
 import { readRegistry } from './registry.mjs'
 import { CORE, knowledgePaths } from './roles.mjs'
-import { extractRequirementsSection, parseDeltaSpec, validateProject } from './specs.mjs'
+import { checkSpecsBase, extractRequirementsSection, parseDeltaSpec, validateProject } from './specs.mjs'
 import { claudeHome } from './superpowers.mjs'
 import { gitIn } from './workspace.mjs'
 
@@ -27,6 +27,7 @@ export const CHECKS = {
   validation: 'Structural validation',
   tasks: 'Task completion',
   deltas: 'Delta spec sync state',
+  'specs-base': 'Spec base snapshot',
   tree: 'Implementation signal',
   'test-record': 'Apply test record',
   worktrees: 'No leftover worktrees',
@@ -181,6 +182,21 @@ function checkDeltas(root, change) {
   if (byState.conflict.length > 0) return { verdict: 'fail', summary: `cannot be merged at archive: ${byState.conflict.join(', ')}`, text }
   if (byState['needs sync'].length > 0) return { verdict: 'warn', summary: `needs sync, expected before archive: ${byState['needs sync'].join(', ')}`, text }
   return { verdict: 'pass', summary: `already synced: ${byState.synced.join(', ')}`, text }
+}
+
+// specs-base.json against the delta specs (`specs.mjs base --check`): archive's three-way check
+// reads each touched requirement's base from it, so a missing or stale entry fails.
+function checkSpecsBaseSnapshot(root, change) {
+  const result = checkSpecsBase(root, change)
+  const named = (list) => list.map((m) => `${m.capability}: ${m.requirement}`)
+  const text = [
+    `${result.file}: ${result.exists ? 'present' : 'absent'}; ${result.touched} requirement(s) modified, removed or renamed`,
+    ...named(result.missing).map((m) => `missing: ${m}`),
+    ...named(result.stale).map((m) => `stale: ${m}`)
+  ].join('\n')
+  if (!result.ok) return { verdict: 'fail', summary: result.refusal, text }
+  if (result.touched === 0) return { verdict: 'pass', summary: 'N/A: no MODIFIED, REMOVED or RENAMED requirement', text }
+  return { verdict: 'pass', summary: `every base current for ${result.touched} requirement(s)`, text }
 }
 
 function checkTree(git, base) {
@@ -424,6 +440,7 @@ export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md
     validation: guard(() => checkValidation(root, change)),
     tasks: guard(() => checkTasks(root, change, tracks)),
     deltas: guard(() => checkDeltas(root, change)),
+    'specs-base': guard(() => checkSpecsBaseSnapshot(root, change)),
     tree: guard(() => checkTree(git, base)),
     'test-record': guard(() => checkTestRecord(root, change, git)),
     worktrees: guard(() => checkWorktrees(root, change, git)),
@@ -846,6 +863,7 @@ const HEADING_IDS = {
   'Structural validation': 'validation',
   'Task completion': 'tasks',
   'Delta spec sync state': 'deltas',
+  'Spec base snapshot': 'specs-base',
   'Design and specs coherence': 'c4',
   'Implementation signal': 'tree',
   'Apply test record': 'test-record',

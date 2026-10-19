@@ -5,7 +5,7 @@
 // real git repositories.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   buildSpecSkeleton,
@@ -15,14 +15,19 @@ import {
   deltaAlreadyMerged,
   findConflicts,
   hasPlaceholderPurpose,
+  checkSpecsBase,
   mergePreview,
+  NO_SPECS_BASE,
   parseDeltaSpec,
   PURPOSE_PLACEHOLDER,
+  specsBasePath,
   validateSpecContent,
-  writeMerge
+  writeMerge,
+  writeSpecsBase
 } from '../lib/specs.mjs'
+import { failed, run as specsCli } from '../specs.mjs'
 import { listCases, loadCase, OPENSPEC_PURPOSE, openspecBuild } from './fixtures/spec-merge/cases.mjs'
-import { git, mergeRepo } from './fixtures/spec-merge/repo.mjs'
+import { commitFiles, git, mergeRepo } from './fixtures/spec-merge/repo.mjs'
 
 const PURPOSE = 'Widgets are built, stored and shipped by the system, one at a time.'
 const req = (name, body = `The system SHALL ${name.toLowerCase()}.`, scenario = 'Works') =>
@@ -251,4 +256,120 @@ test('a refusal of the merge itself is reported per capability, and an unknown c
   assert.deepEqual(preview.errors, [{ capability: 'widgets', error: 'widgets validation failed - duplicate requirement in ADDED for header "### Requirement: Store"' }])
   assert.throws(() => mergePreview(change, 'add-y'), /no change "add-y"/)
   assert.equal(existsSync(join(change, 'openspec', 'specs', 'widgets', 'spec.md')), true)
+})
+
+// ---- The base snapshot (specs-base.json) ----
+
+const SPEC = 'openspec/specs/widgets/spec.md'
+const DELTA_PATH = 'openspec/changes/add-x/specs/widgets/spec.md'
+const BASE_PATH = 'openspec/changes/add-x/specs-base.json'
+const snapshotOf = (dir) => JSON.parse(readFileSync(specsBasePath(dir, 'add-x'), 'utf8')).capabilities
+const ids = (list) => list.map((m) => `${m.capability}: ${m.requirement}`)
+
+test('a rebase moves the merge base past the other change: the snapshot still sees the conflict, the merge base does not', () => {
+  const { change, onDevelop } = mergeRepo({ main: { widgets: BASE_MAIN }, delta: { widgets: DELTA } })
+  assert.equal(writeSpecsBase(change, 'add-x').ok, true)
+  commitFiles(change, {}, 'snapshot')
+  // Another change edits the requirement on develop; the branch is then rebased onto it, so the
+  // merge base is the new develop tip and the worktree's main spec holds the other edit.
+  const tip = onDevelop({ [SPEC]: BASE_MAIN.replace('The system SHALL store.', 'The system SHALL store widgets cold.') })
+  git(change, 'rebase', '-q', 'develop')
+  assert.equal(changeMergeBase(change, 'add-x').sha, tip)
+
+  const preview = mergePreview(change, 'add-x')
+  assert.equal(preview.ok, false)
+  assert.deepEqual(preview.base, { ref: 'develop', sha: null, snapshot: BASE_PATH })
+  assert.deepEqual(preview.warnings, [])
+  assert.deepEqual(preview.conflicts.map(({ requirement, operation, side }) => [requirement, operation, side]), [['Store', 'MODIFIED', 'base-branch']])
+  assert.match(preview.conflicts[0].base, /SHALL store\.$/m)
+  assert.match(preview.conflicts[0].current, /SHALL store widgets cold\./)
+  assert.deepEqual(writeMerge(change, 'add-x').written, [])
+
+  rmSync(specsBasePath(change, 'add-x'))
+  const fallback = mergePreview(change, 'add-x')
+  assert.equal(fallback.ok, true, 'without the snapshot the rebase hides the conflict')
+  assert.deepEqual(fallback.conflicts, [])
+  assert.equal(fallback.base.sha, tip)
+  assert.deepEqual(fallback.warnings, [NO_SPECS_BASE])
+  assert.equal(NO_SPECS_BASE, 'no specs-base.json; base from git merge-base, which a rebase moves')
+})
+
+test('a snapshot with no entry for a touched requirement refuses that capability\'s merge', () => {
+  const { change } = mergeRepo({ main: { widgets: BASE_MAIN }, delta: { widgets: DELTA } })
+  writeFileSync(specsBasePath(change, 'add-x'), '{"capabilities":{}}\n')
+  const preview = mergePreview(change, 'add-x')
+  assert.equal(preview.ok, false)
+  assert.deepEqual(preview.errors, [{ capability: 'widgets', error: `${BASE_PATH} holds no base for "Store"; the three-way check cannot run without it` }])
+  assert.deepEqual(writeMerge(change, 'add-x').written, [])
+  writeFileSync(specsBasePath(change, 'add-x'), '{"capabilities":[]}\n')
+  assert.throws(() => mergePreview(change, 'add-x'), /specs-base\.json is not \{ capabilities/)
+})
+
+test('specs.mjs base adds, keeps, refreshes and drops entries, deterministically', () => {
+  const main = mainSpec('widgets', req('Build'), req('Store'), req('Ship'))
+  const delta = `## MODIFIED Requirements\n\n${req('Store', 'The system SHALL store widgets dry.')}\n## REMOVED Requirements\n\n${req('Ship', '**Reason**: gone.')}`
+  const { change } = mergeRepo({ main: { widgets: main }, delta: { widgets: delta, 'new-cap': `## ADDED Requirements\n\n${req('Label')}` } })
+  const first = writeSpecsBase(change, 'add-x')
+  assert.deepEqual([first.ok, first.file, ids(first.added), first.refreshed, first.kept, first.dropped], [true, BASE_PATH, ['widgets: Store', 'widgets: Ship'], [], [], []])
+  const bytes = readFileSync(specsBasePath(change, 'add-x'), 'utf8')
+  assert.ok(bytes.endsWith('}\n'))
+  assert.deepEqual(Object.keys(snapshotOf(change).widgets), ['Ship', 'Store'], 'keys sorted')
+  assert.deepEqual(Object.keys(snapshotOf(change).widgets.Store), ['operation', 'delta', 'base'])
+  assert.equal(snapshotOf(change).widgets.Store.base, req('Store').trimEnd())
+  assert.equal(snapshotOf(change).widgets.Store.operation, 'MODIFIED')
+
+  const again = writeSpecsBase(change, 'add-x')
+  assert.deepEqual([again.added, ids(again.kept)], [[], ['widgets: Store', 'widgets: Ship']])
+  assert.equal(readFileSync(specsBasePath(change, 'add-x'), 'utf8'), bytes, 'a re-run writes the same bytes')
+
+  // The main spec moves (a rebase): an unchanged delta block keeps the base it was written on.
+  writeFileSync(join(change, SPEC), main.replace('SHALL store.', 'SHALL store cold.'))
+  assert.deepEqual(ids(writeSpecsBase(change, 'add-x').kept), ['widgets: Store', 'widgets: Ship'])
+  assert.match(snapshotOf(change).widgets.Store.base, /SHALL store\.$/m)
+  // Blank-line and trailing-space edits are no change of the block.
+  writeFileSync(join(change, DELTA_PATH), delta.replace('dry.', 'dry.  \n'))
+  assert.deepEqual(ids(writeSpecsBase(change, 'add-x').kept), ['widgets: Store', 'widgets: Ship'])
+
+  // The delta is edited: Store's block changes, Ship leaves, Build is renamed.
+  writeFileSync(join(change, DELTA_PATH), `## MODIFIED Requirements\n\n${req('Store', 'The system SHALL store widgets dry and cold.')}\n## RENAMED Requirements\n\n- FROM: \`### Requirement: Build\`\n- TO: \`### Requirement: Make\`\n`)
+  const edited = writeSpecsBase(change, 'add-x')
+  assert.deepEqual([ids(edited.added), ids(edited.refreshed), edited.kept, ids(edited.dropped)], [['widgets: Build'], ['widgets: Store'], [], ['widgets: Ship']])
+  assert.match(snapshotOf(change).widgets.Store.base, /SHALL store cold\./, 'a changed block takes the main spec as it is now')
+  assert.deepEqual(Object.keys(snapshotOf(change).widgets), ['Build', 'Store'])
+  assert.equal(snapshotOf(change).widgets.Build.operation, 'RENAMED')
+})
+
+test('specs.mjs base refuses, writing nothing, when the main spec lacks a touched requirement', () => {
+  const { change } = mergeRepo({ main: { widgets: BASE_MAIN }, delta: { widgets: `## MODIFIED Requirements\n\n${req('Paint')}` } })
+  const result = writeSpecsBase(change, 'add-x')
+  assert.equal(result.ok, false)
+  assert.deepEqual(ids(result.missing), ['widgets: Paint'])
+  assert.match(result.error, /the main spec holds no requirement widgets "Paint"/)
+  assert.equal(existsSync(specsBasePath(change, 'add-x')), false)
+})
+
+test('specs.mjs base --check refuses a missing file, a missing entry and a stale one, and writes nothing', () => {
+  const { change } = mergeRepo({ main: { widgets: BASE_MAIN }, delta: { widgets: DELTA } })
+  const check = (...args) => specsCli(['base', '--check', '--change', 'add-x', '--root', change, ...args])
+  let result = check()
+  assert.equal(failed(result), true)
+  assert.deepEqual([result.ok, result.exists, ids(result.missing), result.stale], [false, false, ['widgets: Store'], []])
+  assert.match(result.refusal, /has no base for widgets "Store": run specs\.mjs base --change add-x/)
+  assert.equal(existsSync(specsBasePath(change, 'add-x')), false)
+
+  const written = specsCli(['base', '--change', 'add-x', '--root', change])
+  assert.deepEqual([written.ok, written.change, written.file, ids(written.added)], [true, 'add-x', BASE_PATH, ['widgets: Store']])
+  result = check()
+  assert.deepEqual([failed(result), result.exists, result.missing, result.stale], [false, true, [], []])
+
+  writeFileSync(join(change, DELTA_PATH), DELTA.replace('dry.', 'wet.'))
+  result = check()
+  assert.deepEqual([failed(result), ids(result.stale)], [true, ['widgets: Store']])
+  assert.match(result.refusal, /a base taken for another delta text for widgets "Store"/)
+
+  writeFileSync(join(change, DELTA_PATH), `${DELTA}\n## REMOVED Requirements\n\n${req('Ship', '**Reason**: gone.')}`)
+  result = check()
+  assert.deepEqual([ids(result.missing), result.stale], [['widgets: Ship'], []])
+  assert.throws(() => specsCli(['base', '--check', '--spec', 'widgets', '--root', change]), /usage/)
+  assert.throws(() => specsCli(['merge', '--dry-run', '--check', '--root', change]), /usage/)
 })

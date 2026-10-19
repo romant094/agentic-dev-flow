@@ -126,9 +126,10 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    The script merges with openspec 1.5.0's semantics, all or nothing, and writes the main specs
    itself; no agent edits them.
 
-   - **A conflict** is a requirement this change modifies, removes or renames that the main
-     spec changed after the change's merge base. It fails the step with `detail.conflicts`, one
-     entry per capability. For each, in one response:
+   - **A conflict** is a requirement this change modifies, removes or renames whose main-spec
+     text changed since the base the change snapshotted at propose (`specs-base.json`; without
+     it, the change's merge base, and the preview's `warnings` say so). It fails the step with
+     `detail.conflicts`, one entry per capability. For each, in one response:
 
      ```bash
      node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" attempt --change <change> --name "spec-merge <capability>" --root <root>

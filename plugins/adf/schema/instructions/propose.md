@@ -50,8 +50,11 @@ holds only markdown until apply; whether and how the worktree is provisioned is 
 later artifact while a written one fails them, and `propose.mjs commit` runs them all again. A
 gate's findings are yours to fix in the artifact, never to argue past. The `specs` gates validate
 this change's specs only, the proposal's capabilities against the spec folders, and each delta
-against the main spec archive will apply it to. A requirement's `SHALL` or `MUST` MUST be on the
-first line of its body: the validator does not scan past it.
+against the main spec archive will apply it to. The last of them, `specs-base`, also writes
+`specs-base.json` beside the deltas: the main-spec text of every requirement they modify, remove
+or rename, which archive's three-way check reads as the base. `propose.mjs commit` commits it
+with the artifacts; write and edit it never by hand. A requirement's `SHALL` or `MUST` MUST be
+on the first line of its body: the validator does not scan past it.
 
 **Context, rules and guides guide the author and never reach the artifact.**
 

@@ -5,8 +5,10 @@
 // checks the two against a real corpus. Node standard library only.
 //
 // The archive merge at the end (buildUpdatedSpec and the rest) ports core/specs-apply.js of the
-// same CLI and adds the three-way check against the change's merge base.
+// same CLI and adds the three-way check against the base the change snapshotted at propose
+// (specs-base.json), or its merge base when it has no snapshot.
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { changeDir, changeMeta } from './changes.mjs'
@@ -940,11 +942,13 @@ function touchedRequirements(plan, deltaText) {
 }
 
 // The three-way check of one capability: every requirement the delta modifies, removes or
-// renames whose main-spec text at `nowText` differs from its text at `baseText` (the change's
-// merge base). Each conflict carries the base text, the current text (null where the
-// requirement is absent) and the delta's text; `side` names where the current text was read.
-export function findConflicts(plan, deltaText, { baseText, nowText, side }) {
-  const base = blocksByName(baseText)
+// renames whose main-spec text at `nowText` differs from its base text. The base is
+// `baseBlocks`, requirement name -> block, when given (the change's specs-base.json), else the
+// blocks of `baseText` (the main spec at the change's merge base). Each conflict carries the
+// base text, the current text (null where the requirement is absent) and the delta's text;
+// `side` names where the current text was read.
+export function findConflicts(plan, deltaText, { baseText, baseBlocks, nowText, side }) {
+  const base = baseBlocks ?? blocksByName(baseText)
   const now = blocksByName(nowText)
   return touchedRequirements(plan, deltaText)
     .filter(({ requirement }) => !sameBlock(base.get(requirement) ?? null, now.get(requirement) ?? null))
@@ -1001,12 +1005,11 @@ function gitText(root, ...args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28 })
 }
 
-// The change's base branch as a ref (`origin/<base>` when the remote has it) and its merge base
-// with HEAD: { ref, sha }.
-export function changeMergeBase(root, change) {
+// The change's base branch as a ref: `origin/<base>` when the remote has it.
+export function changeBaseRef(root, change) {
   const meta = changeMeta(root, change)
   if (typeof meta.base !== 'string' || !meta.base.trim()) throw new Error(`openspec/changes/${change}/.adf.json has no "base" branch; the three-way check needs it`)
-  const ref = baseRef(meta, (name) => {
+  return baseRef(meta, (name) => {
     try {
       gitText(root, 'rev-parse', '--verify', '--quiet', name)
       return true
@@ -1014,6 +1017,11 @@ export function changeMergeBase(root, change) {
       return false
     }
   })
+}
+
+// The change's base branch as a ref and its merge base with HEAD: { ref, sha }.
+export function changeMergeBase(root, change) {
+  const ref = changeBaseRef(root, change)
   try {
     return { ref, sha: gitText(root, 'merge-base', ref, 'HEAD').trim() }
   } catch {
@@ -1035,12 +1043,129 @@ const deltaCapabilities = (root, change) => {
   return listDirs(dir, (name) => existsSync(join(dir, name, 'spec.md')))
 }
 
+// ---- The base snapshot: the main-spec text each touched requirement had at propose ----
+
+// A branch rebased or squashed before it merges moves `git merge-base` to the new base tip,
+// where the main spec already holds the other change's edit, and the three-way check then sees
+// no conflict (42 of the origin's 47 merges). So propose snapshots, in
+// openspec/changes/<change>/specs-base.json, the main-spec block of every requirement a delta
+// modifies, removes or renames, with the hash of the delta block it was taken for:
+//   { "capabilities": { "<capability>": { "<requirement>": { "operation", "delta", "base" } } } }
+// `delta` is the sha256 of the operation and the delta's text for the requirement, compared as
+// sameBlock compares blocks; `base` is the whole main-spec block, header first. A RENAMED
+// requirement is keyed by its FROM name.
+export const SPECS_BASE_FILE = 'specs-base.json'
+export const specsBasePath = (root, change) => join(changeDir(root, change), SPECS_BASE_FILE)
+const specsBaseRel = (change) => `openspec/changes/${change}/${SPECS_BASE_FILE}`
+export const NO_SPECS_BASE = `no ${SPECS_BASE_FILE}; base from git merge-base, which a rebase moves`
+
+const comparable = (text) => collapseBlankRuns(text).split('\n').map((l) => l.trimEnd()).join('\n').trim()
+const deltaHash = (operation, text) => createHash('sha256').update(`${operation}\n${comparable(text)}`).digest('hex')
+const isRecord = (value) => typeof value === 'object' && value !== null && !Array.isArray(value)
+
+// Every requirement the change's deltas modify, remove or rename, by capability in directory
+// order: [{ capability, requirement, operation, hash }].
+function touchedInChange(root, change) {
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in openspec/changes`)
+  return deltaCapabilities(root, change).flatMap((capability) => {
+    const deltaText = readFileSync(join(changeDir(root, change), 'specs', capability, 'spec.md'), 'utf8')
+    return touchedRequirements(parseDeltaSpec(deltaText), deltaText).map((t) => ({ capability, requirement: t.requirement, operation: t.operation, hash: deltaHash(t.operation, t.delta) }))
+  })
+}
+
+// The snapshot's capabilities, or null when the change has none. Throws on a malformed file.
+export function readSpecsBase(root, change) {
+  const path = specsBasePath(root, change)
+  if (!existsSync(path)) return null
+  let data
+  try {
+    data = JSON.parse(readFileSync(path, 'utf8'))
+  } catch (error) {
+    throw new Error(`${specsBaseRel(change)}: ${error.message}`)
+  }
+  const entries = isRecord(data?.capabilities) ? Object.values(data.capabilities) : null
+  const valid = entries?.every((byName) => isRecord(byName) && Object.values(byName).every((e) => isRecord(e) && ['operation', 'delta', 'base'].every((k) => typeof e[k] === 'string')))
+  if (!valid) throw new Error(`${specsBaseRel(change)} is not { capabilities: { <capability>: { <requirement>: { operation, delta, base } } } }`)
+  return data.capabilities
+}
+
+// `specs.mjs base`: the snapshot written for the deltas as they are now. An entry whose delta
+// hash is unchanged keeps its stored base; one whose delta block changed is taken again from the
+// main spec in the working tree; one no delta touches any more is dropped; a new one is added.
+// Refused, nothing written, when the main spec lacks a touched requirement. Keys are sorted, so
+// the same input writes the same bytes. { ok, file, added, refreshed, kept, dropped }, each list
+// of { capability, requirement }.
+export function writeSpecsBase(root, change) {
+  const touched = touchedInChange(root, change)
+  const stored = readSpecsBase(root, change) ?? {}
+  const file = specsBaseRel(change)
+  const result = { ok: true, file, added: [], refreshed: [], kept: [], dropped: [] }
+  const mains = new Map()
+  const next = {}
+  const missing = []
+  for (const { capability, requirement, operation, hash } of touched) {
+    if (!mains.has(capability)) mains.set(capability, blocksByName(readOrNull(mainSpecPath(root, capability))))
+    const old = stored[capability]?.[requirement]
+    let entry
+    if (old?.delta === hash) {
+      entry = { operation: old.operation, delta: old.delta, base: old.base }
+      result.kept.push({ capability, requirement })
+    } else {
+      const base = mains.get(capability).get(requirement)
+      if (base === undefined) {
+        missing.push({ capability, requirement })
+        continue
+      }
+      entry = { operation, delta: hash, base }
+      result[old ? 'refreshed' : 'added'].push({ capability, requirement })
+    }
+    next[capability] = { ...next[capability], [requirement]: entry }
+  }
+  if (missing.length > 0) {
+    return { ok: false, file, error: `the main spec holds no requirement ${missing.map((m) => `${m.capability} "${m.requirement}"`).join(', ')}, so it has no base text; nothing was written`, missing }
+  }
+  for (const [capability, byName] of Object.entries(stored)) {
+    for (const requirement of Object.keys(byName)) if (!next[capability]?.[requirement]) result.dropped.push({ capability, requirement })
+  }
+  const sorted = (object) => Object.fromEntries(Object.keys(object).sort().map((k) => [k, object[k]]))
+  const capabilities = Object.fromEntries(Object.keys(next).sort().map((c) => [c, sorted(next[c])]))
+  writeFileSync(specsBasePath(root, change), `${JSON.stringify({ capabilities }, null, 2)}\n`)
+  return result
+}
+
+// `specs.mjs base --check`, read-only: every requirement a delta modifies, removes or renames
+// has an entry (`missing` otherwise), taken for its delta block as it is now (`stale`
+// otherwise). { ok, file, exists, touched (how many requirements need a base), missing, stale,
+// refusal? }.
+export function checkSpecsBase(root, change) {
+  const touched = touchedInChange(root, change)
+  const stored = readSpecsBase(root, change)
+  const missing = []
+  const stale = []
+  for (const { capability, requirement, hash } of touched) {
+    const entry = stored?.[capability]?.[requirement]
+    if (!entry) missing.push({ capability, requirement })
+    else if (entry.delta !== hash) stale.push({ capability, requirement })
+  }
+  const out = { ok: missing.length === 0 && stale.length === 0, file: specsBaseRel(change), exists: stored !== null, touched: touched.length, missing, stale }
+  if (out.ok) return out
+  const named = (list) => list.map((m) => `${m.capability} "${m.requirement}"`).join(', ')
+  const problems = [
+    ...(missing.length ? [`no base for ${named(missing)}`] : []),
+    ...(stale.length ? [`a base taken for another delta text for ${named(stale)}`] : [])
+  ]
+  return { ...out, refusal: `${out.file} has ${problems.join(' and ')}: run specs.mjs base --change ${change} after editing a delta block, and commit the file with the edit` }
+}
+
 // The merge of every delta spec of `change` into the main specs under `root`, nothing written:
 // per capability its counts, `new`, `merged` (the main spec already holds the delta), the
-// conflicts of the three-way check and any refusal. The three-way check reads the main text at
-// the change's merge base against the text on the base branch now (`side: 'base-branch'`) and
-// in the working tree (`side: 'worktree'`); a conflict with a resolution is applied, one without
-// leaves the capability unbuilt. A resolution that answers no conflict is refused (throws).
+// conflicts of the three-way check and any refusal. The three-way check reads each touched
+// requirement's base text from specs-base.json, a requirement without an entry refusing the
+// capability; with no snapshot, from the main spec at the change's merge base, with the warning
+// NO_SPECS_BASE. It compares that text with the text on the base branch now (`side:
+// 'base-branch'`) and in the working tree (`side: 'worktree'`); a conflict with a resolution is
+// applied, one without leaves the capability unbuilt. A resolution that answers no conflict is
+// refused (throws).
 // `purposes` gives a new capability's Purpose line; the default is PURPOSE_PLACEHOLDER.
 // Returns { preview, rebuilt: Map(capability -> text) }.
 function prepareMerge(root, change, { resolutions = [], purposes = {} } = {}) {
@@ -1050,6 +1175,7 @@ function prepareMerge(root, change, { resolutions = [], purposes = {} } = {}) {
   const rebuilt = new Map()
   const capabilities = []
   let base = null
+  const snapshot = readSpecsBase(root, change)
   for (const capability of deltaCapabilities(root, change)) {
     const deltaText = readFileSync(join(changeDir(root, change), 'specs', capability, 'spec.md'), 'utf8')
     let plan = parseDeltaSpec(deltaText)
@@ -1067,11 +1193,24 @@ function prepareMerge(root, change, { resolutions = [], purposes = {} } = {}) {
       continue
     }
     if (mainText !== null && plan.modified.length + plan.removed.length + plan.renamed.length > 0) {
-      base ??= changeMergeBase(root, change)
-      const baseText = mainSpecAt(root, base.sha, capability)
-      const found = findConflicts(plan, deltaText, { baseText, nowText: mainSpecAt(root, base.ref, capability), side: 'base-branch' })
+      let baseSide
+      if (snapshot) {
+        const stored = snapshot[capability] ?? {}
+        const touched = touchedRequirements(plan, deltaText)
+        const absent = touched.filter((t) => !Object.hasOwn(stored, t.requirement))
+        if (absent.length > 0) {
+          entry.error = `${specsBaseRel(change)} holds no base for ${absent.map((t) => `"${t.requirement}"`).join(', ')}; the three-way check cannot run without it`
+          continue
+        }
+        base ??= { ref: changeBaseRef(root, change), sha: null, snapshot: specsBaseRel(change) }
+        baseSide = { baseBlocks: new Map(touched.map((t) => [t.requirement, stored[t.requirement].base])) }
+      } else {
+        base ??= changeMergeBase(root, change)
+        baseSide = { baseText: mainSpecAt(root, base.sha, capability) }
+      }
+      const found = findConflicts(plan, deltaText, { ...baseSide, nowText: mainSpecAt(root, base.ref, capability), side: 'base-branch' })
       const named = new Set(found.map((c) => c.requirement))
-      found.push(...findConflicts(plan, deltaText, { baseText, nowText: mainText, side: 'worktree' }).filter((c) => !named.has(c.requirement)))
+      found.push(...findConflicts(plan, deltaText, { ...baseSide, nowText: mainText, side: 'worktree' }).filter((c) => !named.has(c.requirement)))
       for (const conflict of found) {
         const resolution = resolutions.find((r) => r.capability === capability && normalizeRequirementName(r.requirement) === conflict.requirement)
         if (resolution) {
@@ -1123,15 +1262,17 @@ function prepareMerge(root, change, { resolutions = [], purposes = {} } = {}) {
     newCapabilities: capabilities.filter((c) => c.new && !c.merged).map((c) => c.capability),
     placeholderPurpose: capabilities.filter((c) => c.placeholderPurpose).map((c) => c.capability),
     conflicts,
-    errors
+    errors,
+    warnings: base && !snapshot ? [NO_SPECS_BASE] : []
   }
   return { preview, rebuilt }
 }
 
 // The read-only preview of the merge (`specs.mjs merge --dry-run`): prepareMerge's result.
-// { ok, change, noChanges, merged, base: { ref, sha } | null, capabilities: [{ capability, new,
-//   merged, counts, conflicts, warnings?, error?, issues?, placeholderPurpose? }], totals,
-//   newCapabilities, placeholderPurpose, conflicts, errors }
+// { ok, change, noChanges, merged, base: { ref, sha } | { ref, sha: null, snapshot } | null,
+//   capabilities: [{ capability, new, merged, counts, conflicts, warnings?, error?, issues?,
+//   placeholderPurpose? }], totals, newCapabilities, placeholderPurpose, conflicts, errors,
+//   warnings }
 export function mergePreview(root, change, options = {}) {
   return prepareMerge(root, change, options).preview
 }

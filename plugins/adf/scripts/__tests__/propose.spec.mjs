@@ -171,10 +171,10 @@ test('next hands out each artifact in order, done gates it, and commit takes onl
   assert.equal((await markDone(root, 'add-thing', 'proposal', schema)).ok, true)
 
   next = await nextArtifact(root, 'add-thing', schema)
-  assert.deepEqual([next.artifact, next.gates], ['specs', ['specs-validate', 'specs-capabilities', 'specs-against-main']])
+  assert.deepEqual([next.artifact, next.gates], ['specs', ['specs-validate', 'specs-capabilities', 'specs-against-main', 'specs-base']])
   write(dir, 'specs/thing-export/spec.md', DELTA)
   const specs = await markDone(root, 'add-thing', 'specs', schema)
-  assert.deepEqual(specs.gates.map((g) => [g.gate, g.ok]), [['specs-validate', true], ['specs-capabilities', true], ['specs-against-main', true]])
+  assert.deepEqual(specs.gates.map((g) => [g.gate, g.ok]), [['specs-validate', true], ['specs-capabilities', true], ['specs-against-main', true], ['specs-base', true]])
 
   assert.equal((await nextArtifact(root, 'add-thing', schema)).artifact, 'tasks')
   write(dir, 'tasks.md', TASKS)
@@ -192,6 +192,7 @@ test('next hands out each artifact in order, done gates it, and commit takes onl
   assert.equal(commit.code, 0, JSON.stringify(commit.result))
   assert.equal(git(root, 'log', '-1', '--format=%s'), 'docs(openspec): propose add-thing')
   assert.ok(commit.result.files.every((f) => f.startsWith('openspec/changes/add-thing/')))
+  assert.ok(commit.result.files.includes('openspec/changes/add-thing/specs-base.json'), 'the specs-base gate wrote the snapshot, and the commit holds it')
   assert.equal(git(root, 'status', '--porcelain'), '?? stray.txt')
 
   const report = node('changes.mjs', ['status', '--report', '--root', root], root).out.report

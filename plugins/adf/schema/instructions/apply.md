@@ -242,6 +242,13 @@ reads only a backticked path. It compares the branch with the plan's file blocks
 line, a correct apply fails there. The next tick commits the plan; with no tick left, pass
 `--commit` on the last `added` call, which commits `plan.md` alone.
 
+**A delta block edited after propose takes a new base snapshot.** Run `specs.mjs base` after
+the edit and commit `specs-base.json` with it; verify's `specs-base` check states why:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/specs.mjs" base --change <change> --root <root>
+```
+
 **Merge a group as soon as every task of it is complete.**
 
 From the change worktree, never a group's:

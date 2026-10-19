@@ -43,13 +43,20 @@ The verdicts: `pass`; `warn`, which never blocks; `fail`, which blocks; `not-run
 pass. What resolves each check:
 
 - `validation`: the change's own artifacts validate strictly. A failure is this change's: fix
-  the artifact and re-run. The rest of the corpus is reported as advisory text and never gates.
+  the artifact and re-run; a fixed delta block takes the `specs-base` step below. The rest of
+  the corpus is reported as advisory text and never gates.
 - `tasks`: every item of the tracked tasks file is ticked. Each open item blocks until it is
   ticked, or until the developer rules on it with the reason it stays open (manual, out of
   scope, blocked).
 - `deltas`: each capability's delta against its main spec. `needs sync` is expected before
   archive, which merges the deltas: a warning naming the capabilities, not a failure. A
   `conflict` is a delta archive could not apply, and fails.
+- `specs-base`: `specs.mjs base --check`. Archive's three-way check reads each modified,
+  removed or renamed requirement's base text from the change's `specs-base.json`, taken at
+  propose, because a rebase moves `git merge-base` past the edit another change made. A
+  requirement with no entry, or whose entry was taken for another delta text, fails: after
+  editing a delta block, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/specs.mjs" base --change
+  <change> --root <root>`, commit the file with the edit, and re-run.
 - `tree`: an uncommitted path, untracked files included, is outside every range a later phase
   reads: commit it, or remove it, and re-run.
 - `test-record`: whether apply's test record still describes HEAD. Its rules are below.

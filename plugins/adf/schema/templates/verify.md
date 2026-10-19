@@ -37,6 +37,14 @@
 <!-- verbatim output of deltas -->
 ```
 
+## Spec base snapshot
+
+**Result:** <!-- verdict and summary of `specs-base`: every touched requirement's base current, or what is missing or stale -->
+
+```text
+<!-- verbatim output of specs-base -->
+```
+
 ## Design and specs coherence
 
 **Result:** <!-- verdict and summary of `c4`, which says the case that applied -->

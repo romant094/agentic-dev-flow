@@ -16,6 +16,7 @@ import { assemble, changedTerms, computeVerdict, countsIn, deltaState, pathMatch
 import { create } from '../lib/workspace.mjs'
 import { writeCommand } from '../lib/suite.mjs'
 import { run as verifyCli } from '../verify.mjs'
+import { writeSpecsBase } from '../lib/specs.mjs'
 
 const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), '..')
 const CLI = join(SCRIPTS, 'verify.mjs')
@@ -118,7 +119,7 @@ test('a complete change passes every check, and each check leaves its output and
   const result = runChecks(root, { change: CHANGE, now: 'T' })
   assert.deepEqual(
     result.checks.map((c) => [c.id, c.verdict]),
-    [['validation', 'pass'], ['tasks', 'pass'], ['deltas', 'pass'], ['tree', 'pass'], ['test-record', 'pass'], ['worktrees', 'pass'], ['out-of-plan', 'pass']]
+    [['validation', 'pass'], ['tasks', 'pass'], ['deltas', 'pass'], ['specs-base', 'pass'], ['tree', 'pass'], ['test-record', 'pass'], ['worktrees', 'pass'], ['out-of-plan', 'pass']]
   )
   assert.equal(result.ok, true)
   assert.equal(result.base, 'develop')
@@ -130,7 +131,7 @@ test('a complete change passes every check, and each check leaves its output and
     output: `.superpowers/sdd/${CHANGE}/verify/deltas.txt`
   })
   for (const c of result.checks) assert.equal(existsSync(join(root, c.output)), true, c.id)
-  assert.match(readFileSync(join(root, result.checks[3].output), 'utf8'), /range develop\.\.HEAD:\n.* record\n.* src\/a\.mjs\n.* propose/)
+  assert.match(readFileSync(join(root, result.checks.find((c) => c.id === 'tree').output), 'utf8'), /range develop\.\.HEAD:\n.* record\n.* src\/a\.mjs\n.* propose/)
   assert.deepEqual(JSON.parse(readFileSync(join(verifyDir(root, CHANGE), 'run.json'), 'utf8')).checks, result.checks)
   judged(root)
   assert.deepEqual(computeVerdict(root, { change: CHANGE }).line, 'Verdict: PASS')
@@ -451,12 +452,31 @@ test('verdict: a ruling accepts a failing check; silence and a ruling on tree do
   assert.equal(result.checks.find((c) => c.id === 'test-record').title, 'Agent test-record')
 })
 
+test('specs-base passes with no touched requirement, fails a missing or stale snapshot, and passes a current one', () => {
+  const { root } = host()
+  assert.equal(runIn(root)['specs-base'].summary, 'N/A: no MODIFIED, REMOVED or RENAMED requirement')
+  const modified = `## MODIFIED Requirements\n\n${REQUIREMENT.replace('greet the user.', 'greet the user by name.')}\n`
+  commit(root, { [changeFile('specs/greeting/spec.md')]: modified }, 'modify')
+  let check = runIn(root)['specs-base']
+  assert.equal(check.verdict, 'fail')
+  assert.match(check.summary, /no base for greeting "Greeting": run specs\.mjs base --change add-x/)
+  assert.match(readFileSync(join(root, check.output), 'utf8'), /specs-base\.json: absent; 1 requirement\(s\)[^\n]*\nmissing: greeting: Greeting/)
+  assert.equal(writeSpecsBase(root, CHANGE).ok, true)
+  commit(root, { [changeFile('specs-base.json')]: readFileSync(join(root, changeFile('specs-base.json')), 'utf8') }, 'snapshot')
+  check = runIn(root)['specs-base']
+  assert.deepEqual([check.verdict, check.summary], ['pass', 'every base current for 1 requirement(s)'])
+  commit(root, { [changeFile('specs/greeting/spec.md')]: modified.replace('by name', 'by first name') }, 'edit the delta')
+  check = runIn(root)['specs-base']
+  assert.equal(check.verdict, 'fail')
+  assert.match(readFileSync(join(root, check.output), 'utf8'), /stale: greeting: Greeting/)
+})
+
 test('the CLI prints one JSON object: exit 0 on a pass, 1 on a failing check, 2 on a usage error', () => {
   const { root } = host()
   const cli = (...args) => spawnSync('node', [CLI, ...args], { encoding: 'utf8' })
   let proc = cli('run', '--change', CHANGE, '--root', root)
   assert.equal(proc.status, 0)
-  assert.equal(JSON.parse(proc.stdout).checks.length, 7)
+  assert.equal(JSON.parse(proc.stdout).checks.length, 8)
   judged(root)
   const out = join(root, '.superpowers', 'sdd', CHANGE, 'verdict.json')
   proc = cli('verdict', '--change', CHANGE, '--root', root, '--out', out)

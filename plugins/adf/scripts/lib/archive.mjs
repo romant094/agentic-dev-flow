@@ -401,7 +401,8 @@ export function mergeStep(ctx, { resolutionFiles = [], purposeFiles = {} } = {})
         merged: out.merged,
         newCapabilities: out.newCapabilities,
         purposes: Object.keys(purposes),
-        resolved: out.capabilities.flatMap((c) => c.conflicts.filter((x) => x.resolved).map((x) => `${c.capability}: ${x.requirement}`))
+        resolved: out.capabilities.flatMap((c) => c.conflicts.filter((x) => x.resolved).map((x) => `${c.capability}: ${x.requirement}`)),
+        warnings: out.warnings
       }
     }
   })
@@ -624,7 +625,7 @@ const summary = {
       ? 'no delta specs'
       : d.merged
         ? 'the main specs already held the delta'
-        : `added ${d.totals.added}, modified ${d.totals.modified}, removed ${d.totals.removed}, renamed ${d.totals.renamed}${d.newCapabilities?.length ? `; new capabilities ${d.newCapabilities.join(', ')}` : ''}${d.purposes?.length ? `; Purpose written by hand for ${d.purposes.join(', ')}` : ''}${d.resolved?.length ? `; conflicts resolved: ${d.resolved.join('; ')}` : ''}`,
+        : `added ${d.totals.added}, modified ${d.totals.modified}, removed ${d.totals.removed}, renamed ${d.totals.renamed}${d.newCapabilities?.length ? `; new capabilities ${d.newCapabilities.join(', ')}` : ''}${d.purposes?.length ? `; Purpose written by hand for ${d.purposes.join(', ')}` : ''}${d.resolved?.length ? `; conflicts resolved: ${d.resolved.join('; ')}` : ''}${d.warnings?.length ? `; warnings: ${d.warnings.join('; ')}` : ''}`,
   move: (d) => `moved to ${d.target}; ledger ${d.ledger}`,
   'commit-specs': (d) => (d.commit ? `commit ${d.commit.slice(0, 7)}` : 'nothing to commit'),
   ingest: (d) => d.report ?? `${d.paths?.length ?? 0} path(s)`,

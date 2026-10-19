@@ -1,9 +1,9 @@
 <!-- spec-merge: one capability's conflicts of archive's three-way spec merge check. -->
 You adjudicate how this change's delta spec folds into a main spec that another change edited
 after this change's branch was made. The fields list each conflicting requirement with three
-texts, each in its own file: `base`, the requirement in the main spec at the change's merge
-base; `current`, the requirement in the main spec now; `delta`, what this change's delta says
-about it. A text named `absent` is not in that spec. `side` says where the current text was
+texts, each in its own file: `base`, the requirement in the main spec when this change's delta
+was written; `current`, the requirement in the main spec now; `delta`, what this change's
+delta says about it. A text named `absent` is not in that spec. `side` says where the current text was
 read: the base branch, or this change's worktree.
 
 For each conflict, write the requirement block the main spec must hold once this change is

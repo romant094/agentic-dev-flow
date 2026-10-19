@@ -21,7 +21,9 @@
 //      compared: the port writes a new capability's Purpose separately.
 //
 // The three-way check (the port's `findConflicts`, both sides as the port's archive runs them),
-// where the branch base is reachable: for a merge commit, base = merge-base(commit^1, commit^2);
+// where the branch base is reachable. The port now snapshots each touched requirement's base
+// text at propose (`specs-base.json`, `specs.mjs base`), because a rebase moves the merge base;
+// the origin has no snapshot, so this replay runs the port's fallback, the merge base: for a merge commit, base = merge-base(commit^1, commit^2);
 // each delta's MODIFIED, REMOVED and RENAMED requirements whose text at the base differs from
 // the text on commit^1 (side `base-branch`) or in the replay before this change (side
 // `worktree`: the group's earlier changes already merged) are flagged.

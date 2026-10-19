@@ -33,5 +33,5 @@ cleanly and specifies the opposite behaviour; one such slip reached verify past 
 reviews.
 
 The `specs` gates check the structure, the capability contract and each delta header against
-the main spec; the propose block states how a gate binds. The polarity read above is yours: no
-gate can see it.
+the main spec, and snapshot the base of each requirement a delta touches; the propose block
+states how a gate binds. The polarity read above is yours: no gate can see it.
