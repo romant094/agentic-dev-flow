@@ -4,8 +4,16 @@
 // branches that fetched the same prices on the same day add the same bytes and merge cleanly.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { readRegistry } from './registry.mjs'
+import { DEFAULT_PRICES_URL } from './transcripts.mjs'
 
 export const PRICES_DIR = join('.adf', 'prices')
+
+// The registry's metrics.pricesUrl when it sets one, else the runtime module's default.
+export function pricesUrl(root) {
+  const url = readRegistry(root)?.metrics?.pricesUrl
+  return typeof url === 'string' && url.trim() ? url : DEFAULT_PRICES_URL
+}
 
 const RATE_FIELDS = ['input', 'cacheWrite5m', 'cacheWrite1h', 'cacheRead', 'output']
 const ENTRY_FILE = /^\d{4}-\d{2}-\d{2}\.json$/
@@ -124,6 +132,12 @@ export async function fetchEntry({ url, fetch = globalThis.fetch, now = () => ne
   } catch (err) {
     return { ok: false, reason: `could not fetch ${url}: ${err.message}` }
   }
+  return entryFromPage(text, { url, now })
+}
+
+// The entry dated today (UTC) from the text of the pricing page; a page with no parsable table is
+// `{ ok: false, reason }`.
+export function entryFromPage(text, { url, now = () => new Date() } = {}) {
   const models = parsePriceTable(text)
   if (Object.keys(models).length === 0) return { ok: false, reason: `no price table parsed from ${url}` }
   return { ok: true, entry: { from: dateOf(now()), source: url, models } }
@@ -135,9 +149,13 @@ export async function fetchEntry({ url, fetch = globalThis.fetch, now = () => ne
 //   { state: 'stale', last, reason }   the fetch failed; the last entry stays in force
 //   { state: 'none', reason }          the fetch failed and there is no entry; cost is unpriced
 export async function updateTable(root, { url, fetch, now } = {}) {
+  return addEntry(root, await fetchEntry({ url, fetch, now }))
+}
+
+// The write half of updateTable, synchronous: `got` is what fetchEntry or entryFromPage returned.
+export function addEntry(root, got) {
   const table = readTable(root)
   const last = table[table.length - 1] ?? null
-  const got = await fetchEntry({ url, fetch, now })
   if (!got.ok) return last ? { state: 'stale', last: last.from, reason: got.reason } : { state: 'none', reason: got.reason }
   if (last && sameModels(last.models, got.entry.models)) return { state: 'unchanged', from: last.from }
   const path = join(PRICES_DIR, `${got.entry.from}.json`)

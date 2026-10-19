@@ -23,7 +23,8 @@ orchestrator, and with nobody's script:
 **The steps, their state, and resuming.**
 
 The steps run in the order `archive.mjs next` gives: `check`, `placements`, `merge`, `move`,
-`commit-specs`, `ingest`, `commit-memory`, `mr`, `merge-local`, `remove`. Each step's state is
+`commit-specs`, `ingest`, `commit-memory`, `metrics`, `commit-metrics`, `mr`, `merge-local`,
+`remove`. Each step's state is
 `pending`, `done`, `degraded`, `failed` or `skipped`, kept per change in the main checkout, in
 `<main>/.superpowers/sdd/<change>/archive/state.json`: the change directory moves at `move` and
 the worktree goes at `remove`, and the main checkout's copy outlives both. A step runs only once
@@ -49,7 +50,7 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
 
    A change whose worktree a finished `remove` took is no longer listed by `changes.mjs find`:
    for it, run `archive.mjs next --change <change> --root <main>`, and when `next` is null show
-   the report (step 12).
+   the report (step 14).
 
 2. **`check`: PASS only.**
 
@@ -215,7 +216,17 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    <change> taught`, of only the paths the ingest and the placement wrote. Nothing to commit is
    no commit.
 
-9. **`mr`: the merge request.** Ask the forge first:
+9. **`metrics`.** `archive.mjs metrics`: the change's metrics record, built by script after the
+   ingest is committed so that the ingest is measured, written as `metrics.json` in the archived
+   directory with a copy of `attempts.jsonl`; the price table is updated from the registry's
+   `metrics.pricesUrl`. A failed price fetch is recorded as `stale` or `none` and does not fail
+   the step; with no transcripts the step is `degraded`, the record written with the gap named.
+   Neither stops archive. A record that fails its schema fails the step and writes nothing.
+
+10. **`commit-metrics`.** `archive.mjs commit-metrics`: one commit, `chore(metrics): record
+    <change>`, of only the paths `metrics` wrote. Nothing to commit is no commit.
+
+11. **`mr`: the merge request.** Ask the forge first:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/forge.mjs" check --root <root>
@@ -241,7 +252,7 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    again. `degraded` keeps the role's fallback commands, archive goes on, and the report says
    the request is not ready until the fallback has run and `mr` has run again.
 
-10. **`merge-local`: with no forge only.** With a forge the step is `skipped`. With none:
+12. **`merge-local`: with no forge only.** With a forge the step is `skipped`. With none:
 
     ```bash
     node "${CLAUDE_PLUGIN_ROOT}/scripts/archive.mjs" merge-local --change <change> --root <root>
@@ -254,13 +265,13 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
     Nothing is pushed and the branch is kept. On a no, run it with `--no`: the developer merges
     it.
 
-11. **`remove`.** `archive.mjs remove`: the change's worktree goes, from the main checkout,
+13. **`remove`.** `archive.mjs remove`: the change's worktree goes, from the main checkout,
     never forced, its branch kept. A change made in place, or a worktree already gone, is
     reported, not failed. A worktree with uncommitted changes is refused with its status, for
     the developer to settle; so is a worktree whose ledger the archived change holds no copy
     of. From here on, pass `--root <main>`.
 
-12. **Report.**
+14. **Report.**
 
     ```bash
     node "${CLAUDE_PLUGIN_ROOT}/scripts/archive.mjs" report --change <change> --root <main>

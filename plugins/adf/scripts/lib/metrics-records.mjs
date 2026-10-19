@@ -2,7 +2,8 @@
 // change worktree: the dispatch events and their computed results, the test-run records, the
 // review stage's state, the verify run and the ledger. Each reader returns `{ value, reason }`:
 // `value` is null and `reason` names what is missing when its source is absent, never a 0 that
-// reads as a measurement. Pure apart from reading files; nothing is written.
+// reads as a measurement. plan.md and review.md are read from the change's directory, active or
+// archived. Pure apart from reading files; nothing is written.
 //
 //   readReplies     attempts.jsonl   per role { dispatches, valid, invalid, retries, stops }
 //   readImpl        attempts.jsonl   the impl replies' computed status counts
@@ -20,12 +21,12 @@
 // The severity map puts the apply reviews' Superpowers scale on the review stage's: the record
 // keeps both the native counts and the mapped ones; the sweep has no severity and is counted only.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { attemptsFile, parseEvents } from './attempts.mjs'
-import { changeDir } from './changes.mjs'
+import { changeDir, changeDirOf } from './changes.mjs'
 import { MAX_ATTEMPTS, parseGraph, parseName, sddDir } from './dispatch.mjs'
 import { ledgerPath, readLedger as parseLedger, unresolvedDebt } from './ledger.mjs'
-import { checkRecord, loadState, recordPath, reviewDir } from './review-state.mjs'
+import { checkRecord, loadState, reviewDir } from './review-state.mjs'
 import { readTestRecord, TESTS_DIR } from './suite.mjs'
 import { computeVerdict, verifyDir } from './verify.mjs'
 
@@ -40,6 +41,9 @@ const present = (value) => ({ value, reason: null })
 const absent = (reason) => ({ value: null, reason })
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'))
 const rel = (change, file) => `.superpowers/sdd/${change}/${file}`
+// A file of the change's directory, active or, after archive's move, archived: archive builds
+// the record after the move.
+const changeFile = (root, change, name) => join(changeDirOf(root, change) ?? changeDir(root, change), name)
 
 // The events of the change's log, or the reason there are none to read.
 function events(root, change) {
@@ -145,8 +149,8 @@ export function readFindings(root, change) {
 // the log carries (`merge-review <G>`, `fix <G>`, `re-review <G>`): a group merged from its own
 // worktree is merge-reviewed under its letter. Never `git worktree list`, empty by archive.
 export function readCompliance(root, change) {
-  const planFile = join(changeDir(root, change), 'plan.md')
-  if (!existsSync(planFile)) return absent(`no openspec/changes/${change}/plan.md`)
+  const planFile = changeFile(root, change, 'plan.md')
+  if (!existsSync(planFile)) return absent(`no ${relative(root, planFile).split(sep).join('/')}`)
   const groups = parseGraph(readFileSync(planFile, 'utf8'))
   if (groups.length === 0) return absent('the plan has no Execution Graph group table')
   const log = events(root, change)
@@ -187,7 +191,7 @@ export function readTests(root, change) {
 export function readReview(root, change) {
   const state = loadState(root, change)
   if (!state.start) return absent(`no ${rel(change, 'review/start.json')}: the review stage did not start`)
-  const file = join(root, recordPath(change))
+  const file = changeFile(root, change, 'review.md')
   const record = existsSync(file) ? checkRecord(readFileSync(file, 'utf8')) : null
   const dispositions = {}
   for (const d of Object.values(state.dispositions)) dispositions[d.as] = (dispositions[d.as] ?? 0) + 1

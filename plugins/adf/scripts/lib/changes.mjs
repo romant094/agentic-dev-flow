@@ -355,6 +355,12 @@ export function archivedDirs(root, name) {
     .map((entry) => join(dir, entry))
 }
 
+// The change's directory: active, else its newest archived one; null when there is neither.
+export function changeDirOf(root, change) {
+  const active = changeDir(root, change)
+  return existsSync(active) ? active : (archivedDirs(root, change).at(-1) ?? null)
+}
+
 const posixRel = (root, path) => relative(root, path).split(sep).join('/')
 
 // Moves a change into `<changes>/archive/<YYYY-MM-DD>-<name>`, the date from `now` in UTC (as

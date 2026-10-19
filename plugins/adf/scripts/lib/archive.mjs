@@ -1,8 +1,8 @@
 // /adf:archive's deterministic steps, each a function that records its own state, so archive
 // resumes from the step that failed and a re-run of a finished step changes nothing.
 //
-// The steps, in order: check, placements, merge, move, commit-specs, ingest, commit-memory, mr,
-// merge-local, remove. A step runs only when every step before it is settled (`done`,
+// The steps, in order: check, placements, merge, move, commit-specs, ingest, commit-memory,
+// metrics, commit-metrics, mr, merge-local, remove. A step runs only when every step before it is settled (`done`,
 // `degraded` or `skipped`); a `done` or `skipped` step is reported as it is, never run again; a
 // `failed` step, and a `degraded` one, runs again. The state is kept per change in the main
 // checkout's `.superpowers/sdd/<change>/archive/state.json`: the change directory moves at
@@ -36,6 +36,15 @@
 //                 knowledge role's `log`; with no knowledge provider the step is `skipped`.
 //   commit-memory `docs(memory): ingest what <name> taught`: only the paths the ingest and the
 //                 placement wrote.
+//   metrics       lib/metrics.mjs buildRecord after the ingest is committed, so the ingest is
+//                 measured: metrics.json and a copy of attempts.jsonl in the archived directory,
+//                 and the price table updated (lib/prices.mjs) from the registry's
+//                 metrics.pricesUrl; a failed price fetch is the detail's `stale` or `none`, never
+//                 the step's failure. No transcripts is `degraded`, the record written and the gap
+//                 named; a record that fails its schema is `failed`, nothing written. A re-run
+//                 writes the same files; once commit-metrics is done it changes nothing, since a
+//                 new record would measure its own commit.
+//   commit-metrics `chore(metrics): record <name>`: only the paths metrics wrote.
 //   mr            the forge role's `finalize`; `none` is `skipped`, `degraded` keeps the role's
 //                 fallback file and the step is `degraded`. With a forge and no `--body` the step
 //                 holds, `pending`, and returns what it needs: mr-input, then the body file.
@@ -50,25 +59,28 @@
 // the knowledge base and the debt tree that it did not write and that no later step will commit:
 // the origin staged whole trees and committed other people's work with its own.
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve, sep } from 'node:path'
 import { archiveChange, CHANGES_DIR, changeStatus, globToRegExp, META_FILE, parseTasks } from './changes.mjs'
-import { recordReply } from './attempts.mjs'
+import { attemptsFile, recordReply } from './attempts.mjs'
 import { readBranches } from './branches.mjs'
 import { commitPaths } from './commit.mjs'
 import { dispatchName } from './dispatch.mjs'
 import { checkIngestFile, findChangeDir, workingChanges } from './ingest.mjs'
 import { mainCheckout } from './installed.mjs'
 import { readRecords, unresolvedDebt } from './ledger.mjs'
+import { buildRecord, RECORD_FILE, RecordError } from './metrics.mjs'
+import { addEntry, pricesUrl } from './prices.mjs'
 import { readDebtRoot } from './registry.mjs'
 import { checkRecord } from './review-state.mjs'
 import { callRole, CORE, forgeInput, forgeReport, knowledgeReport } from './roles.mjs'
 import { checkResolutions, checkSpecsBase, mergePreview, writeMerge } from './specs.mjs'
 import { writeConflictTexts } from './spec-merge.mjs'
 import { loadSchema } from './schema.mjs'
+import { defaultProjectsDir } from './transcripts.mjs'
 import { remove as removeWorktree } from './workspace.mjs'
 
-export const STEPS = ['check', 'placements', 'merge', 'move', 'commit-specs', 'ingest', 'commit-memory', 'mr', 'merge-local', 'remove']
+export const STEPS = ['check', 'placements', 'merge', 'move', 'commit-specs', 'ingest', 'commit-memory', 'metrics', 'commit-metrics', 'mr', 'merge-local', 'remove']
 export const STEP_STATES = ['pending', 'done', 'degraded', 'failed', 'skipped']
 const SETTLED = new Set(['done', 'degraded', 'skipped'])
 const FINAL = new Set(['done', 'skipped'])
@@ -145,7 +157,8 @@ function gitAsk(root, what, ...args) {
 }
 
 // deps: { now() -> Date, home, knowledge() -> context result, knowledgeLog(input) -> log result,
-// forge(operation, input) -> role result, fault(step) }. `fault` lets a test fail a step.
+// forge(operation, input) -> role result, projectsDir, fetchPrices(url, now) -> fetchEntry result,
+// fault(step) }. `fault` lets a test fail a step; `projectsDir` is the transcript directory.
 export function archiveContext(rootArg, change, deps = {}) {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(change ?? '')) refuse(`change name "${change}" is not kebab-case; pass the resolved change name`)
   const given = resolve(rootArg)
@@ -162,9 +175,27 @@ export function archiveContext(rootArg, change, deps = {}) {
     fault: deps.fault ?? null,
     knowledge: () => (context ??= (deps.knowledge ?? (() => callRole(root, 'knowledge', 'context', {}, core)))()),
     knowledgeLog: deps.knowledgeLog ?? ((input) => callRole(root, 'knowledge', 'log', input, core)),
-    forge: deps.forge ?? ((operation, input) => callRole(root, 'forge', operation, input, core))
+    forge: deps.forge ?? ((operation, input) => callRole(root, 'forge', operation, input, core)),
+    home: deps.home,
+    projectsDir: deps.projectsDir ?? defaultProjectsDir(),
+    fetchPrices: deps.fetchPrices ?? fetchPricesSync
   }
   return ctx
+}
+
+// lib/prices.mjs fetchEntry is asynchronous and the steps are not: it runs in a child process.
+const PRICES_MODULE = new URL('./prices.mjs', import.meta.url).href
+const FETCH_PRICES = `const { fetchEntry } = await import(process.argv[1])
+const got = await fetchEntry({ url: process.argv[2], now: () => new Date(process.argv[3]) })
+process.stdout.write(JSON.stringify(got))`
+
+function fetchPricesSync(url, now) {
+  const run = spawnSync(process.execPath, ['--input-type=module', '-e', FETCH_PRICES, PRICES_MODULE, url, now().toISOString()], { encoding: 'utf8', timeout: 60000, maxBuffer: 1 << 26 })
+  try {
+    return JSON.parse(run.stdout)
+  } catch {
+    return { ok: false, reason: `could not fetch ${url}: ${String(run.error?.message || run.stderr || `exit ${run.status}`).trim()}` }
+  }
 }
 
 // ---------------------------------------------------------------- running a step
@@ -525,6 +556,53 @@ export function commitMemoryStep(ctx) {
   })
 }
 
+// ---------------------------------------------------------------- the metrics record
+
+const posix = (path) => path.split(sep).join('/')
+
+export function metricsStep(ctx) {
+  return runStep(ctx, 'metrics', (state) => {
+    const { root, change } = ctx
+    const { target } = settledDetail(state, 'move')
+    if (!target) refuse('the move recorded no target; run archive.mjs move again')
+    const committed = state.steps['commit-metrics']
+    if (committed.state === 'done') {
+      return { hold: true, out: { already: true, note: `the record is committed${committed.detail?.commit ? ` at ${committed.detail.commit.slice(0, 7)}` : ''}; a new record would measure its own commit, so nothing was written` } }
+    }
+    let record
+    try {
+      record = buildRecord({ root, change, now: ctx.now(), projectsDir: ctx.projectsDir, home: ctx.home })
+    } catch (error) {
+      if (!(error instanceof RecordError)) throw error
+      return { state: 'failed', refusal: `${error.message}; nothing was written`, detail: { error: error.message, errors: error.errors } }
+    }
+    const file = `${target}/${RECORD_FILE}`
+    writeFileSync(join(root, file), `${JSON.stringify(record, null, 2)}\n`)
+    let attempts = null
+    if (existsSync(attemptsFile(root, change))) {
+      attempts = `${target}/attempts.jsonl`
+      copyFileSync(attemptsFile(root, change), join(root, attempts))
+    }
+    const url = pricesUrl(root)
+    const prices = { url, ...addEntry(root, ctx.fetchPrices(url, ctx.now)) }
+    if (prices.path) prices.path = posix(prices.path)
+    // A price entry an earlier run wrote is still this step's to commit.
+    const earlier = (state.steps.metrics.detail?.files ?? []).filter((f) => f.startsWith('.adf/prices/') && existsSync(join(root, f)))
+    const files = [...new Set([file, ...(attempts ? [attempts] : []), ...(prices.path ? [prices.path] : []), ...earlier])]
+    const transcripts = record.sources.coverage.transcripts
+    const detail = { file, attempts, files, prices, warnings: record.sources.warnings }
+    if (transcripts === 'record') return { state: 'done', detail }
+    return { state: 'degraded', detail: { ...detail, gap: `${transcripts.none}; the token, context and dispatch groups are null` } }
+  })
+}
+
+export function commitMetricsStep(ctx) {
+  return runStep(ctx, 'commit-metrics', (state) => {
+    const own = new Set(settledDetail(state, 'metrics').files ?? [])
+    return commitOwn(ctx, { mine: (f) => own.has(f), message: `chore(metrics): record ${ctx.change}` })
+  })
+}
+
 // ---------------------------------------------------------------- the merge request
 
 const section = (text, title) => {
@@ -696,16 +774,22 @@ const summary = {
   'commit-specs': (d) => (d.commit ? `commit ${d.commit.slice(0, 7)}` : 'nothing to commit'),
   ingest: (d) => d.report ?? `${d.paths?.length ?? 0} path(s)`,
   'commit-memory': (d) => (d.commit ? `commit ${d.commit.slice(0, 7)}` : 'nothing to commit'),
+  metrics: (d) =>
+    `${d.file}${d.attempts ? ` and ${d.attempts}` : '; no attempts.jsonl to copy'}; prices ${d.prices.state}${d.prices.path ? ` (${d.prices.path})` : ''}${d.prices.reason ? `: ${d.prices.reason}` : ''}${d.gap ? `; ${d.gap}` : ''}`,
+  'commit-metrics': (d) => (d.commit ? `commit ${d.commit.slice(0, 7)}` : 'nothing to commit'),
   mr: (d) => d.report,
   'merge-local': (d) => d.report,
   remove: (d) => (d.state === 'removed' ? `worktree ${d.path} removed; branch ${d.branch} kept` : d.state === 'in-place' ? 'made in place; no worktree to remove' : 'no worktree left')
 }
 
 // The final report, built from the states alone. `complete` only when every step is done or
-// skipped: a pending, failed or degraded step is named.
+// skipped, or is metrics degraded: its record is written and committed with the gap named, and a
+// re-run does not bring the transcripts back. A pending, failed or other degraded step is named.
+const finished = (state, step) => FINAL.has(state.steps[step].state) || (step === 'metrics' && state.steps[step].state === 'degraded')
+
 export function report(ctx) {
   const state = readArchiveState(ctx.main, ctx.change)
-  const complete = STEPS.every((s) => FINAL.has(state.steps[s].state))
+  const complete = STEPS.every((s) => finished(state, s))
   const lines = []
   for (const step of STEPS) {
     const { state: s, detail } = state.steps[step]
@@ -720,7 +804,7 @@ export function report(ctx) {
     }
     lines.push(`- ${step}: ${s}${text ? ` — ${text}` : ''}`)
   }
-  const open = STEPS.filter((s) => !FINAL.has(state.steps[s].state))
+  const open = STEPS.filter((s) => !finished(state, s))
   const handEdited = state.steps.check.detail?.handEdited ?? []
   const lint = handEdited.length
     ? ['', `Corpus lint due: verify.md lists hand-edited capability prose (${handEdited.join('; ')}); run the spec corpus lint over openspec/specs/, which reports and never gates.`]

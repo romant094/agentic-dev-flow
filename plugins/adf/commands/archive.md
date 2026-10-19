@@ -48,7 +48,8 @@ conversation; if that is vague or ambiguous, the selection in step 1 asks.
    - `merge`: show `specs.mjs merge --dry-run` first. Dispatch `spec-merge <capability>` for
      each conflict and check each reply with `specs.mjs resolution`; write a new capability's
      Purpose from `proposal.md`; pass them as `--resolutions` and `--purpose`.
-   - `move`, `commit-specs`, `commit-memory`, `remove`: the call alone. After `remove`, pass
+   - `move`, `commit-specs`, `commit-memory`, `metrics`, `commit-metrics`, `remove`: the call
+     alone; a `degraded` `metrics` does not stop archive. After `remove`, pass
      `--root <main>`.
    - `ingest`: `ingest.mjs stale`, then dispatch `ingest` and pass its reply as `--reply`;
      with no knowledge plugin, the call with no reply.

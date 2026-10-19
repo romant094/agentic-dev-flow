@@ -45,6 +45,14 @@ test('extract writes a valid record into the change directory', () => {
   assert.ok(existsSync(out))
 })
 
+test('extract takes now as a function, as prices fetch does', async () => {
+  const h = host()
+  const out = join(h.change, 'm.json')
+  const done = await run(['extract', '--change', 'add-x', '--out', out], { cwd: h.change, now: () => new Date('2026-10-05T08:00:00Z'), projectsDir: tmp('adf-metrics-cli-projects-') })
+  assert.equal(done.ok, true, done.error)
+  assert.equal(JSON.parse(readFileSync(out, 'utf8')).generatedAt, '2026-10-05T08:00:00.000Z')
+})
+
 test('extract refuses a change with no directory, and a record that fails its schema', () => {
   const h = host()
   const missing = call(h.change, 'extract', '--change', 'no-such')

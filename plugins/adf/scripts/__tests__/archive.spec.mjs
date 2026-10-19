@@ -1,7 +1,8 @@
 // archive.mjs against real git repositories: a host on develop whose main spec `widgets` the
 // change add-x modifies, in its own worktree, reviewed PASS, with a ledger whose every item is
-// placed. The roles and the clock are injected: the knowledge and forge providers answer as the
-// test needs, and the move is dated 2026-10-19.
+// placed. The roles, the clock, the transcript directory and the price fetch are injected: the
+// knowledge and forge providers answer as the test needs, the move is dated 2026-10-19, and
+// nothing reads the network or the developer's own transcripts.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -12,6 +13,9 @@ import { fileURLToPath } from 'node:url'
 import { run, UsageError } from '../archive.mjs'
 import { run as ingestRun } from '../ingest.mjs'
 import { deltaScenarios, handEditedProse, statePath, STEPS, unplaced } from '../lib/archive.mjs'
+import { recordDispatch } from '../lib/attempts.mjs'
+import { entryFromPage } from '../lib/prices.mjs'
+import { encodeKeys } from '../lib/transcripts.mjs'
 import { setBranches } from '../lib/branches.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
@@ -26,7 +30,15 @@ const MAIN_SPEC = readFileSync(join(FIX, 'main.md'), 'utf8')
 const DELTA = readFileSync(join(FIX, 'delta.md'), 'utf8')
 const NOW = new Date('2026-10-19T10:00:00Z')
 const TARGET = 'openspec/changes/archive/2026-10-19-add-x'
-const NONE = { now: () => NOW, knowledge: () => ({ state: 'none', point: 'knowledge' }), forge: () => ({ state: 'none', point: 'forge' }) }
+const OFFLINE = () => ({ ok: false, reason: 'could not fetch the pricing page: offline' })
+const NO_TRANSCRIPTS = realpathSync(mkdtempSync(join(tmpdir(), 'adf-archive-no-projects-')))
+const NONE = { now: () => NOW, knowledge: () => ({ state: 'none', point: 'knowledge' }), forge: () => ({ state: 'none', point: 'forge' }), projectsDir: NO_TRANSCRIPTS, fetchPrices: OFFLINE }
+const BEFORE_MR = STEPS.slice(0, STEPS.indexOf('mr'))
+const PAGE = `| Model | Base Input Tokens | 5m Cache Writes | 1h Cache Writes | Cache Hits & Refreshes | Output Tokens |
+|---|---|---|---|---|---|
+| Claude Opus 5.5 | $5 / MTok | $6.25 / MTok | $10 / MTok | $0.50 / MTok | $25 / MTok |
+`
+const prices = (page) => (url, now) => entryFromPage(page, { url, now })
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 
 function put(dir, files) {
@@ -114,6 +126,21 @@ function placedLedger(wt) {
   add('resolve', { finding: 'F1', as: 'accepted', where: 'the developer keeps it' })
 }
 
+// A transcript directory holding one session of the change, on its branch, in its worktree.
+function projectsFor(h) {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'adf-archive-projects-')))
+  const key = join(dir, encodeKeys(h.wt)[0])
+  mkdirSync(key, { recursive: true })
+  const usage = { input_tokens: 2, output_tokens: 10, cache_read_input_tokens: 100, cache_creation_input_tokens: 0 }
+  const records = [
+    { type: 'user', timestamp: '2026-10-19T09:00:00.000Z', gitBranch: 'feat/add-x', message: { role: 'user', content: 'archive add-x' } },
+    { type: 'assistant', timestamp: '2026-10-19T09:01:00.000Z', gitBranch: 'feat/add-x', message: { id: 'm1', model: 'claude-opus-5-5', role: 'assistant', content: [{ type: 'text' }], usage } }
+  ]
+  writeFileSync(join(key, 's1.jsonl'), `${records.map((r) => JSON.stringify(r)).join('\n')}\n`)
+  return dir
+}
+const measured = (h, deps = NONE) => ({ ...deps, projectsDir: projectsFor(h) })
+
 const ARGS = { 'merge-local': ['--yes'] }
 const rootOf = (h) => (existsSync(h.wt) ? h.wt : h.root)
 const call = (h, args, deps = NONE) => run([...args, '--change', 'add-x', '--root', rootOf(h)], { deps })
@@ -134,9 +161,12 @@ function drive(h, deps = NONE, args = ARGS) {
 
 test('a full archive with no forge and no knowledge base: merged, moved, committed, merged locally, removed', () => {
   const h = archiveHost()
-  const steps = drive(h)
+  recordDispatch(h.wt, 'add-x', 'T1 impl', { now: '2026-10-19T08:00:00.000Z' })
+  const events = readFileSync(join(h.wt, '.superpowers', 'sdd', 'add-x', 'attempts.jsonl'), 'utf8')
+  const deps = measured(h)
+  const steps = drive(h, deps)
   assert.deepEqual(steps.map((s) => `${s.step}:${s.state}`), STEPS.map((s) => `${s}:${['ingest', 'mr'].includes(s) ? 'skipped' : 'done'}`))
-  const [check, , merge, move, specs, ingest, memory, mr, local, removed] = steps
+  const [check, , merge, move, specs, ingest, memory, metrics, recorded, mr, local, removed] = steps
   assert.equal(check.detail.verdict, 'PASS')
   assert.equal(check.detail.commit, h.reviewed)
   assert.deepEqual(check.detail.warnings, [])
@@ -148,6 +178,19 @@ test('a full archive with no forge and no knowledge base: merged, moved, committ
   assert.equal(git(h.root, 'log', '-1', '--format=%s', specs.detail.commit), 'docs(specs): archive add-x')
   assert.match(ingest.detail.report, /no knowledge plugin is enabled, so no log entry was written and archive skipped the ingest/)
   assert.deepEqual(memory.detail, { commit: null, files: [] })
+  // The record and the attempts copy in their own commit, after the memory commit.
+  assert.deepEqual(metrics.detail.files, [`${TARGET}/metrics.json`, `${TARGET}/attempts.jsonl`])
+  assert.equal(metrics.detail.prices.state, 'none', 'an offline fetch with no entry leaves cost unpriced, not the step failed')
+  assert.deepEqual(recorded.detail.files, [`${TARGET}/attempts.jsonl`, `${TARGET}/metrics.json`])
+  assert.equal(git(h.root, 'log', '-1', '--format=%s', recorded.detail.commit), 'chore(metrics): record add-x')
+  assert.equal(git(h.root, 'log', '-1', '--format=%s', `${recorded.detail.commit}^`), 'docs(specs): archive add-x')
+  const record = JSON.parse(git(h.root, 'show', `${recorded.detail.commit}:${TARGET}/metrics.json`))
+  assert.equal(record.change, 'add-x')
+  assert.equal(record.generatedAt, NOW.toISOString())
+  assert.equal(record.sources.coverage.transcripts, 'record')
+  assert.equal(record.tokens.total.output, 10)
+  assert.equal(record.review, null, 'the review stage did not start in this host')
+  assert.equal(readFileSync(join(h.root, TARGET, 'attempts.jsonl'), 'utf8'), events)
   assert.equal(mr.detail.forge, 'none')
   assert.equal(local.detail.merged, true)
   assert.deepEqual({ state: removed.detail.state, branch: removed.detail.branch }, { state: 'removed', branch: 'feat/add-x' })
@@ -157,15 +200,17 @@ test('a full archive with no forge and no knowledge base: merged, moved, committ
   assert.match(readFileSync(join(h.root, 'openspec/specs/widgets/spec.md'), 'utf8'), /### Requirement: Track/)
   assert.ok(existsSync(join(h.root, TARGET, 'ledger.jsonl')))
   assert.equal(git(h.root, 'branch', '--list', 'feat/add-x'), 'feat/add-x', 'the branch is kept')
-  const report = call(h, ['report'])
+  const report = call(h, ['report'], deps)
   assert.equal(report.complete, true)
   assert.match(report.report, /^## Archive complete: add-x/)
+  assert.match(report.report, /- metrics: done — openspec\/changes\/archive\/2026-10-19-add-x\/metrics\.json and .*attempts\.jsonl; prices none: could not fetch the pricing page: offline/)
+  assert.match(report.report, /- commit-metrics: done — commit [0-9a-f]{7}/)
   assert.match(report.report, /- merge: done — added 1, modified 1, removed 1, renamed 0/)
   assert.match(report.report, /- remove: done — worktree .* removed; branch feat\/add-x kept/)
   // Every step again reports done and changes nothing.
   const head = git(h.root, 'rev-parse', 'HEAD')
   const before = readState(h)
-  for (const step of STEPS) assert.equal(call(h, [step, ...(ARGS[step] ?? [])]).already, true, step)
+  for (const step of STEPS) assert.equal(call(h, [step, ...(ARGS[step] ?? [])], deps).already, true, step)
   assert.deepEqual(readState(h), before)
   assert.equal(git(h.root, 'rev-parse', 'HEAD'), head)
 })
@@ -175,7 +220,7 @@ test('a failure injected at each step is recorded, and a re-run resumes from tha
     const h = archiveHost()
     let fired = false
     const deps = {
-      ...NONE,
+      ...measured(h),
       fault: (s) => {
         if (s === step && !fired) {
           fired = true
@@ -204,6 +249,88 @@ test('a failure injected at each step is recorded, and a re-run resumes from tha
     assert.ok(rest.every((r) => r.ok), step)
     assert.equal(call(h, ['report'], deps).complete, true, step)
   }
+})
+
+const METRICS = STEPS.slice(0, STEPS.indexOf('metrics'))
+
+test('metrics with no transcripts is degraded: the record written and committed, the gap named, the archive complete', () => {
+  const h = archiveHost()
+  const steps = drive(h)
+  const metrics = steps.find((s) => s.step === 'metrics')
+  assert.deepEqual([metrics.state, metrics.ok], ['degraded', true])
+  assert.match(metrics.detail.gap, /^transcripts: no project key/)
+  assert.deepEqual(metrics.detail.files, [`${TARGET}/metrics.json`], 'no attempts.jsonl to copy')
+  assert.equal(metrics.detail.attempts, null)
+  const record = JSON.parse(readFileSync(join(h.root, TARGET, 'metrics.json'), 'utf8'))
+  assert.equal(record.tokens, null)
+  assert.match(record.sources.coverage.tokens.none, /^transcripts: /)
+  assert.equal(git(h.root, 'log', '-1', '--format=%s', steps.find((s) => s.step === 'commit-metrics').detail.commit), 'chore(metrics): record add-x')
+  assert.equal(steps.at(-1).step, 'remove', 'a degraded metrics step does not hold archive')
+  const report = call(h, ['report'])
+  assert.equal(report.complete, true)
+  assert.match(report.report, /- metrics: degraded — .*; transcripts: no project key/)
+})
+
+test('a price fetch is no step failure: none and stale are recorded, a changed table is written and committed', () => {
+  const h = archiveHost()
+  for (const step of METRICS) assert.equal(call(h, [step]).ok, true, step)
+  const offline = call(h, ['metrics'])
+  assert.equal(offline.ok, true)
+  assert.deepEqual([offline.detail.prices.state, offline.detail.prices.reason], ['none', 'could not fetch the pricing page: offline'])
+  assert.match(offline.detail.prices.url, /^https:\/\//, 'the default url when the registry sets none')
+  const fetched = call(h, ['metrics'], { ...NONE, fetchPrices: prices(PAGE) })
+  assert.deepEqual([fetched.detail.prices.state, fetched.detail.prices.path], ['written', '.adf/prices/2026-10-19.json'])
+  assert.ok(fetched.detail.files.includes('.adf/prices/2026-10-19.json'))
+  const stale = call(h, ['metrics'])
+  assert.deepEqual([stale.ok, stale.detail.prices.state, stale.detail.prices.last], [true, 'stale', '2026-10-19'])
+  assert.ok(stale.detail.files.includes('.adf/prices/2026-10-19.json'), 'the entry an earlier run wrote is still committed')
+  const commit = call(h, ['commit-metrics'])
+  assert.deepEqual(commit.detail.files, ['.adf/prices/2026-10-19.json', `${TARGET}/metrics.json`])
+})
+
+test('a re-run of metrics writes the same files, and once the record is committed changes nothing', () => {
+  const h = archiveHost()
+  for (const step of METRICS) assert.equal(call(h, [step]).ok, true, step)
+  const first = call(h, ['metrics'])
+  const text = readFileSync(join(h.wt, TARGET, 'metrics.json'), 'utf8')
+  const again = call(h, ['metrics'])
+  assert.deepEqual(again.detail, first.detail)
+  assert.equal(readFileSync(join(h.wt, TARGET, 'metrics.json'), 'utf8'), text)
+  const commit = call(h, ['commit-metrics'])
+  assert.ok(commit.detail.commit)
+  const head = git(h.wt, 'rev-parse', 'HEAD')
+  const before = readState(h)
+  const late = call(h, ['metrics'], { ...NONE, now: () => new Date('2026-10-19T11:00:00Z') })
+  assert.deepEqual([late.ok, late.already, late.state], [true, true, 'degraded'])
+  assert.match(late.note, /a new record would measure its own commit/)
+  assert.deepEqual(readState(h), before)
+  assert.equal(git(h.wt, 'status', '--porcelain'), '')
+  assert.equal(git(h.wt, 'rev-parse', 'HEAD'), head)
+  assert.equal(call(h, ['commit-metrics']).already, true)
+})
+
+test('a record that fails its schema fails metrics, writes nothing, and a re-run resumes', () => {
+  const h = archiveHost()
+  for (const step of METRICS) assert.equal(call(h, [step]).ok, true, step)
+  const refused = call(h, ['metrics'], { ...NONE, now: () => new Date('+010000-01-01T00:00:00Z') })
+  assert.deepEqual([refused.ok, refused.state], [false, 'failed'])
+  assert.match(refused.refusal, /the metrics record fails its schema: .*generatedAt.*; nothing was written/)
+  assert.ok(refused.detail.errors.length > 0)
+  assert.equal(existsSync(join(h.wt, TARGET, 'metrics.json')), false)
+  assert.equal(call(h, ['next']).next, 'metrics')
+  assert.equal(call(h, ['metrics']).ok, true)
+})
+
+test('--no-ci still reaches mr after the metrics steps', () => {
+  const h = archiveHost()
+  const calls = []
+  const deps = { ...NONE, forge: (op, input) => (calls.push({ op, input }), op === 'check' ? { state: 'done', plugin: 'gitlab' } : { state: 'done', plugin: 'gitlab', url: 'u' }) }
+  for (const step of BEFORE_MR) assert.equal(call(h, [step, '--no-ci'], deps).ok, true, step)
+  assert.equal(call(h, ['next'], deps).next, 'mr')
+  const body = join(h.wt, '..', 'body.md')
+  writeFileSync(body, '## What\n\n- dry\n')
+  assert.equal(call(h, ['mr', '--body', body, '--title', 'feat: x'], deps).detail.ci, false)
+  assert.equal(calls.find((c) => c.op === 'finalize').input.ci, false)
 })
 
 test('check refuses a BLOCKED record: PASS is the only route', () => {
@@ -443,7 +570,7 @@ test('mr finalizes through the forge role; degraded keeps the fallback and re-ru
   let answer = { state: 'degraded', plugin: 'gitlab', hint: 'glab is not logged in', inputFile: '/tmp/finalize.json', fallback: ['node forge.mjs finalize --input-file /tmp/finalize.json'] }
   const calls = []
   const deps = { ...NONE, forge: (op, input) => (calls.push({ op, input }), answer) }
-  for (const step of STEPS.slice(0, 7)) assert.equal(call(h, [step], deps).ok, true, step)
+  for (const step of BEFORE_MR) assert.equal(call(h, [step], deps).ok, true, step)
   const body = join(h.root, '.superpowers', 'sdd', 'add-x', 'archive', 'merge-request.md')
   const before = readState(h)
   const held = call(h, ['mr'], deps)
@@ -477,7 +604,7 @@ test('--no-ci is kept in the archive state and reaches finalize as ci false, acr
   assert.equal(call(h, ['check', '--no-ci'], deps).ok, true)
   assert.equal(readState(h).ci, false)
   assert.equal(call(h, ['state'], deps).ci, false)
-  for (const step of STEPS.slice(1, 7)) assert.equal(call(h, [step], deps).ok, true, step)
+  for (const step of BEFORE_MR.slice(1)) assert.equal(call(h, [step], deps).ok, true, step)
   assert.equal(readState(h).ci, false, 'later steps keep the flag')
   const body = join(h.wt, '..', 'body.md')
   writeFileSync(body, '## What\n\n- dry\n')
@@ -495,7 +622,7 @@ test('without --no-ci finalize gets no ci field, and the read-only commands refu
   const h = archiveHost()
   const calls = []
   const deps = { ...NONE, forge: (op, input) => (calls.push({ op, input }), op === 'check' ? { state: 'done', plugin: 'gitlab' } : { state: 'done', plugin: 'gitlab', url: 'u' }) }
-  for (const step of STEPS.slice(0, 7)) assert.equal(call(h, [step], deps).ok, true, step)
+  for (const step of BEFORE_MR) assert.equal(call(h, [step], deps).ok, true, step)
   assert.equal(call(h, ['state'], deps).ci, true)
   assert.equal(Object.hasOwn(readState(h), 'ci'), false)
   const body = join(h.wt, '..', 'body.md')
@@ -510,7 +637,7 @@ test('without --no-ci finalize gets no ci field, and the read-only commands refu
 test('a refused finalize fails the step', () => {
   const h = archiveHost()
   const deps = { ...NONE, forge: (op) => (op === 'check' ? { state: 'done', plugin: 'gitlab' } : { state: 'refused', plugin: 'gitlab', error: 'Description rejected' }) }
-  for (const step of STEPS.slice(0, 7)) call(h, [step], deps)
+  for (const step of BEFORE_MR) call(h, [step], deps)
   const body = join(h.wt, '..', 'body.md')
   writeFileSync(body, 'x\n')
   const out = call(h, ['mr', '--body', body, '--title', 'feat: x'], deps)
@@ -520,7 +647,7 @@ test('a refused finalize fails the step', () => {
 
 test('merge-local waits for the yes, refuses a main checkout off its base or dirty with the commands, and --no records the choice', () => {
   const h = archiveHost()
-  for (const step of STEPS.slice(0, 8)) assert.equal(call(h, [step]).ok, true, step)
+  for (const step of STEPS.slice(0, STEPS.indexOf('merge-local'))) assert.equal(call(h, [step]).ok, true, step)
   const waiting = call(h, ['merge-local'])
   assert.equal(waiting.state, 'pending')
   assert.deepEqual(waiting.commands, [`git -C ${h.root} checkout develop`, `git -C ${h.root} merge --no-ff feat/add-x`])
@@ -586,7 +713,7 @@ test('a failed git read refuses the guard that reads it, and an empty branch rea
   rmSync(index)
   git(h.wt, 'reset', '-q')
   assert.equal(call(h, ['check']).ok, true)
-  for (const step of STEPS.slice(1, 7)) assert.equal(call(h, [step]).ok, true, step)
+  for (const step of BEFORE_MR.slice(1)) assert.equal(call(h, [step]).ok, true, step)
   git(h.wt, 'checkout', '-q', '--detach')
   const body = join(h.wt, '..', 'body.md')
   writeFileSync(body, 'x\n')

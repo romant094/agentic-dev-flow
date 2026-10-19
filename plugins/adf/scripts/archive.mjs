@@ -35,6 +35,15 @@
 //   archive.mjs commit-memory --change <name>
 //       `docs(memory): ingest what <name> taught`: only the paths the ingest and the placement
 //       wrote; nothing to commit is no commit
+//   archive.mjs metrics --change <name>
+//       the metrics record (lib/metrics.mjs) as metrics.json in the archived directory, with a
+//       copy of attempts.jsonl, and the price table updated from the registry's
+//       metrics.pricesUrl; a failed price fetch is detail.prices.state `stale` or `none`, not a
+//       failure; no transcripts: degraded, the record written and detail.gap naming why; a record
+//       that fails its schema: failed, nothing written
+//   archive.mjs commit-metrics --change <name>
+//       `chore(metrics): record <name>`: only the paths metrics wrote; nothing to commit is no
+//       commit
 //   archive.mjs mr --change <name> [--body <file> --summary "<scope>: <description>" | --title <t>]
 //       the forge role's finalize; no forge: skipped (no --body needed); a forge and no --body:
 //       held, pending, nothing recorded, with bodyFile and waiting; degraded: the role's
@@ -58,17 +67,20 @@
 //   archive.mjs next --change <name>      { ok, change, next: <step> | null, state }
 //   archive.mjs report --change <name>    { ok, change, complete, next, steps, handEdited, report }:
 //                                         built last, from the states; complete only when every
-//                                         step is done or skipped; the corpus lint named as due
+//                                         step is done or skipped, metrics degraded allowed; the
+//                                         corpus lint named as due
 //                                         when verify.md lists hand-edited capability prose
 import { parseArgs } from 'node:util'
 import {
   archiveContext,
   checkStep,
   commitMemoryStep,
+  commitMetricsStep,
   commitSpecsStep,
   ingestStep,
   mergeLocalStep,
   mergeStep,
+  metricsStep,
   moveStep,
   mrInput,
   mrStep,
@@ -85,7 +97,7 @@ import { isMain } from './lib/main.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
 
 export const USAGE = `usage:
-  archive.mjs check|placements|move|commit-specs|commit-memory|remove --change <name> [--no-ci] [--root <dir>] [--home <dir>]
+  archive.mjs check|placements|move|commit-specs|commit-memory|metrics|commit-metrics|remove --change <name> [--no-ci] [--root <dir>] [--home <dir>]
   archive.mjs mr-input|state|next|report --change <name> [--root <dir>] [--home <dir>]
   archive.mjs merge --change <name> [--resolutions <file> ...] [--purpose <capability>=<file> ...] [--no-ci] [--root <dir>]
   archive.mjs ingest --change <name> [--reply <file>] [--resume yes|no] [--no-ci] [--root <dir>] [--home <dir>]
@@ -118,6 +130,8 @@ const TAKES = {
   'commit-specs': [],
   ingest: ['reply', 'resume'],
   'commit-memory': [],
+  metrics: [],
+  'commit-metrics': [],
   'mr-input': [],
   mr: ['body', 'title', 'summary'],
   'merge-local': ['yes', 'no'],
@@ -171,6 +185,10 @@ export function run(argv, { cwd = process.cwd(), deps = {} } = {}) {
       return ingestStep(ctx, { reply: values.reply ?? null, resume: values.resume !== 'no' })
     case 'commit-memory':
       return commitMemoryStep(ctx)
+    case 'metrics':
+      return metricsStep(ctx)
+    case 'commit-metrics':
+      return commitMetricsStep(ctx)
     case 'mr-input':
       return mrInput(ctx)
     case 'mr':

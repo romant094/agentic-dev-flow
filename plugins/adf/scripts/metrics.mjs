@@ -24,11 +24,10 @@
 //       { ok, url, state, path?, from?, last?, reason? }
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
+import { changeDirOf } from './lib/changes.mjs'
 import { isMain } from './lib/main.mjs'
-import { buildRecord, candidates, changeDirOf, cost, RECORD_FILE, renderRecord } from './lib/metrics.mjs'
-import { readTable, updateTable } from './lib/prices.mjs'
-import { readRegistry } from './lib/registry.mjs'
-import { DEFAULT_PRICES_URL } from './lib/transcripts.mjs'
+import { buildRecord, candidates, cost, RECORD_FILE, renderRecord } from './lib/metrics.mjs'
+import { pricesUrl, readTable, updateTable } from './lib/prices.mjs'
 
 export const USAGE = `usage:
   metrics.mjs extract --change <name> [--out <file>] [--projects <dir>] [--root <dir>]
@@ -82,12 +81,8 @@ function readJson(cwd, file) {
 
 const posix = (root, path) => relative(root, path).split(sep).join('/')
 
-// The registry's metrics.pricesUrl when it sets one, else the runtime module's default.
-export function pricesUrl(root) {
-  const url = readRegistry(root)?.metrics?.pricesUrl
-  return typeof url === 'string' && url.trim() ? url : DEFAULT_PRICES_URL
-}
-
+// `now` is a function that returns a Date, for every command; `fetch`, `projectsDir` and `home`
+// go to lib/prices.mjs and lib/metrics.mjs as they are.
 export async function run(argv, { cwd = process.cwd(), fetch, now, projectsDir, home } = {}) {
   const { values, rest } = parse(argv)
   const command = rest.join(' ')
@@ -105,7 +100,7 @@ export async function run(argv, { cwd = process.cwd(), fetch, now, projectsDir, 
       const file = values.out ? resolve(cwd, values.out) : join(dir, RECORD_FILE)
       let record
       try {
-        record = buildRecord({ root, change: values.change, now, home, ...(values.projects ? { projectsDir: resolve(cwd, values.projects) } : projectsDir ? { projectsDir } : {}) })
+        record = buildRecord({ root, change: values.change, now: now?.(), home, ...(values.projects ? { projectsDir: resolve(cwd, values.projects) } : projectsDir ? { projectsDir } : {}) })
       } catch (error) {
         return { ok: false, error: error.message, ...(error.errors ? { errors: error.errors } : {}) }
       }

@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { recordDispatch, recordReply } from '../lib/attempts.mjs'
+import { archiveChange } from '../lib/changes.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
 import {
   FANOUT_RULE,
@@ -162,7 +163,7 @@ test('test runs from the suite records: runs, failed, uncounted, and a file that
   assert.deepEqual(readTests(change, CHANGE).value, { runs: 4, failed: 2, uncounted: 2, unreadable: ['junk.json'] })
 })
 
-test('review state: verdict from the assembled record, rounds, dispositions; ai-review from findings.json', () => {
+test('review state: verdict from the assembled record, rounds, dispositions; ai-review from findings.json; after the move too', () => {
   const { change } = host()
   commitIn(change, 'openspec/planning.md', '# Planning\n\n## Whole-suite command\n\ntrue\n')
   commitIn(change, 'src/a.ts', 'line1\nline2\nline3\n')
@@ -195,6 +196,13 @@ test('review state: verdict from the assembled record, rounds, dispositions; ai-
   const findings = readFindings(change, CHANGE).value
   assert.deepEqual(findings['ai-review'], { dispatches: 1, findings: 2, native: { MEDIUM: 1, LOW: 1 }, mapped: { CRITICAL: 0, HIGH: 0, MEDIUM: 1, LOW: 1 } })
   assert.deepEqual(readReplies(change, CHANGE).value['ai-review'], { dispatches: 0, valid: 1, invalid: 1, retries: 1, stops: 0 })
+  // Archive builds the record after the move: plan.md and review.md are read from the archive.
+  writeFileSync(join(change, 'openspec', 'changes', CHANGE, 'plan.md'), PLAN)
+  applyLog(change)
+  archiveChange(change, CHANGE, { now: new Date('2026-10-19T12:00:00Z') })
+  const moved = readSddRecords(change, CHANGE)
+  assert.equal(moved.review.verdict, 'PASS')
+  assert.deepEqual(moved.compliance, [{ rule: FANOUT_RULE, required: ['A', 'B'], performed: ['A', 'B'] }])
 })
 
 test('verify run: each check verdict, a ruled failure, the files outside the plan', () => {

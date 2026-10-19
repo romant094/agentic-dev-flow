@@ -19,7 +19,7 @@ import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readBranches } from './branches.mjs'
-import { ARCHIVE, archivedDirs, CHANGES_DIR, changeDir, META_FILE, parseTasks } from './changes.mjs'
+import { ARCHIVE, CHANGES_DIR, changeDirOf, META_FILE, parseTasks } from './changes.mjs'
 import { parseName } from './dispatch.mjs'
 import { readSchema, validateJson } from './json-schema.mjs'
 import { readRecords } from './ledger.mjs'
@@ -169,12 +169,6 @@ function maxTurnsOf(pluginRoot) {
 }
 
 // ---------------------------------------------------------------- build
-
-// The change's directory: active, else its newest archived one; null when there is neither.
-export function changeDirOf(root, change) {
-  const active = changeDir(root, change)
-  return existsSync(active) ? active : (archivedDirs(root, change).at(-1) ?? null)
-}
 
 function metaBase(dir) {
   try {
