@@ -10,7 +10,7 @@ import { parseReply, readSchema, unknownKeywords, validateJson } from '../lib/js
 const SCHEMA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema')
 const schemaOf = (name) => readSchema(join(SCHEMA_DIR, `${name}.schema.json`))
 
-const finding = { severity: 'important', kind: 'quality', file: 'src/a.mjs', line: 12, title: 'Unchecked error', body: 'The error of readFile is dropped.' }
+const finding = { severity: 'important', kind: 'quality', category: 'tests', file: 'src/a.mjs', line: 12, title: 'Unchecked error', body: 'The error of readFile is dropped.' }
 const PATCH = 'diff --git a/.claude/skills/x/SKILL.md b/.claude/skills/x/SKILL.md\n--- a/.claude/skills/x/SKILL.md\n+++ b/.claude/skills/x/SKILL.md\n@@ -3 +3 @@\n-old\n+new\n'
 
 // name: [valid reply, invalid reply, an error the invalid reply must produce]
@@ -21,9 +21,9 @@ const CASES = {
     ['$: testRuns is required', '$: status is not allowed']
   ],
   'task-review': [
-    { role: 'review', summary: 'One quality finding.', findings: [finding, { ...finding, severity: 'minor', kind: 'spec', line: null, planMandated: true }], unverifiable: [{ requirement: 'R2', check: 'Run it on hardware.' }] },
-    { role: 'review', summary: 'Fails.', verdict: 'fail', findings: [{ ...finding, severity: 'HIGH' }], unverifiable: [] },
-    ['$: verdict is not allowed', '$.findings[0].severity: must be one of critical, important, minor']
+    { role: 'review', summary: 'One quality finding.', findings: [finding, { ...finding, severity: 'minor', kind: 'spec', category: 'missing', line: null, planMandated: true }], unverifiable: [{ requirement: 'R2', check: 'Run it on hardware.' }] },
+    { role: 'review', summary: 'Fails.', verdict: 'fail', findings: [{ ...finding, severity: 'HIGH', category: 'style' }, (({ category, ...rest }) => rest)(finding)], unverifiable: [] },
+    ['$: verdict is not allowed', '$.findings[0].severity: must be one of critical, important, minor', '$.findings[0].category: must be one of missing, extra', '$.findings[1]: category is required']
   ],
   're-review': [
     { role: 're-review', summary: 'F1 addressed.', previous: [{ id: 'F1', status: 'addressed', file: 'src/a.mjs', line: 12 }], findings: [], outOfScope: [{ file: 'src/b.mjs', line: null, title: 'Old naming' }] },
@@ -51,7 +51,7 @@ const CASES = {
       summary: 'One drift.'
     },
     { role: 'verify-c4', case: 'both', verdict: 'pass', findings: [{ kind: 'drift', where: [], text: 'x' }], proseEdits: [], removalAccounting: [{ requirement: 'Old flag', op: 'MODIFIED', disposition: null, holds: 'yes', oldPathReachable: false }], exercised: [], summary: 'x' },
-    ['$: verdict is not allowed', '$.findings[0].kind: must be one of', '$.removalAccounting[0].op: must be one of REMOVED, RENAMED', '$.removalAccounting[0].holds: expected boolean']
+    ['$: verdict is not allowed', '$.findings[0].kind: must be one of', '$.findings[0].where: must hold at least 1 item', '$.removalAccounting[0].op: must be one of REMOVED, RENAMED', '$.removalAccounting[0].holds: expected boolean']
   ],
   'verify-c8': [
     { role: 'verify-c8', candidates: [{ file: '.claude/skills/x/SKILL.md', line: 3, class: 'CONFIRMED', fact: 'The path moved.', why: 'The diff renamed it.', patch: PATCH }, { file: '.claude/skills/x/README.md', line: 8, class: 'none', fact: 'Unrelated.', why: 'Another term.' }], summary: 'One stale line.' },
@@ -82,6 +82,21 @@ test('impl.schema.json requires a blocker when the outcome is not done', () => {
   for (const outcome of ['blocked', 'needs-context']) {
     assert.deepEqual(validateJson(schema, { role: 'fix', outcome, commits: [], concerns: [], summary: 'Stopped.' }), ['$: blocker is required'])
   }
+})
+
+test('impl.schema.json requires a commit and a test-run record when the outcome is done', () => {
+  const schema = schemaOf('impl')
+  const done = { role: 'impl', outcome: 'done', commits: [], testRuns: [], concerns: [], summary: 'Done.' }
+  assert.deepEqual(validateJson(schema, done), ['$.commits: must hold at least 1 item', '$.testRuns: must hold at least 1 item'])
+  assert.deepEqual(validateJson(schema, { ...done, outcome: 'blocked', blocker: 'No access.' }), [])
+})
+
+test('minItems counts the items of an array and is a known keyword', () => {
+  const schema = { type: 'array', minItems: 2 }
+  assert.deepEqual(unknownKeywords(schema), [])
+  assert.deepEqual(validateJson(schema, [1]), ['$: must hold at least 2 items'])
+  assert.deepEqual(validateJson(schema, [1, 2]), [])
+  assert.deepEqual(validateJson({ type: 'string', minItems: 1 }, ''), [])
 })
 
 test('every reply schema requires its role', () => {

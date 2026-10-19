@@ -10,13 +10,16 @@
 // - the debt records of the reply's dispositions, one per removed or renamed requirement.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { changeDir, META_FILE } from './changes.mjs'
 import { coveringMarker, findMarkers } from './dup.mjs'
+import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { baseRef } from './plan-symbols.mjs'
 import { appendRecord, readRecords } from './ledger.mjs'
-import { checkReplyText } from './reply.mjs'
 import { findSection, parseSections } from './specs.mjs'
+
+export const SWEEP_SCHEMA = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema', 'sweep.schema.json')
 
 const DISPOSITION = /^\s*\*\*Code Disposition(?::\*\*|\*\*:)\s*(.*)$/
 
@@ -116,27 +119,30 @@ export function sweepInputs(root, change) {
   }
 }
 
-// The sweep reply with every finding a DUP marker accepts dropped. A refused reply is no verdict,
-// never CLEAN: the result is then { ok: false, reasons }.
-export function filterReply(root, text) {
-  const reasons = checkReplyText('sweep', text)
-  if (reasons.length) return { ok: false, error: 'the sweep reply is refused; it is no verdict', reasons }
-  const reply = JSON.parse(text)
+// The sweep's findings with every one a DUP marker in the tree accepts dropped, and the verdict
+// computed from what is left: { verdict: CLEAN | FINDINGS, findings, dropped }.
+export function dupFilter(root, replyFindings) {
   const markers = findMarkers(root)
   const findings = []
   const dropped = []
-  for (const finding of reply.findings) {
+  for (const finding of replyFindings) {
     const marker = coveringMarker(markers, finding)
     if (marker) dropped.push({ ...finding, marker: `${marker.file}:${marker.line}` })
     else findings.push(finding)
   }
-  return {
-    ok: true,
-    verdict: findings.length ? 'FINDINGS' : 'CLEAN',
-    findings,
-    dropped,
-    ...(reply.dispositions ? { dispositions: reply.dispositions } : {})
-  }
+  return { verdict: findings.length ? 'FINDINGS' : 'CLEAN', findings, dropped }
+}
+
+// The sweep reply, checked under sweep.schema.json, with every finding a DUP marker accepts
+// dropped. A refused reply is no verdict, never CLEAN: the result is then { ok: false, reasons }.
+// The coverage of the dispositions is checked where the change is known, by `dispatch.mjs reply`
+// (lib/reply.mjs).
+export function filterReply(root, text) {
+  const parsed = parseReply(text)
+  const reasons = parsed.errors.length ? parsed.errors : validateJson(readSchema(SWEEP_SCHEMA), parsed.reply)
+  if (reasons.length) return { ok: false, error: 'the sweep reply is refused; it is no verdict', reasons }
+  const reply = parsed.reply
+  return { ok: true, ...dupFilter(root, reply.findings), ...(reply.dispositions ? { dispositions: reply.dispositions } : {}) }
 }
 
 // One `debt` record per disposition of an accepted sweep reply, carrying the sweep's answer as

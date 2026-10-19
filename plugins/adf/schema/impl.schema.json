@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "adf/impl.schema.json",
   "title": "ADF implementer reply",
-  "description": "The implementer's or fixer's reply for one task: the outcome, the commits, the test-run records `suite.mjs covering` wrote, and the concerns. The script computes the status, reads each commit from git and the test result from the records; the reply states no verdict.",
+  "description": "The implementer's or fixer's reply for one task: the outcome, the commits, the test-run records `suite.mjs covering` wrote, and the concerns; a done reply names at least one commit and one test-run record. The script computes the status, reads each commit from git and the test result from the records; the reply states no verdict.",
   "type": "object",
   "additionalProperties": false,
   "required": ["role", "outcome", "commits", "concerns", "summary"],
@@ -27,7 +27,7 @@
     "summary": { "type": "string", "minLength": 1 }
   },
   "allOf": [
-    { "if": { "properties": { "outcome": { "const": "done" } } }, "then": { "required": ["testRuns"] } },
+    { "if": { "properties": { "outcome": { "const": "done" } } }, "then": { "required": ["testRuns"], "properties": { "commits": { "minItems": 1 }, "testRuns": { "minItems": 1 } } } },
     { "if": { "properties": { "outcome": { "const": "blocked" } } }, "then": { "required": ["blocker"] } },
     { "if": { "properties": { "outcome": { "const": "needs-context" } } }, "then": { "required": ["blocker"] } }
   ]

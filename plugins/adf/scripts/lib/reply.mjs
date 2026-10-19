@@ -1,159 +1,365 @@
-// A subagent's final reply is a JSON object whose shape depends on the role it was
-// dispatched in. This validates that shape so the controller reads fields instead of
-// prose. The table is keyed by role, in the style of KINDS in lib/ledger.mjs.
+// The replies of the apply roles: a role table `{ schema, check, compute }`. A subagent replies
+// with one JSON object under its role's schema in schema/, and the reply states no verdict.
+// `check` refuses what the schema cannot see (git, the test-run records, the open findings, the
+// sweep's inputs); `compute` gives every verdict from the accepted reply. The dispatch name gives
+// the role (lib/dispatch.mjs parseName), and the reply's `role` must be that role.
 //
-// Every reply, in every role, carries a top-level `role` key whose value is exactly the
-// role it is validated as (`"role": "spec-merge"` for a spec-merge reply). ROLES below
-// lists only the fields beside it. No other field is accepted: an unknown key is refused
-// at the top level and inside every nested object. The shapes in full:
+//   role                          schema                   check -> compute
+//   impl, fix                     impl.schema.json         commits, test runs, scope -> status
+//   review, final-review,         task-review.schema.json  category agrees with kind -> ids,
+//     merge-review                                         spec and quality verdicts, result
+//   re-review                     re-review.schema.json    the open set answered -> open set
+//   sweep                         sweep.schema.json        dispositions -> CLEAN | FINDINGS
+//   investigate                   investigate.schema.json  the schema only; nothing computed
+//
+// The context (`replyContext`) is read once the schema accepts the reply:
+//   { root, change, name, parts, planText?, worktree?, scope?, history?, sweep? }
+// root is the change worktree; worktree the dispatch's own (a group worktree for a task of a
+// parallel group); scope the plan tasks whose **Files:** bound the dispatch; history the computed
+// results of the subject's accepted reviews in attempts.jsonl; sweep lib/sweep.mjs sweepInputs.
+//
+// The computed results:
 //
 //   impl, fix
-//     role      "impl" | "fix"
-//     status    "DONE" | "DONE_WITH_CONCERNS" | "BLOCKED" | "NEEDS_CONTEXT"
-//     commits   [{ sha: string, subject: string }]
-//     tests     { command: string, result: "pass" | "fail", summary: string }
-//               may be absent only when status is BLOCKED or NEEDS_CONTEXT
-//     concerns  [string]
-//     report    string
+//     { status: DONE | DONE_WITH_CONCERNS | BLOCKED | NEEDS_CONTEXT,
+//       next: review (impl) | re-review (fix) | read-concerns | provide-context | blocked,
+//       commits: [{ sha, subject, files }]   oldest first, read from git,
+//       range: { base, head } | null          the review package: the first commit's parent
+//                                             to the last commit,
+//       tests: { result: pass | fail | null, counts, runs: [{ file, command, exit, counts,
+//                failing, timedOut? }] }     the last run by its stamp gives result and counts,
+//       concerns: [{ text, file?, source: agent | script }], outOfScope: [file], blocker? }
+//     Each commit must lie in the change's commits of the dispatch worktree (the merge-base of
+//     the .adf.json base with HEAD, to HEAD). A done reply needs a last run that passed (exit 0,
+//     not timed out, no failed count) and ran a test (a total of 0 is refused). A last run with
+//     no count line, and a file outside the scope's **Files:** (the task's; a group's tasks for
+//     `fix <G>`; every task for the final `fix`), are script concerns: DONE_WITH_CONCERNS.
 //
-//   review, re-review, final-review, merge-review
-//     role      the role name
-//     verdict   "pass" | "fail"; "pass" is refused while any finding is critical or important
-//     findings  [{ severity: "critical" | "important" | "minor", file: string,
-//                  line?: number, summary: string }]
+//   review, final-review, merge-review
+//     { subject, findings: [{ id, ...finding, planMandated }], spec: pass | fail,
+//       quality: approved | needs-fixes, open, toRule, deferred: [id], unverifiable,
+//       result: rule | fix | clean }
+//     Ids are F<k>, after the highest id of the subject (T<n>, a group letter, or `final`), so
+//     they stay distinct across rounds. spec fails on any spec finding (category missing, extra,
+//     misunderstood); quality needs fixes on a critical or important finding. A plan-mandated
+//     finding goes to toRule, a minor quality finding to deferred, every other finding to open,
+//     the fix loop's input. result: rule while toRule or unverifiable is not empty (a ruling
+//     can add to the fix), else fix while open is not, else clean.
+//
+//   re-review
+//     { subject, previous, addressed: [id], findings, open, toRule, deferred, outOfScope, result }
+//     previous must answer exactly the open set of the subject's last accepted review or
+//     re-review; open is its not-addressed ids and the new open findings; result as for a review.
 //
 //   sweep
-//     role          "sweep"
-//     verdict       "CLEAN" | "FINDINGS"; CLEAN requires findings empty, FINDINGS non-empty
-//     findings      [{ introduced: string, existing: string, why: string }]
-//     dispositions? [{ requirement: string, disposition: string }]
-//
-//   investigate
-//     role      "investigate"
-//     answer    string
-//     evidence  [{ file: string, line?: number }]
-//
-//   spec-merge
-//     role          "spec-merge"
-//     capabilities  [{ name: string, added: count, modified: count, removed: count,
-//                      renamed: count }]   (count = non-negative integer)
-//
-// A field marked `?` may be absent; every other field is required.
-//
-// Field specs in the table: 'string' | 'number' | 'count' (non-negative integer) |
-// ['a', 'b'] (enum) | { array: spec } | { object: fields } . A field spec with
-// `optional: true` may be absent. The cross-field rules above live in validateReply.
+//     { verdict: CLEAN | FINDINGS, findings, dropped, dispositions? }
+//     Dispositions are required exactly when sweepInputs reports a second question, one for each
+//     REMOVED or RENAMED requirement it lists; the findings a DUP marker accepts are dropped.
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { attemptsFile, parseEvents } from './attempts.mjs'
+import { globToRegExp } from './changes.mjs'
+import { parseGraph, parseName, planDispatch, sddDir } from './dispatch.mjs'
+import { parseReply, readSchema, validateJson } from './json-schema.mjs'
+import { parsePlan, rangeCommits, taskMatchers } from './plan.mjs'
+import { readRegistry } from './registry.mjs'
+import { readTestRecord, recordName, TESTS_DIR } from './suite.mjs'
+import { dupFilter, sweepInputs } from './sweep.mjs'
+import { gitIn } from './workspace.mjs'
 
-const str = 'string'
-const opt = (spec) => ({ optional: true, spec })
-const arr = (spec) => ({ array: spec })
-const obj = (fields) => ({ object: fields })
+export const SCHEMA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema')
+export const SPEC_CATEGORIES = ['missing', 'extra', 'misunderstood']
+export const REVIEW_ROLES = ['review', 'final-review', 'merge-review']
 
-const IMPL = {
-  status: ['DONE', 'DONE_WITH_CONCERNS', 'BLOCKED', 'NEEDS_CONTEXT'],
-  commits: arr(obj({ sha: str, subject: str })),
-  tests: opt(obj({ command: str, result: ['pass', 'fail'], summary: str })),
-  concerns: arr(str),
-  report: str
-}
+export class ReplyError extends Error {}
 
-const REVIEW = {
-  verdict: ['pass', 'fail'],
-  findings: arr(obj({ severity: ['critical', 'important', 'minor'], file: str, line: opt('number'), summary: str }))
-}
-
-// Fields beside the required `role` key, which validateReply checks before this table.
-export const ROLES = {
-  impl: IMPL,
-  fix: IMPL,
-  review: REVIEW,
-  're-review': REVIEW,
-  'final-review': REVIEW,
-  'merge-review': REVIEW,
-  sweep: {
-    verdict: ['CLEAN', 'FINDINGS'],
-    findings: arr(obj({ introduced: str, existing: str, why: str })),
-    dispositions: opt(arr(obj({ requirement: str, disposition: str })))
-  },
-  investigate: {
-    answer: str,
-    evidence: arr(obj({ file: str, line: opt('number') }))
-  },
-  'spec-merge': {
-    capabilities: arr(obj({ name: str, added: 'count', modified: 'count', removed: 'count', renamed: 'count' }))
-  }
-}
-
-const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
-
-const checkValue = (spec, value, path, out) => {
-  if (Array.isArray(spec)) {
-    if (!spec.includes(value)) out.push(`${path} must be one of ${spec.join(', ')}`)
-  } else if (spec === 'string') {
-    if (typeof value !== 'string') out.push(`${path} must be a string`)
-  } else if (spec === 'number') {
-    if (typeof value !== 'number' || !Number.isFinite(value)) out.push(`${path} must be a number`)
-  } else if (spec === 'count') {
-    if (!Number.isInteger(value) || value < 0) out.push(`${path} must be a non-negative integer`)
-  } else if (spec.array) {
-    if (!Array.isArray(value)) out.push(`${path} must be an array`)
-    else value.forEach((item, i) => checkValue(spec.array, item, `${path}[${i}]`, out))
-  } else if (spec.object) {
-    checkFields(spec.object, value, path, out)
-  }
-}
-
-const checkFields = (fields, value, path, out) => {
-  if (!isObject(value)) {
-    out.push(`${path || 'reply'} must be an object`)
-    return
-  }
-  for (const [name, def] of Object.entries(fields)) {
-    const here = path ? `${path}.${name}` : name
-    const optional = isObject(def) && def.optional === true
-    if (!Object.hasOwn(value, name)) {
-      if (!optional) out.push(`${here} is required`)
-      continue
-    }
-    checkValue(optional ? def.spec : def, value[name], here, out)
-  }
-  for (const name of Object.keys(value)) {
-    if (!Object.hasOwn(fields, name)) out.push(`${path ? `${path}.${name}` : name} is not a known field`)
-  }
-}
-
-export function validateReply(role, value) {
-  if (!Object.hasOwn(ROLES, role)) return [`role ${String(role)} is not a known role`]
-  if (!isObject(value)) return ['reply must be a JSON object']
-  const out = []
-  if (value.role !== role) out.push(`role must be ${role}`)
-  const { role: _role, ...rest } = value
-  const fields = ROLES[role]
-  checkFields(fields, rest, '', out)
-
-  if (role === 'impl' || role === 'fix') {
-    if (!('tests' in rest) && rest.status !== 'BLOCKED' && rest.status !== 'NEEDS_CONTEXT') {
-      out.push('tests may be absent only when status is BLOCKED or NEEDS_CONTEXT')
-    }
-  } else if (fields === REVIEW && Array.isArray(rest.findings)) {
-    const blocking = rest.findings.some((f) => isObject(f) && (f.severity === 'critical' || f.severity === 'important'))
-    if (rest.verdict === 'pass' && blocking)
-      out.push('verdict pass is refused while a critical or important finding is present')
-  } else if (role === 'sweep' && Array.isArray(rest.findings)) {
-    if (rest.verdict === 'CLEAN' && rest.findings.length > 0)
-      out.push('verdict CLEAN is refused while findings is not empty')
-    if (rest.verdict === 'FINDINGS' && rest.findings.length === 0)
-      out.push('verdict FINDINGS is refused while findings is empty')
-  }
-  return out
-}
-
-// The reasons a reply file's text is refused: those of validateReply, or one reason when the
-// text is not JSON at all.
-export function checkReplyText(role, text) {
+const attempt = (fn) => {
   try {
-    return validateReply(role, JSON.parse(text))
+    return fn()
   } catch {
-    return ['file is not valid JSON']
+    return null
   }
+}
+const readOr = (path) => attempt(() => readFileSync(path, 'utf8'))
+const real = (path) => attempt(() => realpathSync(path)) ?? resolve(path)
+
+// ---------------------------------------------------------------- reviews
+
+const kindOf = (category) => (SPEC_CATEGORIES.includes(category) ? 'spec' : 'quality')
+
+const findingErrors = (findings, path) =>
+  findings.flatMap((f, i) => (kindOf(f.category) === f.kind ? [] : [`${path}[${i}].kind: category ${f.category} is a ${kindOf(f.category)} finding, not ${f.kind}`]))
+
+// The subject a review loop belongs to: T<n>, a group letter, or `final`.
+export const subjectOf = (parts) => (parts.task !== undefined ? `T${parts.task}` : parts.group !== undefined ? parts.group : 'final')
+
+// The computed results of the subject's accepted reviews and re-reviews, in log order.
+export function subjectHistory(eventsText, subject) {
+  return parseEvents(eventsText)
+    .filter((e) => e.event === 'valid' && e.result)
+    .filter((e) => {
+      const parts = parseName(e.name)
+      return parts && [...REVIEW_ROLES, 're-review'].includes(parts.role) && subjectOf(parts) === subject
+    })
+    .map((e) => e.result)
+}
+
+const highestId = (history) => Math.max(0, ...history.flatMap((r) => r.findings ?? []).map((f) => Number(/^F(\d+)$/.exec(f.id ?? '')?.[1] ?? 0)))
+
+// Numbers the findings after the subject's highest id and sorts them into the loop's routes.
+function routeFindings(findings, history) {
+  const first = highestId(history) + 1
+  const numbered = findings.map((f, i) => ({ id: `F${first + i}`, ...f, planMandated: f.planMandated === true }))
+  const toRule = numbered.filter((f) => f.planMandated)
+  const deferred = numbered.filter((f) => !f.planMandated && f.severity === 'minor' && f.kind === 'quality')
+  const open = numbered.filter((f) => !toRule.includes(f) && !deferred.includes(f))
+  const ids = (list) => list.map((f) => f.id)
+  return { findings: numbered, open: ids(open), toRule: ids(toRule), deferred: ids(deferred) }
+}
+
+const resultOf = ({ open, toRule, unverifiable = [] }) => (toRule.length || unverifiable.length ? 'rule' : open.length ? 'fix' : 'clean')
+
+const review = {
+  schema: 'task-review.schema.json',
+  check: (reply) => findingErrors(reply.findings, '$.findings'),
+  compute(reply, ctx) {
+    const routed = routeFindings(reply.findings, ctx.history)
+    return {
+      subject: subjectOf(ctx.parts),
+      findings: routed.findings,
+      spec: reply.findings.some((f) => f.kind === 'spec') ? 'fail' : 'pass',
+      quality: reply.findings.some((f) => f.severity === 'critical' || f.severity === 'important') ? 'needs-fixes' : 'approved',
+      open: routed.open,
+      toRule: routed.toRule,
+      deferred: routed.deferred,
+      unverifiable: reply.unverifiable,
+      result: resultOf({ ...routed, unverifiable: reply.unverifiable })
+    }
+  }
+}
+
+const reReview = {
+  schema: 're-review.schema.json',
+  check(reply, ctx) {
+    const errors = findingErrors(reply.findings, '$.findings')
+    const subject = subjectOf(ctx.parts)
+    const open = ctx.history.at(-1)?.open
+    if (open === undefined) return [...errors, `$.previous: no accepted review of ${subject} is recorded, so there is no open set to answer`]
+    const seen = new Set()
+    reply.previous.forEach(({ id }, i) => {
+      if (seen.has(id)) errors.push(`$.previous[${i}].id: ${id} is answered twice`)
+      else if (!open.includes(id)) errors.push(`$.previous[${i}].id: ${id} is not an open finding of ${subject}`)
+      seen.add(id)
+    })
+    for (const id of open) if (!seen.has(id)) errors.push(`$.previous: the open finding ${id} of ${subject} is not answered`)
+    return errors
+  },
+  compute(reply, ctx) {
+    const routed = routeFindings(reply.findings, ctx.history)
+    const status = (s) => reply.previous.filter((p) => p.status === s).map((p) => p.id)
+    const open = [...status('not-addressed'), ...routed.open]
+    return {
+      subject: subjectOf(ctx.parts),
+      previous: reply.previous,
+      addressed: status('addressed'),
+      findings: routed.findings,
+      open,
+      toRule: routed.toRule,
+      deferred: routed.deferred,
+      outOfScope: reply.outOfScope,
+      result: resultOf({ open, toRule: routed.toRule })
+    }
+  }
+}
+
+// ---------------------------------------------------------------- impl and fix
+
+// A covering run passed: it finished with exit 0 and its runner counted no failure.
+const passed = (run) => run.exit === 0 && !run.timedOut && !(run.counts && run.counts.fail > 0)
+
+function readCommits(reply, ctx, git, errors) {
+  if (reply.commits.length === 0) return []
+  const range = rangeCommits(ctx.worktree, ctx.change, { git })
+  const order = range.commits.map((c) => c.sha)
+  const filesOf = new Map(range.commits.map((c) => [c.sha, c.files]))
+  const shas = []
+  reply.commits.forEach((sha, i) => {
+    const full = attempt(() => git('rev-parse', '--verify', '--quiet', `${sha}^{commit}`))
+    if (!full) errors.push(`$.commits[${i}]: ${sha} is no commit in ${ctx.worktree}`)
+    else if (!filesOf.has(full)) errors.push(`$.commits[${i}]: ${sha} lies outside ${range.base}..HEAD, the change's commits in ${ctx.worktree}`)
+    else if (shas.includes(full)) errors.push(`$.commits[${i}]: ${sha} is named twice`)
+    else shas.push(full)
+  })
+  shas.sort((a, b) => order.indexOf(b) - order.indexOf(a))
+  const subjects = new Map()
+  if (shas.length) {
+    for (const line of git('show', '-s', '--format=%H%x1f%s', ...shas).split('\n')) {
+      const [sha, subject] = line.split('\x1f')
+      subjects.set(sha, subject ?? '')
+    }
+  }
+  return shas.map((sha) => ({ sha, subject: subjects.get(sha) ?? '', files: filesOf.get(sha) }))
+}
+
+function readRuns(reply, ctx, errors) {
+  const testsDir = join(sddDir(ctx.root, ctx.change), TESTS_DIR)
+  const stem = `${recordName(ctx.name)}-`
+  const runs = []
+  ;(reply.testRuns ?? []).forEach((file, i) => {
+    const path = resolve(ctx.root, file)
+    const rel = relative(testsDir, path)
+    if (rel.startsWith('..') || isAbsolute(rel) || /[\\/]/.test(rel)) return errors.push(`$.testRuns[${i}]: ${file} is not a test-run record under ${relative(ctx.root, testsDir)}/`)
+    if (!basename(path).startsWith(stem)) return errors.push(`$.testRuns[${i}]: ${file} is the record of another dispatch, not of ${ctx.name}`)
+    let record
+    try {
+      record = readTestRecord(path)
+    } catch (error) {
+      return errors.push(`$.testRuns[${i}]: ${error.message}`)
+    }
+    if (real(record.worktree) !== real(ctx.worktree)) return errors.push(`$.testRuns[${i}]: ${file} ran in ${record.worktree}, not in ${ctx.worktree}, this dispatch's worktree`)
+    runs.push({ file: relative(ctx.root, path), command: record.command, exit: record.exit, counts: record.counts, failing: record.failing, ...(record.timedOut ? { timedOut: true } : {}) })
+  })
+  return runs.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0))
+}
+
+// What git and the test-run records say about an impl or fix reply: { errors, commits, runs,
+// last, concerns, outOfScope }. Memoised per reply object, since check and compute both read it.
+const FACTS = new WeakMap()
+function implFacts(reply, ctx) {
+  if (FACTS.has(reply)) return FACTS.get(reply)
+  const errors = []
+  const git = gitIn(ctx.worktree)
+  const commits = readCommits(reply, ctx, git, errors)
+  const runs = readRuns(reply, ctx, errors)
+  const last = runs.at(-1)
+
+  const concerns = reply.concerns.map((c) => ({ ...c, source: 'agent' }))
+  if (reply.outcome === 'done' && last) {
+    if (!passed(last)) {
+      const how = last.timedOut ? 'timed out' : `exit ${last.exit}${last.failing.length ? `, failing ${last.failing.join(', ')}` : ''}`
+      errors.push(`$.testRuns: the last covering run ${last.file} failed (${how}); a done reply needs a passing run`)
+    } else if (last.counts?.total === 0) errors.push(`$.testRuns: the last covering run ${last.file} ran no test`)
+    else if (last.counts === null) concerns.push({ text: `the last covering run ${last.file} printed no count line, so what it ran is unconfirmed`, file: last.file, source: 'script' })
+  }
+
+  const covers = taskMatchers(parsePlan(ctx.planText).tasks)
+    .filter((t) => ctx.scope.includes(t.number))
+    .flatMap((t) => t.covers)
+  const prefix = `openspec/changes/${ctx.change}/`
+  const allowed = (readRegistry(ctx.root)?.outsidePlan ?? []).map((g) => globToRegExp(g))
+  const exempt = (file) => file.startsWith(prefix) || allowed.some((re) => re.test(file)) || covers.some((c) => c(file))
+  const outOfScope = [...new Set(commits.flatMap((c) => c.files))].filter((file) => !exempt(file))
+  const scopeName = ctx.parts.task !== undefined ? `Task ${ctx.parts.task}` : ctx.parts.group !== undefined ? `group ${ctx.parts.group}'s tasks` : 'any task of the plan'
+  for (const file of outOfScope) concerns.push({ text: `changed outside the **Files:** of ${scopeName}`, file, source: 'script' })
+
+  const facts = { errors, commits, runs, last, concerns, outOfScope }
+  FACTS.set(reply, facts)
+  return facts
+}
+
+const STATUS = { blocked: 'BLOCKED', 'needs-context': 'NEEDS_CONTEXT' }
+const NEXT = { BLOCKED: 'blocked', NEEDS_CONTEXT: 'provide-context', DONE_WITH_CONCERNS: 'read-concerns' }
+
+const impl = {
+  schema: 'impl.schema.json',
+  check: (reply, ctx) => implFacts(reply, ctx).errors,
+  compute(reply, ctx) {
+    const { commits, runs, last, concerns, outOfScope } = implFacts(reply, ctx)
+    const status = STATUS[reply.outcome] ?? (concerns.length ? 'DONE_WITH_CONCERNS' : 'DONE')
+    const base = commits.length ? attempt(() => gitIn(ctx.worktree)('rev-parse', `${commits[0].sha}^`)) : null
+    return {
+      status,
+      next: NEXT[status] ?? (ctx.parts.role === 'fix' ? 're-review' : 'review'),
+      commits,
+      range: base ? { base, head: commits.at(-1).sha } : null,
+      tests: { result: last ? (passed(last) ? 'pass' : 'fail') : null, counts: last?.counts ?? null, runs },
+      concerns,
+      outOfScope,
+      ...(reply.blocker ? { blocker: reply.blocker } : {})
+    }
+  }
+}
+
+// ---------------------------------------------------------------- sweep
+
+const sweep = {
+  schema: 'sweep.schema.json',
+  check(reply, ctx) {
+    const listed = ctx.sweep.removedOrRenamed.map((r) => r.requirement ?? r.from)
+    const given = reply.dispositions ?? []
+    if (!ctx.sweep.secondQuestion) return given.length ? ['$.dispositions: the change lists no REMOVED or RENAMED requirement, so the reply gives no disposition'] : []
+    if (reply.dispositions === undefined) return [`$.dispositions: required, one for each REMOVED or RENAMED requirement: ${listed.join(', ')}`]
+    const errors = []
+    const seen = new Set()
+    given.forEach(({ requirement }, i) => {
+      if (!listed.includes(requirement)) errors.push(`$.dispositions[${i}].requirement: ${requirement} is no REMOVED or RENAMED requirement of the change`)
+      else if (seen.has(requirement)) errors.push(`$.dispositions[${i}].requirement: ${requirement} is answered twice`)
+      seen.add(requirement)
+    })
+    for (const requirement of listed) if (!seen.has(requirement)) errors.push(`$.dispositions: ${requirement} has no disposition`)
+    return errors
+  },
+  compute: (reply, ctx) => ({ ...dupFilter(ctx.root, reply.findings), ...(reply.dispositions ? { dispositions: reply.dispositions } : {}) })
+}
+
+// ---------------------------------------------------------------- the table
+
+export const ROLES = {
+  impl,
+  fix: impl,
+  review,
+  'final-review': review,
+  'merge-review': review,
+  're-review': reReview,
+  sweep,
+  investigate: { schema: 'investigate.schema.json', check: () => [], compute: () => undefined }
+}
+
+export const schemaOf = (role) => readSchema(join(SCHEMA_DIR, ROLES[role].schema))
+
+// The tasks whose **Files:** bound a dispatch: its task, its group's tasks, or every task.
+function scopeOf(planText, parts) {
+  if (parts.task !== undefined) return [parts.task]
+  if (parts.group !== undefined) return parseGraph(planText).find((g) => g.letter === parts.group)?.tasks ?? []
+  return parsePlan(planText).tasks.map((t) => t.number)
+}
+
+// What the checker of `name`'s role reads besides the reply. Throws a ReplyError when the name is
+// no reply role's or does not fit the change (no plan, a task or group the plan lacks).
+export function replyContext(root, change, name, { main = root } = {}) {
+  const parts = parseName(name)
+  if (!parts || !Object.hasOwn(ROLES, parts.role)) throw new ReplyError(`"${name}" is not the dispatch name of a reply role (${Object.keys(ROLES).join(', ')})`)
+  const ctx = { root, change, name, parts }
+  try {
+    if (parts.role === 'impl' || parts.role === 'fix') {
+      const planText = readOr(join(root, 'openspec', 'changes', change, 'plan.md'))
+      if (planText === null) throw new Error(`openspec/changes/${change}/plan.md does not exist`)
+      const plan = planDispatch({ change, ...parts }, { root, main, planText, exists: existsSync })
+      Object.assign(ctx, { planText, worktree: plan.worktree, scope: scopeOf(planText, parts) })
+    }
+    if ([...REVIEW_ROLES, 're-review'].includes(parts.role)) ctx.history = subjectHistory(readOr(attemptsFile(root, change)) ?? '', subjectOf(parts))
+    if (parts.role === 'sweep') ctx.sweep = sweepInputs(root, change)
+  } catch (error) {
+    throw new ReplyError(error.message)
+  }
+  return ctx
+}
+
+// One reply's text checked as `role`: { valid, errors, result, fenced }. `context` is the
+// replyContext, or a function giving it, called only once the schema accepts the reply. `result`
+// is the computed result of a valid reply (undefined for investigate), null for a refused one.
+export function checkReply(role, text, context) {
+  if (!Object.hasOwn(ROLES, role)) throw new ReplyError(`role ${role} has no reply checker; known: ${Object.keys(ROLES).join(', ')}`)
+  const parsed = parseReply(text)
+  const refuse = (errors) => ({ valid: false, errors, result: null, fenced: parsed.fenced })
+  if (parsed.errors.length) return refuse(parsed.errors)
+  const errors = validateJson(schemaOf(role), parsed.reply)
+  if (errors.length === 0 && parsed.reply.role !== role) errors.push(`$.role: must be ${role}, the role of this dispatch`)
+  if (errors.length) return refuse(errors)
+  const ctx = typeof context === 'function' ? context() : context
+  const { check, compute } = ROLES[role]
+  const checked = check(parsed.reply, ctx)
+  if (checked.length) return refuse(checked)
+  return { valid: true, errors: [], result: compute(parsed.reply, ctx), fenced: parsed.fenced }
 }

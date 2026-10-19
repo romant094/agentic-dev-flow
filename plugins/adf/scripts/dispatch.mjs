@@ -44,12 +44,14 @@
 //                        [--resume yes|no] [--root <change worktree>]
 //       checks the reply through its role's checker (the role read from the name) and records a
 //       `valid` or `invalid` event of the name (lib/attempts.mjs). { ok, valid, errors, next, mode,
-//       invalid, replyFile, log }: next `proceed` for a valid reply; for a refused one `retry` (the
-//       first) or `stop` (the second: BLOCKED, nothing it reported is recorded); mode `resume` on a
-//       retry, `fresh` when --resume no says the harness cannot resume the agent, else null. A
-//       missing reply file is a refused reply. The checkers: lib/reply.mjs for the apply roles,
-//       review.mjs checkFindings for ai-review, checkFix for ai-fix (its finding must be the
-//       name's), spec-merge.mjs checkSpecMergeReply against the capability's conflicts,
+//       invalid, replyFile, log, result? }: next `proceed` for a valid reply; for a refused one
+//       `retry` (the first) or `stop` (the second: BLOCKED, nothing it reported is recorded);
+//       mode `resume` on a retry, `fresh` when --resume no says the harness cannot resume the
+//       agent, else null. A missing reply file is a refused reply. The checkers: lib/reply.mjs
+//       for the apply roles, whose computed `result` (the impl status, the review verdicts, ...)
+//       the valid event records and the output carries; review.mjs checkFindings for ai-review,
+//       checkFix for ai-fix (its finding must be the name's), spec-merge.mjs
+//       checkSpecMergeReply against the capability's conflicts,
 //       ingest.mjs checkIngestFile against the ingest input; verify sections are checked by
 //       verify.mjs verdict, not here
 //
@@ -60,7 +62,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readArchiveState } from './lib/archive.mjs'
-import { attemptsFile, recordDispatch, recordReply } from './lib/attempts.mjs'
+import { attemptsFile, recordDispatch, recordReply, standing } from './lib/attempts.mjs'
 import {
   ARCHIVE_ROLES,
   DispatchError,
@@ -78,11 +80,11 @@ import { mainCheckout } from './lib/installed.mjs'
 import { isMain } from './lib/main.mjs'
 import { unplannedIn } from './lib/plan.mjs'
 import { parsePlanTasks } from './lib/plan-symbols.mjs'
-import { checkReplyText, ROLES as REPLY_ROLES } from './lib/reply.mjs'
+import { checkReply, replyContext, ROLES as REPLY_ROLES } from './lib/reply.mjs'
 import { checkFindings, checkFix } from './lib/review.mjs'
 import { checkSpecMergeReply, writeConflictTexts } from './lib/spec-merge.mjs'
 import { mergePreview } from './lib/specs.mjs'
-import { fixTarget, Refusal } from './lib/review-state.mjs'
+import { fixTarget, Refusal, reviewSince } from './lib/review-state.mjs'
 import { sweepInputs } from './lib/sweep.mjs'
 
 export const PLUGIN_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -280,10 +282,17 @@ function promptFor(inputs, plan, values, root, planText) {
   return renderPrompt({ plan, change, skeletons: skeletons(), fields, question, tokens, testFirst, dispositions })
 }
 
-// The errors of one reply under its role's checker; `parts` is the parsed dispatch name.
+// The errors of one reply under its role's checker and, for an apply role, the computed result
+// of a valid one: { errors, result? }. `parts` is the parsed dispatch name.
+function replyCheck(parts, text, ctx) {
+  if (!Object.hasOwn(REPLY_ROLES, parts.role)) return { errors: replyErrors(parts, text, ctx) }
+  const checked = checkReply(parts.role, text, () => replyContext(ctx.root, ctx.change, ctx.name, { main: ctx.main }))
+  return { errors: checked.errors, ...(checked.valid && checked.result !== undefined ? { result: checked.result } : {}) }
+}
+
+// The errors of one reply of a review-stage or archive role under its checker.
 function replyErrors(parts, text, { root, change, file, main }) {
   const { role } = parts
-  if (Object.hasOwn(REPLY_ROLES, role)) return checkReplyText(role, text)
   if (role === 'ai-review') return checkFindings(text).errors
   if (role === 'ai-fix') {
     const checked = checkFix(text)
@@ -319,9 +328,18 @@ function recordReplyOf(values, { root, change, main }) {
   if (values.resume !== undefined && !['yes', 'no'].includes(values.resume)) throw new UsageError('--resume is yes or no')
   if (parts.role === 'verify') throw new DispatchError(`a ${name} reply is checked by verify.mjs verdict, not by dispatch.mjs reply`)
   const path = resolve(root, file)
-  const text = readOr(path)
-  const errors = text === null ? [`no reply file ${path}: a reply that is prose and no file is a refusal`] : replyErrors(parts, text, { root, change, file: path, main })
-  return recordReply(root, change, { name, file: path, errors, resume: values.resume !== 'no' })
+  // The review stage counts only its current run's events (lib/review-state.mjs).
+  const since = ['ai-review', 'ai-fix'].includes(parts.role) ? reviewSince(root, change) : null
+  // A stopped dispatch's reply is not checked: recordReply refuses it.
+  const stopped = standing(readOr(attemptsFile(root, change)) ?? '', name, { since }).next === 'stop'
+  const text = stopped ? null : readOr(path)
+  const { errors, result } = stopped
+    ? { errors: [] }
+    : text === null
+      ? { errors: [`no reply file ${path}: a reply that is prose and no file is a refusal`] }
+      : replyCheck(parts, text, { root, change, name, file: path, main })
+  const recorded = recordReply(root, change, { name, file: path, errors, result, resume: values.resume !== 'no', since })
+  return { ...recorded, ...(result === undefined ? {} : { result }) }
 }
 
 function existsArchived(root, change) {

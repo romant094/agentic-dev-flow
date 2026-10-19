@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs'
 
 export const readSchema = (path) => JSON.parse(readFileSync(path, 'utf8'))
 
-const KNOWN = new Set(['$schema', '$id', 'title', 'description', 'type', 'additionalProperties', 'required', 'properties', '$defs', 'items', '$ref', 'enum', 'const', 'pattern', 'minLength', 'minimum', 'allOf', 'if', 'then'])
+const KNOWN = new Set(['$schema', '$id', 'title', 'description', 'type', 'additionalProperties', 'required', 'properties', '$defs', 'items', '$ref', 'enum', 'const', 'pattern', 'minLength', 'minItems', 'minimum', 'allOf', 'if', 'then'])
 
 // The keywords of a schema this validator does not implement; a schema must use none.
 export function unknownKeywords(schema, path = '$') {
@@ -47,6 +47,7 @@ export function validateJson(schema, value, path = '$', root = schema) {
     if (schema.pattern && !new RegExp(schema.pattern, 'u').test(value)) errors.push(`${path}: "${value}" does not match ${schema.pattern}`)
   }
   if (typeof value === 'number' && schema.minimum !== undefined && value < schema.minimum) errors.push(`${path}: must be at least ${schema.minimum}`)
+  if (Array.isArray(value) && schema.minItems !== undefined && value.length < schema.minItems) errors.push(`${path}: must hold at least ${schema.minItems} item${schema.minItems === 1 ? '' : 's'}`)
   if (Array.isArray(value) && schema.items) value.forEach((item, i) => errors.push(...validateJson(schema.items, item, `${path}[${i}]`, root)))
   if (isObject(value)) {
     for (const key of schema.required ?? []) if (!Object.hasOwn(value, key)) errors.push(`${path}: ${key} is required`)

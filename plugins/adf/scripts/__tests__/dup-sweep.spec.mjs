@@ -86,11 +86,11 @@ test('sweep inputs: the range from the base, the REMOVED and RENAMED requirement
   assert.deepEqual(removalsIn('## ADDED Requirements\n\n### Requirement: X\n'), [])
 })
 
-test('sweep filter drops a finding a marker accepts and recomputes the verdict; a refused reply is no verdict', () => {
+test('sweep filter drops a finding a marker accepts and computes the verdict; a refused reply is no verdict', () => {
   const { change } = host()
   commitIn(change, 'src/b.ts', 'const x = 1\n// ADF DUP src/a.ts:12 -- kept\nexport function parse() {}\n')
   mkdirSync(join(change, 'r'), { recursive: true })
-  const reply = (findings) => JSON.stringify({ role: 'sweep', verdict: findings.length ? 'FINDINGS' : 'CLEAN', findings })
+  const reply = (findings) => JSON.stringify({ role: 'sweep', findings })
   writeFileSync(join(change, 'r/one.json'), reply([{ introduced: 'src/b.ts:3', existing: 'src/a.ts:12', why: 'same parser' }]))
   assert.deepEqual(sweep(['filter', 'r/one.json', '--root', change]), {
     ok: true,
@@ -100,8 +100,9 @@ test('sweep filter drops a finding a marker accepts and recomputes the verdict; 
   })
   writeFileSync(join(change, 'r/two.json'), reply([{ introduced: 'src/b.ts:3', existing: 'src/c.ts:1', why: 'other' }]))
   assert.equal(sweep(['filter', 'r/two.json', '--root', change]).verdict, 'FINDINGS')
+  // The reply states no verdict, and one that states it is refused.
   writeFileSync(join(change, 'r/bad.json'), '{"role":"sweep","verdict":"CLEAN","findings":[{"introduced":"a","existing":"b","why":"c"}]}')
-  assert.equal(sweep(['filter', 'r/bad.json', '--root', change]).ok, false)
+  assert.deepEqual(sweep(['filter', 'r/bad.json', '--root', change]).reasons, ['$: verdict is not allowed'])
   assert.equal(sweep(['filter', 'r/none.json', '--root', change]).ok, false)
   assert.equal(coveringMarker([{ file: 'a.ts', line: 5, existing: 'x', wholeFile: false }], { introduced: 'aSymbol', existing: 'x' }), null)
 })
@@ -113,7 +114,7 @@ test('sweep filter --record turns each disposition into a debt record, once', ()
     { requirement: 'Old thing', disposition: 'deleted with its route; the old path is unreachable' },
     { requirement: 'New name', disposition: 'renamed in code; the old export is still reachable from src/x.ts' }
   ]
-  writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', verdict: 'CLEAN', findings: [], dispositions }))
+  writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', findings: [], dispositions }))
   const out = sweep(['filter', 'r/s.json', '--record', '--change', 'add-x', '--root', change])
   assert.deepEqual(out.debt, [{ requirement: 'Old thing', id: 'debt-1' }, { requirement: 'New name', id: 'debt-2' }])
   const debts = listRecords(change, 'add-x')

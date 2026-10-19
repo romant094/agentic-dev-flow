@@ -440,7 +440,8 @@ test('a retry counts only for the same review dispatch name', () => {
 })
 
 // lib/attempts.mjs through `dispatch.mjs reply`: one events log, keyed by the dispatch name.
-const IMPL_OK = { role: 'impl', status: 'DONE', commits: [{ sha: 'abc1234', subject: 'feat: t3' }], tests: { command: 'npm test', result: 'pass', summary: '3 pass' }, concerns: [], report: 'done' }
+// Valid with no commit and no test run, so it reads no git: the role table is lib/reply.mjs's.
+const IMPL_OK = { role: 'impl', outcome: 'needs-context', commits: [], concerns: [], blocker: 'Which grammar?', summary: 'Stopped before the parser.' }
 const writeReply = (root, name, value) => {
   const file = join(root, 'replies', `${name}.json`)
   mkdirSync(dirname(file), { recursive: true })
@@ -469,7 +470,9 @@ test('two invalid replies of one dispatch give retry, then stop; a stopped dispa
   assert.deepEqual([fresh.next, fresh.mode], ['retry', 'fresh'])
   const good = call(root, 'reply', '--name', 'T4 impl', '--file', writeReply(root, 'good', IMPL_OK))
   assert.deepEqual([good.ok, good.valid, good.errors, good.next, good.mode, good.invalid], [true, true, [], 'proceed', null, 1])
+  assert.deepEqual([good.result.status, good.result.next], ['NEEDS_CONTEXT', 'provide-context'])
   assert.equal(events(root).at(-1).event, 'valid')
+  assert.deepEqual(events(root).at(-1).result, good.result)
   const exit = cli(root, 'reply', '--change', CHANGE, '--name', 'T5 impl', '--file', bad)
   assert.equal(exit.status, 1)
   assert.equal(exit.out.next, 'retry')

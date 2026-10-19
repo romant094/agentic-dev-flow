@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "adf/task-review.schema.json",
   "title": "ADF task review reply",
-  "description": "A task, group, final or merge review: the findings with their severity on the Superpowers scale and their kind, and the requirements the reviewer could not verify. The script assigns the finding ids and computes the spec verdict, the quality verdict and the result; the reply states no verdict.",
+  "description": "A task, group, final or merge review: the findings with their severity on the Superpowers scale, their kind and their category, and the requirements the reviewer could not verify. The script assigns the finding ids and computes the spec verdict, the quality verdict and the result; the reply states no verdict.",
   "type": "object",
   "additionalProperties": false,
   "required": ["role", "summary", "findings", "unverifiable"],
@@ -27,10 +27,12 @@
     "finding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["severity", "kind", "file", "line", "title", "body"],
+      "description": "One finding. Its category names what is wrong: missing, extra and misunderstood are spec findings, every other category a quality finding, and kind must agree (lib/reply.mjs checks it).",
+      "required": ["severity", "kind", "category", "file", "line", "title", "body"],
       "properties": {
         "severity": { "enum": ["critical", "important", "minor"] },
         "kind": { "enum": ["spec", "quality"] },
+        "category": { "enum": ["missing", "extra", "misunderstood", "quality", "tests", "structure", "merge-meaning"] },
         "file": { "type": "string", "minLength": 1 },
         "line": { "type": ["integer", "null"], "minimum": 1 },
         "title": { "type": "string", "minLength": 1 },

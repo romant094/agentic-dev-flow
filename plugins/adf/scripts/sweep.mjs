@@ -12,7 +12,7 @@
 //   sweep.mjs filter <reply file> [--root <change worktree>] [--record --change <name>]
 //       { ok, verdict, findings, dropped, dispositions?, debt? }: the validated sweep reply with
 //       every finding dropped whose introduced location carries a DUP marker naming its
-//       `existing`; verdict is recomputed. A refused reply exits 1: it is no verdict, never
+//       `existing`; the verdict is computed from what is left (the reply states none). A refused reply exits 1: it is no verdict, never
 //       CLEAN. --record writes one `debt` ledger record per disposition, the sweep's answer as
 //       its reason (lib/sweep.mjs recordDispositions); `debt` lists each id, or why it was
 //       skipped.

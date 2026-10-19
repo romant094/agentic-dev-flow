@@ -20,13 +20,25 @@ const CHANGE = 'add-x'
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
 const changeFile = (file) => `openspec/changes/${CHANGE}/${file}`
 
-// mode.txt: `pass`, `fail:a,b` (TAP names the failures), `anon` (fails, names nothing); a
+// mode.txt: `pass`, `fail:a,b` (TAP names the failures), `spec:a,b` (the node:test spec reporter
+// names them, twice, under its "failing tests:" header), `anon` (fails, names nothing); a
 // `+junk` suffix leaves an untracked file behind, which makes git refuse to remove a worktree.
 const FAKE_SUITE = `import { readFileSync, writeFileSync } from 'node:fs'
 const [mode, extra] = readFileSync('mode.txt', 'utf8').trim().split('+')
 if (extra === 'junk') writeFileSync('junk.txt', 'x')
 console.log('MARKER-RAW-OUTPUT')
 if (mode === 'anon') { console.error('Error: boom'); process.exit(1) }
+if (mode.startsWith('spec:')) {
+  const names = mode.slice(5).split(',')
+  console.log('\u2714 stays (0.1ms)')
+  for (const name of names) console.log('\u2716 ' + name + ' (0.2ms)')
+  console.log('\u2139 tests ' + (names.length + 1))
+  console.log('\u2139 pass 1')
+  console.log('\u2139 fail ' + names.length)
+  console.log('\u2716 failing tests:')
+  for (const name of names) console.log('\u2716 ' + name + ' (0.2ms)')
+  process.exit(1)
+}
 const failing = mode.startsWith('fail:') ? mode.slice(5).split(',') : []
 console.log('TAP version 13')
 console.log('ok 1 - stays')
@@ -129,6 +141,9 @@ test('failing identifiers and count lines come from the runner output', () => {
   assert.deepEqual(failingIn(tap), ['b'])
   assert.deepEqual(failingIn(' FAIL  src/a.test.ts\n  ✕ adds (3 ms)\nFAILED tests/t.py::test_x - assert\n--- FAIL: TestY (0.0s)'), ['src/a.test.ts', 'adds', 'tests/t.py::test_x', 'TestY'])
   assert.deepEqual(countLines(tap), ['# tests 2', '# pass 1'])
+  // The node:test spec reporter: each failure once, its "failing tests:" header and colours not.
+  const spec = '\u001b[31m✖ adds (1.3ms)\u001b[39m\n  AssertionError\n✔ passes (0.1ms)\n▶ group\n  ✖ inner fails (0.1ms)\n✖ group (0.3ms)\nℹ tests 3\n\n✖ failing tests:\n\ntest at t.test.mjs:3:1\n✖ adds (1.3ms)\n'
+  assert.deepEqual(failingIn(spec), ['adds', 'inner fails', 'group'])
 })
 
 // ---------------------------------------------------------------- runs
@@ -186,6 +201,13 @@ test('a failure the base does not have blocks; the base-check worktree is remove
   const section = JSON.parse(readFileSync(join(verifyDir(root, CHANGE), 'test-record.json'), 'utf8'))
   assert.equal(section.verdict, 'fail')
   assert.match(section.summary, /does not reproduce on the base: b/)
+})
+
+test('a run names the failures the node:test spec reporter prints, not its header', () => {
+  const { root } = host({ headMode: 'spec:adds,subtracts' })
+  const r = runSuite(root, { change: CHANGE })
+  assert.equal(r.status, 'fail')
+  assert.deepEqual(r.failing, ['adds', 'subtracts'])
 })
 
 test('a failure that also fails on the base is pre-existing; a partial overlap blocks on the rest', () => {
@@ -367,6 +389,8 @@ test('a failing covering run is a record that says so, exit 0', () => {
   assert.deepEqual([out.json.ok, out.json.exit, out.json.counts, out.json.failing], [true, 1, { pass: 1, fail: 1, skipped: 0, total: 2 }, ['adds']])
   const jest = runCovering(root, { change: CHANGE, name: 'jest', command: 'node runner.cjs jest', worktree: root })
   assert.deepEqual([jest.exit, jest.counts, jest.failing], [1, { pass: 4, fail: 1, skipped: 1, total: 6 }, ['src/a.test.js', 'adds']])
+  const spec = runCovering(root, { change: CHANGE, name: 'spec', command: 'node runner.cjs node-spec', worktree: root })
+  assert.deepEqual([spec.exit, spec.counts, spec.failing], [1, { pass: 1, fail: 1, skipped: 1, total: 3 }, ['subtracts']])
 })
 
 test('a covering run past the timeout is stopped: exit null, no counts, timedOut', () => {

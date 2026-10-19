@@ -21,7 +21,8 @@
 // addBaseCheck, the same command run there (its output to `<stamp>-base.txt`), then
 // removeBaseCheck, never forced; a refused removal is reported and the worktree left.
 // Failing test identifiers are parsed from the output (TAP `not ok`, Jest/Vitest `FAIL` and
-// `✕`/`×` lines, pytest `FAILED`, Go `--- FAIL:`). When both runs name their failures, a failure
+// `✕`/`×` lines, the node:test spec reporter's `✖` lines but its `✖ failing tests:` header,
+// pytest `FAILED`, Go `--- FAIL:`). When both runs name their failures, a failure
 // is pre-existing when the base names it too, and the rest are new. When the runner names
 // none, the comparison is of the whole run: a base run that also fails makes the failure
 // pre-existing, and the result says `comparison: "whole-run"`, since a partial overlap cannot
@@ -138,13 +139,14 @@ const FAILURE_PATTERNS = [
   /^\s*not ok \d+ - (.+?)(?:\s+#.*)?$/, // TAP: node --test, tap, bats
   /^\s*FAIL\s+(\S.*)$/, // Jest, Vitest: a failing file
   /^\s*[✕×✗]\s+(.+?)(?:\s+\(\d+(?:\.\d+)?\s*m?s\))?$/, // Jest, Vitest, Mocha-like: a failing test
+  /^\s*✖\s+(?!failing tests:\s*$)(.+?)(?:\s+\(\d+(?:\.\d+)?\s*m?s\))?$/, // node:test spec reporter, not its "failing tests:" header
   /^FAILED\s+(\S+)/, // pytest
   /^\s*--- FAIL:\s+(\S+)/ // Go
 ]
 
 export function failingIn(text) {
   const found = new Set()
-  for (const line of String(text ?? '').split(/\r?\n/)) {
+  for (const line of String(text ?? '').replace(ANSI, '').split(/\r?\n/)) {
     for (const re of FAILURE_PATTERNS) {
       const m = re.exec(line)
       if (m) {

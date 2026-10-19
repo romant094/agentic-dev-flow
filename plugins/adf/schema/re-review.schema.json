@@ -42,10 +42,12 @@
     "finding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["severity", "kind", "file", "line", "title", "body"],
+      "description": "One finding. Its category names what is wrong: missing, extra and misunderstood are spec findings, every other category a quality finding, and kind must agree (lib/reply.mjs checks it).",
+      "required": ["severity", "kind", "category", "file", "line", "title", "body"],
       "properties": {
         "severity": { "enum": ["critical", "important", "minor"] },
         "kind": { "enum": ["spec", "quality"] },
+        "category": { "enum": ["missing", "extra", "misunderstood", "quality", "tests", "structure", "merge-meaning"] },
         "file": { "type": "string", "minLength": 1 },
         "line": { "type": ["integer", "null"], "minimum": 1 },
         "title": { "type": "string", "minLength": 1 },
