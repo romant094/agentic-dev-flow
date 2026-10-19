@@ -27,9 +27,22 @@ error.
 
 | Operation | Input | Result when `done` |
 |---|---|---|
-| `context` | `{}` | `base`, `index` (host-relative path of the index), `exists`, `instructions` (absolute paths of `ingest`, `query`, `lint`, `fix`), `paths` (`[".claude/memory/**"]`, the globs an ingest may write) |
+| `context` | `{}` | `base`, `index` (host-relative path of the index), `exists`, `instructions` (absolute paths of `ingest`, `query`, `lint`, `fix`), `paths` (`[".claude/memory/**"]`, the globs an ingest may write), `log` (`[".claude/memory/log.md", ".claude/memory/log-archive/**"]`, the files only `log` writes; archive's ingest check refuses an agent that edited them) |
 | `log` | `type` (`ingest`, `query`, `lint`, `task`), `title`, and `bullets` or `commit` + `reason`; `amend` | `entry` (the text written), `rotated` (the months moved to `log-archive/`), `amended`, `path` |
-| `check` | `{}` | `findings` (`unindexed`, `broken-link`, `malformed-header`, `out-of-order`, `missing`), `pages` |
+| `check` | `{}` | `findings` (`unindexed`, `broken-link`, `malformed-header`, `out-of-order`, `missing`), `pages` (the pages checked), `excluded` (the pages left out) |
+
+`check` leaves out every page an `exclude` glob matches, relative to `.claude/memory/`: `**`
+matches at any depth, `*` and `?` within one path segment. The host sets the globs in this
+plugin's `config` in the registry, which the core passes on every call, for example
+`{ "exclude": ["reports/**"] }`; by hand, `--exclude <glob>`, once per glob. By default nothing
+is excluded but `log.md` and `log-archive/`, which are never pages. An excluded page is not
+checked for broken links or for its index line.
+
+`memory.mjs sort [--root <dir>]` is not a role operation. It puts the entries of `log.md` back
+in timestamp order, newest first, after a merge of branches that each added entries broke the
+order. Entries with the same time keep their order, no entry's text changes, and a log already
+in order is not written. It prints `moved` (the entries whose place changed) and `entries`;
+with no `log.md` it is refused. Run it when `check` reports `out-of-order`.
 
 ## The log
 

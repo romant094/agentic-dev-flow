@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFi
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BASE, check, entryBody, insertEntry, links, utcStamp } from '../lib/memory.mjs'
+import { BASE, check, entryBody, globTest, insertEntry, links, sortLog, utcStamp } from '../lib/memory.mjs'
 import { main } from '../memory.mjs'
 
 const pluginDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -53,7 +53,8 @@ test('context names the index, the instructions and the paths an ingest may writ
     index: '.claude/memory/index.md',
     exists: true,
     instructions: ['ingest', 'query', 'lint', 'fix'],
-    paths: ['.claude/memory/**']
+    paths: ['.claude/memory/**'],
+    log: ['.claude/memory/log.md', '.claude/memory/log-archive/**']
   })
   for (const path of Object.values(result.instructions)) assert.equal(existsSync(path), true, path)
 })
@@ -160,7 +161,7 @@ test('check reports unindexed pages, broken links, malformed headers and entries
 
 test('check on a host without the knowledge base names what is missing', () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'memory-empty-')))
-  assert.deepEqual(check(root), { state: 'done', pages: 0, findings: [{ kind: 'missing', path: '.claude/memory/index.md' }, { kind: 'missing', path: '.claude/memory/log.md' }] })
+  assert.deepEqual(check(root), { state: 'done', pages: 0, excluded: 0, findings: [{ kind: 'missing', path: '.claude/memory/index.md' }, { kind: 'missing', path: '.claude/memory/log.md' }] })
 })
 
 test('links skips URLs, anchors and code, and reads angle-bracket targets', () => {
@@ -191,4 +192,59 @@ test('the CLI: flags and stdin, exit 1 on a refusal and 2 on a usage error', () 
   assert.equal(run(['merge']).code, 2)
   assert.equal(run(['check', '--type', 'task']).code, 2)
   assert.equal(run(['context'], '{not json').code, 2)
+})
+
+test('check leaves out the pages the exclude globs name, from the config the core passes or from flags', () => {
+  const root = host()
+  const mem = join(root, BASE)
+  mkdirSync(join(mem, 'reports', 'deep'), { recursive: true })
+  writeFileSync(join(mem, 'reports', 'r.md'), '# Report\n\n[gone](gone.md)\n')
+  writeFileSync(join(mem, 'reports', 'deep', 'd.md'), '# Deep\n')
+  const all = check(root)
+  assert.equal(all.excluded, 0)
+  assert.deepEqual(all.findings.map((f) => `${f.kind} ${f.path}`).sort(), [
+    'broken-link .claude/memory/reports/r.md',
+    'unindexed .claude/memory/reports/deep/d.md',
+    'unindexed .claude/memory/reports/r.md'
+  ])
+  const byRole = main(['check'], () => JSON.stringify({ root, config: { exclude: ['reports/**'] }, input: {} }))
+  assert.equal(byRole.code, 0)
+  assert.deepEqual({ pages: byRole.result.pages, excluded: byRole.result.excluded, findings: byRole.result.findings }, { pages: all.pages - 2, excluded: 2, findings: [] })
+  const byFlags = main(['check', '--exclude', 'reports/*.md', '--root', root], () => '')
+  assert.deepEqual(byFlags.result.findings.map((f) => f.path), ['.claude/memory/reports/deep/d.md'])
+  assert.equal(main(['check'], () => JSON.stringify({ root, config: { exclude: 'reports/**' }, input: {} })).code, 1)
+})
+
+test('globTest reads ** at any depth and * within one segment', () => {
+  assert.equal(globTest('reports/**')('reports/a/b.md'), true)
+  assert.equal(globTest('**/draft.md')('draft.md'), true)
+  assert.equal(globTest('**/draft.md')('a/draft.md'), true)
+  assert.equal(globTest('reports/*.md')('reports/a/b.md'), false)
+  assert.equal(globTest('a.md')('aXmd'), false)
+})
+
+test('sort puts the entries back newest first, keeps ties and text, and is idempotent', () => {
+  const text = `${PREFIX}\n${entry('2026-10-11 09:00', 'early')}\n${entry('2026-10-12 16:24', 'late', '- one\n  continued')}\n${entry('2026-10-11 09:00', 'tie')}\n${entry('2026-10-13 08:00', 'latest')}`
+  const sorted = sortLog(text)
+  assert.equal(sorted.moved, 3, "late keeps its place")
+  assert.equal(sorted.entries, 4)
+  assert.equal(
+    sorted.text,
+    `${PREFIX}\n${entry('2026-10-13 08:00', 'latest')}\n${entry('2026-10-12 16:24', 'late', '- one\n  continued')}\n${entry('2026-10-11 09:00', 'early')}\n${entry('2026-10-11 09:00', 'tie')}`
+  )
+  assert.deepEqual(sortLog(sorted.text), { text: sorted.text, moved: 0, entries: 4 })
+  const unspaced = `${PREFIX}\n${entry('2026-10-11 09:00', 'a')}${entry('2026-10-12 09:00', 'b')}`
+  assert.equal(sortLog(unspaced).text, `${PREFIX}\n${entry('2026-10-12 09:00', 'b')}${entry('2026-10-11 09:00', 'a')}`)
+})
+
+test('the sort operation writes only a log out of order and is refused without a log', () => {
+  const root = host({ logText: `${PREFIX}\n${entry('2026-10-11 09:00', 'early')}\n${entry('2026-10-12 16:24', 'late')}` })
+  const first = main(['sort', '--root', root], () => '')
+  assert.deepEqual({ code: first.code, ...first.result }, { code: 0, state: 'done', path: '.claude/memory/log.md', moved: 2, entries: 2 })
+  assert.deepEqual(check(root).findings.filter((f) => f.kind === 'out-of-order'), [])
+  const again = read(logPath(root))
+  assert.equal(main(['sort', '--root', root], () => '').result.moved, 0)
+  assert.equal(read(logPath(root)), again)
+  const empty = realpathSync(mkdtempSync(join(tmpdir(), 'memory-nolog-')))
+  assert.equal(main(['sort', '--root', empty], () => '').code, 1)
 })

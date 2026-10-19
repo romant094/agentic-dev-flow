@@ -5,7 +5,10 @@
 // - `context`: where the knowledge base is and which instructions its workflows follow;
 // - `log`: writes one log entry, after the rotation, at its timestamp's place;
 // - `check`: the mechanical half of a lint (unindexed pages, links to missing files, malformed
-//   log headers, log entries out of order).
+//   log headers, log entries out of order), over every page but those the host's `exclude`
+//   globs name;
+// - `sort` (by hand, not a role operation): puts the log's entries back in timestamp order
+//   after a merge broke it.
 //
 // Every operation returns one object with `state` `done` or `refused` (with `error`). Times
 // are UTC, read from the clock; the plugin is the one surface stating that rule. The clock and
@@ -33,7 +36,8 @@ export function context(root, pluginDir) {
     index: `${BASE}/index.md`,
     exists: existsSync(join(root, BASE, 'index.md')),
     instructions: Object.fromEntries(WORKFLOWS.map((w) => [w, join(pluginDir, 'instructions', `${w}.md`)])),
-    paths: [`${BASE}/**`]
+    paths: [`${BASE}/**`],
+    log: [`${BASE}/log.md`, `${BASE}/log-archive/**`]
   }
 }
 
@@ -139,7 +143,54 @@ export function log(root, input, { now, git, template }) {
   return { state: 'done', path: `${BASE}/log.md`, entry: `${entryLines.join('\n')}\n`, amended: Boolean(amended), rotated: rotation.rotated }
 }
 
+// ---------------------------------------------------------------- sort
+
+// Pure: the log with its entries newest first, by the timestamp of each header; entries with
+// the same timestamp keep their order, and no entry's text changes. A log already in order is
+// returned as it is. `moved`: the entries whose place changed.
+export function sortLog(text) {
+  const { prefix, entries } = splitEntries(text)
+  const sorted = entries.map((e, i) => ({ e, i })).sort((a, b) => stamp(b.e.header).localeCompare(stamp(a.e.header)) || a.i - b.i)
+  const moved = sorted.filter((s, at) => s.i !== at).length
+  if (moved === 0) return { text, moved, entries: entries.length }
+  const spaced = entries.slice(0, -1).some((e) => e.lines.at(-1).trim() === '')
+  const body = (e) => {
+    const lines = [...e.lines]
+    while (lines.length > 1 && lines.at(-1).trim() === '') lines.pop()
+    return lines.join('\n')
+  }
+  const lead = text.startsWith(entries[0].header) ? '' : `${prefix}\n`
+  return { text: `${lead}${sorted.map((s) => body(s.e)).join(spaced ? '\n\n' : '\n')}\n`, moved, entries: entries.length }
+}
+
+export function sort(root) {
+  const path = join(root, BASE, 'log.md')
+  if (!existsSync(path)) return refused(`no ${BASE}/log.md to sort`)
+  const result = sortLog(readFileSync(path, 'utf8'))
+  if (result.moved > 0) writeFileSync(path, result.text, 'utf8')
+  return { state: 'done', path: `${BASE}/log.md`, moved: result.moved, entries: result.entries }
+}
+
 // ---------------------------------------------------------------- check
+
+// A glob relative to the knowledge base as a test of a base-relative path: `**` any depth,
+// `*` and `?` within one segment.
+export function globTest(glob) {
+  let source = ''
+  for (let i = 0; i < glob.length; i++) {
+    if (glob.startsWith('**/', i)) {
+      source += '(?:.*/)?'
+      i += 2
+    } else if (glob.startsWith('**', i)) {
+      source += '.*'
+      i += 1
+    } else if (glob[i] === '*') source += '[^/]*'
+    else if (glob[i] === '?') source += '[^/]'
+    else source += glob[i].replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  }
+  const re = new RegExp(`^${source}$`)
+  return (path) => re.test(path)
+}
 
 function walk(dir) {
   if (!existsSync(dir)) return []
@@ -183,7 +234,11 @@ export function links(text, pageDir) {
   return out
 }
 
-export function check(root) {
+// exclude: globs relative to the knowledge base (`reports/**`); a page they match is not
+// checked for links or for its index line, and is not counted.
+export function check(root, { exclude = [] } = {}) {
+  if (!Array.isArray(exclude) || !exclude.every((g) => typeof g === 'string' && g !== '')) return refused('exclude must be a list of non-empty globs')
+  const excluded = exclude.map(globTest)
   const dir = join(root, BASE)
   const rel = (path) => posix(relative(root, path))
   const findings = []
@@ -192,7 +247,9 @@ export function check(root) {
   }
   const files = walk(dir)
   const archived = join(dir, 'log-archive') + sep
-  const pages = files.filter((f) => f.endsWith('.md') && !f.startsWith(archived) && f !== join(dir, 'log.md'))
+  const isExcluded = (f) => excluded.some((test) => test(posix(relative(dir, f))))
+  const candidates = files.filter((f) => f.endsWith('.md') && !f.startsWith(archived) && f !== join(dir, 'log.md'))
+  const pages = candidates.filter((f) => !isExcluded(f))
   for (const page of pages) {
     for (const link of links(readFileSync(page, 'utf8'), dirname(page))) {
       if (!existsSync(link.resolved)) findings.push({ kind: 'broken-link', path: rel(page), line: link.line, target: link.target })
@@ -222,5 +279,5 @@ export function check(root) {
       }
     })
   }
-  return { state: 'done', pages: pages.length, findings }
+  return { state: 'done', pages: pages.length, excluded: candidates.length - pages.length, findings }
 }

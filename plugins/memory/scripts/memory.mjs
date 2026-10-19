@@ -7,7 +7,8 @@
 // By hand, with flags (the knowledge base is <root>/.claude/memory; root defaults to the
 // current directory):
 //   memory.mjs context [--root <dir>]
-//   memory.mjs check [--root <dir>]
+//   memory.mjs check [--exclude <glob> ...] [--root <dir>]
+//   memory.mjs sort [--root <dir>]
 //   memory.mjs log --type ingest|query|lint|task --title <t> --bullet <b> [--bullet <b> ...]
 //                  [--amend] [--root <dir>]
 //   memory.mjs log --type task --title <t> --commit <sha>[,<sha>] --reason <r> [--amend] [--root <dir>]
@@ -16,20 +17,26 @@
 // it rotates the log first, then inserts the entry at its timestamp's place. `--amend`
 // replaces the uncommitted entry with the same title, and is refused when there is none.
 //
+// `check` leaves out the pages the `exclude` globs match, relative to the knowledge base
+// (`reports/**`): from the core, the plugin's `config.exclude` in the registry; by hand,
+// `--exclude`. `sort` is not a role operation: it puts the log's entries back in timestamp
+// order, newest first, after a merge broke it, and reports `moved`; a sorted log is untouched.
+//
 // Prints one JSON object: `state` done or refused. Exit 0 done, 1 refused, 2 usage error.
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
-import { check, context, log } from './lib/memory.mjs'
+import { check, context, log, sort } from './lib/memory.mjs'
 import { isMain } from './lib/main.mjs'
 
 const pluginDir = join(dirname(fileURLToPath(import.meta.url)), '..')
 export const USAGE = [
   'usage:',
-  '  memory.mjs context|log|check                  (payload { root, config, input } on stdin)',
-  '  memory.mjs context|check [--root <dir>]',
+  '  memory.mjs context|log|check|sort             (payload { root, config, input } on stdin)',
+  '  memory.mjs context|sort [--root <dir>]',
+  '  memory.mjs check [--exclude <glob> ...] [--root <dir>]',
   '  memory.mjs log --type <ingest|query|lint|task> --title <t> (--bullet <b> ... | --commit <sha> --reason <r>) [--amend] [--root <dir>]'
 ].join('\n')
 
@@ -40,7 +47,8 @@ const OPTIONS = {
   bullet: { type: 'string', multiple: true },
   commit: { type: 'string' },
   reason: { type: 'string' },
-  amend: { type: 'boolean' }
+  amend: { type: 'boolean' },
+  exclude: { type: 'string', multiple: true }
 }
 
 const usage = (error) => ({ code: 2, result: { state: 'refused', error, usage: USAGE } })
@@ -50,16 +58,21 @@ function fromFlags(operation, args) {
   const { values, positionals } = parseArgs({ args, options: OPTIONS, strict: true, allowPositionals: true })
   if (positionals.length) throw new Error(`unexpected argument ${positionals[0]}`)
   const root = resolve(values.root ?? process.cwd())
+  if (operation === 'check') {
+    const extra = Object.keys(values).filter((k) => k !== 'root' && k !== 'exclude')
+    if (extra.length) throw new Error('check takes only --exclude and --root')
+    return { root, input: {}, config: values.exclude ? { exclude: values.exclude } : {} }
+  }
   if (operation !== 'log') {
     const extra = Object.keys(values).filter((k) => k !== 'root')
     if (extra.length) throw new Error(`${operation} takes only --root`)
-    return { root, input: {} }
+    return { root, input: {}, config: {} }
   }
   const input = {}
   for (const key of ['type', 'title', 'commit', 'reason']) if (values[key] !== undefined) input[key] = values[key]
   if (values.bullet) input.bullets = values.bullet
   if (values.amend) input.amend = true
-  return { root, input }
+  return { root, input, config: {} }
 }
 
 const gitIn = (root) => (args) => {
@@ -69,12 +82,13 @@ const gitIn = (root) => (args) => {
 
 export function main(argv, readStdin, { now = new Date() } = {}) {
   const [operation, ...rest] = argv
-  if (!['context', 'log', 'check'].includes(operation)) return usage(`unknown operation ${operation ?? '(none)'}`)
+  if (!['context', 'log', 'check', 'sort'].includes(operation)) return usage(`unknown operation ${operation ?? '(none)'}`)
   let root
   let input
+  let config
   if (rest.length > 0) {
     try {
-      ;({ root, input } = fromFlags(operation, rest))
+      ;({ root, input, config } = fromFlags(operation, rest))
     } catch (error) {
       return usage(error.message)
     }
@@ -90,10 +104,12 @@ export function main(argv, readStdin, { now = new Date() } = {}) {
     }
     root = resolve(payload.root ?? process.cwd())
     input = payload.input ?? {}
+    config = payload.config ?? {}
   }
   let result
   if (operation === 'context') result = context(root, pluginDir)
-  else if (operation === 'check') result = check(root)
+  else if (operation === 'check') result = check(root, { exclude: config.exclude ?? [] })
+  else if (operation === 'sort') result = sort(root)
   else result = log(root, input, { now, git: gitIn(root), template: readFileSync(join(pluginDir, 'host', 'log.md'), 'utf8') })
   return { code: result.state === 'done' ? 0 : 1, result }
 }
