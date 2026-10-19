@@ -157,7 +157,7 @@ or https URL; without it the core uses its default, and `/adf:init` does not ask
 ```json
 {
   "name": "gitlab",
-  "contract": "1.1",
+  "contract": "1.4",
   "provides": {
     "forge": { "script": "scripts/forge.mjs", "operations": ["check", "open", "push", "finalize"] }
   },
