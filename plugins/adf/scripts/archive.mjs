@@ -45,14 +45,16 @@
 //       nothing pushed, the branch kept; --no records that the developer merges it
 //   archive.mjs remove --change <name>
 //       workspace.mjs remove from the main checkout
-// Each prints { ok, change, step, state, detail, next, already?, refusal? }.
+// Each prints { ok, change, step, state, detail, next, already?, refusal? }. Each takes --no-ci:
+// it is kept in the archive state, so a resumed run keeps it, and the mr step passes it to the
+// forge as `ci: false` (a push with no CI run).
 //
 // Read-only:
 //   archive.mjs mr-input --change <name>
 //       { ok, change, changeDir, tasks: { done, open }, why, scenarios: [{ capability,
 //         requirement, scenario, given, when, then }], evidence: { verdict, sections: [{ title,
 //         text }] }, bodyFile }
-//   archive.mjs state --change <name>     { ok, change, steps: { <step>: { state, at, detail } }, next }
+//   archive.mjs state --change <name>     { ok, change, ci, steps: { <step>: { state, at, detail } }, next }
 //   archive.mjs next --change <name>      { ok, change, next: <step> | null, state }
 //   archive.mjs report --change <name>    { ok, change, complete, next, steps, handEdited, report }:
 //                                         built last, from the states; complete only when every
@@ -75,17 +77,20 @@ import {
   readArchiveState,
   Refusal,
   removeStep,
-  report
+  report,
+  setNoCi,
+  STEPS
 } from './lib/archive.mjs'
 import { isMain } from './lib/main.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
 
 export const USAGE = `usage:
-  archive.mjs check|placements|move|commit-specs|commit-memory|remove|mr-input|state|next|report --change <name> [--root <dir>] [--home <dir>]
-  archive.mjs merge --change <name> [--resolutions <file> ...] [--purpose <capability>=<file> ...] [--root <dir>]
-  archive.mjs ingest --change <name> [--reply <file>] [--resume yes|no] [--root <dir>] [--home <dir>]
-  archive.mjs mr --change <name> [--body <file> (--summary "<scope>: <description>" | --title <t>)] [--root <dir>] [--home <dir>]
-  archive.mjs merge-local --change <name> [--yes | --no] [--root <dir>]`
+  archive.mjs check|placements|move|commit-specs|commit-memory|remove --change <name> [--no-ci] [--root <dir>] [--home <dir>]
+  archive.mjs mr-input|state|next|report --change <name> [--root <dir>] [--home <dir>]
+  archive.mjs merge --change <name> [--resolutions <file> ...] [--purpose <capability>=<file> ...] [--no-ci] [--root <dir>]
+  archive.mjs ingest --change <name> [--reply <file>] [--resume yes|no] [--no-ci] [--root <dir>] [--home <dir>]
+  archive.mjs mr --change <name> [--body <file> (--summary "<scope>: <description>" | --title <t>)] [--no-ci] [--root <dir>] [--home <dir>]
+  archive.mjs merge-local --change <name> [--yes | --no] [--no-ci] [--root <dir>]`
 
 export class UsageError extends Error {}
 
@@ -101,7 +106,8 @@ const OPTIONS = {
   title: { type: 'string' },
   summary: { type: 'string' },
   yes: { type: 'boolean' },
-  no: { type: 'boolean' }
+  no: { type: 'boolean' },
+  'no-ci': { type: 'boolean' }
 }
 const COMMON = ['change', 'root', 'home']
 const TAKES = {
@@ -143,11 +149,12 @@ export function run(argv, { cwd = process.cwd(), deps = {} } = {}) {
   const { values, positionals } = parsed
   const [command, ...extra] = positionals
   if (!Object.hasOwn(TAKES, command ?? '') || extra.length > 0 || !values.change) throw new UsageError(USAGE)
-  const stray = Object.keys(values).filter((k) => !COMMON.includes(k) && !TAKES[command].includes(k))
+  const stray = Object.keys(values).filter((k) => !COMMON.includes(k) && !TAKES[command].includes(k) && !(k === 'no-ci' && STEPS.includes(command)))
   if (stray.length > 0) throw new UsageError(`${command} takes no --${stray[0]}\n${USAGE}`)
   if (values.yes && values.no) throw new UsageError('merge-local takes --yes or --no, not both')
   if (values.title && values.summary) throw new UsageError('mr takes --title or --summary, not both')
   const ctx = archiveContext(values.root ?? cwd, values.change, { home: values.home ?? claudeHome(), ...deps })
+  if (values['no-ci']) setNoCi(ctx.main, ctx.change)
   switch (command) {
     case 'check':
       return checkStep(ctx)
@@ -174,7 +181,7 @@ export function run(argv, { cwd = process.cwd(), deps = {} } = {}) {
       return removeStep(ctx)
     case 'state': {
       const state = readArchiveState(ctx.main, ctx.change)
-      return { ok: true, change: ctx.change, steps: state.steps, next: nextStep(state) }
+      return { ok: true, change: ctx.change, ci: state.ci !== false, steps: state.steps, next: nextStep(state) }
     }
     case 'next': {
       const state = readArchiveState(ctx.main, ctx.change)

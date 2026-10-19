@@ -150,3 +150,21 @@ export function knowledgeReport(operation, result) {
   const findings = result.findings ?? []
   return findings.length ? `Knowledge check: ${findings.length} finding(s)` : 'Knowledge check: no findings'
 }
+
+// ---------------------------------------------------------------- the upstream role
+
+// The line a command shows for an upstream result; the default with no provider is stated here
+// once: nothing is filed, and the findings stay in the retrospective's sidecar.
+export function upstreamReport(operation, result) {
+  if (result.state === 'none') {
+    return {
+      check: 'Upstream: none; no upstream plugin is enabled, so the findings stay in the retrospective sidecar.',
+      file: 'Upstream: none; no upstream plugin is enabled, so nothing was filed and the findings stay in the retrospective sidecar.'
+    }[operation]
+  }
+  if (result.state === 'refused') return `Upstream ${operation}: refused; ${result.error ?? 'no reason given'}`
+  if (result.state === 'degraded') return `Upstream ${operation}: not done. ${result.hint ?? ''}`.trim()
+  if (operation === 'check') return `Upstream: ${result.tool ?? 'ready'}`
+  const issues = result.issues ?? []
+  return issues.length ? `Upstream: filed ${issues.map((i) => `${i.finding} as ${i.url ?? `#${i.number}`}`).join(', ')}` : 'Upstream: nothing filed'
+}

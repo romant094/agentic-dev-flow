@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initRegistry, writeRegistry, readRegistry } from '../lib/registry.mjs'
-import { callRole, CORE, knowledgePaths, knowledgeReport } from '../lib/roles.mjs'
+import { callRole, CORE, forgeInput, knowledgePaths, knowledgeReport, upstreamReport } from '../lib/roles.mjs'
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'forge.mjs')
 const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
@@ -84,10 +84,43 @@ function knowledgeHost(declaration, script) {
   return root
 }
 
-test('contract 1.3 defines the knowledge role with context, log and check', () => {
-  assert.equal(CORE.coreContract, '1.3')
+test('contract 1.4 defines the forge, knowledge and upstream roles', () => {
+  assert.equal(CORE.coreContract, '1.4')
+  assert.deepEqual(Object.keys(CORE.points), ['forge', 'knowledge', 'upstream'])
+  assert.deepEqual(CORE.points.forge, { kind: 'role', operations: ['check', 'open', 'push', 'finalize'] })
   assert.deepEqual(CORE.points.knowledge, { kind: 'role', operations: ['context', 'log', 'check'] })
-  assert.equal(CORE.points.forge.kind, 'role')
+  assert.deepEqual(CORE.points.upstream, { kind: 'role', operations: ['check', 'file'] })
+})
+
+test('forgeInput passes ci false through, and the forge provider gets it', () => {
+  const state = { change: 'x', branch: 'feat/x', base: 'develop', protected: ['develop'] }
+  for (const operation of ['open', 'push', 'finalize']) {
+    assert.equal(forgeInput(operation, state, { input: { ci: false }, title: 'feat: x' }).ci, false, operation)
+    assert.equal(Object.hasOwn(forgeInput(operation, state, { title: 'feat: x' }), 'ci'), false, operation)
+  }
+  const out = forge(host(ECHO), 'push', '--input', '{"change":"x","ci":false}').out
+  assert.deepEqual(out.input, { change: 'x', ci: false })
+})
+
+test('with no upstream provider nothing is filed and the findings stay in the sidecar', () => {
+  const root = knowledgeHost()
+  const core = { ...CORE, home }
+  const none = callRole(root, 'upstream', 'file', { report: '.adf/retro/2026-10-19-window.json', findings: ['R1'] }, core)
+  assert.deepEqual(none, { state: 'none', point: 'upstream' })
+  assert.equal(upstreamReport('file', none), 'Upstream: none; no upstream plugin is enabled, so nothing was filed and the findings stay in the retrospective sidecar.')
+  assert.match(upstreamReport('check', none), /findings stay in the retrospective sidecar/)
+  assert.throws(() => callRole(root, 'upstream', 'close', {}, core), /upstream has no operation close/)
+})
+
+test('an upstream provider declared for contract 1.4 files through the core', () => {
+  const declaration = { name: 'u', contract: '1.4', provides: { upstream: { script: 'scripts/k.mjs', operations: ['check', 'file'] } } }
+  const script = `let t='';process.stdin.on('data',(d)=>t+=d).on('end',()=>{const j=JSON.parse(t);console.log(JSON.stringify({state:'done',issues:j.input.findings.map((f,i)=>({finding:f,number:i+1,url:'https://t/'+(i+1)}))}))})`
+  const root = knowledgeHost(declaration, script)
+  const core = { ...CORE, home }
+  const filed = callRole(root, 'upstream', 'file', { report: '.adf/retro/r.json', findings: ['R1', 'R2'] }, core)
+  assert.deepEqual(filed.issues, [{ finding: 'R1', number: 1, url: 'https://t/1' }, { finding: 'R2', number: 2, url: 'https://t/2' }])
+  assert.equal(upstreamReport('file', filed), 'Upstream: filed R1 as https://t/1, R2 as https://t/2')
+  assert.equal(upstreamReport('check', { state: 'degraded', hint: 'gh auth login' }), 'Upstream check: not done. gh auth login')
 })
 
 test('with no knowledge provider the state is none, the default is said, and no path is allowed', () => {

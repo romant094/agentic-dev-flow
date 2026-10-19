@@ -73,9 +73,10 @@ const toolMessage = (tool) =>
   tool === 'missing' ? `glab is not installed, so ${NOTHING_SENT}.` : `glab is installed but not authenticated, so ${NOTHING_SENT}.`
 
 // Never --force, and never a refspec naming anything but this branch: a push is not locally
-// reversible.
-export function pushArgs(root, branch) {
-  return ['-C', root, 'push', '--set-upstream', 'origin', branch]
+// reversible. `ci: false` asks GitLab to create no pipeline for this push (`-o ci.skip`); the
+// option is a push option, never a marker in a title or a commit message.
+export function pushArgs(root, branch, ci = true) {
+  return ['-C', root, 'push', ...(ci === false ? ['-o', 'ci.skip'] : []), '--set-upstream', 'origin', branch]
 }
 
 // ---------------------------------------------------------------- the description
@@ -138,6 +139,7 @@ function validate(input, fields) {
   // An integration branch is reached only through a merge request the developer merges.
   if (input.protected.includes(input.branch)) return `refusing to act on the protected branch "${input.branch}"`
   if (input.draft !== undefined && typeof input.draft !== 'boolean') return 'input.draft must be true or false'
+  if (input.ci !== undefined && typeof input.ci !== 'boolean') return 'input.ci must be true or false'
   return null
 }
 
@@ -209,12 +211,12 @@ export function open(ctx) {
       message: toolMessage(tool.tool),
       fallback: [
         `cd ${quote(root)}`,
-        `git push --set-upstream origin ${quote(input.branch)}`,
+        `git push ${input.ci === false ? '-o ci.skip ' : ''}--set-upstream origin ${quote(input.branch)}`,
         ['glab', ...createArgs(mr, config).map((a) => (a.startsWith('--') || a === 'mr' || a === 'create' ? a : quote(a)))].join(' ')
       ]
     }
   }
-  if (!ok(run('git', pushArgs(root, input.branch)))) return refused('git push failed; no merge request was touched.')
+  if (!ok(run('git', pushArgs(root, input.branch, input.ci)))) return refused('git push failed; no merge request was touched.')
   const listed = listOpen(run, root, input.branch)
   if (listed.error) return refused(`${listed.error}; the branch was pushed, but no merge request was created or reused.`)
   if (listed.list.length > 0) {
@@ -255,7 +257,7 @@ export function finalize(ctx) {
   if (listed.list.length === 0) {
     // No merge request was ever opened (open degraded and nobody created one by hand). Open
     // it ready, with the final description. The branch must be on origin before the create.
-    if (!ok(run('git', pushArgs(root, branch)))) return refused('git push failed; no merge request was touched.')
+    if (!ok(run('git', pushArgs(root, branch, input.ci)))) return refused('git push failed; no merge request was touched.')
     const description = mergeDescription('', change, body)
     const result = run('glab', createArgs({ ...input, draft: false, description }, config), { cwd: root })
     if (!ok(result)) return refused(`could not create the merge request: ${output(result)}; the branch was pushed.`)
@@ -290,7 +292,7 @@ export function finalize(ctx) {
   const ready = run('glab', ['mr', 'update', branch, '--ready', '--description', merged], { cwd: root })
   // review-ignore-end
   if (!ok(ready)) return refused(`Could not take the merge request out of draft: ${output(ready)}; the final commit was not pushed.`)
-  if (!ok(run('git', pushArgs(root, branch)))) {
+  if (!ok(run('git', pushArgs(root, branch, input.ci)))) {
     return refused(
       'The merge request is out of draft with the final description, but the last commit failed to push; push the branch by hand to finish.'
     )
@@ -315,7 +317,7 @@ export function push(ctx) {
       `${root} has "${checkedOut || '(detached HEAD)'}" checked out, not the change branch "${input.branch}"; a push from a group worktree pushes the group branch instead of the change branch, so run it from the main change worktree. Nothing was pushed and nothing else changed.`
     )
   }
-  const pushed = run('git', pushArgs(root, input.branch))
+  const pushed = run('git', pushArgs(root, input.branch, input.ci))
   if (!ok(pushed)) return refused(`git push failed: ${output(pushed)}; nothing else changed.`)
   return { state: 'done' }
 }

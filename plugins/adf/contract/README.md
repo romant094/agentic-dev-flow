@@ -24,7 +24,8 @@ A plugin declares, per point, the `script` that runs it (deterministic, runs und
 runtime) and the `operations` it implements: every operation the point defines.
 
 Each point arrives with the first plugin that needs it. Version `1.0` defined none; `1.1` adds
-the `forge` role; `1.2` adds its `push` operation; `1.3` adds the `knowledge` role.
+the `forge` role; `1.2` adds its `push` operation; `1.3` adds the `knowledge` role; `1.4` adds
+the `forge` operations' `ci` field and the `upstream` role.
 
 ## Calling convention
 
@@ -48,7 +49,7 @@ core gets `{ "state": "none" }` and applies the role's default.
 
 ## Points
 
-### `forge` (role, since 1.1; `push` since 1.2)
+### `forge` (role, since 1.1; `push` since 1.2; `ci` since 1.4)
 
 Pushes the change branch and keeps its merge request. The core never names a forge.
 
@@ -58,6 +59,12 @@ Pushes the change branch and keeps its merge request. The core never names a for
 | `open` | `change`, `branch`, `base`, `title`, `draft` (default true), `protected` | the branch pushed, never forced; a merge request into `base`, reused when one is open: `number`, `url`, `reused` |
 | `push` (since 1.2) | `change`, `branch`, `protected` | the branch pushed, never forced; nothing else changes |
 | `finalize` | `change`, `branch`, `base`, `title`, `body`, `protected` | the description holds `body` in this change's block, other text kept; the merge request leaves draft, then the branch is pushed: `number`, `url` |
+
+`open`, `push` and `finalize` take an optional `ci` (boolean, since 1.4, default `true`).
+`ci: false` pushes with no CI run: the provider asks the forge to start no pipeline for each
+push the operation does. A provider whose forge cannot skip CI on a push refuses (`refused`,
+exit 1) with nothing sent. Skipping CI is this field only, never a marker in a title, a
+description or a commit message.
 
 A provider refuses a branch that is empty or in `protected`. `body` holds the sections of the
 plugin's merge request template. Default with no provider: nothing is pushed, no merge request
@@ -79,6 +86,19 @@ allows every path `paths` names, so an ingest no plan names is not a finding. De
 provider: brainstorm reads no index, archive skips the ingest and says so in its report, and
 no log entry is written.
 
+### `upstream` (role, since 1.4)
+
+Where a retrospective's flow findings are filed, outside the host project: the issue tracker
+of the flow itself. The core never names a tracker.
+
+| Operation | Input | Result when `done` |
+|---|---|---|
+| `check` | `{}` | `tool: "ready"`; degraded: `tool` is `missing` or `unauthenticated`, with `hint` |
+| `file` | `report`: the host-relative path of a retrospective's sidecar JSON; `findings`: the ids of the findings in it to file | `issues`: a list of `{ finding, number, url }`, one per finding filed |
+
+The provider reads the findings from the sidecar; the core passes only their ids. Default with
+no provider: nothing is filed, and the findings stay in the retrospective's sidecar.
+
 ## Versioning
 
 The version is `major.minor`.
@@ -98,7 +118,7 @@ plugin and name both versions.
 
 ```json
 {
-  "contract": "1.3",
+  "contract": "1.4",
   "branches": { "integration": "develop", "protected": ["develop", "main"] },
   "extensions": [
     { "plugin": "gitlab@agentic-dev-flow", "config": { "host": "gitlab.example.com" } },

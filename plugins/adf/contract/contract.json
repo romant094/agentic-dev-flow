@@ -1,5 +1,5 @@
 {
-  "version": "1.3",
+  "version": "1.4",
   "points": {
     "forge": {
       "kind": "role",
@@ -16,6 +16,13 @@
         "context",
         "log",
         "check"
+      ]
+    },
+    "upstream": {
+      "kind": "role",
+      "operations": [
+        "check",
+        "file"
       ]
     }
   }

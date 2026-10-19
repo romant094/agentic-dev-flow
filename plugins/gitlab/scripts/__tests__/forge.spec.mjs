@@ -555,9 +555,49 @@ test("a failed push is refused with git's output and nothing else changed", () =
   assert.deepEqual(result, { state: 'refused', error: 'git push failed: rejected: non-fast-forward; nothing else changed.' })
 })
 
-test('the declaration names contract 1.2, which defines push', () => {
+test('the declaration names contract 1.4, which defines ci', () => {
   const declared = JSON.parse(readFileSync(join(pluginDir, 'adf-extension.json'), 'utf8'))
-  assert.equal(declared.contract, '1.2')
+  assert.equal(declared.contract, '1.4')
+})
+
+// ---------------------------------------------------------------- ci
+
+const SKIP = 'git -C /work/host push -o ci.skip --set-upstream origin feat/x'
+const PLAIN = 'git -C /work/host push --set-upstream origin feat/x'
+const pushes = (calls) => calls.filter((c) => c.startsWith('git -C /work/host push'))
+
+test('pushArgs adds -o ci.skip only for ci false', () => {
+  assert.deepEqual(pushArgs(ROOT, 'feat/x', false), ['-C', ROOT, 'push', '-o', 'ci.skip', '--set-upstream', 'origin', 'feat/x'])
+  assert.deepEqual(pushArgs(ROOT, 'feat/x', true), pushArgs(ROOT, 'feat/x'))
+  assert.deepEqual(pushArgs(ROOT, 'feat/x', undefined), ['-C', ROOT, 'push', '--set-upstream', 'origin', 'feat/x'])
+})
+
+for (const [ci, expected] of [[false, SKIP], [true, PLAIN], [undefined, PLAIN]]) {
+  test(`every push of open, push and finalize with ci ${ci} is "${expected}"`, () => {
+    const extra = ci === undefined ? {} : { ci }
+    const opened = op('open', { ...openInput, ...extra }, [...ready, ['git -C /work/host push', yes()], mrList([]), ['glab mr create', yes()]])
+    const pushed = op('push', { ...pushInput, ...extra }, [onBranch('feat/x'), ['git -C /work/host push', yes()]])
+    const finalized = op('finalize', { ...finalInput, ...extra }, [...ready, existing, viewOf(''), ['glab mr update', yes()], ['git -C', yes()]])
+    const created = op('finalize', { ...finalInput, ...extra }, [...ready, mrList([]), ['git -C', yes()], ['glab mr create', yes()]])
+    for (const run of [opened, pushed, finalized, created]) {
+      assert.equal(run.code, 0)
+      assert.deepEqual(pushes(run.calls), [expected])
+    }
+  })
+}
+
+test("open's degraded fallback carries -o ci.skip for ci false", () => {
+  const { result } = op('open', { ...openInput, ci: false }, [])
+  assert.equal(result.fallback[1], "git push -o ci.skip --set-upstream origin 'feat/x'")
+})
+
+test('a ci that is not a boolean is refused with nothing sent', () => {
+  for (const operation of ['open', 'push', 'finalize']) {
+    const { code, result, calls } = op(operation, { ...finalInput, ci: 'no' }, ready)
+    assert.equal(code, 1)
+    assert.match(result.error, /input\.ci must be true or false/)
+    assert.deepEqual(calls, [])
+  }
 })
 
 test('the CLI dispatches push', () => {

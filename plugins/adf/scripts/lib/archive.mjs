@@ -39,6 +39,8 @@
 //   mr            the forge role's `finalize`; `none` is `skipped`, `degraded` keeps the role's
 //                 fallback file and the step is `degraded`. With a forge and no `--body` the step
 //                 holds, `pending`, and returns what it needs: mr-input, then the body file.
+//                 With the run's `ci: false` (archive.mjs --no-ci, kept in the state) the
+//                 forge pushes with no CI run.
 //   merge-local   with no forge only, after the developer's yes: `git merge --no-ff <branch>` in
 //                 the main checkout when it has the base checked out and is clean; nothing pushed,
 //                 the branch kept.
@@ -90,20 +92,32 @@ export const statePath = (main, change) => join(archiveDir(main, change), 'state
 // worktree's removal.
 export const bodyPath = (main, change) => join(archiveDir(main, change), 'merge-request.md')
 
+// `ci: false` is the run's --no-ci, kept so that a resumed run pushes with no CI run too.
 export function readArchiveState(main, change) {
   const path = statePath(main, change)
   const saved = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : {}
-  return { change, steps: Object.fromEntries(STEPS.map((s) => [s, saved.steps?.[s] ?? { state: 'pending' }])) }
+  return { change, ...(saved.ci === false ? { ci: false } : {}), steps: Object.fromEntries(STEPS.map((s) => [s, saved.steps?.[s] ?? { state: 'pending' }])) }
 }
 
-function saveStep(main, change, step, record) {
-  const state = readArchiveState(main, change)
-  state.steps[step] = record
+function writeState(main, change, state) {
   const path = statePath(main, change)
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(`${path}.tmp`, `${JSON.stringify(state, null, 2)}\n`)
   renameSync(`${path}.tmp`, path)
   return state
+}
+
+function saveStep(main, change, step, record) {
+  const state = readArchiveState(main, change)
+  state.steps[step] = record
+  return writeState(main, change, state)
+}
+
+// Records the run's --no-ci: the forge calls of the `mr` step get `ci: false`.
+export function setNoCi(main, change) {
+  const state = readArchiveState(main, change)
+  if (state.ci === false) return state
+  return writeState(main, change, { change, ci: false, steps: state.steps })
 }
 
 export const nextStep = (state) => STEPS.find((s) => !SETTLED.has(state.steps[s].state)) ?? null
@@ -586,7 +600,8 @@ export function mrInput(ctx) {
 }
 
 export function mrStep(ctx, { body = null, title, summary } = {}) {
-  return runStep(ctx, 'mr', () => {
+  return runStep(ctx, 'mr', (state) => {
+    const ci = state.ci === false ? { ci: false } : {}
     if (!body) {
       const probe = ctx.forge('check', {})
       if (probe.state === 'none') return { state: 'skipped', detail: { forge: 'none', report: forgeReport('finalize', probe) } }
@@ -609,17 +624,17 @@ export function mrStep(ctx, { body = null, title, summary } = {}) {
     const input = forgeInput(
       'finalize',
       { change: ctx.change, branch: branchOf(ctx), base: baseOf(ctx), protected: readBranches(ctx.root)?.protected ?? null },
-      { input: { body: text }, title, summary }
+      { input: { body: text, ...ci }, title, summary }
     )
     const result = ctx.forge('finalize', input)
     const report = forgeReport('finalize', result)
     const forge = result.state === 'none' ? 'none' : result.plugin ?? null
     if (result.state === 'none') return { state: 'skipped', detail: { forge, report } }
-    if (result.state === 'refused') return { state: 'failed', refusal: report, detail: { forge, report, error: result.error ?? null } }
+    if (result.state === 'refused') return { state: 'failed', refusal: report, detail: { forge, report, error: result.error ?? null, ...ci } }
     if (result.state === 'degraded') {
-      return { state: 'degraded', detail: { forge, report, hint: result.hint ?? null, fallback: result.fallback ?? [], inputFile: result.inputFile ?? null, body } }
+      return { state: 'degraded', detail: { forge, report, hint: result.hint ?? null, fallback: result.fallback ?? [], inputFile: result.inputFile ?? null, body, ...ci } }
     }
-    return { state: 'done', detail: { forge, report, url: result.url ?? null } }
+    return { state: 'done', detail: { forge, report, url: result.url ?? null, ...ci } }
   })
 }
 

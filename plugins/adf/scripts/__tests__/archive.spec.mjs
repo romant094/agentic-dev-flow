@@ -469,6 +469,44 @@ test('mr finalizes through the forge role; degraded keeps the fallback and re-ru
   assert.equal(local.state, 'skipped')
 })
 
+test('--no-ci is kept in the archive state and reaches finalize as ci false, across a failed mr and its resume', () => {
+  const h = archiveHost()
+  let answer = { state: 'refused', plugin: 'gitlab', error: 'git push failed' }
+  const calls = []
+  const deps = { ...NONE, forge: (op, input) => (calls.push({ op, input }), op === 'check' ? { state: 'done', plugin: 'gitlab' } : answer) }
+  assert.equal(call(h, ['check', '--no-ci'], deps).ok, true)
+  assert.equal(readState(h).ci, false)
+  assert.equal(call(h, ['state'], deps).ci, false)
+  for (const step of STEPS.slice(1, 7)) assert.equal(call(h, [step], deps).ok, true, step)
+  assert.equal(readState(h).ci, false, 'later steps keep the flag')
+  const body = join(h.wt, '..', 'body.md')
+  writeFileSync(body, '## What\n\n- dry\n')
+  const failed = call(h, ['mr', '--body', body, '--title', 'feat: x'], deps)
+  assert.equal(failed.state, 'failed')
+  answer = { state: 'done', plugin: 'gitlab', url: 'https://g/mr/1' }
+  const done = call(h, ['mr', '--body', body, '--title', 'feat: x'], deps)
+  assert.equal(done.state, 'done')
+  assert.equal(done.detail.ci, false)
+  const finalizes = calls.filter((c) => c.op === 'finalize').map((c) => c.input.ci)
+  assert.deepEqual(finalizes, [false, false])
+})
+
+test('without --no-ci finalize gets no ci field, and the read-only commands refuse the flag', () => {
+  const h = archiveHost()
+  const calls = []
+  const deps = { ...NONE, forge: (op, input) => (calls.push({ op, input }), op === 'check' ? { state: 'done', plugin: 'gitlab' } : { state: 'done', plugin: 'gitlab', url: 'u' }) }
+  for (const step of STEPS.slice(0, 7)) assert.equal(call(h, [step], deps).ok, true, step)
+  assert.equal(call(h, ['state'], deps).ci, true)
+  assert.equal(Object.hasOwn(readState(h), 'ci'), false)
+  const body = join(h.wt, '..', 'body.md')
+  writeFileSync(body, '## What\n\n- dry\n')
+  assert.equal(call(h, ['mr', '--body', body, '--title', 'feat: x'], deps).state, 'done')
+  assert.equal(Object.hasOwn(calls.find((c) => c.op === 'finalize').input, 'ci'), false)
+  for (const command of ['state', 'next', 'report', 'mr-input']) {
+    assert.throws(() => call(h, [command, '--no-ci'], deps), (e) => e instanceof UsageError && /takes no --no-ci/.test(e.message), command)
+  }
+})
+
 test('a refused finalize fails the step', () => {
   const h = archiveHost()
   const deps = { ...NONE, forge: (op) => (op === 'check' ? { state: 'done', plugin: 'gitlab' } : { state: 'refused', plugin: 'gitlab', error: 'Description rejected' }) }

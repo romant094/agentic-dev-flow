@@ -1,6 +1,6 @@
 {
   "name": "gitlab",
-  "contract": "1.2",
+  "contract": "1.4",
   "provides": {
     "forge": {
       "script": "scripts/forge.mjs",
