@@ -25,7 +25,8 @@
 //       archive's last step, from the main checkout: remove the change's worktree, never
 //       forced, keeping its branch: { ok, state: removed|in-place|absent, change, path?,
 //       branch? }. A change made in place, or whose worktree is already gone, is reported, not
-//       failed; a worktree with uncommitted changes is refused with its `git status --porcelain`
+//       failed; a worktree whose ledger the archived change holds no copy of is refused; a
+//       worktree with uncommitted changes is refused with its `git status --porcelain`
 //   workspace.mjs base-check-add|base-check-remove --change <name>
 //       from the change worktree: make a detached worktree of the change's base (the
 //       .adf.json base, the remote-tracking ref when it exists) to check whether a whole-suite

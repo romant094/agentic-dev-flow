@@ -8,13 +8,21 @@
 //
 // propose runs in the main checkout before the change has a worktree: it checks the gate, that
 // the root is the main checkout, and the workspace policy inputs (`workspace.mjs suggest`), and
-// refuses on uncommitted tracked work. The base and the branch name are the developer's answers;
+// refuses on uncommitted tracked work.
+//
+// archive runs where review ran, with the same gates, and two of its own: the review artifact
+// done, and no uncommitted file outside the change directory, tracked or untracked, since
+// archive commits only what it wrote. An archive already under way (a step of
+// `.superpowers/sdd/<change>/archive/state.json` in the main checkout settled) skips the clean
+// tree check, which its commit steps make per file, and a change already moved to
+// `archive/<date>-<name>` passes with `archived` set. The base and the branch name are the developer's answers;
 // the session is recorded in the change worktree, by `propose.mjs create` for a new change and by
 // `changes.mjs next` for one continued (lib/ledger.mjs recordSessionOnce), not here: in the main
 // checkout the developer has not yet chosen to continue the change.
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
-import { join } from 'node:path'
-import { applyInstructions, artifactInstructions, changeDir, CHANGES_DIR, META_FILE } from './changes.mjs'
+import { basename, join } from 'node:path'
+import { archiveStarted, nextStep, readArchiveState } from './archive.mjs'
+import { applyInstructions, ARCHIVE, archivedDirs, artifactInstructions, changeDir, changeStatus, CHANGES_DIR, META_FILE } from './changes.mjs'
 import { checkCommitPlace, Refusal } from './commit.mjs'
 import { mainCheckout } from './installed.mjs'
 import { appendRecord } from './ledger.mjs'
@@ -24,12 +32,12 @@ import { runPlanSymbols as planSymbols } from './plan-symbols-repo.mjs'
 import { initSdd } from './sdd.mjs'
 import { gitIn, suggest } from './workspace.mjs'
 
-export const PHASES = ['propose', 'apply', 'verify', 'review']
+export const PHASES = ['propose', 'apply', 'verify', 'review', 'archive']
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
-function readBase(root, change) {
+function readBase(root, change, dir = changeDir(root, change)) {
   try {
-    const base = JSON.parse(readFileSync(join(changeDir(root, change), META_FILE), 'utf8')).base
+    const base = JSON.parse(readFileSync(join(dir, META_FILE), 'utf8')).base
     return typeof base === 'string' && base.trim() ? base : null
   } catch {
     return null
@@ -78,6 +86,11 @@ async function changePhase(out, { phase, change, root, env, schema, git }) {
   }
   Object.assign(out, { main: place.main, root: place.root, branch: place.branch, protected: place.protected })
   root = place.root
+  if (phase === 'archive') {
+    const gated = archiveGate(out, { change, root, schema, git })
+    if (gated.refusal) return stop(gated.refusal)
+    return record(out, { root, change, phase, env })
+  }
   if (!existsSync(changeDir(root, change))) {
     return stop(`${root} holds no change "${change}"; select the change and its root from changes.mjs find.`)
   }
@@ -106,15 +119,62 @@ async function changePhase(out, { phase, change, root, env, schema, git }) {
     }
   }
 
-  // The session record is the ledger's, not a guard: a runtime without a session id still runs
-  // the phase, and the result says why nothing was recorded.
+  return record(out, { root, change, phase, env })
+}
+
+// The session record is the ledger's, not a guard: a runtime without a session id still runs
+// the phase, and the result says why nothing was recorded.
+function record(out, { root, change, phase, env }) {
   try {
-    const { record, path } = appendRecord(root, change, 'session', { phase }, { env })
-    out.ledger = { recorded: true, id: record.id, path }
+    const { record: written, path } = appendRecord(root, change, 'session', { phase }, { env })
+    out.ledger = { recorded: true, id: written.id, path }
   } catch (error) {
     out.ledger = { recorded: false, error: error.message }
   }
   return { ...out, ok: true }
+}
+
+// `git status --porcelain=v1 -z` as repository-relative paths, a rename as its two ends.
+function porcelainPaths(text) {
+  const parts = text.split('\0')
+  const paths = []
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i].length < 4) continue
+    paths.push(parts[i].slice(3))
+    if (parts[i][0] === 'R' || parts[i][0] === 'C') paths.push(parts[++i])
+  }
+  return paths
+}
+
+function archiveGate(out, { change, root, schema, git }) {
+  const state = readArchiveState(out.main, change)
+  out.archive = { started: archiveStarted(state), next: nextStep(state) }
+  if (!existsSync(changeDir(root, change))) {
+    const archived = archivedDirs(root, change).at(-1)
+    if (!archived) return { refusal: `${root} holds no change "${change}"; select the change and its root from changes.mjs find.` }
+    out.archived = `${CHANGES_DIR}/${ARCHIVE}/${basename(archived)}`
+    out.base = readBase(root, change, archived)
+    out.state = 'archived'
+    return {}
+  }
+  out.base = readBase(root, change)
+  out.progress = applyInstructions(root, change, schema).progress
+  const review = changeStatus(root, change, schema).artifacts.find((a) => a.id === 'review')
+  out.state = review?.status === 'done' ? 'ready' : 'blocked'
+  if (out.state === 'blocked') return { refusal: `archive needs review done first; run /adf:review ${change} to write it.` }
+  if (out.archive.started) return {}
+  let status
+  try {
+    status = git('-c', 'core.quotePath=false', 'status', '--porcelain=v1', '-z', '--untracked-files=all')
+  } catch (error) {
+    return { refusal: `git failed to read the status of ${root} (${String(error.stderr || error.message).trim()}); check the worktree and run again.` }
+  }
+  const prefix = `${CHANGES_DIR}/${change}/`
+  const outside = porcelainPaths(status).filter((p) => !p.startsWith(prefix))
+  if (outside.length > 0) {
+    return { refusal: `uncommitted files outside ${prefix}: ${outside.join(', ')}; archive commits only what it writes, so the developer commits, moves or discards them first.` }
+  }
+  return {}
 }
 
 function proposePhase(out, { change, root, git }) {

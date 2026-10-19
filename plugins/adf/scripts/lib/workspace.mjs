@@ -10,7 +10,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { isProtected, requireBranches } from './branches.mjs'
-import { ARCHIVE, CHANGES_DIR, isMainCheckout } from './changes.mjs'
+import { ARCHIVE, archivedDirs, CHANGES_DIR, isMainCheckout, LEDGER_FILE } from './changes.mjs'
+import { ledgerPath } from './ledger.mjs'
 
 export const WORKTREES_DIR = '.claude/worktrees'
 
@@ -142,7 +143,9 @@ export function worktrees(git) {
 // The branch is kept. A change made in place (the main checkout holds it and no worktree does)
 // is `in-place`; a change with no worktree left is `absent`: neither is a failure, so a second
 // archive run passes this step. A worktree with uncommitted changes or untracked files is
-// refused with its `git status --porcelain` lines.
+// refused with its `git status --porcelain` lines. A worktree whose ledger exists while the
+// archived change holds no copy is refused too: the ledger under `.superpowers/` goes with the
+// worktree.
 // Returns { ok, state: removed|in-place|absent, change, path?, branch?, hint? }.
 export function remove(root, { change }, { git = gitIn(root) } = {}) {
   if (!change) throw new Error('no change name')
@@ -163,6 +166,10 @@ export function remove(root, { change }, { git = gitIn(root) } = {}) {
     }
   }
   const { path, branch } = found[0]
+  const archived = archivedDirs(path, change).at(-1)
+  if (existsSync(ledgerPath(path, change)) && !(archived && existsSync(join(archived, LEDGER_FILE)))) {
+    throw new Error(`${path} holds the ledger of ${change} and the archived change has no copy of it; archive the change first (changes.mjs archive copies it), then remove again`)
+  }
   const status = gitIn(path)('status', '--porcelain')
   if (status !== '') throw new Error(`${path} has uncommitted changes; commit or move them, then remove again (never --force):\n${status}`)
   git('worktree', 'remove', path)

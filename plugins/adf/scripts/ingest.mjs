@@ -18,10 +18,10 @@
 //
 // --root names the change worktree (default: the current directory); the change may be active
 // or already archived. --home names the Claude Code home where the knowledge plugin is found.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
-import { checkIngestReply, findChangeDir, ingestInputFile, ingestLogInput, mergeBaseOf, relativeTo, staleList, workingChanges } from './lib/ingest.mjs'
+import { checkIngestFile, findChangeDir, ingestInputFile, mergeBaseOf, relativeTo, staleList } from './lib/ingest.mjs'
 import { isMain } from './lib/main.mjs'
 import { callRole, CORE, knowledgeReport } from './lib/roles.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
@@ -77,22 +77,8 @@ export function run(argv, { cwd = process.cwd(), knowledge = (root, home) => cal
   }
 
   if (!values.reply) throw new UsageError(USAGE)
-  if (!existsSync(file)) throw new Error(`no ${file}: run ingest.mjs stale --change ${change} first`)
-  const input = JSON.parse(readFileSync(file, 'utf8'))
-  let text
-  try {
-    text = readFileSync(values.reply, 'utf8')
-  } catch (error) {
-    throw new Error(`--reply ${values.reply}: ${error.message}`)
-  }
-  const checked = checkIngestReply(text, {
-    stale: input.stale,
-    changedFiles: workingChanges(root).filter((f) => f !== relativeTo(root, file)),
-    knowledgePaths: input.knowledge.paths,
-    logPaths: input.knowledge.log,
-    exists: (path) => existsSync(join(root, path))
-  })
-  return { ok: checked.valid, valid: checked.valid, errors: checked.errors, log: checked.valid ? ingestLogInput(checked.reply) : null, reply: checked.reply }
+  const { input, ...checked } = checkIngestFile(root, change, values.reply)
+  return checked
 }
 
 if (isMain(import.meta.url)) {

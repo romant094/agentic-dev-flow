@@ -8,8 +8,9 @@
 // every artifact), `openspec/rules/<artifact>.md` (one rule per `- ` line) and the project
 // guides an artifact names in the schema (`guides`), such as `openspec/planning.md`.
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
+import { ledgerPath } from './ledger.mjs'
 import { buildOrder, readSchemaFile } from './schema.mjs'
 
 export const CHANGES_DIR = 'openspec/changes'
@@ -337,4 +338,56 @@ export function statusReport(status, { branch = null, root, base = null } = {}) 
   const ready = status.applyRequires.every((id) => status.artifacts.find((a) => a.id === id)?.status === 'done')
   lines.push(`Next: ${ready ? '/adf:apply' : `/adf:propose ${status.changeName} to finish its artifacts`}`)
   return lines.join('\n')
+}
+
+// ---------------------------------------------------------------- archive
+
+export const LEDGER_FILE = 'ledger.jsonl'
+const DATED = /^\d{4}-\d{2}-\d{2}-/
+
+// The archived directories of a change, `archive/<YYYY-MM-DD>-<name>`, oldest first.
+export function archivedDirs(root, name) {
+  const dir = join(root, CHANGES_DIR, ARCHIVE)
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .filter((entry) => DATED.test(entry) && entry.slice(11) === name)
+    .sort()
+    .map((entry) => join(dir, entry))
+}
+
+const posixRel = (root, path) => relative(root, path).split(sep).join('/')
+
+// Moves a change into `<changes>/archive/<YYYY-MM-DD>-<name>`, the date from `now` in UTC (as
+// `new` dates a change). The ledger is copied into the change directory first, once: the
+// worktree's `.superpowers/` goes with the worktree, and the archive is the copy that stays. A
+// missing ledger is no failure; any other failure of the copy refuses before anything moves (the
+// origin's `cp ... 2>/dev/null || true` hid it). An existing target is refused with the ways
+// out. A change already archived, with no active directory left, is reported, not refused, so a
+// second archive run passes this step.
+// Returns { changeName, from, target, ledger: copied|none, already }, paths relative to root.
+export function archiveChange(root, name, { now = new Date() } = {}) {
+  if (!NAME.test(name ?? '') || name === ARCHIVE) throw new Error(`change name "${name}" is not kebab-case`)
+  const dir = changeDir(root, name)
+  const from = `${CHANGES_DIR}/${name}`
+  if (!existsSync(dir)) {
+    const done = archivedDirs(root, name).at(-1)
+    if (!done) throw new Error(`no change "${name}" in ${CHANGES_DIR}`)
+    return { changeName: name, from, target: posixRel(root, done), ledger: existsSync(join(done, LEDGER_FILE)) ? 'copied' : 'none', already: true }
+  }
+  const target = join(root, CHANGES_DIR, ARCHIVE, `${now.toISOString().slice(0, 10)}-${name}`)
+  if (existsSync(target)) {
+    throw new Error(`${posixRel(root, target)} already exists; rename the change, delete the duplicate archive if it is one, or archive it tomorrow`)
+  }
+  let ledger = 'copied'
+  try {
+    copyFileSync(ledgerPath(root, name), join(dir, LEDGER_FILE))
+  } catch (error) {
+    if (error.code !== 'ENOENT' || existsSync(ledgerPath(root, name))) {
+      throw new Error(`the ledger could not be copied into ${from} (${error.message}); nothing was moved`)
+    }
+    ledger = 'none'
+  }
+  mkdirSync(dirname(target), { recursive: true })
+  renameSync(dir, target)
+  return { changeName: name, from, target: posixRel(root, target), ledger, already: false }
 }

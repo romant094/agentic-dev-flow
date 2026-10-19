@@ -91,6 +91,20 @@ test('resolves only a debt record that exists, to one of the named destinations'
   assert.deepEqual(unresolvedDebt([debt]), [debt])
 })
 
+test('resolve --finding places a review finding: an F<n> id, a destination, and no debt beside it', () => {
+  const record = buildRecord('resolve', { finding: 'F3', as: 'follow-up', where: 'change add-y' }, { now })
+  assert.deepEqual(record, { id: 'resolve-1', kind: 'resolve', at: now, finding: 'F3', as: 'follow-up', where: 'change add-y' })
+  assert.throws(() => buildRecord('resolve', { finding: 'debt-1', as: 'accepted', where: 'x' }), /--finding must be a review finding id such as F3/)
+  assert.throws(() => buildRecord('resolve', { finding: 'F3', as: 'later', where: 'x' }), /--as must be one of/)
+  assert.throws(() => buildRecord('resolve', { finding: 'F3', as: 'accepted' }), /resolve needs --where/)
+  assert.throws(() => buildRecord('resolve', { finding: 'F3', debt: 'debt-1', as: 'accepted', where: 'x' }), /resolve takes no --debt; it takes --finding, --as, --where/)
+  const debt = buildRecord('debt', { what: 'a', reason: 'b' }, { now })
+  assert.deepEqual(unresolvedDebt([debt, record]), [debt])
+  const root = host()
+  const out = run(['resolve', '--change', 'c', '--finding', 'F1', '--as', 'accepted', '--where', 'the developer accepted it', '--root', root], { env: {} })
+  assert.equal(out.record.finding, 'F1')
+})
+
 test('reads the ledger back line by line', () => {
   const text = `${JSON.stringify({ id: 'debt-1', kind: 'debt' })}\n\n${JSON.stringify({ id: 'session-1', kind: 'session' })}\n`
   assert.deepEqual(

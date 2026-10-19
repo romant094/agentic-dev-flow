@@ -17,6 +17,10 @@
 //                                                            a ruling of the review stage:
 //                                                            review-range, review-slices,
 //                                                            review-suite, review-round-<k>
+//   ledger.mjs resolve --change <name> --finding F<n> --as <destination> --where <where>
+//                                                            the placement of a recorded or
+//                                                            accepted review finding, which
+//                                                            archive.mjs placements reads
 //   ledger.mjs skill-edit --change <name> --sha <commit> [--message <m>]
 //                                                            an approved skill edit's commit,
 //                                                            which every later verify run exempts
@@ -35,7 +39,7 @@ Kinds: ${Object.entries(KINDS)
     ([k, v]) =>
       `${k} (${v.required.map((f) => `--${f}`).join(' ')}${v.optional.length ? ` [${v.optional.map((f) => `--${f}`).join(' ')}]` : ''})`
   )
-  .join('; ')}; ruling on a verify check or a review stage step (--check --reason); ruling on a review finding (--finding --as dismissed|accepted|fix --decision); skill-edit (--sha [--message])`
+  .join('; ')}; ruling on a verify check or a review stage step (--check --reason); ruling on a review finding (--finding --as dismissed|accepted|fix --decision); resolve of a review finding (--finding F<n> --as --where); skill-edit (--sha [--message])`
 
 export function run(argv, { env = process.env, cwd = process.cwd() } = {}) {
   const [kind, ...rest] = argv

@@ -327,6 +327,33 @@ export function checkIngestReply(reply, { stale = [], changedFiles = [], knowled
   return { valid: errors.length === 0, ...parsed, errors }
 }
 
+// `ingest.mjs check` and `archive.mjs ingest`: the reply file against the dispatch's input
+// (written by `ingest.mjs stale`) and the working tree. `exclude` names repository-relative
+// files that changed for another reason and are no page of the ingest: the debt files archive's
+// placement wrote, when the debt tree sits inside the knowledge base.
+// Returns { ok, valid, errors, log, reply, input }: `log` is the knowledge role's `log` input,
+// null when nothing was learned or the reply is refused.
+export function checkIngestFile(root, change, replyPath, { exclude = [] } = {}) {
+  const file = ingestInputFile(root, change)
+  if (!existsSync(file)) throw new Error(`no ${file}: run ingest.mjs stale --change ${change} first`)
+  const input = JSON.parse(readFileSync(file, 'utf8'))
+  let text
+  try {
+    text = readFileSync(replyPath, 'utf8')
+  } catch (error) {
+    throw new Error(`--reply ${replyPath}: ${error.message}`)
+  }
+  const skip = new Set([relativeTo(root, file), ...exclude])
+  const checked = checkIngestReply(text, {
+    stale: input.stale,
+    changedFiles: workingChanges(root).filter((f) => !skip.has(f)),
+    knowledgePaths: input.knowledge.paths,
+    logPaths: input.knowledge.log,
+    exists: (path) => existsSync(join(root, path))
+  })
+  return { ok: checked.valid, valid: checked.valid, errors: checked.errors, log: checked.valid ? ingestLogInput(checked.reply) : null, reply: checked.reply, input }
+}
+
 // The knowledge role's `log` input for a valid reply; null when nothing was learned.
 export function ingestLogInput(reply) {
   if (reply.nothingLearned) return null

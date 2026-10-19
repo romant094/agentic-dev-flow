@@ -37,6 +37,12 @@ export const HANDOFF_EXTRA = ['blockedReason']
 // again). The field is the port's own, kept out of KINDS like HANDOFF_EXTRA.
 export const RULING_EXTRA = ['as']
 export const RULING_AS = ['dismissed', 'accepted', 'fix']
+// A recorded or accepted review finding is placed like a debt: `resolve --finding F<n> --as
+// <destination> --where <where>`, the second shape of the `resolve` kind. The origin's `resolve`
+// took debt records only, so nothing checked a recorded finding's placement; archive's
+// placements read these. Kept out of KINDS like CHECK_RULING.
+export const RESOLVE_FINDING = { required: ['finding', 'as', 'where'], optional: [] }
+const FINDING_ID = /^F\d+$/
 const SHA = /^[0-9a-f]{7,40}$/
 export const SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
 
@@ -54,7 +60,8 @@ export function readLedger(text) {
 // Build a record from `--field value` pairs, or throw naming what is wrong.
 export function buildRecord(kind, fields, { existing = [], sessionId = null, now = new Date().toISOString() } = {}) {
   const checkRuling = kind === 'ruling' && ('check' in fields || 'reason' in fields)
-  const spec = checkRuling ? CHECK_RULING : kind === 'skill-edit' ? SKILL_EDIT : KINDS[kind]
+  const findingResolve = kind === 'resolve' && 'finding' in fields
+  const spec = checkRuling ? CHECK_RULING : findingResolve ? RESOLVE_FINDING : kind === 'skill-edit' ? SKILL_EDIT : KINDS[kind]
   if (!spec) throw new Error(`unknown kind "${kind}"; one of: ${Object.keys(KINDS).join(', ')}`)
   const extra = kind === 'handoff' ? HANDOFF_EXTRA : kind === 'ruling' && !checkRuling ? RULING_EXTRA : []
   const allowed = new Set([...spec.required, ...spec.optional, ...extra])
@@ -78,8 +85,12 @@ export function buildRecord(kind, fields, { existing = [], sessionId = null, now
   }
   if (kind === 'resolve') {
     if (!RESOLUTIONS.includes(fields.as)) throw new Error(`--as must be one of: ${RESOLUTIONS.join(', ')}`)
-    const debt = existing.find((r) => r.id === fields.debt && r.kind === 'debt')
-    if (!debt) throw new Error(`no debt record "${fields.debt}" to resolve`)
+    if (findingResolve) {
+      if (!FINDING_ID.test(fields.finding)) throw new Error(`--finding must be a review finding id such as F3, got "${fields.finding}"`)
+    } else {
+      const debt = existing.find((r) => r.id === fields.debt && r.kind === 'debt')
+      if (!debt) throw new Error(`no debt record "${fields.debt}" to resolve`)
+    }
   }
   const n = existing.filter((r) => r.kind === kind).length + 1
   return { id: `${kind}-${n}`, kind, at: now, ...(sessionId ? { sessionId } : {}), ...fields }

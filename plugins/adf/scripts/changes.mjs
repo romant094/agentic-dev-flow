@@ -27,14 +27,22 @@
 //   changes.mjs skip <artifact> [--change <name>]    records that an optional artifact is not
 //                                                    written
 //   changes.mjs schema                               validate the schema and print its graph
+//   changes.mjs archive --change <name>              archive's move: copies the ledger into the
+//                                                    change once, then moves the change to
+//                                                    archive/<YYYY-MM-DD>-<name> (UTC); an
+//                                                    existing target and a failed copy refuse;
+//                                                    commits nothing (archive.mjs commit-specs
+//                                                    does). { changeName, from, target, ledger:
+//                                                    copied|none, already }
 //
 // --root <dir> names the host project or the change worktree (default: the current directory).
-// Without --change the change is the one active change under the root. next, done and skip
-// write, and refuse the main checkout unless --allow-main is given.
+// Without --change the change is the one active change under the root. next, done, skip and
+// archive write, and refuse the main checkout unless --allow-main is given.
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import {
   applyInstructions,
+  archiveChange,
   artifactInstructions,
   changeMeta,
   changeStatus,
@@ -125,8 +133,12 @@ export function run(argv, { schemaDir, env = process.env } = {}) {
       return skipArtifact(root, change(), target, schema)
     case 'schema':
       return { name: schema.name, version: schema.version, order: buildOrder(schema), apply: schema.apply ?? null }
+    case 'archive':
+      if (target || !given) throw new Error('usage: archive --change <name>')
+      writing()
+      return archiveChange(resolve(root), given)
     default:
-      throw new Error('usage: changes.mjs new|list|find|status|instructions|next|done|skip|schema [--root <dir>]')
+      throw new Error('usage: changes.mjs new|list|find|status|instructions|next|done|skip|schema|archive [--root <dir>]')
   }
 }
 

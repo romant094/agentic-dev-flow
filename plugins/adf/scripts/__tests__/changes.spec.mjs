@@ -1,12 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   applyInstructions,
+  archiveChange,
   artifactInstructions,
   changeStatus,
   listChanges,
@@ -177,4 +178,52 @@ test('verify is ready once the plan exists, and its instructions carry the proce
   assert.deepEqual(result.unlocks, ['review'])
   write(root, 'openspec/changes/c/verify.md')
   assert.equal(statuses(changeStatus(root, 'c', schema)).verify, 'done')
+})
+
+test('archive copies the ledger once, moves the change under its UTC date, and reports a second run', () => {
+  const root = host()
+  write(root, 'openspec/changes/add-x/proposal.md', '# add-x\n')
+  write(root, '.superpowers/sdd/add-x/ledger.jsonl', '{"id":"debt-1"}\n')
+  const now = new Date('2026-10-19T23:30:00Z')
+  const out = archiveChange(root, 'add-x', { now })
+  assert.deepEqual(out, { changeName: 'add-x', from: 'openspec/changes/add-x', target: 'openspec/changes/archive/2026-10-19-add-x', ledger: 'copied', already: false })
+  assert.equal(existsSync(join(root, 'openspec/changes/add-x')), false)
+  assert.equal(readFileSync(join(root, out.target, 'ledger.jsonl'), 'utf8'), '{"id":"debt-1"}\n')
+  assert.equal(readFileSync(join(root, out.target, 'proposal.md'), 'utf8'), '# add-x\n')
+  assert.deepEqual(archiveChange(root, 'add-x', { now }), { ...out, already: true })
+  assert.throws(() => archiveChange(root, 'add-y', { now }), /no change "add-y"/)
+})
+
+test('archive refuses an existing target, and a failed ledger copy moves nothing; a missing ledger is no failure', () => {
+  const root = host()
+  const now = new Date('2026-10-19T10:00:00Z')
+  write(root, 'openspec/changes/add-x/proposal.md')
+  write(root, 'openspec/changes/archive/2026-10-19-add-x/proposal.md')
+  assert.throws(() => archiveChange(root, 'add-x', { now }), /2026-10-19-add-x already exists; rename the change, delete the duplicate archive if it is one, or archive it tomorrow/)
+  assert.equal(existsSync(join(root, 'openspec/changes/add-x')), true)
+
+  write(root, 'openspec/changes/add-y/proposal.md')
+  mkdirSync(join(root, '.superpowers/sdd/add-y/ledger.jsonl'), { recursive: true })
+  assert.throws(() => archiveChange(root, 'add-y', { now }), /the ledger could not be copied into openspec\/changes\/add-y .*nothing was moved/)
+  assert.equal(existsSync(join(root, 'openspec/changes/add-y')), true)
+  assert.equal(existsSync(join(root, 'openspec/changes/archive/2026-10-19-add-y')), false)
+
+  write(root, 'openspec/changes/add-z/proposal.md')
+  assert.equal(archiveChange(root, 'add-z', { now }).ledger, 'none')
+})
+
+test('changes.mjs archive moves the change and refuses the main checkout of a repository', () => {
+  const root = host()
+  write(root, 'openspec/changes/add-x/proposal.md')
+  const out = JSON.parse(execFileSync('node', [cli, 'archive', '--change', 'add-x', '--root', root], { encoding: 'utf8' }))
+  assert.match(out.target, /^openspec\/changes\/archive\/\d{4}-\d{2}-\d{2}-add-x$/)
+  execFileSync('git', ['init', '-q', root])
+  write(root, 'openspec/changes/add-y/proposal.md')
+  let refused
+  try {
+    execFileSync('node', [cli, 'archive', '--change', 'add-y', '--root', root], { encoding: 'utf8' })
+  } catch (error) {
+    refused = JSON.parse(error.stdout)
+  }
+  assert.match(refused.error, /is the main checkout/)
 })
