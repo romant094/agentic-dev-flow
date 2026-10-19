@@ -32,7 +32,8 @@
 //            retrospective <date>`, with ` of <change>` for one change
 //   publish  the forge role's `open`, `draft: false`, `ci: false`, into the integration branch;
 //            never merged with a forge. With none: held until the developer's yes, then a local
-//            merge in the main checkout (lib/local-merge.mjs, archive's merge-local rule)
+//            merge in the main checkout (lib/local-merge.mjs, archive's merge-local rule); the
+//            developer's no ends it `skipped`, the branch kept and the commands kept
 //   file     the upstream role's `file` with `{ report, findings }` after the developer's yes;
 //            with no provider `skipped`, and the findings stay in the sidecar
 //   remove   the retro worktree removed from the main checkout as archive removes a change's
@@ -322,7 +323,7 @@ export function recordStep(ctx) {
 
 // ---------------------------------------------------------------- publish
 
-export function publishStep(ctx, { yes = false } = {}) {
+export function publishStep(ctx, { yes = false, no = false } = {}) {
   return runStep(ctx, 'publish', (state) => {
     const wt = worktreeOf(state)
     const { branch, base } = state.steps.start.detail
@@ -331,9 +332,12 @@ export function publishStep(ctx, { yes = false } = {}) {
     const result = ctx.forge('open', forgeIn, wt)
     const report = forgeReport('open', result, { draft: false })
     if (result.state === 'none') {
-      const merged = localMerge(ctx.main, { branch, base, yes })
+      const merged = localMerge(ctx.main, { branch, base, yes: yes && !no })
+      if (!merged.already && no) {
+        return { state: 'skipped', detail: { forge: 'none', declined: true, branch, base, commands: merged.commands, report: `Local merge: declined; the developer merges ${branch} into ${base}.` } }
+      }
       if (merged.hold) {
-        return { hold: true, out: { forge: 'none', report, branch, base, commands: merged.commands, waiting: `the developer's yes: retro.mjs publish --id ${ctx.id} --yes merges ${branch} into ${base} in the main checkout` } }
+        return { hold: true, out: { forge: 'none', report, branch, base, commands: merged.commands, waiting: `the developer's yes: retro.mjs publish --id ${ctx.id} --yes merges ${branch} into ${base} in the main checkout, or --no to merge it by hand` } }
       }
       const { hold: _h, ...detail } = merged
       return { state: 'done', detail: { forge: 'none', ...detail } }

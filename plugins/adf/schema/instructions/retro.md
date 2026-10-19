@@ -95,7 +95,8 @@ write `state.json`.
    integration branch in the main checkout now. Only on their explicit yes, run it again with
    `--yes`: `git merge --no-ff` in the main checkout, when it has the integration branch checked
    out and is clean; otherwise refused with the commands. Nothing is pushed and the branch is
-   kept. A local merge starts the next window only after the developer pushes the integration
+   kept. On a no, run it with `--no`: the step is `skipped`, the developer merges the branch by
+   hand with the commands it keeps, and `file` and `remove` can run. A local merge starts the next window only after the developer pushes the integration
    branch, since the window reads the fetched ref.
 
 7. **`file`.** `retro.mjs file --id <id> --root <wt>` asks the `upstream` role. With no

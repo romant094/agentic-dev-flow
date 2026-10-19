@@ -250,6 +250,23 @@ test('without a forge, publish holds for the developer, and --yes merges locally
   assert.equal(call(h, ['publish', '--yes']).already, true)
 })
 
+test('without a forge, publish --no is skipped with the branch and the commands kept, and file and remove run', () => {
+  const h = host()
+  recorded(h)
+  const developBefore = g(h.root, ['rev-parse', 'develop'])
+  const declined = call(h, ['publish', '--no'])
+  assert.deepEqual([declined.ok, declined.state, declined.detail.forge, declined.detail.declined, declined.next], [true, 'skipped', 'none', true, 'file'])
+  assert.deepEqual(declined.detail.commands, [`git -C ${h.root} checkout develop`, `git -C ${h.root} merge --no-ff chore/retro/${ID}`])
+  assert.equal(declined.detail.report, `Local merge: declined; the developer merges chore/retro/${ID} into develop.`)
+  assert.equal(g(h.root, ['rev-parse', 'develop']), developBefore, 'nothing merged')
+  assert.equal(call(h, ['publish', '--yes']).already, true, 'a skipped publish is not run again')
+  assert.equal(call(h, ['file']).state, 'skipped')
+  assert.equal(call(h, ['remove']).state, 'done')
+  assert.equal(g(h.root, ['rev-parse', '--verify', `chore/retro/${ID}`]).length, 40, 'the branch is kept')
+  const both = spawnSync(process.execPath, [CLI, 'publish', '--yes', '--no'], { cwd: h.root, encoding: 'utf8' })
+  assert.equal(both.status, 2, both.stdout)
+})
+
 test('file: with an upstream provider, what would be filed until the yes, then filed; findings named by id', () => {
   const h = host()
   const calls = []

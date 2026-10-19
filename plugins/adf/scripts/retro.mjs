@@ -27,10 +27,11 @@
 //   retro.mjs record
 //       commit.mjs --only those two files: `docs(retro): <mode> retrospective <date>`, with
 //       ` of <change>` for one change
-//   retro.mjs publish [--yes]
+//   retro.mjs publish [--yes | --no]
 //       the forge's open with draft false and ci false into the integration branch, never merged;
 //       no forge: held (pending, the commands) until --yes, then a local merge in the main
-//       checkout, nothing pushed, the branch kept
+//       checkout, nothing pushed, the branch kept; --no: skipped, the developer merges it, the
+//       branch and the commands kept
 //   retro.mjs file [--yes] [--findings R1,R2]
 //       the upstream role's file with { report, findings } (default every finding) after --yes;
 //       without it pending, with `would`; no provider: skipped, the findings stay in the sidecar
@@ -55,7 +56,7 @@ export const USAGE = `usage:
   retro.mjs start [--date <YYYY-MM-DD>] [--mode window|change|period] [--change <name>] [--from <YYYY-MM-DD> --to <YYYY-MM-DD>] [--root <dir>] [--home <dir>]
   retro.mjs window|render|record|remove|state [--id <id>] [--root <dir>] [--home <dir>]
   retro.mjs reply --file <reply json> [--resume yes|no] [--id <id>] [--root <dir>]
-  retro.mjs publish [--yes] [--id <id>] [--root <dir>] [--home <dir>]
+  retro.mjs publish [--yes | --no] [--id <id>] [--root <dir>] [--home <dir>]
   retro.mjs file [--yes] [--findings R1,R2] [--id <id>] [--root <dir>] [--home <dir>]
   retro.mjs since [--root <dir>]`
 
@@ -73,6 +74,7 @@ const OPTIONS = {
   file: { type: 'string' },
   resume: { type: 'string' },
   yes: { type: 'boolean' },
+  no: { type: 'boolean' },
   findings: { type: 'string' }
 }
 const COMMON = ['root', 'home']
@@ -82,7 +84,7 @@ const TAKES = {
   reply: ['id', 'file', 'resume'],
   render: ['id'],
   record: ['id'],
-  publish: ['id', 'yes'],
+  publish: ['id', 'yes', 'no'],
   file: ['id', 'yes', 'findings'],
   remove: ['id'],
   since: [],
@@ -136,6 +138,7 @@ export function run(argv, { cwd = process.cwd(), deps = {} } = {}) {
   if (values.date !== undefined && !isDay(values.date)) usage(`--date is YYYY-MM-DD, not "${values.date}"`)
   if (values.id !== undefined && !(RETRO_ID.test(values.id) && isDay(values.id.slice(0, 10)))) usage(`--id is <YYYY-MM-DD>-<window | period | change name>, not "${values.id}"`)
   if (values.resume !== undefined && !['yes', 'no'].includes(values.resume)) usage('--resume is yes or no')
+  if (values.yes && values.no) usage('publish takes --yes or --no, not both')
   if (command === 'reply' && !values.file) usage('reply needs --file <reply json>')
   const root = values.root ?? cwd
   if (command === 'since') return since(root)
@@ -154,7 +157,7 @@ export function run(argv, { cwd = process.cwd(), deps = {} } = {}) {
     case 'record':
       return recordStep(ctx)
     case 'publish':
-      return publishStep(ctx, { yes: Boolean(values.yes) })
+      return publishStep(ctx, { yes: Boolean(values.yes), no: Boolean(values.no) })
     case 'file':
       return fileStep(ctx, { yes: Boolean(values.yes), findings })
     case 'remove':

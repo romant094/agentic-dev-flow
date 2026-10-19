@@ -46,7 +46,7 @@ is the retrospective's id, `id` in every result. A re-run resumes at
 
 7. **Publish.** `retro.mjs publish --id <id> --root <wt>`. With a forge, report the merge
    request: no draft, no CI run. With none, the call holds with the commands of a local merge:
-   ask the developer, and only on their yes run it again with `--yes`. Tell them the next
+   ask the developer, and only on their yes run it again with `--yes`; on a no, with `--no`. Tell them the next
    window starts here only once they push the integration branch.
 
 8. **File upstream.** `retro.mjs file --id <id> --root <wt>`. With an `upstream` provider, show
