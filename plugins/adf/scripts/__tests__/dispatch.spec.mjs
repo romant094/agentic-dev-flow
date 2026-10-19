@@ -439,6 +439,86 @@ test('a retry counts only for the same review dispatch name', () => {
   assert.equal(call(root, 'round').completed, 0)
 })
 
+// lib/attempts.mjs through `dispatch.mjs reply`: one events log, keyed by the dispatch name.
+const IMPL_OK = { role: 'impl', status: 'DONE', commits: [{ sha: 'abc1234', subject: 'feat: t3' }], tests: { command: 'npm test', result: 'pass', summary: '3 pass' }, concerns: [], report: 'done' }
+const writeReply = (root, name, value) => {
+  const file = join(root, 'replies', `${name}.json`)
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value))
+  return file
+}
+const events = (root) => readFileSync(join(root, '.superpowers', 'sdd', CHANGE, 'attempts.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+
+test('two invalid replies of one dispatch give retry, then stop; a stopped dispatch records nothing more', () => {
+  const root = host()
+  assert.equal(call(root, 'attempt', '--name', 'T3 impl').next, 'dispatch')
+  const bad = writeReply(root, 'bad', { role: 'impl', status: 'DONE' })
+  const first = call(root, 'reply', '--name', 'T3 impl', '--file', bad)
+  assert.deepEqual([first.ok, first.valid, first.next, first.mode, first.invalid], [false, false, 'retry', 'resume', 1])
+  assert.ok(first.errors.some((e) => /commits is required/.test(e)))
+  // The retry resumes the agent; the attempt count reads only the dispatch events.
+  assert.equal(call(root, 'attempt', '--name', 'T3 impl').next, 'retry')
+  const second = call(root, 'reply', '--name', 'T3 impl', '--file', join(root, 'replies', 'absent.json'))
+  assert.deepEqual([second.valid, second.next, second.mode, second.invalid], [false, 'stop', null, 2])
+  assert.match(second.errors[0], /no reply file/)
+  assert.throws(() => call(root, 'reply', '--name', 'T3 impl', '--file', writeReply(root, 'good', IMPL_OK)), /stopped after 2 invalid replies/)
+  assert.deepEqual(events(root).map((e) => e.event), ['dispatch', 'invalid', 'dispatch', 'invalid'])
+  assert.deepEqual(Object.keys(events(root)[1]).sort(), ['at', 'errors', 'event', 'file', 'mode', 'name', 'next'])
+  // Without resume the retry is a fresh dispatch; a valid reply proceeds.
+  const fresh = call(root, 'reply', '--name', 'T4 impl', '--file', bad, '--resume', 'no')
+  assert.deepEqual([fresh.next, fresh.mode], ['retry', 'fresh'])
+  const good = call(root, 'reply', '--name', 'T4 impl', '--file', writeReply(root, 'good', IMPL_OK))
+  assert.deepEqual([good.ok, good.valid, good.errors, good.next, good.mode, good.invalid], [true, true, [], 'proceed', null, 1])
+  assert.equal(events(root).at(-1).event, 'valid')
+  const exit = cli(root, 'reply', '--change', CHANGE, '--name', 'T5 impl', '--file', bad)
+  assert.equal(exit.status, 1)
+  assert.equal(exit.out.next, 'retry')
+  assert.equal(cli(root, 'reply', '--change', CHANGE, '--name', 'T5 impl', '--file', bad, '--resume', 'maybe').status, 2)
+  assert.throws(() => call(root, 'reply', '--name', 'verify c4', '--file', bad), /verify\.mjs verdict/)
+  assert.throws(() => call(root, 'reply', '--name', 'T3 implement', '--file', bad), /fixed form/)
+})
+
+test('a legacy attempts log gives the same rounds as the events log', () => {
+  const names = ['T3 impl', 'T3 review', 'T3 fix r1', 'T3 re-review r1', 'T3 fix r2', 'T3 re-review r2', 'fix B r1', 're-review B r1', 'fix r1']
+  const legacy = names.map((name) => JSON.stringify({ name, at: '2026-10-01T00:00:00.000Z' })).join('\n')
+  const root = host()
+  for (const name of names) {
+    call(root, 'attempt', '--name', name)
+    const role = parseName(name).role
+    call(root, 'reply', '--name', name, '--file', writeReply(root, name.replace(/ /g, '-'), { role, verdict: 'pass', findings: [] }))
+  }
+  const current = readFileSync(join(root, '.superpowers', 'sdd', CHANGE, 'attempts.jsonl'), 'utf8')
+  for (const subject of [{ task: 3 }, { group: 'B' }, {}]) assert.deepEqual(roundOf(current, subject), roundOf(legacy, subject), JSON.stringify(subject))
+  assert.equal(roundOf(legacy, { task: 3 }).round, 3)
+  // A legacy line counts as a dispatch for attempt and for the reply's standing.
+  const old = host()
+  mkdirSync(join(old, '.superpowers', 'sdd', CHANGE), { recursive: true })
+  writeFileSync(join(old, '.superpowers', 'sdd', CHANGE, 'attempts.jsonl'), `${legacy}\n`)
+  assert.equal(call(old, 'attempt', '--name', 'T3 impl').next, 'retry')
+  assert.equal(call(old, 'round', '--task', '3').round, 3)
+})
+
+test('distinct dispatch names never share an invalid count', () => {
+  const root = host()
+  // Two fixers whose replies both lack a valid finding: each keeps its own count.
+  const noFinding = writeReply(root, 'no-finding', { outcome: 'fixed' })
+  assert.equal(call(root, 'reply', '--name', 'ai-fix F1 r1', '--file', noFinding).next, 'retry')
+  assert.equal(call(root, 'reply', '--name', 'ai-fix F2 r1', '--file', noFinding).next, 'retry')
+  assert.equal(call(root, 'reply', '--name', 'ai-fix F1 r2', '--file', noFinding).next, 'retry')
+  assert.equal(call(root, 'reply', '--name', 'ai-review r1 s1', '--file', noFinding).next, 'retry')
+  assert.equal(call(root, 'reply', '--name', 'T3 fix r1', '--file', noFinding).next, 'retry')
+  assert.equal(call(root, 'reply', '--name', 'ai-fix F1 r1', '--file', noFinding).next, 'stop')
+  assert.equal(call(root, 'reply', '--name', 'ai-fix F2 r1', '--file', noFinding).next, 'stop')
+  assert.deepEqual(
+    events(root).map((e) => [e.name, e.next]),
+    [['ai-fix F1 r1', 'retry'], ['ai-fix F2 r1', 'retry'], ['ai-fix F1 r2', 'retry'], ['ai-review r1 s1', 'retry'], ['T3 fix r1', 'retry'], ['ai-fix F1 r1', 'stop'], ['ai-fix F2 r1', 'stop']]
+  )
+  // A fixer's reply is checked against the finding its name carries, never keyed by its content.
+  const f2 = writeReply(root, 'f2', { finding: 'F2', outcome: 'fixed', sha: 'abc1234', failureMode: 'off by one' })
+  assert.deepEqual(call(root, 'reply', '--name', 'ai-fix F3 r1', '--file', f2).errors, ['$.finding: F2 is not F3, the finding this dispatch was sent to fix'])
+  assert.equal(call(root, 'reply', '--name', 'ai-fix F2 r2', '--file', f2).next, 'proceed')
+})
+
 test('the reviewer prompt names its one input and its JSON reply, and from round 2 distrusts the last round', () => {
   const root = host()
   const plan1 = call(root, 'plan', '--role', 'ai-review', '--round', '1')

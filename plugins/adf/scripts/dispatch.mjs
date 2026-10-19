@@ -40,18 +40,30 @@
 //       re-review was attempted. { ok, subject, completed, max, next, round?, fix?, reReview? }:
 //       next `fix` names the round's two dispatches; at the breaker (MAX_ROUNDS) next is
 //       `adjudicate` for a task and `escalate-to-developer` for a group or the final review
+//   dispatch.mjs reply   --change <name> --name "<dispatch name>" --file <reply file>
+//                        [--resume yes|no] [--root <change worktree>]
+//       checks the reply through its role's checker (the role read from the name) and records a
+//       `valid` or `invalid` event of the name (lib/attempts.mjs). { ok, valid, errors, next, mode,
+//       invalid, replyFile, log }: next `proceed` for a valid reply; for a refused one `retry` (the
+//       first) or `stop` (the second: BLOCKED, nothing it reported is recorded); mode `resume` on a
+//       retry, `fresh` when --resume no says the harness cannot resume the agent, else null. A
+//       missing reply file is a refused reply. The checkers: lib/reply.mjs for the apply roles,
+//       review.mjs checkFindings for ai-review, checkFix for ai-fix (its finding must be the
+//       name's), spec-merge.mjs checkSpecMergeReply against the capability's conflicts,
+//       ingest.mjs checkIngestFile against the ingest input; verify sections are checked by
+//       verify.mjs verdict, not here
 //
 // prompt for a `re-review` with --base and --head (the fix's range) also returns `unplanned`:
 // the files that range touched which no task of the plan names, each with its owning task
 // (the task itself for a task's round), the files to record with `plan.mjs added`.
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readArchiveState } from './lib/archive.mjs'
+import { attemptsFile, recordDispatch, recordReply } from './lib/attempts.mjs'
 import {
   ARCHIVE_ROLES,
-  countAttempts,
   DispatchError,
-  nextFor,
   parseName,
   planDispatch,
   REVIEW_ROLES,
@@ -61,12 +73,14 @@ import {
   taskBody,
   verifyDirOf
 } from './lib/dispatch.mjs'
-import { changeArtifacts, findChangeDir, ingestInputFile } from './lib/ingest.mjs'
+import { changeArtifacts, checkIngestFile, findChangeDir, ingestInputFile } from './lib/ingest.mjs'
 import { mainCheckout } from './lib/installed.mjs'
 import { isMain } from './lib/main.mjs'
 import { unplannedIn } from './lib/plan.mjs'
 import { parsePlanTasks } from './lib/plan-symbols.mjs'
-import { writeConflictTexts } from './lib/spec-merge.mjs'
+import { checkReplyText, ROLES as REPLY_ROLES } from './lib/reply.mjs'
+import { checkFindings, checkFix } from './lib/review.mjs'
+import { checkSpecMergeReply, writeConflictTexts } from './lib/spec-merge.mjs'
 import { mergePreview } from './lib/specs.mjs'
 import { fixTarget, Refusal } from './lib/review-state.mjs'
 import { sweepInputs } from './lib/sweep.mjs'
@@ -78,11 +92,12 @@ export const USAGE = `usage:
   dispatch.mjs plan --change <name> --role <role> [--task <N>] [--group <G>] [--round <k>] [--topic <word>] [--check c4|c8] [--slice <n>] [--finding F<n>] [--capability <capability>] [--root <dir>]
   dispatch.mjs prompt (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>]
   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <dir>]
+  dispatch.mjs reply --change <name> --name "<dispatch name>" --file <reply file> [--resume yes|no] [--root <dir>]
   dispatch.mjs round --change <name> [--task <N> | --group <G>] [--root <dir>]`
 
 export class UsageError extends Error {}
 
-const FLAGS = ['--change', '--role', '--task', '--group', '--round', '--topic', '--check', '--slice', '--finding', '--capability', '--root', '--question-file', '--base', '--head', '--name']
+const FLAGS = ['--change', '--role', '--task', '--group', '--round', '--topic', '--check', '--slice', '--finding', '--capability', '--root', '--question-file', '--base', '--head', '--name', '--file', '--resume']
 
 function parse(argv) {
   const values = {}
@@ -265,6 +280,50 @@ function promptFor(inputs, plan, values, root, planText) {
   return renderPrompt({ plan, change, skeletons: skeletons(), fields, question, tokens, testFirst, dispositions })
 }
 
+// The errors of one reply under its role's checker; `parts` is the parsed dispatch name.
+function replyErrors(parts, text, { root, change, file, main }) {
+  const { role } = parts
+  if (Object.hasOwn(REPLY_ROLES, role)) return checkReplyText(role, text)
+  if (role === 'ai-review') return checkFindings(text).errors
+  if (role === 'ai-fix') {
+    const checked = checkFix(text)
+    if (!checked.valid) return checked.errors
+    return checked.reply.finding === parts.finding ? [] : [`$.finding: ${checked.reply.finding} is not ${parts.finding}, the finding this dispatch was sent to fix`]
+  }
+  if (role === 'spec-merge') {
+    let conflicts
+    try {
+      conflicts = mergePreview(root, change).conflicts.filter((c) => c.capability === parts.capability)
+    } catch (error) {
+      throw new DispatchError(`cannot preview the spec merge: ${error.message}`)
+    }
+    if (conflicts.length === 0) throw new DispatchError(`${parts.capability} has no unresolved conflict in ${change}; there is nothing to resolve`)
+    return checkSpecMergeReply(text, { capability: parts.capability, conflicts }).errors
+  }
+  if (role === 'ingest') {
+    // The debt files archive's placement wrote changed for another reason (archive.mjs ingest).
+    const exclude = readArchiveState(main, change).steps.placements.detail?.debtFiles ?? []
+    try {
+      return checkIngestFile(root, change, file, { exclude }).errors
+    } catch (error) {
+      throw new DispatchError(error.message)
+    }
+  }
+  throw new DispatchError(`a ${role} reply is checked by verify.mjs verdict, not by dispatch.mjs reply`)
+}
+
+function recordReplyOf(values, { root, change, main }) {
+  const { name, file } = values
+  const parts = parseName(name)
+  if (!parts) throw new DispatchError(`"${name}" is not a dispatch name in the fixed form`)
+  if (values.resume !== undefined && !['yes', 'no'].includes(values.resume)) throw new UsageError('--resume is yes or no')
+  if (parts.role === 'verify') throw new DispatchError(`a ${name} reply is checked by verify.mjs verdict, not by dispatch.mjs reply`)
+  const path = resolve(root, file)
+  const text = readOr(path)
+  const errors = text === null ? [`no reply file ${path}: a reply that is prose and no file is a refusal`] : replyErrors(parts, text, { root, change, file: path, main })
+  return recordReply(root, change, { name, file: path, errors, resume: values.resume !== 'no' })
+}
+
 function existsArchived(root, change) {
   try {
     return Boolean(findChangeDir(root, change))
@@ -284,7 +343,7 @@ function readQuestion(file) {
 export function run(argv, { cwd = process.cwd(), main } = {}) {
   const { values, rest } = parse(argv)
   const [command, ...extra] = rest
-  if (extra.length > 0 || !['plan', 'prompt', 'attempt', 'round'].includes(command) || !values.change) throw new UsageError(USAGE)
+  if (extra.length > 0 || !['plan', 'prompt', 'attempt', 'round', 'reply'].includes(command) || !values.change) throw new UsageError(USAGE)
   const root = resolve(cwd, values.root ?? '.')
   const change = values.change
   // The ingest runs on the archived change; every other dispatch on an active one.
@@ -295,23 +354,22 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
 
   if (command === 'attempt') {
     if (!values.name || Object.keys(values).some((k) => !['change', 'name', 'root'].includes(k))) throw new UsageError(USAGE)
-    if (!parseName(values.name)) throw new DispatchError(`"${values.name}" is not a dispatch name in the fixed form`)
-    const dir = sddDir(root, change)
-    const file = join(dir, 'attempts.jsonl')
-    mkdirSync(dir, { recursive: true })
-    appendFileSync(file, `${JSON.stringify({ name: values.name, at: new Date().toISOString() })}\n`)
-    const attempt = countAttempts(readFileSync(file, 'utf8'), values.name)
-    return { ok: true, name: values.name, attempt, next: nextFor(attempt), file }
+    return { ok: true, ...recordDispatch(root, change, values.name) }
+  }
+
+  if (command === 'reply') {
+    if (!values.name || !values.file || Object.keys(values).some((k) => !['change', 'name', 'file', 'resume', 'root'].includes(k))) throw new UsageError(USAGE)
+    return { name: values.name, ...recordReplyOf(values, { root, change, main: main ?? mainCheckout(root) }) }
   }
 
   if (command === 'round') {
     if (Object.keys(values).some((k) => !['change', 'task', 'group', 'root'].includes(k))) throw new UsageError(USAGE)
-    const file = join(sddDir(root, change), 'attempts.jsonl')
-    return { ok: true, ...roundOf(readOr(file) ?? '', { task: number(values.task), group: values.group }) }
+    return { ok: true, ...roundOf(readOr(attemptsFile(root, change)) ?? '', { task: number(values.task), group: values.group }) }
   }
 
   if (!values.role) throw new UsageError(USAGE)
-  if (values.name) throw new UsageError('--name belongs to attempt')
+  if (values.name) throw new UsageError('--name belongs to attempt and reply')
+  if (values.file || values.resume) throw new UsageError('--file and --resume belong to reply')
   if (command === 'plan' && (values['question-file'] || values.base || values.head)) throw new UsageError('--question-file, --base and --head belong to prompt')
   const inputs = {
     change,
@@ -341,7 +399,9 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
 
 if (isMain(import.meta.url)) {
   try {
-    process.stdout.write(`${JSON.stringify(run(process.argv.slice(2)), null, 2)}\n`)
+    const out = run(process.argv.slice(2))
+    process.stdout.write(`${JSON.stringify(out, null, 2)}\n`)
+    if (out.ok === false) process.exitCode = 1
   } catch (error) {
     const usage = error instanceof UsageError
     process.stdout.write(`${JSON.stringify({ ok: false, error: error.message, ...(usage ? { usage: USAGE } : {}) })}\n`)

@@ -380,13 +380,15 @@ export function renderPrompt({ plan, change, skeletons, fields, question, tokens
 // BLOCKED. The n-th recorded attempt of one dispatch name: 1 dispatches, 2 retries, 3 stops.
 export const nextFor = (attempt) => (attempt === 1 ? 'dispatch' : attempt <= MAX_ATTEMPTS ? 'retry' : 'stop')
 
+// The `dispatch` events of one name (lib/attempts.mjs); a line with no `event` is one.
 export function countAttempts(text, name) {
   return text
     .split('\n')
     .filter(Boolean)
     .filter((line) => {
       try {
-        return JSON.parse(line).name === name
+        const event = JSON.parse(line)
+        return event.name === name && (event.event ?? 'dispatch') === 'dispatch'
       } catch {
         return false
       }
