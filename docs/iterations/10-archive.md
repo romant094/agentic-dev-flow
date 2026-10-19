@@ -97,8 +97,9 @@ Settled by the developer on 2026-10-19.
 - `claude plugin validate .`: not run here; run by the developer.
 - Not run: `/adf:archive` end to end by an agent (iteration 14), forge on real systems
   (iteration 18).
-- Open: the review's own retry counter is separate from `dispatch.mjs attempt` (iteration 10a);
-  a spec base refreshed after a rebase takes the current main text, so it cannot see an edit
+- Open: the review's own retry counter is separate from `dispatch.mjs attempt` (closed in
+  iteration 10a: the review stage counts its replies in the shared attempts log, keyed by the
+  dispatch name, `docs/iterations/10a-structured-replies.md`); a spec base refreshed after a rebase takes the current main text, so it cannot see an edit
   made before the refresh; the stay-on-branch mode does not exist in the port, so `workspace
   remove`'s `in-place` state is only reported.
 - Versions: adf 0.9.0, memory 0.1.0, english-check 0.4.0, gitlab 0.2.0 unchanged.

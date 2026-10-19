@@ -54,3 +54,45 @@ Settled by the developer on 2026-10-19.
 - The raw verify output `<id>-agent.txt` is dropped; the record is rendered from the JSON.
 - Fixed here: a fixer's retry key came from its reply's content, so two fixers with invalid
   replies shared a key and the second stopped the stage; the key is now the dispatch name.
+
+## Result
+
+- `npm test`: 753 tests, 752 pass, 0 failures, 1 skipped (the live openspec parity, with
+  `OPENSPEC_DIST` not set); `check-lessons.mjs`: ok, 706 rows, 53 pending, none pending on 10a.
+- `npm run parity -- <origin>`: all seventeen tools PASS. The two reply tools:
+  - `origin-reply.mjs`: 1388 cases through the v1-to-v2 converter; the origin accepts 333 and
+    refuses 1055, the port accepts 316. Explained classes: `role-removed` 115,
+    `verdict-computed` 105, `tests-structured` 56, `text-nonempty` 21, `line-integer` 15,
+    `commits-from-git` 8, `dispositions-checked` 6, `blocker-required` 4, `cli-form` 1.
+    Computed differences on cases both accept: `DONE` to `DONE_WITH_CONCERNS` for no count line
+    22 and for the agent's concerns 4, `DONE_WITH_CONCERNS` to `DONE` for the agent's concerns
+    4, a computed verdict 12. 0 unexplained.
+  - `origin-reply-corpus.mjs`: 1004 transcripts, 313 distinct replies (heredoc and write):
+    `review` 91, `impl` 95, `fix` 62, `re-review` 28, `investigate` 8, `sweep` 8,
+    `final-review` 8, `merge-review` 8, `spec-merge` 5 (`role-removed`). Explained:
+    `commits-from-git` 8 (`impl` 6, `fix` 2), `role-removed` 5. 0 unexplained. 88 of the 146
+    done `impl` and `fix` replies both accept (46 `impl`, 42 `fix`; 88 of the 91 the origin
+    marked `DONE`) become `DONE_WITH_CONCERNS`, because the origin's summary carried no count
+    line. In the port the count comes from the runner's output through `suite.mjs covering`,
+    so this is a deliberate difference, not a regression.
+- Fixes: a fixer's retry key came from its reply's content, so two fixers with invalid replies
+  shared a key and the second stopped the stage; the key is now the dispatch name. The review
+  stage's own retry counter is gone: it counts its replies in the shared attempts log
+  (`lib/attempts.mjs`), as every other role does. Found while closing: `dispatch.mjs reply`
+  for `sweep` also writes the dispositions as debt, so one call records a sweep reply
+  (`sweep.mjs filter` stays for manual use); each apply role's prompt names its exact schema
+  path through `{{schema}}` (`lib/dispatch.mjs` `APPLY_SCHEMAS`, which `lib/reply.mjs` checks
+  under); the record marks a c4 path nothing exercised `not exercised (warning)` under
+  `## Exercised and not exercised`.
+- Decisions confirmed by the developer: c4 `decision-untraced` and
+  `requirement-contradicts-decision` are warnings; a verify section needs a recorded reply; the
+  c4 `case` is checked against the change's files; a c8 patch edits only its candidate's file.
+- Template default: a `## Test-first shares` section in `host/planning.md` makes the flow run
+  the test-first proof before the review; without it, the reviewer runs it.
+- `claude plugin validate .`: not run here; run by the developer.
+- Not run: an agent end to end (iteration 14).
+- Open: a defect found while checking an unverifiable item (`U<n>`) cannot be ruled `fix`, as
+  there is no path to add it as a finding; the corpus count drifts as transcripts grow; the
+  `metrics.json` findings comparison is iteration 11's.
+- Versions: adf 0.10.0, the root `package.json` 0.10.0; memory 0.1.0, english-check 0.4.0,
+  gitlab 0.2.0 unchanged.
