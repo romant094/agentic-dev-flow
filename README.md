@@ -22,9 +22,9 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Verify: the mechanical checks and the verdict by script, read-only judgement dispatches, developer rulings, the base check as a workspace operation | done (iteration 08) |
 | Scripts first: every deterministic step of propose, apply and verify is a script; the LLM keeps the reasoning work | done (iteration 08a) |
 | Review: the reviewer and the fixer reply in JSON, the verdict, the rounds, the dispositions, the markers and the record by script; `input`, `response` and `render` run standalone for a CI job | done (iteration 09) |
-| Archive: `/adf:archive`, resumable; the spec merge, the placements, the ingest, the merge request or a local merge and the worktree removal by script; the LLM keeps the conflicts, a new capability's Purpose, the ingest and the merge request's prose | in progress (iteration 10) |
+| Archive: `/adf:archive`, resumable; the spec merge, the placements, the ingest, the merge request or a local merge and the worktree removal by script; the LLM keeps the conflicts, a new capability's Purpose, the ingest and the merge request's prose | done (iteration 10) |
 | Metrics, retrospective | not ported |
-| Wiki memory and technical debt: the `memory` plugin (the `knowledge` role, contract `1.3`) and the core's debt store | in progress (iteration 10) |
+| Wiki memory and technical debt: the `memory` plugin (the `knowledge` role, contract `1.3`) and the core's debt store | done (iteration 10) |
 | Plugins: tracker (Jira), project stack | not started |
 | `/adf:quick`, a small fix or feature without the full artifact set | not started |
 | `/adf:update` | not started |

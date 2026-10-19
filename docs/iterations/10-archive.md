@@ -58,3 +58,47 @@ Settled by the developer on 2026-10-19.
 - Port fixes of origin defects: one verdict route (`PASS` only); archive commits only the paths
   it wrote; a ledger copy failure stops archive; the rotation creates its directory; a recorded
   finding's placement is checked.
+
+## Result
+
+- `npm test`: 704 tests, 703 pass, 0 failures, 1 skipped (the live openspec parity, with
+  `OPENSPEC_DIST` not set); `check-lessons.mjs`: ok, 706 rows, 53 pending, no row pending on
+  iteration 10.
+- `npm run parity -- <origin>`: all sixteen tools PASS. The four new ones:
+  - `origin-spec-merge.mjs`: 50 commits on `origin/develop`, 67 changes, 140 files; 134 equal,
+    6 deliberate differences, 0 unexplained: a hand edit (`f2c2b3dd device-module-routing`),
+    three stale siblings (`2406ec38 change-workflow-schema`, `ac9deac9 device-form-schemas`,
+    `ac9deac9 device-form-rendering`), an archive order (`7f9d17a8
+    discovered-device-inventory`), and `05e6e054 config-snapshots`, archived unsynced; 2 of
+    them are refused by the port's merge. The three-way check on the origin flags none of the 6
+    stale cases: 42 of 47 merges with a base were rebased, so the merge base already held the
+    other change's edit (5 with a base, 3 without; 57 capabilities checked, 6 flagged where the
+    outputs are equal). This is the reason for the spec base snapshot, `specs-base.json`.
+  - `origin-log.mjs`: 354 entries over six months (2026-05 to 2026-10); of 18 rotations, 8 equal
+    and 10 differences, all explained by the zone suffix; the file layer differs where the
+    origin's rotation stops on a missing `log-archive/` and the port creates it; `check` finds
+    18 entries out of order and 1 malformed header; 0 unexplained.
+  - `origin-debt-tree.mjs`: 11 files, 176 rows in 8 blocks, the port's reader and a plain
+    reader agree on every block; 176 unique ids, 94 tracker keys, no duplicate; classes debt
+    131, defect 39, decision 6; one `check` finding, explained (a prose example).
+  - `origin-archive-ledgers.mjs`: 18 ledgers, 410 records; 0 unresolved debt on both sides;
+    under the port's rule, 21 deviations cited by no debt and no ruling and 11 recorded findings
+    with no `resolve` would have held placements, as the port intends.
+- Fixes found while closing: `mr` with a forge and no `--body` holds, `pending`, and names
+  what it needs, as `merge-local` does without a flag; `check` runs the spec base check, a stale
+  or missing entry refuses archive, and a change with no `specs-base.json` gets a warning naming
+  the fallback to the merge base; the report names the capabilities `verify.md` lists as
+  hand-edited and says the corpus lint is due; the finalize report says the merge request is
+  ready to merge; a test feeds archive's git reads a failed call and a detached HEAD.
+- Decisions changed while closing: `verify.md`'s "never delete the worktree without an explicit
+  yes" — the removal is archive's last step, with no separate yes; `english-check.md`'s merge
+  request description — the body is an ignored file outside the change, so no hook checks it,
+  and the archive instruction states English.
+- `claude plugin validate .`: not run here; run by the developer.
+- Not run: `/adf:archive` end to end by an agent (iteration 14), forge on real systems
+  (iteration 18).
+- Open: the review's own retry counter is separate from `dispatch.mjs attempt` (iteration 10a);
+  a spec base refreshed after a rebase takes the current main text, so it cannot see an edit
+  made before the refresh; the stay-on-branch mode does not exist in the port, so `workspace
+  remove`'s `in-place` state is only reported.
+- Versions: adf 0.9.0, memory 0.1.0, english-check 0.4.0, gitlab 0.2.0 unchanged.

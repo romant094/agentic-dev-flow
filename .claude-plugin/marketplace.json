@@ -11,7 +11,7 @@
     {
       "name": "adf",
       "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "source": "./plugins/adf"
     },
     {
@@ -23,7 +23,7 @@
     {
       "name": "english-check",
       "description": "Blocks an agent's git commit when a file in scope holds non-English prose",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "source": "./plugins/english-check"
     },
     {
