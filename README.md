@@ -24,7 +24,7 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Review: the reviewer and the fixer reply in JSON, the verdict, the rounds, the dispositions, the markers and the record by script; `input`, `response` and `render` run standalone for a CI job | done (iteration 09) |
 | Archive: `/adf:archive`, resumable; the spec merge, the placements, the ingest, the merge request or a local merge and the worktree removal by script; the LLM keeps the conflicts, a new capability's Purpose, the ingest and the merge request's prose | done (iteration 10) |
 | Structured replies: every apply and verify role replies in JSON under a schema the core owns; the statuses, the test result and every verdict computed by script; one retry mechanism for every role | done (iteration 10a) |
-| Metrics, retrospective | not ported |
+| Metrics and the retrospective: one checked metrics record per change, written by archive from the SDD records, git and the session transcripts, tokens only and priced by a dated price table; `/adf:retro` over a window, one change or a period, every number by script, one agent's JSON reply checked by script, committed in `.adf/retro/` on its own branch with a non-draft merge request and no CI run; contract `1.4`: the forge's `ci` and the `upstream` role | done (iteration 11) |
 | Wiki memory and technical debt: the `memory` plugin (the `knowledge` role, contract `1.3`) and the core's debt store | done (iteration 10) |
 | Plugins: tracker (Jira), project stack | not started |
 | `/adf:quick`, a small fix or feature without the full artifact set | not started |
