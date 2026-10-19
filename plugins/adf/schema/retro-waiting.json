@@ -1,0 +1,35 @@
+{
+  "description": "The flow rules waiting for data: every retrospective decides each one keep, remove or wait, citing the window's metric keys listed here (lib/window.mjs METRICS). The script inserts the values; the agent changes none. `lessons` names the lessons row that holds the rule, by its file and the start of its rule cell.",
+  "items": [
+    {
+      "id": "handoff-threshold",
+      "question": "Does the handoff threshold (finish the task group, record a handoff, continue in a fresh session) prevent the cost it is meant to, and which observed proxy should trigger it? It is the first removal candidate if it is not load-bearing.",
+      "metrics": ["context.peak", "context.compactions", "autonomy.sessions", "autonomy.clears", "efficiency.orchestratorShare", "efficiency.orchestratorPerDispatch"],
+      "lessons": { "file": "docs/lessons/apply.md", "row": "The handoff threshold is observable proxies" }
+    },
+    {
+      "id": "fix-round-2-level-up",
+      "question": "Does re-dispatching a fix loop one capability level higher when it enters round 2 end the loop sooner than it costs?",
+      "metrics": ["efficiency.roundsPerTask", "quality.findings.re-review", "efficiency.outliers", "efficiency.mechanicalShare"],
+      "lessons": { "file": "docs/lessons/apply.md", "row": "A fix loop entering round 2 is re-dispatched one level higher" }
+    },
+    {
+      "id": "lite-path",
+      "question": "Would a lite path for small changes save more than it risks: is the flow's overhead a large share of a small change's time and tokens?",
+      "metrics": ["speed.activeMinutes", "cost.tokens", "overhead.timeShare", "overhead.tokenShare", "predictability.minutesPerTask"],
+      "lessons": { "file": "docs/lessons/propose.md", "row": "The planned lite path for small fixes" }
+    },
+    {
+      "id": "subagent-cache-ttl",
+      "question": "Would a one-hour cache lifetime for dispatched agents save more in rewritten cache than its write premium costs?",
+      "metrics": ["cost.coldResumes", "cost.rewrittenTokens", "efficiency.cacheHit"],
+      "lessons": { "file": "docs/lessons/metrics.md", "row": "Cache TTL: cold resume gap" }
+    },
+    {
+      "id": "recite-before-solving",
+      "question": "Does stating the task's Files, Interfaces and acceptance criteria before the first edit reduce fix rounds, review findings and fixes after merge?",
+      "metrics": ["efficiency.roundsPerTask", "quality.findings.review", "quality.fixesPerChangeWeek"],
+      "lessons": { "file": "docs/lessons/propose.md", "row": "A task's text directs the implementer to state its Files, Interfaces and acceptance criteria before the first edit" }
+    }
+  ]
+}
