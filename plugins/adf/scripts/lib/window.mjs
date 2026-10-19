@@ -336,7 +336,9 @@ function mergeFigures(root, history, entries, { asOf, excluded }) {
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
 const ratio = (a, b) => (num(a) !== null && num(b) !== null && b > 0 ? a / b : null)
-const tokensOf = (b) => (b ? TOKEN_FIELDS.reduce((n, f) => n + (b[f] ?? 0), 0) : null)
+// `output` already holds the thinking tokens (`usage.output_tokens`), so `thinking` is not added.
+const BILLED_FIELDS = TOKEN_FIELDS.filter((f) => f !== 'thinking')
+const tokensOf = (b) => (b ? BILLED_FIELDS.reduce((n, f) => n + (b[f] ?? 0), 0) : null)
 const OVERHEAD_PHASES = ['verify', 'review', 'archive']
 // A phase split that observed none of verify, review and archive did not see the overhead.
 const phased = (byPhase) => byPhase != null && OVERHEAD_PHASES.some((p) => p in byPhase)

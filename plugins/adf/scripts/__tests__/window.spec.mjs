@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path'
 import { setBranches } from '../lib/branches.mjs'
 import { fromV1, validateRecord } from '../lib/metrics.mjs'
 import { initRegistry } from '../lib/registry.mjs'
-import { aggregate, buildSidecar, delta, DIRECTION, fetchRef, integrationRef, METRICS, previousRetro, readWaiting, selectWindow, sinceLastRetro, waitingItems } from '../lib/window.mjs'
+import { aggregate, buildSidecar, changeValues, delta, DIRECTION, fetchRef, integrationRef, METRICS, previousRetro, readWaiting, selectWindow, sinceLastRetro, waitingItems } from '../lib/window.mjs'
 
 const ARCHIVE = 'openspec/changes/archive'
 const DATE = '2026-10-19'
@@ -354,4 +354,10 @@ test('fetchRef fetches the remote-tracking integration ref; the readers use it a
   assert.equal(failed.fetched, false)
   assert.match(failed.reason, /^git fetch failed/)
   assert.ok(failed.fetchedAt, 'a failed fetch keeps the last fetch time')
+})
+
+test('the token total counts thinking once, inside output', () => {
+  const total = { input: 10, output: 100, thinking: 40, cacheRead: 5, cacheWrite5m: 2, cacheWrite1h: 1 }
+  const values = changeValues({ record: { tokens: { total } }, coverage: { tokens: 'record' }, tasks: 1 })
+  assert.equal(values['cost.tokens'], 118)
 })
