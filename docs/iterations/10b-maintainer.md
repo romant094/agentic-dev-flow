@@ -6,8 +6,8 @@ The `adf-maintainer` plugin provides the role `upstream`. A retrospective files 
 findings and the open ADF debt as issues in the plugin's GitHub repository, after a check of
 push permission and the developer's yes. The plugin is installed by the maintainer only, and
 every other host skips the step. Every step is a script: the issue titles, bodies and labels
-are rendered from the retrospective's sidecar and the debt records, and the LLM writes no text
-that is sent.
+are rendered from the findings and the debt records the core passes, and the LLM writes no
+text that is sent.
 
 ## Steps
 
@@ -53,3 +53,22 @@ Refined while building, from the decisions above.
   `host` is the host's `origin` remote path, else its root directory's name.
 - `/adf:add` records each registry entry's `points`; an absent entry is named only for the
   points it recorded. A disabled plugin is absent too.
+
+## Result
+
+- `npm test`: 926 tests, 925 pass, 0 failures, 1 skipped (the live openspec parity, with
+  `OPENSPEC_DIST` not set); `check-lessons.mjs`: ok, 765 rows, 40 pending, none on 10b.
+- `npm run parity -- <origin>`: 21 of 21 PASS after two fixes. `origin-ledger.mjs` explains
+  the renamed resolution (`renamed-resolution`, 29 cases). `origin-window.mjs` found a port
+  defect that new origin data exposed: a merge carrying two changes charged each with the
+  other's files outside the plan; the port now reports null there, as the origin does.
+- A test sends the core's `file` input to the real plugin with a fake `gh` and reads the result
+  in the core's report: the shapes match.
+- The contract change is a minor one although `upstream.file` changed its input: no provider
+  existed under 1.4.
+- Not run: `gh` against the real repository (`gh` is not installed on the build machine; the
+  `labels[]=` field syntax needs `gh` 2.20 or later), `claude plugin validate .`.
+- Open: the English check's `retro.mjs` entry names `.adf/retro` only, so it does not read
+  the debt index the retrospective now commits (the index gets only issue URLs).
+- Versions: adf 0.12.0, adf-maintainer 0.1.0, contract 1.5; gitlab 0.3.0, memory 0.1.0,
+  english-check 0.5.0 unchanged.
