@@ -8,6 +8,12 @@ do not run it by hand.
 Only the flow's maintainer installs this plugin. Every other host has no `upstream` provider,
 and its retrospective skips the step: the findings stay in the retrospective's sidecar.
 
+Install it in the host project, then add it to the registry with `/adf:add`:
+
+```
+/plugin install adf-maintainer --marketplace romant094/agentic-dev-flow
+```
+
 ## What it does
 
 | Operation | Does |
