@@ -16,6 +16,8 @@ import {
   unresolvedDebt
 } from '../lib/ledger.mjs'
 import { run } from '../ledger.mjs'
+import { unplaced } from '../lib/archive.mjs'
+import { readLedger as readMetricsLedger } from '../lib/metrics-records.mjs'
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'ledger.mjs')
 const host = () => mkdtempSync(join(tmpdir(), 'adf-ledger-'))
@@ -104,6 +106,22 @@ test('resolves only a debt record that exists, to one of the named destinations'
   )
   assert.deepEqual(unresolvedDebt([debt, resolve]), [])
   assert.deepEqual(unresolvedDebt([debt]), [debt])
+})
+
+test('a resolve record written before the rename, as flow-debt, still closes its debt everywhere it is read', () => {
+  const root = host()
+  const change = 'legacy'
+  mkdirSync(dirname(ledgerPath(root, change)), { recursive: true })
+  const debt = { id: 'debt-1', kind: 'debt', at: now, what: 'a', reason: 'b' }
+  const resolve = { id: 'resolve-1', kind: 'resolve', at: now, debt: 'debt-1', as: 'flow-debt', where: 'adf ledger' }
+  writeFileSync(ledgerPath(root, change), `${JSON.stringify(debt)}\n${JSON.stringify(resolve)}\n`)
+  assert.deepEqual(run(['list', '--change', change, '--root', root]).records, [debt, resolve])
+  assert.deepEqual(run(['list', '--change', change, '--unresolved-debt', '--root', root]).records, [])
+  assert.deepEqual(unplaced([debt, resolve], [], change), [])
+  const metrics = readMetricsLedger(root, change)
+  assert.deepEqual(metrics.value.unresolvedDebt, [])
+  assert.deepEqual(metrics.value.counts, { debt: 1, resolve: 1 })
+  assert.equal(run(['debt', '--change', change, '--what', 'c', '--reason', 'd', '--root', root], { env: {} }).record.id, 'debt-2')
 })
 
 test('resolve --finding places a review finding: an F<n> id, a destination, and no debt beside it', () => {

@@ -8,10 +8,14 @@
 // A generated corpus of argument vectors — a valid record of every kind with and without its
 // optional fields, every refusal, and both list forms — runs in order through both scripts.
 // After each step the accept or refuse decision, the refusal reason, the JSONL file (with the
-// `at` timestamps normalized) and the listed or recorded records are compared. The one
-// deliberate difference is the output form:
-//   json-output   the origin prints prose on success and on stderr on refusal; ours prints one
-//                 JSON object on stdout ({ ok, record, path } / { ok, records } / { ok, error })
+// `at` timestamps normalized) and the listed or recorded records are compared. The deliberate
+// differences:
+//   json-output          the origin prints prose on success and on stderr on refusal; ours
+//                        prints one JSON object on stdout ({ ok, record, path } / { ok, records }
+//                        / { ok, error })
+//   renamed-resolution   the resolution the origin calls flow-debt is adf-debt here. The origin
+//                        is sent `--as flow-debt` where ours is sent `--as adf-debt`, and its
+//                        output and ledger read with flow-debt as adf-debt before comparing
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -80,6 +84,9 @@ const env = (session) => {
   if (session) e.CLAUDE_CODE_SESSION_ID = session
   return e
 }
+// The origin's spelling of the one renamed resolution: its argv, and ours read from its output.
+const toTheirs = (argv) => argv.map((a, i) => (a === 'adf-debt' && argv[i - 1] === '--as' ? 'flow-debt' : a))
+const renamed = (text) => text?.replaceAll('flow-debt', 'adf-debt') ?? text
 const runIn = (script, argv, root, flag, session) =>
   spawnSync('node', [script, ...argv, ...(flag ? [flag, root] : [])], { cwd: root, env: env(session), encoding: 'utf8' })
 
@@ -118,7 +125,7 @@ let compared = 0
 let accepted = 0
 for (const [argv, session, rootFlag] of corpus) {
   compared++
-  const their = theirOutcome(runIn(originScript, argv, theirRoot, rootFlag && '--repo', session), theirRoot)
+  const their = theirOutcome(runIn(originScript, toTheirs(argv), theirRoot, rootFlag && '--repo', session), theirRoot)
   const ours = ourOutcome(runIn(ourScript, argv, ourRoot, rootFlag && '--root', session), ourRoot)
   if (their.ok) accepted++
   const change = changeOf(argv)
@@ -128,12 +135,13 @@ for (const [argv, session, rootFlag] of corpus) {
   const { form: ourForm, ...ourContent } = ours
   const sameContent = JSON.stringify(theirContent) === JSON.stringify(ourContent) && theirLedger === ourLedger
   if (sameContent && theirForm === ourForm) continue
+  const sameRenamed = renamed(JSON.stringify(theirContent)) === JSON.stringify(ourContent) && renamed(theirLedger) === ourLedger
   differences.push({
-    case: { argv, session },
+    case: { argv, ...(toTheirs(argv).join('\0') === argv.join('\0') ? {} : { theirArgv: toTheirs(argv) }), session },
     theirs: their,
     ours,
     ...(theirLedger === ourLedger ? {} : { theirLedger, ourLedger }),
-    explained: sameContent ? 'json-output' : null
+    explained: sameContent ? 'json-output' : sameRenamed ? 'renamed-resolution' : null
   })
 }
 
