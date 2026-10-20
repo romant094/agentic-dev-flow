@@ -11,7 +11,7 @@
     {
       "name": "adf",
       "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "source": "./plugins/adf"
     },
     {
@@ -31,6 +31,12 @@
       "description": "ADF knowledge plugin: an indexed wiki memory, a log rotated monthly, and the ingest, query and lint workflows",
       "version": "0.1.0",
       "source": "./plugins/memory"
+    },
+    {
+      "name": "adf-maintainer",
+      "description": "Upstream for the Agentic Dev Flow maintainer: files a retrospective's flow findings and the open ADF debt as GitHub issues through gh",
+      "version": "0.1.0",
+      "source": "./plugins/adf-maintainer"
     }
   ]
 }

@@ -310,6 +310,12 @@ const DEBT_FIELDS = ['id', 'title', 'plugin', 'pluginVersion', 'change', 'class'
 const only = (o, keys) => Object.fromEntries(keys.map((k) => [k, o[k] ?? null]))
 const titled = ({ id, title }) => ({ id, title })
 
+// The `upstream.file` input: each finding and debt record cut to the contract's fields, an
+// absent field sent as null.
+export function upstreamFileInput({ repository, host, retro, findings, debt }) {
+  return { repository, host, retro, findings: findings.map((f) => only(f, FINDING_FIELDS)), debt: debt.map((d) => only(d, DEBT_FIELDS)) }
+}
+
 // The items of `all` the developer chose: `ids`, or every one when they named none.
 function chosen(all, ids, what) {
   if (ids === undefined) return all
@@ -347,7 +353,7 @@ export function fileStep(ctx, { yes = false, findings, debt } = {}) {
       const flags = `${findings ? ` --findings ${findings.length ? findings.join(',') : 'none'}` : ''}${debt ? ` --debt ${debt.length ? debt.join(',') : 'none'}` : ''}`
       return { hold: true, out: { upstream, repository, would: { findings: pickedFindings.map(titled), debt: pickedDebt.map(titled) }, waiting: `the developer's yes: retro.mjs file --id ${ctx.id} --yes${flags}` } }
     }
-    const fileIn = { repository, host: hostSlug(ctx.main), retro: ctx.id, findings: pickedFindings.map((f) => only(f, FINDING_FIELDS)), debt: pickedDebt.map((d) => only(d, DEBT_FIELDS)) }
+    const fileIn = upstreamFileInput({ repository, host: hostSlug(ctx.main), retro: ctx.id, findings: pickedFindings, debt: pickedDebt })
     const result = ctx.upstream('file', fileIn, wt)
     const text = upstreamReport('file', result)
     const sent = { ...checked, upstream: result.state === 'none' ? 'none' : (result.plugin ?? upstream), host: fileIn.host }

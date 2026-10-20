@@ -47,9 +47,10 @@ count. An entry is deleted when its debt is resolved (`debt.mjs remove`); git ke
 ## ADF records
 
 The block `adf` holds the records of kind `adf`: defects of the flow's own plugins found while
-a host used them. They stay on this machine; no core script sends them anywhere. The
-maintainer's plugin reads them with `debt.mjs list --kind adf`, files each upstream and records
-the issue with `debt.mjs mark-filed --id <id> --url <url>`.
+a host used them. They go upstream only through the retrospective: its `file` step sends the
+records with no Filed value to the `upstream` provider, the maintainer's plugin, and marks each
+one filed with its issue's URL, as `debt.mjs mark-filed --id <id> --url <url>` does. With no
+provider they stay on this machine.
 
 | ID | Title | Plugin | Version | Change | Class | Source | Filed |
 |---|---|---|---|---|---|---|---|

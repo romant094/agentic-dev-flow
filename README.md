@@ -26,6 +26,7 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Structured replies: every apply and verify role replies in JSON under a schema the core owns; the statuses, the test result and every verdict computed by script; one retry mechanism for every role | done (iteration 10a) |
 | Metrics and the retrospective: one checked metrics record per change, written by archive from the SDD records, git and the session transcripts, tokens only and priced by a dated price table; `/adf:retro` over a window, one change or a period, every number by script, one agent's JSON reply checked by script, committed in `.adf/retro/` on its own branch with a non-draft merge request and no CI run; contract `1.4`: the forge's `ci` and the `upstream` role | done (iteration 11) |
 | Wiki memory and technical debt: the `memory` plugin (the `knowledge` role, contract `1.3`) and the core's debt store | done (iteration 10) |
+| Maintainer upstream: the `adf-maintainer` plugin (the `upstream` role, contract `1.5`) files a retrospective's flow findings and the ADF debt not yet filed as GitHub issues through `gh`; every extension is optional, and a registry entry whose plugin is not installed is skipped | done (iteration 10b) |
 | Plugins: tracker (Jira), project stack | not started |
 | `/adf:quick`, a small fix or feature without the full artifact set | not started |
 | `/adf:update` | not started |
@@ -83,6 +84,10 @@ The English check works as soon as it is installed: it is a Claude Code hook on 
 `git commit`. `/adf:add english-check@agentic-dev-flow '{"include":[...]}'` only changes its
 scope (`plugins/english-check/README.md`).
 
+Only the flow's maintainer installs `adf-maintainer@agentic-dev-flow`: it files the
+retrospective's findings and the ADF debt upstream (`plugins/adf-maintainer/README.md`). Every
+other host has no `upstream` provider, and the retrospective skips the step.
+
 ## Host files
 
 `/adf:init` writes the registry, `.claude/adf-extensions.json` (its keys are in
@@ -107,6 +112,7 @@ plugins/adf/                      the core
 plugins/gitlab/                   the forge role for GitLab, through glab; the merge request template
 plugins/english-check/            a PreToolUse hook that blocks a commit with non-English text
 plugins/memory/                   the wiki memory: the knowledge role, its log and its workflows
+plugins/adf-maintainer/           the upstream role on GitHub, through gh: the maintainer's only
 scripts/parity/                   dev tools: compare the ported scripts with the origin's and the
                                   openspec CLI on the origin project (npm run parity -- <root>)
 test/fixtures/                    a host project and a plugin for end-to-end tests

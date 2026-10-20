@@ -455,3 +455,68 @@ test('a debt record with no change and no source is accepted, and its body omits
     )
   }
 })
+
+// ---------------------------------------------------------------- with the core
+
+// A fake gh on PATH that can file: the probe, the labels, an empty issue list, and each created
+// issue numbered from 1 in the order it is created.
+const filingGh = () => {
+  const dir = mkdtempSync(join(tmpdir(), 'adf-maintainer-gh-'))
+  const script = [
+    '#!/usr/bin/env node',
+    'const fs = require("node:fs")',
+    'const path = require("node:path")',
+    'const argv = process.argv.slice(2)',
+    'const a = argv.join(" ")',
+    'if (a === "--version") { console.log("gh version 2.62.0"); process.exit(0) }',
+    'if (a === "auth status") process.exit(0)',
+    `if (a === "api repos/${REPO}") { console.log(JSON.stringify({ permissions: { push: true } })); process.exit(0) }`,
+    `if (argv[1] === "repos/${REPO}/labels") { console.log("{}"); process.exit(0) }`,
+    'if (argv[1] === "--paginate") process.exit(0)',
+    `if (argv[1] === "repos/${REPO}/issues") {`,
+    '  const counter = path.join(__dirname, "count")',
+    '  const n = (fs.existsSync(counter) ? Number(fs.readFileSync(counter, "utf8")) : 0) + 1',
+    '  fs.writeFileSync(counter, String(n))',
+    `  console.log(JSON.stringify({ number: n, html_url: "https://github.com/${REPO}/issues/" + n }))`,
+    '  process.exit(0)',
+    '}',
+    'console.error("unexpected: " + a); process.exit(1)'
+  ].join('\n')
+  writeFileSync(join(dir, 'gh'), `${script}\n`)
+  writeFileSync(join(dir, 'package.json'), '{"type":"commonjs"}\n')
+  chmodSync(join(dir, 'gh'), 0o755)
+  return dir
+}
+
+test("the core's file input is accepted by the CLI, and its result reads in the core's report", { skip: process.platform === 'win32' }, async () => {
+  const core = join(pluginDir, '..', 'adf', 'scripts', 'lib')
+  const { upstreamFileInput } = await import(join(core, 'retro-run.mjs'))
+  const { upstreamReport } = await import(join(core, 'roles.mjs'))
+  // A finding as the core resolves a reply's (no version), and an ADF debt record with no
+  // change and no source, as an older record in the debt tree has.
+  const resolved = {
+    id: 'R1',
+    title: 'An implementation reported done before its review passed',
+    class: 'premature-done',
+    changes: ['one'],
+    evidence: [{ key: 'changes.one.signals.prematureDone', value: 1 }],
+    cost: { key: 'changes.one.values.cost.tokens', value: 300 },
+    caughtWhere: 'the task test run',
+    plugin: 'adf',
+    body: 'T1 was reported done and its review sent it back.'
+  }
+  const record = { id: 'adf-02', title: 'The hook misses a staged rename', plugin: 'adf', pluginVersion: '0.11.0', class: 'defect', body: 'A rename staged before the hook ran is not checked.' }
+  const input = upstreamFileInput({ repository: REPO, host: 'acme/host', retro: '2026-10-20-window', findings: [resolved], debt: [record] })
+  const payload = JSON.stringify({ root: tmpdir(), config: {}, input })
+  const { code, out } = cliRun(['file'], payload, { ...process.env, PATH: `${filingGh()}${delimiter}${process.env.PATH}` })
+  assert.equal(code, 0, JSON.stringify(out))
+  const url = (n) => `https://github.com/${REPO}/issues/${n}`
+  assert.deepEqual(out, {
+    state: 'done',
+    issues: [
+      { item: 'R1', kind: 'finding', number: 1, url: url(1), existed: false },
+      { item: 'adf-02', kind: 'debt', number: 2, url: url(2), existed: false }
+    ]
+  })
+  assert.equal(upstreamReport('file', { ...out, plugin: 'adf-maintainer' }), `Upstream: 2 filed, 0 already filed; finding R1 as ${url(1)}, ADF debt adf-02 as ${url(2)}`)
+})
