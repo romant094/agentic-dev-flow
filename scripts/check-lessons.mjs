@@ -19,11 +19,14 @@ const lessons = join(root, 'docs', 'lessons')
 const iterations = join(root, 'docs', 'iterations')
 const collapse = (text) => text.replace(/\s+/g, ' ')
 
-const done = new Set(
-  readdirSync(iterations)
-    .filter((file) => /^\d+-.*\.md$/.test(file) && /^## Result$/m.test(readFileSync(join(iterations, file), 'utf8')))
-    .map((file) => Number.parseInt(file, 10))
-)
+// An iteration's key is its file name's leading `\d+[a-z]?`: `10` and `10b` are distinct.
+export function doneIterations(dir = iterations) {
+  return new Set(
+    readdirSync(dir)
+      .filter((file) => /^\d+[a-z]?-.*\.md$/.test(file) && /^## Result$/m.test(readFileSync(join(dir, file), 'utf8')))
+      .map((file) => /^\d+[a-z]?/.exec(file)[0])
+  )
+}
 
 // A cell ends at a `|` that is neither escaped (`\|`) nor inside a code span, as in GitHub
 // tables.
@@ -48,13 +51,13 @@ export function cells(line) {
   return [...out, cell.trim()]
 }
 
-function checkEvidence(cell, decision) {
+export function checkEvidence(cell, decision, done = doneIterations()) {
   if (cell === '—') return decision.startsWith('rejected') ? [] : ['evidence "—" is allowed only for a rejected rule']
   const errors = []
   for (const item of cell.split('; ')) {
-    const pending = /^pending: iteration (\d+)$/.exec(item)
+    const pending = /^pending: iteration (\d+[a-z]?)$/.exec(item)
     if (pending) {
-      if (done.has(Number(pending[1]))) errors.push(`pending on iteration ${pending[1]}, which is done`)
+      if (done.has(pending[1])) errors.push(`pending on iteration ${pending[1]}, which is done`)
       continue
     }
     const evidence = /^`([^`]+)`: `([^`]+)`$/.exec(item)
@@ -73,6 +76,7 @@ function checkEvidence(cell, decision) {
 
 export function checkLessons() {
   const errors = []
+  const done = doneIterations()
   let rows = 0
   let pending = 0
   for (const file of readdirSync(lessons).filter((f) => f.endsWith('.md') && f !== 'README.md')) {
@@ -94,7 +98,7 @@ export function checkLessons() {
       const [, , decision, , evidence] = row
       if (!/^(ported|changed|rejected)\b/.test(decision)) errors.push(`${where}: no decision`)
       pending += (evidence.match(/pending: iteration/g) ?? []).length
-      for (const error of checkEvidence(evidence, decision)) errors.push(`${where}: ${error}`)
+      for (const error of checkEvidence(evidence, decision, done)) errors.push(`${where}: ${error}`)
     }
   }
   return { ok: errors.length === 0, rows, pending, errors }
