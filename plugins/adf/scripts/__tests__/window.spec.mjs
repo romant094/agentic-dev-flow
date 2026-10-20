@@ -275,6 +275,25 @@ test('the delta follows each metric direction and compares only what both window
   for (const m of METRICS) assert.ok(['lower', 'higher'].includes(DIRECTION[m.key]), m.key)
 })
 
+test('a merge carrying two changes: no files-outside-the-plan count for either, as the origin', () => {
+  const root = repo()
+  const isolated = (change, files) => {
+    const r = v2(change)
+    return { ...r, isolation: { foreignBranchRecords: 0, filesOutsidePlan: files, strayWorktrees: [] }, sources: { ...r.sources, coverage: { ...r.sources.coverage, isolation: 'record' } } }
+  }
+  merge(root, 'feat/alone', { ...archived('2026-09-02-alone', { record: isolated('alone', ['src/x.txt']) }), 'src/alone.txt': 'a\n' }, '2026-09-02T10:00:00Z')
+  // The list is the merge's files against one change's plan: it charges each with the other's files.
+  merge(
+    root,
+    'feat/pair',
+    { ...archived('2026-09-10-one', { record: isolated('one', ['src/y.txt']) }), ...archived('2026-09-10-two', { record: isolated('two', ['src/y.txt', 'src/z.txt']) }), 'src/pair.txt': 'p\n' },
+    '2026-09-10T10:00:00Z'
+  )
+  const s = buildSidecar(root, { ref: 'develop', date: DATE, asOf: AS_OF })
+  assert.deepEqual(s.changes.map((c) => c.values['isolation.filesOutsidePlan']), [1, null, null])
+  assert.equal(s.aggregates['isolation.filesOutsidePlan'].n, 1)
+})
+
 test('a window after a merged retro carries the delta against it', () => {
   const root = repo()
   const a = merge(root, 'feat/a', archived('2026-09-02-a', { record: v2('a', { rounds: 3 }) }), '2026-09-02T10:00:00Z')

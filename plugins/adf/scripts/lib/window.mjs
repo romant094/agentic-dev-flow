@@ -421,8 +421,10 @@ export const METRICS = [
   M('quality.fixesAfter', [], (c) => (counted(c) ? num(c.git?.fixesAfter) : null), 'lower'),
   M('quality.fixesPerChangeWeek', [], (c) => (counted(c) ? ratio(c.git?.fixesAfter, c.git?.exposureDays / 7) : null), 'lower', { norm: false }),
   M('isolation.foreignBranchRecords', ['isolation'], (c) => num(c.record.isolation?.foreignBranchRecords), 'lower'),
-  // A list the record could not measure is null: no data, not zero files.
-  M('isolation.filesOutsidePlan', ['isolation'], (c) => (Array.isArray(c.record.isolation?.filesOutsidePlan) ? c.record.isolation.filesOutsidePlan.length : null), 'lower'),
+  // A list the record could not measure is null: no data, not zero files. So is the list of a
+  // change whose merge carried others: it is the merge's files against one change's plan, and
+  // charges each change with the others' files.
+  M('isolation.filesOutsidePlan', ['isolation'], (c) => (!c.git?.sharedMerge && Array.isArray(c.record.isolation?.filesOutsidePlan) ? c.record.isolation.filesOutsidePlan.length : null), 'lower'),
   M('isolation.strayWorktrees', ['isolation'], (c) => (Array.isArray(c.record.isolation?.strayWorktrees) ? c.record.isolation.strayWorktrees.length : null), 'lower'),
   M(
     'context.peak',
