@@ -66,6 +66,9 @@ export function validateRegistry(registry) {
       errors.push(`extensions[${i}] needs exactly one of plugin (name@marketplace) or path`)
       continue
     }
+    if (entry.points !== undefined && !(Array.isArray(entry.points) && entry.points.every((p) => typeof p === 'string'))) {
+      errors.push(`extensions[${i}].points must be a list of point names`)
+    }
     const key = byId ? entry.plugin : normalize(entry.path)
     if (seen.has(key)) errors.push(`extensions[${i}] repeats ${entry.path}`)
     seen.add(key)
@@ -230,7 +233,14 @@ export function addExtension(root, target, { config, coreContract, points, home 
     if (label(other) === label(entry) || (other.path && entry.path && normalize(other.path) === normalize(entry.path))) {
       throw new Error(`${target} is already enabled`)
     }
-    const theirs = readDeclaration(root, other, { home })
+    let theirs
+    try {
+      theirs = readDeclaration(root, other, { home })
+    } catch (error) {
+      // An entry whose plugin is not installed or disabled provides nothing, so it conflicts with nothing.
+      if (error.absent) continue
+      throw error
+    }
     if (theirs.name === declaration.name) {
       throw new Error(`a plugin named ${declaration.name} is already enabled (${label(other)})`)
     }
@@ -240,6 +250,9 @@ export function addExtension(root, target, { config, coreContract, points, home 
       }
     }
   }
+  // The points are recorded so that the core can name this entry for the right point when the
+  // plugin is absent on a machine, without reading its declaration.
+  entry.points = Object.keys(declaration.provides)
   if (config !== undefined) entry.config = config
   writeRegistry(root, { ...registry, extensions: [...registry.extensions, entry] })
   const hostFiles = copyHostFiles(root, entry, declaration, { home })
@@ -261,23 +274,40 @@ export function removeExtension(root, name, { home } = {}) {
   return removed
 }
 
-// The enabled plugins with their directories, for the core to call. Throws on a broken entry.
-export function enabledPlugins(root, { coreContract, points, home }) {
+// The enabled plugins with their directories, for the core to call, and the entries whose plugin
+// is not installed or is disabled: every extension is optional, so such an entry is absent.
+// `absent` holds { id, reason, points }, `points` as the entry recorded them (none for an entry
+// written before they were). Throws on a broken entry.
+export function registryPlugins(root, { coreContract, points, home }) {
   const registry = requireRegistry(root)
-  return registry.extensions.map((entry) => ({
-    entry,
-    dir: pluginDir(root, entry, { home }),
-    declaration: loadPlugin(root, entry, { coreContract, points, home })
-  }))
+  const plugins = []
+  const absent = []
+  for (const entry of registry.extensions) {
+    let dir
+    try {
+      dir = pluginDir(root, entry, { home })
+    } catch (error) {
+      if (!error.absent) throw error
+      absent.push({ ...error.absent, points: Array.isArray(entry.points) ? entry.points : [] })
+      continue
+    }
+    plugins.push({ entry, dir, declaration: loadPlugin(root, entry, { coreContract, points, home }) })
+  }
+  return { plugins, absent }
+}
+
+export function enabledPlugins(root, core) {
+  return registryPlugins(root, core).plugins
 }
 
 export function checkRegistry(root, { coreContract, points, home }) {
   const registry = readRegistry(root)
-  if (!registry) return { ok: false, errors: ['no registry; run /adf:init'], plugins: [] }
+  if (!registry) return { ok: false, errors: ['no registry; run /adf:init'], warnings: [], plugins: [] }
   const errors = validateRegistry(registry)
   if (errors.length === 0 && !isCompatible(coreContract, registry.contract)) {
     errors.push(`registry is written for contract ${registry.contract}; this core runs ${coreContract}`)
   }
+  const warnings = []
   const plugins = []
   const providers = {}
   for (const entry of registry.extensions ?? []) {
@@ -290,17 +320,25 @@ export function checkRegistry(root, { coreContract, points, home }) {
         providers[point] = declaration.name
       }
     } catch (error) {
-      errors.push(error.message)
+      // A plugin that is not installed or is disabled is optional: the flow runs without it, so it only warns.
+      const { id, reason } = error.absent ?? {}
+      if (reason === 'not-installed') warnings.push(`${id} is in the registry but not installed; its points are skipped (run: claude plugin install ${id} --scope project)`)
+      else if (reason === 'disabled') warnings.push(`${id} is in the registry but disabled; its points are skipped (run: claude plugin enable ${id})`)
+      else errors.push(error.message)
     }
   }
   if (registry.branches === undefined) errors.push('no branches are set; run /adf:init')
-  return { ok: errors.length === 0, errors, plugins }
+  return { ok: errors.length === 0, errors, warnings, plugins }
 }
 
 // ---------------------------------------------------------------- reports
 
 const plugins = (check) => (check.plugins.length ? check.plugins.map((p) => `${p.name} (${p.points.length ? p.points.join(', ') : 'no points'})`).join('; ') : 'none')
-const checkLine = (check) => (check.ok ? 'Registry check: ok' : `Registry check: ${check.errors.length} error(s)\n${check.errors.map((e) => `- ${e}`).join('\n')}`)
+const checkLine = (check) =>
+  [
+    check.ok ? 'Registry check: ok' : `Registry check: ${check.errors.length} error(s)\n${check.errors.map((e) => `- ${e}`).join('\n')}`,
+    ...(check.warnings ?? []).map((w) => `Warning: ${w}`)
+  ].join('\n')
 const policy = (branches) => `Branch policy: integration ${branches.integration}; protected ${branches.protected.join(', ')}`
 
 const reviewPromptLine = (p) => {

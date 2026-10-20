@@ -53,7 +53,7 @@ test('init, add, check, remove on a fresh host', () => {
   assert.equal(adf(root, 'check').code, 1)
   const set = adf(root, 'branches', '--integration', 'develop', '--protected', 'main, develop').out
   assert.deepEqual({ integration: set.integration, protected: set.protected }, { integration: 'develop', protected: ['develop', 'main'] })
-  assert.deepEqual(set.check, { ok: true, errors: [], plugins: [] })
+  assert.deepEqual(set.check, { ok: true, errors: [], warnings: [], plugins: [] })
   assert.match(set.report, /^Branch policy: integration develop; protected develop, main\n/)
   const again = adf(root, 'init').out
   assert.equal(again.created, false)
@@ -74,7 +74,7 @@ test('init, add, check, remove on a fresh host', () => {
   assert.deepEqual(checked.out.plugins, [{ name: 'sample', path: 'plugins/sample', points: [] }])
 
   const registry = JSON.parse(readFileSync(join(root, '.claude', 'adf-extensions.json'), 'utf8'))
-  assert.deepEqual(registry.extensions, [{ path: 'plugins/sample', config: { greeting: 'hi' } }])
+  assert.deepEqual(registry.extensions, [{ path: 'plugins/sample', points: [], config: { greeting: 'hi' } }])
 
   const removed = adf(root, 'remove', 'sample')
   assert.equal(removed.code, 0)
@@ -131,7 +131,7 @@ test('an installed plugin is enabled by id, its host files copied once, and a ro
   assert.equal(added.out.check.ok, true)
   assert.equal(existsSync(join(root, '.forge', 'mr.md')), true)
   const registry = JSON.parse(readFileSync(join(root, '.claude', 'adf-extensions.json'), 'utf8'))
-  assert.deepEqual(registry.extensions, [{ plugin: 'forge-a@mk' }])
+  assert.deepEqual(registry.extensions, [{ plugin: 'forge-a@mk', points: ['forge'] }])
   assert.deepEqual(adfAt(root, forgeHome, 'check').out.plugins, [{ name: 'forge-a', plugin: 'forge-a@mk', points: ['forge'] }])
   assert.match(adfAt(root, forgeHome, 'add', 'forge-b@mk').out.error, /role forge is already provided by forge-a/)
   assert.match(adfAt(root, forgeHome, 'add', 'missing@mk').out.error, /not installed for this project/)

@@ -45,7 +45,10 @@ The script prints one JSON object on stdout. Its `state` is:
   Exit 1.
 
 A script that prints no such object is treated as `refused`. With no provider of a role the
-core gets `{ "state": "none" }` and applies the role's default.
+core gets `{ "state": "none" }` and applies the role's default. Every extension is optional: a
+registry entry whose plugin is not installed or is disabled is treated as absent. When it is
+the point's only provider, the result is `none` with `absent` (`[{ id, reason }]`, `reason`
+`not-installed` or `disabled`) naming it, and the report says the step was skipped.
 
 ## Points
 
@@ -121,8 +124,8 @@ plugin and name both versions.
   "contract": "1.4",
   "branches": { "integration": "develop", "protected": ["develop", "main"] },
   "extensions": [
-    { "plugin": "gitlab@agentic-dev-flow", "config": { "host": "gitlab.example.com" } },
-    { "path": "plugins/local-draft" }
+    { "plugin": "gitlab@agentic-dev-flow", "points": ["forge"], "config": { "host": "gitlab.example.com" } },
+    { "path": "plugins/local-draft", "points": [] }
   ]
 }
 ```
@@ -130,7 +133,10 @@ plugin and name both versions.
 An entry names an installed plugin by id (`plugin`), or a plugin directory by `path` (a plugin
 in development). An id is resolved from Claude Code's install records for the main checkout,
 so it survives a plugin update and works in every worktree. The order of `extensions` is the
-call order for hooks; a role has at most one provider. `config` is opaque to the core and is
+call order for hooks; a role has at most one provider. `points` is written by `/adf:add` from
+the declaration's `provides`: it lets the core name an absent entry for the points it provides
+without reading its declaration. An entry with no `points` (written before they were) is named
+for no point, and the registry check still warns about it. `config` is opaque to the core and is
 passed to the plugin's operations.
 
 `metrics.pricesUrl` (optional) is the page archive fetches the model price table from, an http

@@ -24,6 +24,13 @@ export function mainCheckout(root) {
   }
 }
 
+// `absent` lets a caller treat the entry as absent rather than as broken.
+function absent(message, id, reason) {
+  const error = new Error(message)
+  error.absent = { id, reason }
+  return error
+}
+
 export function installedPath(id, root, { home = claudeHome(), exists = existsSync } = {}) {
   const main = mainCheckout(root)
   const records = readJson(join(home, 'plugins', 'installed_plugins.json'))?.plugins?.[id]
@@ -33,12 +40,12 @@ export function installedPath(id, root, { home = claudeHome(), exists = existsSy
     readJson(join(main, '.claude', 'settings.json')),
     readJson(join(main, '.claude', 'settings.local.json'))
   )
-  if (settings.enabledPlugins[id] === false) throw new Error(`${id} is installed but disabled`)
+  if (settings.enabledPlugins[id] === false) throw absent(`${id} is installed but disabled`, id, 'disabled')
   // The most specific install wins: local, then project, then user.
   const rank = { local: 0, project: 1, user: 2 }
   const found = here
     .filter((r) => r.installPath && exists(r.installPath))
     .sort((a, b) => (rank[a.scope] ?? 2) - (rank[b.scope] ?? 2))[0]
-  if (!found) throw new Error(`${id} is not installed for this project; run: claude plugin install ${id} --scope project`)
+  if (!found) throw absent(`${id} is not installed for this project; run: claude plugin install ${id} --scope project`, id, 'not-installed')
   return found.installPath
 }

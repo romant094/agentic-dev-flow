@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { enabledPlugins } from './registry.mjs'
+import { registryPlugins } from './registry.mjs'
 
 export const STATES = ['done', 'degraded', 'refused']
 
@@ -15,16 +15,24 @@ const contract = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.
 export const CORE = { coreContract: contract.version, points: contract.points }
 
 export function provider(root, point, core) {
-  return enabledPlugins(root, core).find((p) => Object.hasOwn(p.declaration.provides, point)) ?? null
+  return registryPlugins(root, core).plugins.find((p) => Object.hasOwn(p.declaration.provides, point)) ?? null
 }
 
 // With no provider the result is `{ state: 'none' }`: the point's documented default applies.
+// A registry entry whose plugin is not installed or is disabled is absent. When no enabled
+// plugin provides the point, `absent` lists the absent entries that recorded the point
+// ({ id, reason }), and the report says the step was skipped; an entry that recorded no points
+// is named for none.
 export function callRole(root, point, operation, input, core) {
   if (!core.points[point]?.operations.includes(operation)) {
     throw new Error(`${point} has no operation ${operation}`)
   }
-  const found = provider(root, point, core)
-  if (!found) return { state: 'none', point }
+  const { plugins, absent } = registryPlugins(root, core)
+  const found = plugins.find((p) => Object.hasOwn(p.declaration.provides, point))
+  if (!found) {
+    const named = absent.filter((a) => a.points.includes(point)).map(({ id, reason }) => ({ id, reason }))
+    return named.length ? { state: 'none', point, absent: named } : { state: 'none', point }
+  }
   const script = join(found.dir, found.declaration.provides[point].script)
   const run = spawnSync('node', [script, operation], {
     cwd: root,
@@ -92,6 +100,11 @@ export function forgeInput(operation, state, { input = {}, title, summary, draft
 
 // ---------------------------------------------------------------- the report of a forge call
 
+// The lines a `none` report adds for registry entries that would provide the point but are absent.
+const ABSENT = { 'not-installed': 'not installed', disabled: 'disabled' }
+const absentLines = (result, step) =>
+  (result.absent ?? []).map((a) => `\n${a.id} is in the registry but ${ABSENT[a.reason] ?? a.reason}; ${step} was skipped.`).join('')
+
 const LABEL = { check: 'Forge', open: 'Merge request', push: 'Push', finalize: 'Merge request' }
 
 // The lines a command shows for a forge result, so no caller renders the forge's JSON itself:
@@ -100,7 +113,7 @@ const LABEL = { check: 'Forge', open: 'Merge request', push: 'Push', finalize: '
 // what the caller asked `open` for: false opens it ready to merge (the retrospective's).
 export function forgeReport(operation, result, { draft = true } = {}) {
   const label = LABEL[operation] ?? 'Forge'
-  if (result.state === 'none') return `${label}: none; no forge plugin is enabled, so nothing was pushed and no merge request exists.`
+  if (result.state === 'none') return `${label}: none; no forge plugin is enabled, so nothing was pushed and no merge request exists.${absentLines(result, `the forge ${operation}`)}`
   if (result.state === 'refused') return `${label}: refused; ${result.error ?? 'no reason given'}`
   if (result.state === 'degraded') {
     return [`${label}: not done yet. ${result.hint ?? ''}`.trim(), ...(result.fallback ?? []).map((c) => `  ${c}`)].join('\n')
@@ -123,7 +136,7 @@ export function knowledgePaths(root, core) {
   } catch (error) {
     return { state: 'refused', paths: [], error: error.message }
   }
-  if (result.state !== 'done') return { state: result.state, paths: [], ...(result.error ? { error: result.error } : {}) }
+  if (result.state !== 'done') return { state: result.state, paths: [], ...(result.error ? { error: result.error } : {}), ...(result.absent ? { absent: result.absent } : {}) }
   const given = Array.isArray(result.paths) ? result.paths : []
   const valid = (g) => typeof g === 'string' && g !== '' && g.trim() === g && !isAbsolute(g) && !normalize(g).startsWith('..')
   const dropped = given.filter((g) => !valid(g))
@@ -134,11 +147,11 @@ export function knowledgePaths(root, core) {
 // here once, so no command words them itself.
 export function knowledgeReport(operation, result) {
   if (result.state === 'none') {
-    return {
+    return `${{
       context: 'Knowledge: none; no knowledge plugin is enabled, so brainstorm reads no index and archive skips the ingest.',
       log: 'Knowledge log: none; no knowledge plugin is enabled, so no log entry was written and archive skipped the ingest.',
       check: 'Knowledge check: none; no knowledge plugin is enabled.'
-    }[operation]
+    }[operation]}${absentLines(result, `the knowledge ${operation}`)}`
   }
   if (result.state === 'refused') return `Knowledge ${operation}: refused; ${result.error ?? 'no reason given'}`
   if (result.state === 'degraded') return `Knowledge ${operation}: not done. ${result.hint ?? ''}`.trim()
@@ -158,10 +171,10 @@ export function knowledgeReport(operation, result) {
 // once: nothing is filed, and the findings stay in the retrospective's sidecar.
 export function upstreamReport(operation, result) {
   if (result.state === 'none') {
-    return {
+    return `${{
       check: 'Upstream: none; no upstream plugin is enabled, so the findings stay in the retrospective sidecar.',
       file: 'Upstream: none; no upstream plugin is enabled, so nothing was filed and the findings stay in the retrospective sidecar.'
-    }[operation]
+    }[operation]}${absentLines(result, `the upstream ${operation}`)}`
   }
   if (result.state === 'refused') return `Upstream ${operation}: refused; ${result.error ?? 'no reason given'}`
   if (result.state === 'degraded') return `Upstream ${operation}: not done. ${result.hint ?? ''}`.trim()

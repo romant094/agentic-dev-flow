@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initRegistry, writeRegistry, readRegistry } from '../lib/registry.mjs'
-import { callRole, CORE, forgeInput, knowledgePaths, knowledgeReport, upstreamReport } from '../lib/roles.mjs'
+import { callRole, CORE, forgeInput, forgeReport, knowledgePaths, knowledgeReport, upstreamReport } from '../lib/roles.mjs'
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'forge.mjs')
 const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
@@ -121,6 +121,41 @@ test('an upstream provider declared for contract 1.4 files through the core', ()
   assert.deepEqual(filed.issues, [{ finding: 'R1', number: 1, url: 'https://t/1' }, { finding: 'R2', number: 2, url: 'https://t/2' }])
   assert.equal(upstreamReport('file', filed), 'Upstream: filed R1 as https://t/1, R2 as https://t/2')
   assert.equal(upstreamReport('check', { state: 'degraded', hint: 'gh auth login' }), 'Upstream check: not done. gh auth login')
+})
+
+test('an absent entry is skipped: an installed provider still runs, and a point only it recorded is none with absent', () => {
+  const declaration = { name: 'u', contract: '1.4', provides: { upstream: { script: 'scripts/k.mjs', operations: ['check', 'file'] } } }
+  const root = knowledgeHost(declaration, `console.log(JSON.stringify({state:'done',tool:'t'}))`)
+  const off = mkdtempSync(join(tmpdir(), 'adf-home-'))
+  writeFileSync(join(off, 'settings.json'), JSON.stringify({ enabledPlugins: { 'gitlab@agentic-dev-flow': false } }))
+  const extensions = [{ plugin: 'memory@agentic-dev-flow', points: ['knowledge'] }, { plugin: 'gitlab@agentic-dev-flow', points: ['forge'] }, { plugin: 'old@mk' }, ...readRegistry(root).extensions]
+  writeRegistry(root, { ...readRegistry(root), extensions })
+  const core = { ...CORE, home: off }
+  assert.deepEqual(callRole(root, 'upstream', 'check', {}, core), { state: 'done', tool: 't', plugin: 'u' })
+  const none = callRole(root, 'knowledge', 'context', {}, core)
+  assert.deepEqual(none, { state: 'none', point: 'knowledge', absent: [{ id: 'memory@agentic-dev-flow', reason: 'not-installed' }] })
+  assert.equal(
+    knowledgeReport('context', none),
+    'Knowledge: none; no knowledge plugin is enabled, so brainstorm reads no index and archive skips the ingest.\nmemory@agentic-dev-flow is in the registry but not installed; the knowledge context was skipped.'
+  )
+  assert.deepEqual(knowledgePaths(root, core), { state: 'none', paths: [], absent: [{ id: 'memory@agentic-dev-flow', reason: 'not-installed' }] })
+  assert.match(forgeReport('push', callRole(root, 'forge', 'push', {}, core)), /\ngitlab@agentic-dev-flow is in the registry but disabled; the forge push was skipped\.$/)
+  assert.doesNotMatch(upstreamReport('check', { state: 'none', point: 'upstream' }), /in the registry/)
+})
+
+test('an absent maintainer entry is named for upstream only, and an old entry with no points for nothing', () => {
+  const root = knowledgeHost()
+  writeRegistry(root, { ...readRegistry(root), extensions: [{ plugin: 'adf-maintainer@agentic-dev-flow', points: ['upstream'] }, { plugin: 'old@mk' }] })
+  const core = { ...CORE, home }
+  const knowledge = callRole(root, 'knowledge', 'context', {}, core)
+  assert.deepEqual(knowledge, { state: 'none', point: 'knowledge' })
+  assert.doesNotMatch(knowledgeReport('context', knowledge), /in the registry/)
+  const upstream = callRole(root, 'upstream', 'file', { findings: [] }, core)
+  assert.deepEqual(upstream, { state: 'none', point: 'upstream', absent: [{ id: 'adf-maintainer@agentic-dev-flow', reason: 'not-installed' }] })
+  assert.equal(
+    upstreamReport('file', upstream),
+    'Upstream: none; no upstream plugin is enabled, so nothing was filed and the findings stay in the retrospective sidecar.\nadf-maintainer@agentic-dev-flow is in the registry but not installed; the upstream file was skipped.'
+  )
 })
 
 test('with no knowledge provider the state is none, the default is said, and no path is allowed', () => {
