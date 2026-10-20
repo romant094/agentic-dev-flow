@@ -95,7 +95,7 @@ test('resolves only a debt record that exists, to one of the named destinations'
   )
   assert.throws(
     () => buildRecord('resolve', { debt: 'debt-1', as: 'later', where: 'x' }, { existing: [debt] }),
-    /--as must be one of: tech-debt, flow-debt, follow-up, accepted/
+    /--as must be one of: tech-debt, adf-debt, follow-up, accepted/
   )
   const resolve = buildRecord(
     'resolve',

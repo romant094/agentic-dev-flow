@@ -12,8 +12,8 @@ parser. The tree owns the content of the debt; a tracker plugin owns its plannin
   index.md              the root index: a "| Block | Covers |" table, one row per block
   <block>/index.md      the block's entries, as table rows
   <block>/<topic>.md    optional body file, only for an area that needs explaining
-  flow/index.md         the records of kind flow
-  flow/<id>.md          one body file per flow record
+  adf/index.md          the records of kind adf
+  adf/<id>.md           one body file per ADF record
 ```
 
 A root row links its block: ``| [`snmp`](snmp/index.md) | SNMP transport |``. A block id is
@@ -44,25 +44,30 @@ entries of that table belong to it. It is never a row and never a file.
 The tree carries no status, assignee, priority, estimate or other planning column, and no
 count. An entry is deleted when its debt is resolved (`debt.mjs remove`); git keeps it.
 
-## Flow records
+## ADF records
 
-The block `flow` holds the records of kind `flow`: defects of the flow's own plugins found while
+The block `adf` holds the records of kind `adf`: defects of the flow's own plugins found while
 a host used them. They stay on this machine; no core script sends them anywhere. The
-maintainer's plugin reads them with `debt.mjs list --kind flow`, files each upstream and records
+maintainer's plugin reads them with `debt.mjs list --kind adf`, files each upstream and records
 the issue with `debt.mjs mark-filed --id <id> --url <url>`.
 
 | ID | Title | Plugin | Version | Change | Class | Source | Filed |
 |---|---|---|---|---|---|---|---|
-| `flow-01` | Verify reads the whole repository | `adf` | `0.9.0` | `my-change` | defect | `my-change` | |
+| `adf-01` | Verify reads the whole repository | `adf` | `0.9.0` | `my-change` | defect | `my-change` | |
 
 - **Class** is `defect` (the code or the check is wrong), `deferred wording` (a rule stated
   twice whose deduplication changes what a surface says) or `decision` (a decision still to be
   made).
 - **Filed** is the URL of the issue the record was filed as, once; empty until then.
-- The body is `flow/<id>.md`: a heading naming the id and title, then the body text.
+- The body is `adf/<id>.md`: a heading naming the id and title, then the body text.
 
-`debt.mjs flow --change <name> --file <json>` writes one record from
+`debt.mjs adf --change <name> --file <json>` writes one record from
 `{ plugin, pluginVersion, class, title, body, source? }`; `source` defaults to the change.
+It always writes to the block `adf`.
+
+A tree written before the kind was renamed keeps its records in the block `flow`, ids
+`flow-<number>`, bodies `flow/<id>.md`. The reader takes that block as kind `adf` and checks it
+by the same rules; `mark-filed` and `remove` work on its ids; no record is written to it.
 
 ## What `debt.mjs check` refuses
 
@@ -73,7 +78,7 @@ the issue with `debt.mjs mark-filed --id <id> --url <url>`.
 - a row whose ID is not an id of its block (a sub-block written as a row);
 - a duplicate id, a duplicate tracker key or filed URL;
 - an empty title or source, a class outside the block's vocabulary;
-- a flow record without plugin, version, change or body file, or with a filed value that is
+- an ADF record without plugin, version, change or body file, or with a filed value that is
   not a URL;
 - a count of entries in an index's prose or headings;
 - an id of a block named anywhere in the tree that no row carries.

@@ -1,9 +1,9 @@
 // The core's technical debt store: a Markdown tree at the registry's `debt.root`, its format in
 // contract/debt-format.md. A root index lists the blocks; each block is a directory whose
 // `index.md` holds the entries as table rows, grouped by sub-block headings; a body file beside
-// it explains an area. The block `flow` holds the records of kind `flow`: defects of the flow's
-// own plugins, each with its body in `flow/<id>.md`, kept on this machine until the maintainer
-// files them.
+// it explains an area. The block `adf` holds the records of kind `adf`: defects of the flow's
+// own plugins, each with its body in `adf/<id>.md`, kept on this machine until the maintainer
+// files them. A tree written before the rename keeps them in the block `flow`, read the same way.
 //
 // Nothing here keeps a roll-up, a count or a status: `listTree` computes every entry on demand
 // and writes nothing. An id is allocated once and never renumbered.
@@ -12,13 +12,16 @@ import { join, relative } from 'node:path'
 
 export const ROOT_INDEX = 'index.md'
 export const BLOCK_INDEX = 'index.md'
-export const FLOW_BLOCK = 'flow'
+export const ADF_BLOCK = 'adf'
+// The block ADF records lived in before the kind was renamed; read as kind `adf`, never written.
+export const LEGACY_ADF_BLOCK = 'flow'
+const isAdfBlock = (block) => block === ADF_BLOCK || block === LEGACY_ADF_BLOCK
 export const DEBT_COLUMNS = ['ID', 'Title', 'Anchors', 'Class', 'Source', 'Tracker']
-export const FLOW_COLUMNS = ['ID', 'Title', 'Plugin', 'Version', 'Change', 'Class', 'Source', 'Filed']
+export const ADF_COLUMNS = ['ID', 'Title', 'Plugin', 'Version', 'Change', 'Class', 'Source', 'Filed']
 export const ROOT_COLUMNS = ['Block', 'Covers']
 export const DEBT_CLASSES = ['defect', 'debt', 'decision']
-export const FLOW_CLASSES = ['defect', 'deferred wording', 'decision']
-const FLOW_COVERS = "Defects of the flow's own plugins, kept here until the maintainer files them upstream"
+export const ADF_CLASSES = ['defect', 'deferred wording', 'decision']
+const ADF_COVERS = "Defects of the flow's own plugins, kept here until the maintainer files them upstream"
 // A column the tree never carries: planning belongs to the tracker, and a count disagrees with
 // the rows as soon as one changes.
 const PLANNING = /^(status|state|assignee|owner|priority|estimate|effort|due|deadline|sprint|milestone|count|total|points)$/i
@@ -130,10 +133,10 @@ function rootBlocks(tree) {
 
 function entryOf(block, columns, cells, subBlock) {
   const at = (name) => cells[columns.indexOf(name)] ?? ''
-  if (block === FLOW_BLOCK) {
+  if (isAdfBlock(block)) {
     return {
       id: uncode(at('ID')),
-      kind: 'flow',
+      kind: 'adf',
       block,
       title: at('Title'),
       plugin: uncode(at('Plugin')),
@@ -157,10 +160,10 @@ function entryOf(block, columns, cells, subBlock) {
   }
 }
 
-const flowBodyPath = (tree, id) => join(tree, FLOW_BLOCK, `${id}.md`)
+const adfBodyPath = (tree, block, id) => join(tree, block, `${id}.md`)
 
-function flowBody(tree, id) {
-  const file = flowBodyPath(tree, id)
+function adfBody(tree, block, id) {
+  const file = adfBodyPath(tree, block, id)
   if (!existsSync(file)) return null
   return read(file).replace(/^#[^\n]*\n/, '').trim()
 }
@@ -182,12 +185,12 @@ function blocksOf(tree) {
 }
 
 // Every block, sub-block and entry, computed from the files; nothing is written. `kind` keeps
-// only `debt` (product) or `flow` entries.
+// only `debt` (product) or `adf` entries.
 export function listTree(tree, { kind } = {}) {
   const blocks = []
   const entries = []
   for (const block of blocksOf(tree)) {
-    const blockKind = block.id === FLOW_BLOCK ? 'flow' : 'debt'
+    const blockKind = isAdfBlock(block.id) ? 'adf' : 'debt'
     if (kind && kind !== blockKind) continue
     const tables = block.page?.tables ?? []
     blocks.push({
@@ -197,12 +200,12 @@ export function listTree(tree, { kind } = {}) {
       index: relative(tree, block.index),
       columns: tables[0]?.columns ?? null,
       subBlocks: [...new Set(tables.map((t) => t.subBlock).filter((s) => s !== null))],
-      bodyFiles: blockKind === 'flow' ? [] : block.others.map((f) => `${block.id}/${f}`)
+      bodyFiles: blockKind === 'adf' ? [] : block.others.map((f) => `${block.id}/${f}`)
     })
     for (const table of tables) {
       for (const row of table.rows) {
         const entry = entryOf(block.id, table.columns, row.cells, table.subBlock)
-        if (entry.kind === 'flow') entry.body = flowBody(tree, entry.id)
+        if (entry.kind === 'adf') entry.body = adfBody(tree, block.id, entry.id)
         entries.push(entry)
       }
     }
@@ -240,7 +243,7 @@ export function checkTree(tree) {
   const ids = new Map()
   const keys = new Map()
   for (const block of blocks) {
-    const flow = block.id === FLOW_BLOCK
+    const adf = isAdfBlock(block.id)
     if (!BLOCK_ID.test(block.id)) err(rootFile, block.row?.line ?? null, `block "${block.id}" is not a kebab-case name`)
     if (root.exists && !block.row) err(rootFile, null, `block ${block.id} has no row in the root index`)
     if (block.row && block.row.link !== `${block.id}/${BLOCK_INDEX}`) err(rootFile, block.row.line, `the root row of ${block.id} must link ${block.id}/${BLOCK_INDEX}`)
@@ -248,8 +251,8 @@ export function checkTree(tree) {
       err(block.index, null, `block ${block.id} has no ${BLOCK_INDEX}`)
       continue
     }
-    const expected = flow ? FLOW_COLUMNS : DEBT_COLUMNS
-    const classes = flow ? FLOW_CLASSES : DEBT_CLASSES
+    const expected = adf ? ADF_COLUMNS : DEBT_COLUMNS
+    const classes = adf ? ADF_CLASSES : DEBT_CLASSES
     for (const table of block.page.tables) {
       const planning = table.columns.filter((c) => PLANNING.test(c))
       if (planning.length) err(block.index, table.header, `columns ${planning.join(', ')} hold planning or a count, which the tracker owns`)
@@ -269,15 +272,15 @@ export function checkTree(tree) {
         if (!entry.title) err(block.index, row.line, `${entry.id} has no title`)
         if (!classes.includes(entry.class)) err(block.index, row.line, `${entry.id}: class "${entry.class}" is not one of ${classes.join(', ')}`)
         if (!entry.source) err(block.index, row.line, `${entry.id} has no source`)
-        const identity = flow ? entry.filed : entry.tracker
+        const identity = adf ? entry.filed : entry.tracker
         if (identity) {
-          if (keys.has(identity)) err(block.index, row.line, `${entry.id} shares ${flow ? 'the filed issue' : 'the tracker key'} ${identity} with ${keys.get(identity)}`)
+          if (keys.has(identity)) err(block.index, row.line, `${entry.id} shares ${adf ? 'the filed issue' : 'the tracker key'} ${identity} with ${keys.get(identity)}`)
           else keys.set(identity, entry.id)
         }
-        if (flow) {
+        if (adf) {
           for (const field of ['plugin', 'pluginVersion', 'change']) if (!entry[field]) err(block.index, row.line, `${entry.id} has no ${field}`)
           if (entry.filed && !/^https?:\/\/\S+$/.test(entry.filed)) err(block.index, row.line, `${entry.id}: filed "${entry.filed}" is not a URL`)
-          if (!existsSync(flowBodyPath(tree, entry.id))) err(flowBodyPath(tree, entry.id), null, `${entry.id} has no body file`)
+          if (!existsSync(adfBodyPath(tree, block.id, entry.id))) err(adfBodyPath(tree, block.id, entry.id), null, `${entry.id} has no body file`)
         }
       }
     }
@@ -379,7 +382,7 @@ const oneLine = (name, value) => {
 // nothing and returns it, so a re-run of archive does not file it twice.
 export function addEntry(tree, { block, title, anchors, class: cls, source, subBlock = null, covers = null }) {
   if (!BLOCK_ID.test(block ?? '')) throw new Error(`block "${block}" is not a kebab-case name`)
-  if (block === FLOW_BLOCK) throw new Error('the block flow holds flow records; write them with debt.mjs flow')
+  if (isAdfBlock(block)) throw new Error(`the block ${block} holds ADF records; write them with debt.mjs adf`)
   title = oneLine('title', title)
   source = oneLine('source', source)
   if (!DEBT_CLASSES.includes(cls)) throw new Error(`class "${cls}" is not one of ${DEBT_CLASSES.join(', ')}`)
@@ -423,7 +426,7 @@ export function addAnchor(tree, { id, anchor }) {
   anchor = oneLine('anchor', anchor)
   if (anchor.includes('`')) throw new Error('an anchor has no backticks')
   const at = locate(tree, id)
-  if (at.block === FLOW_BLOCK) throw new Error('a flow record has no anchors')
+  if (isAdfBlock(at.block)) throw new Error('an ADF record has no anchors')
   const column = at.table.columns.indexOf('Anchors')
   const anchors = anchorsOf(at.row.cells[column] ?? '')
   if (anchors.includes(anchor)) return { added: false, entry: entryOf(at.block, at.table.columns, at.row.cells, at.table.subBlock) }
@@ -440,53 +443,54 @@ export function removeEntry(tree, { id }) {
   at.page.lines.splice(at.row.line, 1)
   save(at.file, at.page.lines)
   const files = [`${at.block}/${BLOCK_INDEX}`]
-  if (at.block === FLOW_BLOCK && existsSync(flowBodyPath(tree, id))) {
-    removed.body = flowBody(tree, id)
-    rmSync(flowBodyPath(tree, id))
-    files.push(`${FLOW_BLOCK}/${id}.md`)
+  if (isAdfBlock(at.block) && existsSync(adfBodyPath(tree, at.block, id))) {
+    removed.body = adfBody(tree, at.block, id)
+    rmSync(adfBodyPath(tree, at.block, id))
+    files.push(`${at.block}/${id}.md`)
   }
   return { removed, files }
 }
 
-// A record of kind `flow`: a defect of a flow plugin, kept on this machine. Recording the same
-// plugin, change and title again changes nothing and returns the record.
-export function addFlowRecord(tree, change, input) {
-  if (input === null || typeof input !== 'object' || Array.isArray(input)) throw new Error('the flow record must be a JSON object')
+// A record of kind `adf`: a defect of a flow plugin, kept on this machine, always written to the
+// block `adf`. Recording the same plugin, change and title again, in either block, changes
+// nothing and returns the record.
+export function addAdfRecord(tree, change, input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) throw new Error('the ADF record must be a JSON object')
   const known = ['plugin', 'pluginVersion', 'change', 'class', 'title', 'body', 'source']
   const stray = Object.keys(input).filter((k) => !known.includes(k))
-  if (stray.length) throw new Error(`unknown fields ${stray.join(', ')}; a flow record has ${known.join(', ')}`)
+  if (stray.length) throw new Error(`unknown fields ${stray.join(', ')}; an ADF record has ${known.join(', ')}`)
   change = oneLine('change', change)
   if (input.change !== undefined && input.change !== change) throw new Error(`the record names change ${input.change}, not ${change}`)
   const plugin = oneLine('plugin', input.plugin)
   const pluginVersion = oneLine('pluginVersion', input.pluginVersion)
   const title = oneLine('title', input.title)
   const source = input.source === undefined ? change : oneLine('source', input.source)
-  if (!FLOW_CLASSES.includes(input.class)) throw new Error(`class "${input.class}" is not one of ${FLOW_CLASSES.join(', ')}`)
+  if (!ADF_CLASSES.includes(input.class)) throw new Error(`class "${input.class}" is not one of ${ADF_CLASSES.join(', ')}`)
   if (typeof input.body !== 'string' || input.body.trim() === '') throw new Error('body is required')
   for (const [name, value] of [['plugin', plugin], ['pluginVersion', pluginVersion], ['change', change]]) {
     if (value.includes('`')) throw new Error(`${name} has no backticks`)
   }
-  const existing = listTree(tree, { kind: 'flow' }).entries.find((e) => e.plugin === plugin && e.change === change && e.title === title)
+  const existing = listTree(tree, { kind: 'adf' }).entries.find((e) => e.plugin === plugin && e.change === change && e.title === title)
   if (existing) return { created: false, record: existing, files: [] }
-  const blockRow = addRootRow(tree, FLOW_BLOCK, FLOW_COVERS)
-  mkdirSync(join(tree, FLOW_BLOCK), { recursive: true })
-  const id = nextId(tree, FLOW_BLOCK)
-  writeFileSync(flowBodyPath(tree, id), `# ${code(id)} ${title}\n\n${input.body.trim()}\n`)
-  insertRow(join(tree, FLOW_BLOCK, BLOCK_INDEX), FLOW_COLUMNS, formatRow([code(id), title, code(plugin), code(pluginVersion), code(change), input.class, source, '']), null)
-  const record = listTree(tree, { kind: 'flow' }).entries.find((e) => e.id === id)
-  return { created: true, record, files: [...(blockRow ? [ROOT_INDEX] : []), `${FLOW_BLOCK}/${BLOCK_INDEX}`, `${FLOW_BLOCK}/${id}.md`] }
+  const blockRow = addRootRow(tree, ADF_BLOCK, ADF_COVERS)
+  mkdirSync(join(tree, ADF_BLOCK), { recursive: true })
+  const id = nextId(tree, ADF_BLOCK)
+  writeFileSync(adfBodyPath(tree, ADF_BLOCK, id), `# ${code(id)} ${title}\n\n${input.body.trim()}\n`)
+  insertRow(join(tree, ADF_BLOCK, BLOCK_INDEX), ADF_COLUMNS, formatRow([code(id), title, code(plugin), code(pluginVersion), code(change), input.class, source, '']), null)
+  const record = listTree(tree, { kind: 'adf' }).entries.find((e) => e.id === id)
+  return { created: true, record, files: [...(blockRow ? [ROOT_INDEX] : []), `${ADF_BLOCK}/${BLOCK_INDEX}`, `${ADF_BLOCK}/${id}.md`] }
 }
 
-// The issue a flow record was filed as. The same URL again changes nothing; another URL is
+// The issue an ADF record was filed as. The same URL again changes nothing; another URL is
 // refused, since a record is filed once.
 export function markFiled(tree, { id, url }) {
   url = oneLine('url', url)
   if (!/^https?:\/\/\S+$/.test(url)) throw new Error(`"${url}" is not a URL`)
   const at = locate(tree, id)
-  if (at.block !== FLOW_BLOCK) throw new Error(`${id} is not a flow record`)
+  if (!isAdfBlock(at.block)) throw new Error(`${id} is not an ADF record`)
   const column = at.table.columns.indexOf('Filed')
   const current = key(at.row.cells[column] ?? '')
-  const record = () => ({ ...entryOf(at.block, at.table.columns, at.row.cells, null), body: flowBody(tree, id) })
+  const record = () => ({ ...entryOf(at.block, at.table.columns, at.row.cells, null), body: adfBody(tree, at.block, id) })
   if (current === url) return { changed: false, record: record() }
   if (current) throw new Error(`${id} is already filed as ${current}`)
   at.row.cells[column] = url

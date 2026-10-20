@@ -9,7 +9,7 @@ worktree, `detail.worktree` of `start`.
 **What a retrospective assesses, and what it writes.**
 
 It assesses how the flow worked over its changes, and nothing else. It writes no debt: product
-debt is the ingest's, and flow debt records are archive's. The only files it commits are its
+debt is the ingest's, and ADF debt records are archive's. The only files it commits are its
 report and its sidecar, `.adf/retro/<id>.md` and `.adf/retro/<id>.json`. The input, the replies,
 the prompt and the attempts log stay in `.superpowers/retro/<id>/`, which is ignored.
 

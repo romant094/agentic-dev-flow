@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import {
   addAnchor,
   addEntry,
-  addFlowRecord,
+  addAdfRecord,
   checkTree,
   ensureRootIndex,
   listTree,
@@ -23,7 +23,7 @@ import { initRegistry, readRegistry } from '../lib/registry.mjs'
 const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'debt.mjs')
 const tmp = () => mkdtempSync(join(tmpdir(), 'adf-debt-'))
 const entry = (over = {}) => ({ block: 'snmp', title: 'Trailing index extracted in three places', anchors: ['a.ts:1', 'b.ts:2'], class: 'debt', source: 'some-change', ...over })
-const flowInput = (over = {}) => ({ plugin: 'adf', pluginVersion: '0.9.0', class: 'defect', title: 'Verify reads the whole repository', body: 'The check validates every change.\n\nIt should validate one.', ...over })
+const adfInput = (over = {}) => ({ plugin: 'adf', pluginVersion: '0.9.0', class: 'defect', title: 'Verify reads the whole repository', body: 'The check validates every change.\n\nIt should validate one.', ...over })
 
 function write(tree, files) {
   for (const [path, text] of Object.entries(files)) {
@@ -96,12 +96,13 @@ test('add is idempotent on block, title and source', () => {
   assert.equal(listTree(tree).entries.length, 1)
 })
 
-test('add refuses a class outside the vocabulary, no anchor, a bad block and the flow block', () => {
+test('add refuses a class outside the vocabulary, no anchor, a bad block and an ADF block', () => {
   const tree = tmp()
   assert.throws(() => addEntry(tree, entry({ class: 'chore' })), /class "chore" is not one of defect, debt, decision/)
   assert.throws(() => addEntry(tree, entry({ anchors: [] })), /at least one anchor/)
   assert.throws(() => addEntry(tree, entry({ block: 'Bad Block' })), /kebab-case/)
-  assert.throws(() => addEntry(tree, entry({ block: 'flow' })), /debt\.mjs flow/)
+  assert.throws(() => addEntry(tree, entry({ block: 'adf' })), /debt\.mjs adf/)
+  assert.throws(() => addEntry(tree, entry({ block: 'flow' })), /block flow holds ADF records/)
   assert.throws(() => addEntry(tree, entry({ title: 'two\nlines' })), /one line/)
 })
 
@@ -187,16 +188,16 @@ test('check accepts an absent tree and refuses a tree without a root index', () 
   )
 })
 
-test('a flow record lands in the flow block with its body file, once', () => {
+test('an ADF record lands in the adf block with its body file, once', () => {
   const tree = tmp()
   addEntry(tree, entry())
-  const r = addFlowRecord(tree, 'my-change', flowInput())
+  const r = addAdfRecord(tree, 'my-change', adfInput())
   assert.equal(r.created, true)
-  assert.deepEqual(r.files, ['index.md', 'flow/index.md', 'flow/flow-01.md'])
+  assert.deepEqual(r.files, ['index.md', 'adf/index.md', 'adf/adf-01.md'])
   assert.deepEqual(r.record, {
-    id: 'flow-01',
-    kind: 'flow',
-    block: 'flow',
+    id: 'adf-01',
+    kind: 'adf',
+    block: 'adf',
     title: 'Verify reads the whole repository',
     plugin: 'adf',
     pluginVersion: '0.9.0',
@@ -206,12 +207,12 @@ test('a flow record lands in the flow block with its body file, once', () => {
     filed: null,
     body: 'The check validates every change.\n\nIt should validate one.'
   })
-  assert.equal(addFlowRecord(tree, 'my-change', flowInput({ body: 'other' })).created, false)
-  const second = addFlowRecord(tree, 'my-change', flowInput({ class: 'deferred wording', title: 'A rule stated twice', source: 'ledger deviation-1' }))
-  assert.equal(second.record.id, 'flow-02')
+  assert.equal(addAdfRecord(tree, 'my-change', adfInput({ body: 'other' })).created, false)
+  const second = addAdfRecord(tree, 'my-change', adfInput({ class: 'deferred wording', title: 'A rule stated twice', source: 'ledger deviation-1' }))
+  assert.equal(second.record.id, 'adf-02')
   assert.deepEqual(
-    listTree(tree, { kind: 'flow' }).entries.map((e) => e.id),
-    ['flow-01', 'flow-02']
+    listTree(tree, { kind: 'adf' }).entries.map((e) => e.id),
+    ['adf-01', 'adf-02']
   )
   assert.deepEqual(
     listTree(tree, { kind: 'debt' }).entries.map((e) => e.id),
@@ -220,43 +221,64 @@ test('a flow record lands in the flow block with its body file, once', () => {
   assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
 })
 
-test('a flow record refuses a wrong class, a missing field, an unknown field and another change', () => {
+test('an ADF record refuses a wrong class, a missing field, an unknown field and another change', () => {
   const tree = tmp()
-  assert.throws(() => addFlowRecord(tree, 'c', flowInput({ class: 'debt' })), /not one of defect, deferred wording, decision/)
-  assert.throws(() => addFlowRecord(tree, 'c', flowInput({ pluginVersion: '' })), /pluginVersion is required/)
-  assert.throws(() => addFlowRecord(tree, 'c', flowInput({ body: ' ' })), /body is required/)
-  assert.throws(() => addFlowRecord(tree, 'c', flowInput({ status: 'open' })), /unknown fields status/)
-  assert.throws(() => addFlowRecord(tree, 'c', flowInput({ change: 'd' })), /names change d, not c/)
-  assert.throws(() => addFlowRecord(tree, 'c', []), /JSON object/)
-  assert.equal(existsSync(join(tree, 'flow')), false)
+  assert.throws(() => addAdfRecord(tree, 'c', adfInput({ class: 'debt' })), /not one of defect, deferred wording, decision/)
+  assert.throws(() => addAdfRecord(tree, 'c', adfInput({ pluginVersion: '' })), /pluginVersion is required/)
+  assert.throws(() => addAdfRecord(tree, 'c', adfInput({ body: ' ' })), /body is required/)
+  assert.throws(() => addAdfRecord(tree, 'c', adfInput({ status: 'open' })), /unknown fields status/)
+  assert.throws(() => addAdfRecord(tree, 'c', adfInput({ change: 'd' })), /names change d, not c/)
+  assert.throws(() => addAdfRecord(tree, 'c', []), /JSON object/)
+  assert.equal(existsSync(join(tree, 'adf')), false)
 })
 
-test('mark-filed records the issue once and removing a flow record deletes its body', () => {
+test('mark-filed records the issue once and removing an ADF record deletes its body', () => {
   const tree = tmp()
-  addFlowRecord(tree, 'c', flowInput())
+  addAdfRecord(tree, 'c', adfInput())
   addEntry(tree, entry())
-  assert.throws(() => markFiled(tree, { id: 'flow-01', url: 'not a url' }), /not a URL/)
-  assert.throws(() => markFiled(tree, { id: 'snmp-01', url: 'https://x/1' }), /not a flow record/)
-  assert.equal(markFiled(tree, { id: 'flow-01', url: 'https://forge/issues/1' }).changed, true)
-  assert.equal(markFiled(tree, { id: 'flow-01', url: 'https://forge/issues/1' }).changed, false)
-  assert.throws(() => markFiled(tree, { id: 'flow-01', url: 'https://forge/issues/2' }), /already filed as https:\/\/forge\/issues\/1/)
-  assert.equal(listTree(tree, { kind: 'flow' }).entries[0].filed, 'https://forge/issues/1')
+  assert.throws(() => markFiled(tree, { id: 'adf-01', url: 'not a url' }), /not a URL/)
+  assert.throws(() => markFiled(tree, { id: 'snmp-01', url: 'https://x/1' }), /not an ADF record/)
+  assert.equal(markFiled(tree, { id: 'adf-01', url: 'https://forge/issues/1' }).changed, true)
+  assert.equal(markFiled(tree, { id: 'adf-01', url: 'https://forge/issues/1' }).changed, false)
+  assert.throws(() => markFiled(tree, { id: 'adf-01', url: 'https://forge/issues/2' }), /already filed as https:\/\/forge\/issues\/1/)
+  assert.equal(listTree(tree, { kind: 'adf' }).entries[0].filed, 'https://forge/issues/1')
   assert.equal(checkTree(tree).ok, true)
-  const r = removeEntry(tree, { id: 'flow-01' })
-  assert.deepEqual(r.files, ['flow/index.md', 'flow/flow-01.md'])
-  assert.equal(existsSync(join(tree, 'flow/flow-01.md')), false)
+  const r = removeEntry(tree, { id: 'adf-01' })
+  assert.deepEqual(r.files, ['adf/index.md', 'adf/adf-01.md'])
+  assert.equal(existsSync(join(tree, 'adf/adf-01.md')), false)
   assert.equal(checkTree(tree).ok, true)
 })
 
-test('check refuses a flow record with no body file and a duplicate filed issue', () => {
+test('check refuses an ADF record with no body file and a duplicate filed issue', () => {
   const tree = tmp()
-  addFlowRecord(tree, 'c', flowInput())
-  addFlowRecord(tree, 'c', flowInput({ title: 'Other' }))
-  const index = join(tree, 'flow/index.md')
+  addAdfRecord(tree, 'c', adfInput())
+  addAdfRecord(tree, 'c', adfInput({ title: 'Other' }))
+  const index = join(tree, 'adf/index.md')
   writeFileSync(index, readFileSync(index, 'utf8').replace(/\|  \|\n/g, '| https://f/1 |\n'))
-  writeFileSync(join(tree, 'flow/flow-02.md'), '')
+  writeFileSync(join(tree, 'adf/adf-02.md'), '')
   const before = checkTree(tree).errors.map((e) => e.message)
-  assert.deepEqual(before, ['flow-02 shares the filed issue https://f/1 with flow-01'])
+  assert.deepEqual(before, ['adf-02 shares the filed issue https://f/1 with adf-01'])
+})
+
+test('a block flow written before the rename reads as kind adf; new records go to the adf block', () => {
+  const tree = write(tmp(), {
+    'index.md': '# Technical Debt\n\n## Blocks\n\n| Block | Covers |\n|---|---|\n| [`flow`](flow/index.md) | Old ADF records |\n',
+    'flow/index.md': '| ID | Title | Plugin | Version | Change | Class | Source | Filed |\n|---|---|---|---|---|---|---|---|\n| `flow-01` | Verify reads the whole repository | `adf` | `0.9.0` | `c` | defect | c |  |\n',
+    'flow/flow-01.md': '# `flow-01` Verify reads the whole repository\n\nOld body.\n'
+  })
+  assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
+  const [old] = listTree(tree, { kind: 'adf' }).entries
+  assert.deepEqual([old.id, old.kind, old.block, old.body], ['flow-01', 'adf', 'flow', 'Old body.'])
+  assert.deepEqual(listTree(tree).blocks.map((b) => [b.id, b.kind]), [['flow', 'adf']])
+  assert.equal(addAdfRecord(tree, 'c', adfInput()).created, false)
+  const added = addAdfRecord(tree, 'c', adfInput({ title: 'Other' }))
+  assert.deepEqual([added.record.id, added.record.block], ['adf-01', 'adf'])
+  assert.deepEqual(added.files, ['index.md', 'adf/index.md', 'adf/adf-01.md'])
+  assert.equal(markFiled(tree, { id: 'flow-01', url: 'https://forge/issues/1' }).record.body, 'Old body.')
+  assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
+  assert.deepEqual(removeEntry(tree, { id: 'flow-01' }).files, ['flow/index.md', 'flow/flow-01.md'])
+  assert.equal(existsSync(join(tree, 'flow/flow-01.md')), false)
+  assert.deepEqual(listTree(tree, { kind: 'adf' }).entries.map((e) => e.id), ['adf-01'])
 })
 
 test('ensureRootIndex writes the template once', () => {
@@ -315,15 +337,15 @@ test('the CLI exits 2 on a usage error, 1 on a refusal and a failing check, 0 ot
   const refused = call('remove', '--id', 'snmp-01')
   assert.equal(refused.code, 1)
   assert.match(refused.out.error, /no entry snmp-01/)
-  const file = join(root, 'flow.json')
-  writeFileSync(file, JSON.stringify(flowInput()))
-  const flow = call('flow', '--change', 'c', '--file', file)
-  assert.equal(flow.code, 0)
-  assert.equal(flow.out.record.id, 'flow-01')
-  assert.equal(call('mark-filed', '--id', 'flow-01', '--url', 'https://f/1').out.changed, true)
-  assert.deepEqual(call('list', '--kind', 'flow').out.entries.map((e) => e.filed), ['https://f/1'])
+  const file = join(root, 'adf.json')
+  writeFileSync(file, JSON.stringify(adfInput()))
+  const adf = call('adf', '--change', 'c', '--file', file)
+  assert.equal(adf.code, 0)
+  assert.equal(adf.out.record.id, 'adf-01')
+  assert.equal(call('mark-filed', '--id', 'adf-01', '--url', 'https://f/1').out.changed, true)
+  assert.deepEqual(call('list', '--kind', 'adf').out.entries.map((e) => e.filed), ['https://f/1'])
   assert.equal(call('check').code, 0)
-  writeFileSync(join(root, 'debt/index.md'), `${readFileSync(join(root, 'debt/index.md'), 'utf8')}\nSee flow-07.\n`)
+  writeFileSync(join(root, 'debt/index.md'), `${readFileSync(join(root, 'debt/index.md'), 'utf8')}\nSee adf-07.\n`)
   const failing = call('check')
   assert.equal(failing.code, 1)
   assert.equal(failing.out.ok, false)

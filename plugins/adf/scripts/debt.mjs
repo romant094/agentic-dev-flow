@@ -8,13 +8,14 @@
 //   debt.mjs root [--set <path>]
 //       the registry's debt.root; --set records it and creates the tree's root index when
 //       missing. { ok, root: <path> | null, created }
-//   debt.mjs list [--kind debt|flow]
+//   debt.mjs list [--kind debt|adf]
 //       every block, sub-block and entry, computed from the files.
 //       { ok, root, blocks: [{ id, kind, covers, index, columns, subBlocks, bodyFiles }],
 //         entries: [entry] }
 //       entry (kind debt) { id, kind, block, subBlock, title, anchors, class, source, tracker }
-//       entry (kind flow) { id, kind, block, title, plugin, pluginVersion, change, class,
+//       entry (kind adf)  { id, kind, block, title, plugin, pluginVersion, change, class,
 //                           source, filed, body }
+//       a block `flow` written before the kind was renamed lists as kind adf.
 //   debt.mjs add --block <id> --title <t> --anchors <a1,a2> --class defect|debt|decision
 //                --source <s> [--sub <sub-block>] [--covers <text>]
 //       the block's next id; anchors split at a comma not followed by a digit, so
@@ -28,27 +29,27 @@
 //       delete a resolved entry; no other id changes. { ok, removed, files }
 //   debt.mjs check
 //       the tree's rules. { ok, errors: [{ file, line, message }] }
-//   debt.mjs flow --change <name> --file <json>
-//       a record of kind flow from { plugin, pluginVersion, class, title, body, source?,
+//   debt.mjs adf --change <name> --file <json>
+//       a record of kind adf from { plugin, pluginVersion, class, title, body, source?,
 //       change? }; class defect|deferred wording|decision; source defaults to the change. The
 //       same plugin, change and title again changes nothing. { ok, created, record, files }
-//   debt.mjs mark-filed --id <flow id> --url <issue url>
+//   debt.mjs mark-filed --id <adf id> --url <issue url>
 //       the issue the maintainer filed the record as. { ok, changed, record }
 import { readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
-import { addAnchor, addEntry, addFlowRecord, checkTree, ensureRootIndex, listTree, markFiled, removeEntry } from './lib/debt.mjs'
+import { addAnchor, addEntry, addAdfRecord, checkTree, ensureRootIndex, listTree, markFiled, removeEntry } from './lib/debt.mjs'
 import { isMain } from './lib/main.mjs'
 import { readDebtRoot, setDebtRoot } from './lib/registry.mjs'
 
 export const USAGE = `usage:
   debt.mjs root [--set <path>] [--root <dir>]
-  debt.mjs list [--kind debt|flow] [--root <dir>] [--tree <dir>]
+  debt.mjs list [--kind debt|adf] [--root <dir>] [--tree <dir>]
   debt.mjs add --block <id> --title <t> --anchors <a1,a2> --class defect|debt|decision --source <s> [--sub <sub-block>] [--covers <text>] [--root <dir>] [--tree <dir>]
   debt.mjs anchor --id <id> --anchor <site> [--root <dir>] [--tree <dir>]
   debt.mjs remove --id <id> [--root <dir>] [--tree <dir>]
   debt.mjs check [--root <dir>] [--tree <dir>]
-  debt.mjs flow --change <name> --file <json> [--root <dir>] [--tree <dir>]
-  debt.mjs mark-filed --id <flow id> --url <url> [--root <dir>] [--tree <dir>]`
+  debt.mjs adf --change <name> --file <json> [--root <dir>] [--tree <dir>]
+  debt.mjs mark-filed --id <adf id> --url <url> [--root <dir>] [--tree <dir>]`
 
 export class UsageError extends Error {}
 
@@ -60,7 +61,7 @@ const TAKES = {
   anchor: { required: ['id', 'anchor'], optional: [] },
   remove: { required: ['id'], optional: [] },
   check: { required: [], optional: [] },
-  flow: { required: ['change', 'file'], optional: [] },
+  adf: { required: ['change', 'file'], optional: [] },
   'mark-filed': { required: ['id', 'url'], optional: [] }
 }
 
@@ -123,7 +124,7 @@ export function run(argv, { cwd = process.cwd() } = {}) {
   const where = relative(root, tree) || '.'
   switch (command) {
     case 'list': {
-      if (values.kind !== undefined && !['debt', 'flow'].includes(values.kind)) throw new UsageError('--kind is debt or flow')
+      if (values.kind !== undefined && !['debt', 'adf'].includes(values.kind)) throw new UsageError('--kind is debt or adf')
       return { ok: true, root: where, ...listTree(tree, { kind: values.kind }) }
     }
     case 'add': {
@@ -140,8 +141,8 @@ export function run(argv, { cwd = process.cwd() } = {}) {
       return { ok: true, ...removeEntry(tree, { id: values.id }) }
     case 'check':
       return checkTree(tree)
-    case 'flow':
-      return { ok: true, ...addFlowRecord(tree, values.change, readJson(cwd, values.file)) }
+    case 'adf':
+      return { ok: true, ...addAdfRecord(tree, values.change, readJson(cwd, values.file)) }
     case 'mark-filed':
       return { ok: true, ...markFiled(tree, { id: values.id, url: values.url }) }
   }

@@ -387,7 +387,7 @@ const cites = (text, id) => new RegExp(`(^|[^\\w-])${id.replace(/[-]/g, '\\-')}(
 //   records: the ledger; findings: [{ id, kind }] from the record's dispositions.
 export function unplaced(records, findings, change) {
   const out = []
-  const where = '--as tech-debt|flow-debt|follow-up|accepted --where "<where it went>"'
+  const where = '--as tech-debt|adf-debt|follow-up|accepted --where "<where it went>"'
   for (const d of unresolvedDebt(records)) {
     out.push({ kind: 'debt', id: d.id, what: d.what, reason: d.reason, command: `ledger.mjs resolve --change ${change} --debt ${d.id} ${where}` })
   }

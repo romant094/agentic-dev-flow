@@ -18,7 +18,7 @@ export const KINDS = {
   handoff: { required: ['merged', 'remaining', 'next'], optional: ['blocked', 'openDeviations'] },
   resolve: { required: ['debt', 'as', 'where'], optional: [] }
 }
-export const RESOLUTIONS = ['tech-debt', 'flow-debt', 'follow-up', 'accepted']
+export const RESOLUTIONS = ['tech-debt', 'adf-debt', 'follow-up', 'accepted']
 // A developer ruling on a failing verify check: `ruling --check <id> --reason <text>`, the
 // second shape of the `ruling` kind. It turns that check into an accepted failure; it is kept
 // out of KINDS, which lists the shapes the origin's ledger shares.

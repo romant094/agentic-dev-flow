@@ -99,11 +99,11 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
      several sites is one entry with several anchors. `decision` is a decision still to be
      made. With no `debt.root`, `debt.mjs` refuses; the developer sets it with `debt.mjs root
      --set <path>`. Then `ledger.mjs resolve ... --as tech-debt --where <entry id>`.
-   - **Flow debt**, a defect of the flow's own plugins, is a record of kind `flow`: write `{
+   - **ADF debt**, a defect of the flow's own plugins, is a record of kind `adf`: write `{
      plugin, pluginVersion, class, title, body }` to a file, the version from the plugin's
      `.claude-plugin/plugin.json` and the class `defect`, `deferred wording` or `decision`, and
-     run `debt.mjs flow --change <change> --file <file>`. Nothing leaves the machine; the
-     plugin's maintainer files it upstream. Then `ledger.mjs resolve ... --as flow-debt --where
+     run `debt.mjs adf --change <change> --file <file>`. Nothing leaves the machine; the
+     plugin's maintainer files it upstream. Then `ledger.mjs resolve ... --as adf-debt --where
      <record id>`.
    - **A follow-up change** takes an item that is work for a change of its own: `--as follow-up
      --where "<the follow-up change or issue>"`.

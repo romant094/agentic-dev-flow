@@ -117,12 +117,12 @@ function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widg
   return { root, wt, reviewed, dir }
 }
 
-// A deviation the flow forced, its debt placed as flow debt, and the recorded finding F1 placed.
+// A deviation the flow forced, its debt placed as ADF debt, and the recorded finding F1 placed.
 function placedLedger(wt) {
   const add = (kind, fields) => appendRecord(wt, 'add-x', kind, fields, { env: {} })
   add('deviation', { rule: 'one worktree per group', reason: 'nested worktrees' })
   add('debt', { what: 'nested group worktrees', reason: 'forced deviation-1' })
-  add('resolve', { debt: 'debt-1', as: 'flow-debt', where: 'flow-1' })
+  add('resolve', { debt: 'debt-1', as: 'adf-debt', where: 'adf-01' })
   add('resolve', { finding: 'F1', as: 'accepted', where: 'the developer keeps it' })
 }
 
@@ -398,7 +398,7 @@ test('placements lists the unresolved debt, the unplaced findings and the uncite
   assert.deepEqual(first.detail.unplaced.map((i) => `${i.kind} ${i.id}`), ['debt debt-1', 'debt debt-2', 'finding F1', 'deviation deviation-3'])
   assert.match(first.refusal, /4 item\(s\) are not placed: debt-1, debt-2, F1, deviation-3/)
   assert.match(first.detail.unplaced[2].command, /ledger\.mjs resolve --change add-x --finding F1 /)
-  add('resolve', { debt: 'debt-1', as: 'flow-debt', where: 'flow-1' })
+  add('resolve', { debt: 'debt-1', as: 'adf-debt', where: 'adf-01' })
   add('resolve', { debt: 'debt-2', as: 'tech-debt', where: 'data-1' })
   add('resolve', { finding: 'F1', as: 'follow-up', where: 'add-y' })
   add('ruling', { finding: 'deviation-3', decision: 'kept' })
