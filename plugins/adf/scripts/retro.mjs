@@ -15,26 +15,33 @@
 //       window takes none of them, change takes --change only, period both dates only
 //   retro.mjs window
 //       the sidecar (lib/window.mjs buildSidecar) over the fetched ref, the knowledge provider's
-//       paths excluded from the diff figures; the agent's input written to its input file, the
+//       paths excluded from the diff figures, the ADF debt not yet filed in detail.adfDebt
+//       (id, title); the agent's input written to its input file, the
 //       prompt to detail.dispatch.promptFile, the dispatch recorded; detail.dispatch is the plan
 //       the orchestrator dispatches (name, agent, worktree, inputFile, replyFile, promptFile)
 //   retro.mjs reply --file <reply json> [--resume yes|no]
 //       the reply checked and recorded (lib/retro.mjs recordRetroReply); refused: failed with
 //       detail.next retry, the retry's dispatch recorded and its plan in detail.dispatch, then
 //       stop; valid: detail.result, the computed reply, kept in the state
+//   retro.mjs file [--yes] [--findings R1,R2|none] [--debt adf-01,adf-02|none]
+//       the upstream role's check with { repository } (the core manifest's): no provider
+//       skipped, degraded degraded with its hint, refused failed, nothing sent. Without --yes
+//       pending, with `would` ({ findings, debt }, ids and titles); with it the role's file with
+//       { repository, host, retro, findings, debt } (default every finding and every unfiled
+//       ADF debt record; none files none of that kind), then each debt record filed marked filed
+//       in the worktree's debt tree; detail.issues, detail.debtFiles. Not run again once render
+//       has run
 //   retro.mjs render
-//       .adf/retro/<id>.json (the sidecar and the computed reply) and .md in the worktree
+//       .adf/retro/<id>.json (the sidecar, the computed reply and the issue links) and .md in
+//       the worktree
 //   retro.mjs record
-//       commit.mjs --only those two files: `docs(retro): <mode> retrospective <date>`, with
-//       ` of <change>` for one change
+//       commit.mjs --only those two files and file's detail.debtFiles: `docs(retro): <mode>
+//       retrospective <date>`, with ` of <change>` for one change
 //   retro.mjs publish [--yes | --no]
 //       the forge's open with draft false and ci false into the integration branch, never merged;
 //       no forge: held (pending, the commands) until --yes, then a local merge in the main
 //       checkout, nothing pushed, the branch kept; --no: skipped, the developer merges it, the
 //       branch and the commands kept
-//   retro.mjs file [--yes] [--findings R1,R2]
-//       the upstream role's file with { report, findings } (default every finding) after --yes;
-//       without it pending, with `would`; no provider: skipped, the findings stay in the sidecar
 //   retro.mjs remove
 //       the retro worktree removed from the main checkout (lib/workspace.mjs remove): a dirty
 //       tree refused, never forced, the branch kept; later calls take --root <main>
@@ -57,7 +64,7 @@ export const USAGE = `usage:
   retro.mjs window|render|record|remove|state [--id <id>] [--root <dir>] [--home <dir>]
   retro.mjs reply --file <reply json> [--resume yes|no] [--id <id>] [--root <dir>]
   retro.mjs publish [--yes | --no] [--id <id>] [--root <dir>] [--home <dir>]
-  retro.mjs file [--yes] [--findings R1,R2] [--id <id>] [--root <dir>] [--home <dir>]
+  retro.mjs file [--yes] [--findings R1,R2|none] [--debt adf-01,adf-02|none] [--id <id>] [--root <dir>] [--home <dir>]
   retro.mjs since [--root <dir>]`
 
 export class UsageError extends Error {}
@@ -75,7 +82,8 @@ const OPTIONS = {
   resume: { type: 'string' },
   yes: { type: 'boolean' },
   no: { type: 'boolean' },
-  findings: { type: 'string' }
+  findings: { type: 'string' },
+  debt: { type: 'string' }
 }
 const COMMON = ['root', 'home']
 const TAKES = {
@@ -85,7 +93,7 @@ const TAKES = {
   render: ['id'],
   record: ['id'],
   publish: ['id', 'yes', 'no'],
-  file: ['id', 'yes', 'findings'],
+  file: ['id', 'yes', 'findings', 'debt'],
   remove: ['id'],
   since: [],
   state: ['id']
@@ -115,10 +123,12 @@ function scopeOf({ mode, change, from, to }) {
   return { mode: m }
 }
 
-function findingIds(text) {
+// The ids a filter names, or none for `none`; undefined when the filter is not given.
+function idList(text, { flag, pattern, example }) {
   if (text === undefined) return undefined
+  if (text.trim() === 'none') return []
   const ids = text.split(',').map((s) => s.trim())
-  if (ids.length === 0 || !ids.every((id) => /^R[1-9]\d*$/.test(id))) usage(`--findings takes finding ids as R1,R2, not "${text}"`)
+  if (ids.length === 0 || !ids.every((id) => pattern.test(id))) usage(`--${flag} takes ids as ${example}, or none, not "${text}"`)
   return [...new Set(ids)]
 }
 
@@ -143,7 +153,8 @@ export function run(argv, { cwd = process.cwd(), deps = {} } = {}) {
   const root = values.root ?? cwd
   if (command === 'since') return since(root)
   const scope = command === 'start' ? scopeOf(values) : null
-  const findings = findingIds(values.findings)
+  const findings = idList(values.findings, { flag: 'findings', pattern: /^R[1-9]\d*$/, example: 'R1,R2' })
+  const debt = idList(values.debt, { flag: 'debt', pattern: /^(adf|flow)-\d+$/, example: 'adf-01,adf-02' })
   const ctx = retroContext(root, { id: values.id, date: values.date, scope, start: command === 'start', deps: { ...(values.home ? { home: values.home } : {}), ...deps } })
   switch (command) {
     case 'start':
@@ -159,7 +170,7 @@ export function run(argv, { cwd = process.cwd(), deps = {} } = {}) {
     case 'publish':
       return publishStep(ctx, { yes: Boolean(values.yes), no: Boolean(values.no) })
     case 'file':
-      return fileStep(ctx, { yes: Boolean(values.yes), findings })
+      return fileStep(ctx, { yes: Boolean(values.yes), findings, debt })
     case 'remove':
       return removeStep(ctx)
     default:

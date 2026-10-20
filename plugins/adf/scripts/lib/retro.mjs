@@ -8,7 +8,8 @@
 //            of its record, the ledger's deviations and rulings, the review stage's dispositions
 //            and verify's checks and warnings where the record has them, and the signals below;
 //            the delta, the removal candidates and what else may be named, the waiting items,
-//            the plugins in force, and `values`, every key the reply may cite with its value
+//            the ADF debt not yet filed (`adfDebt`, so a finding can name a record it relates
+//            to), the plugins in force, and `values`, every key the reply may cite with its value
 //   check    the rules of a reply the schema cannot state (see `check`)
 //   compute  the reply with every key resolved to its value, each finding's plugin version from
 //            its manifest, the decisions in the waiting list's order and the improvements
@@ -225,6 +226,7 @@ export function input(sidecar, { root, home = claudeHome() } = {}) {
       rules: waiting.map((w) => w.id)
     },
     waiting,
+    adfDebt: sidecar.adfDebt ?? [],
     plugins: pluginsInForce(root, { home }),
     keys: Object.keys(values),
     values

@@ -5,11 +5,12 @@
 // one change, so several retrospectives may share a date. The id names its branch, worktree,
 // state, files and dispatch.
 //
-// The steps, in order: start, window, reply, render, record, publish, file, remove. A step runs
-// once every step before it is settled (`done`, `degraded` or `skipped`); `file` needs only the
-// steps before `publish`, since the committed sidecar is what it files from. A `done` or `skipped` step
-// is reported as it is, never run again; a `failed` or `degraded` one runs again. A step waiting
-// for the developer's yes holds: `pending`, nothing recorded.
+// The steps, in order: start, window, reply, file, render, record, publish, remove. A step runs
+// once every step before it is settled (`done`, `degraded` or `skipped`). A `done` or `skipped`
+// step is reported as it is, never run again; a `failed` or `degraded` one runs again, `file`
+// only while `render` has not run, since its links and the debt's Filed column go into the
+// report and the commit. A step waiting for the developer's yes holds: `pending`, nothing
+// recorded.
 //
 // The state is kept per retrospective in the main checkout's `.superpowers/retro/<id>/`
 // (state.json and the sidecar), as archive keeps its state in the main checkout; the input,
@@ -21,42 +22,50 @@
 //            as propose makes a change's (lib/workspace.mjs create); the main checkout is never
 //            written. The mode and its scope are kept: a second start with others is refused.
 //   window   buildSidecar over the ref, fetched again, with the knowledge provider's `paths`
-//            excluded from the diff figures; the agent's input (lib/retro.mjs input) and its
+//            excluded from the diff figures and the ADF debt not yet filed; the agent's input (lib/retro.mjs input) and its
 //            prompt written; the dispatch recorded and its plan returned for the orchestrator
 //   reply    lib/retro.mjs recordRetroReply: a refused reply is retried once, the second stops
 //            the retrospective; on `retry` the next attempt's dispatch is recorded here, so the
 //            metrics count every dispatch; a valid one's computed result is kept in the state
-//   render   `.adf/retro/<id>.json` (the sidecar and the computed reply) and `.md`
-//            (lib/retro-render.mjs) in the retro worktree
-//   record   lib/commit.mjs commitPaths, only those two files: `docs(retro): <mode>
-//            retrospective <date>`, with ` of <change>` for one change
+//   file     the upstream role's `check` with `{ repository }`, then, after the developer's yes,
+//            its `file` with `{ repository, host, retro, findings, debt }`: the computed findings
+//            and the window's unfiled ADF debt records, each list filtered by the developer. No
+//            provider: `skipped`, the findings stay in the sidecar and the debt unfiled; a
+//            degraded check: `degraded` with its hint, a refused one: `failed`, nothing sent.
+//            After a `done` file, each debt record filed is marked filed in the retro worktree's
+//            debt tree (lib/debt.mjs markFiled), so its Filed column lands in the retro commit
+//   render   `.adf/retro/<id>.json` (the sidecar, the computed reply and the issue links) and
+//            `.md` (lib/retro-render.mjs) in the retro worktree
+//   record   lib/commit.mjs commitPaths, only those two files and the debt tree files `file`
+//            changed: `docs(retro): <mode> retrospective <date>`, with ` of <change>` for one
+//            change
 //   publish  the forge role's `open`, `draft: false`, `ci: false`, into the integration branch;
 //            never merged with a forge. With none: held until the developer's yes, then a local
 //            merge in the main checkout (lib/local-merge.mjs, archive's merge-local rule); the
 //            developer's no ends it `skipped`, the branch kept and the commands kept
-//   file     the upstream role's `file` with `{ report, findings }` after the developer's yes;
-//            with no provider `skipped`, and the findings stay in the sidecar
 //   remove   the retro worktree removed from the main checkout as archive removes a change's
 //            (lib/workspace.mjs remove): a dirty tree refused, never forced, the branch kept
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { readBranches, requireBranches } from './branches.mjs'
 import { commitPaths } from './commit.mjs'
+import { BLOCK_INDEX, markFiled } from './debt.mjs'
 import { DispatchError, planDispatch, renderPrompt, replyFile, RETRO_ID, retroDir, retroInputFile } from './dispatch.mjs'
 import { mainCheckout } from './installed.mjs'
 import { localMerge } from './local-merge.mjs'
 import { PLUGIN_ROOT } from './metrics.mjs'
 import { input, recordRetroDispatch, recordRetroReply } from './retro.mjs'
 import { renderRetro, retroDocument } from './retro-render.mjs'
-import { callRole, CORE, forgeInput, forgeReport, knowledgePaths, upstreamReport } from './roles.mjs'
+import { readDebtRoot } from './registry.mjs'
+import { callRole, CORE, coreRepository, forgeInput, forgeReport, hostSlug, knowledgePaths, upstreamReport } from './roles.mjs'
 import { claudeHome } from './superpowers.mjs'
 import { buildSidecar, fetchRef, MODES, RETRO_DIR, sinceLastRetro } from './window.mjs'
 import { create, gitIn, remove as removeWorktree, worktreePath, worktrees } from './workspace.mjs'
 
-export const STEPS = ['start', 'window', 'reply', 'render', 'record', 'publish', 'file', 'remove']
+export const STEPS = ['start', 'window', 'reply', 'file', 'render', 'record', 'publish', 'remove']
 const SETTLED = new Set(['done', 'degraded', 'skipped'])
 const FINAL = new Set(['done', 'skipped'])
-const NEEDS = Object.fromEntries(STEPS.map((s, i) => [s, STEPS.slice(0, s === 'file' ? STEPS.indexOf('publish') : i)]))
+const NEEDS = Object.fromEntries(STEPS.map((s, i) => [s, STEPS.slice(0, i)]))
 const PROMPTS_DIR = join(PLUGIN_ROOT, 'schema', 'prompts')
 
 export class Refusal extends Error {
@@ -123,7 +132,8 @@ export function latestId(main) {
 const today = (now) => now().toISOString().slice(0, 10)
 
 // deps: { now() -> Date, home, fault(step), knowledgePaths(root) -> { state, paths },
-// forge(operation, input) -> role result, upstream(operation, input) -> role result }. For
+// forge(operation, input) -> role result, upstream(operation, input) -> role result,
+// repository: the `owner/name` filed in, default the core manifest's }. For
 // `start`, the id is made from `date` (default today) and the `scope`'s mode; for the other
 // steps, `id` names a started retrospective, default the newest started.
 export function retroContext(rootArg, { id, date, scope, start = false, deps = {} } = {}) {
@@ -151,6 +161,7 @@ export function retroContext(rootArg, { id, date, scope, start = false, deps = {
     now,
     home,
     fault: deps.fault ?? null,
+    repository: deps.repository ? () => deps.repository : () => coreRepository(),
     knowledgePaths: deps.knowledgePaths ?? ((root) => knowledgePaths(root, core)),
     forge: deps.forge ? (op, inp) => deps.forge(op, inp) : (op, inp, root) => callRole(root, 'forge', op, inp, core),
     upstream: deps.upstream ? (op, inp) => deps.upstream(op, inp) : (op, inp, root) => callRole(root, 'upstream', op, inp, core)
@@ -257,6 +268,7 @@ export function windowStep(ctx) {
         inputFile,
         changes: sidecar.changes.map((c) => c.change),
         coverage: sidecar.coverage,
+        adfDebt: sidecar.adfDebt.map(titled),
         dispatch: { ...plan, promptFile, attempt: attempt.attempt }
       }
     }
@@ -290,17 +302,90 @@ export function replyStep(ctx, { file, resume = true }) {
   })
 }
 
+// ---------------------------------------------------------------- file
+
+// What `file` sends of a finding and of an ADF debt record (contract/README.md, `upstream`).
+const FINDING_FIELDS = ['id', 'title', 'class', 'changes', 'evidence', 'cost', 'caughtWhere', 'plugin', 'version', 'body']
+const DEBT_FIELDS = ['id', 'title', 'plugin', 'pluginVersion', 'change', 'class', 'source', 'body']
+const only = (o, keys) => Object.fromEntries(keys.map((k) => [k, o[k] ?? null]))
+const titled = ({ id, title }) => ({ id, title })
+
+// The items of `all` the developer chose: `ids`, or every one when they named none.
+function chosen(all, ids, what) {
+  if (ids === undefined) return all
+  const known = all.map((x) => x.id)
+  const unknown = ids.filter((id) => !known.includes(id))
+  if (unknown.length > 0) refuse(`${unknown.join(', ')} ${unknown.length === 1 ? 'is' : 'are'} not ${what}; ${what === 'a finding of this retrospective' ? 'its findings' : 'the records'}: ${known.join(', ') || 'none'}`)
+  return all.filter((x) => ids.includes(x.id))
+}
+
+// findings: the finding ids to file, default every finding of the reply; debt: the ADF debt
+// ids, default every record the window found unfiled. An empty list files none of that kind.
+export function fileStep(ctx, { yes = false, findings, debt } = {}) {
+  const before = readState(ctx.main, ctx.id)
+  if (!FINAL.has(before.steps.file.state) && before.steps.render.state === 'done') {
+    refuse(`file cannot run again: render has run, so the issue links and the debt's Filed column would miss the report and the retro commit; file by hand, or start a new retrospective`)
+  }
+  return runStep(ctx, 'file', (state) => {
+    const wt = worktreeOf(state)
+    const sidecar = JSON.parse(readFileSync(sidecarPath(ctx.main, ctx.id), 'utf8'))
+    const pickedFindings = chosen(state.steps.reply.detail.result.findings, findings, 'a finding of this retrospective')
+    const pickedDebt = chosen(sidecar.adfDebt ?? [], debt, 'an unfiled ADF debt record of this retrospective')
+    const ids = { findings: pickedFindings.map((f) => f.id), debt: pickedDebt.map((d) => d.id) }
+    if (pickedFindings.length + pickedDebt.length === 0) return { state: 'skipped', detail: { ...ids, text: 'Upstream: nothing to file; no finding and no ADF debt chosen.' } }
+    const repository = ctx.repository()
+    const probe = ctx.upstream('check', { repository }, wt)
+    const upstream = probe.state === 'none' ? 'none' : (probe.plugin ?? null)
+    const checked = { upstream, repository, ...ids }
+    if (probe.state === 'none') return { state: 'skipped', detail: { ...checked, text: upstreamReport('file', probe) } }
+    if (probe.state === 'refused') {
+      const text = upstreamReport('check', probe)
+      return { state: 'failed', refusal: text, detail: { ...checked, text, error: probe.error ?? text } }
+    }
+    if (probe.state === 'degraded') return { state: 'degraded', detail: { ...checked, text: upstreamReport('check', probe), hint: probe.hint ?? null } }
+    if (!yes) {
+      const flags = `${findings ? ` --findings ${findings.length ? findings.join(',') : 'none'}` : ''}${debt ? ` --debt ${debt.length ? debt.join(',') : 'none'}` : ''}`
+      return { hold: true, out: { upstream, repository, would: { findings: pickedFindings.map(titled), debt: pickedDebt.map(titled) }, waiting: `the developer's yes: retro.mjs file --id ${ctx.id} --yes${flags}` } }
+    }
+    const fileIn = { repository, host: hostSlug(ctx.main), retro: ctx.id, findings: pickedFindings.map((f) => only(f, FINDING_FIELDS)), debt: pickedDebt.map((d) => only(d, DEBT_FIELDS)) }
+    const result = ctx.upstream('file', fileIn, wt)
+    const text = upstreamReport('file', result)
+    const sent = { ...checked, upstream: result.state === 'none' ? 'none' : (result.plugin ?? upstream), host: fileIn.host }
+    if (result.state === 'none') return { state: 'skipped', detail: { ...sent, text } }
+    if (result.state === 'refused') return { state: 'failed', refusal: text, detail: { ...sent, text, error: result.error ?? text } }
+    if (result.state === 'degraded') return { state: 'degraded', detail: { ...sent, text, hint: result.hint ?? null } }
+    const issues = result.issues ?? []
+    // Each debt record filed is marked in the retro worktree's tree, so the retro commit carries
+    // its Filed column; a re-run after a failure marks it with the same URL, which changes nothing.
+    const debtFiles = new Set()
+    const filedDebt = issues.filter((i) => i.kind === 'debt' && ids.debt.includes(i.item))
+    if (filedDebt.length > 0) {
+      const root = readDebtRoot(wt)
+      if (!root) refuse('the registry names no debt root, so the ADF debt filed cannot be marked filed')
+      for (const issue of filedDebt) {
+        const { record } = markFiled(join(wt, root), { id: issue.item, url: issue.url })
+        debtFiles.add(`${root.replace(/\/$/, '')}/${record.block}/${BLOCK_INDEX}`)
+      }
+    }
+    return { state: 'done', detail: { ...sent, issues, debtFiles: [...debtFiles], text } }
+  })
+}
+
 // ---------------------------------------------------------------- render and record
+
+// The issues a `done` file returned; none when it was skipped or did not finish.
+const filed = (state) => (state.steps.file.state === 'done' ? state.steps.file.detail : null)
 
 export function renderStep(ctx) {
   return runStep(ctx, 'render', (state) => {
     const wt = worktreeOf(state)
     const sidecar = JSON.parse(readFileSync(sidecarPath(ctx.main, ctx.id), 'utf8'))
     const computed = state.steps.reply.detail.result
+    const issues = filed(state)?.issues ?? []
     const [json, md] = retroFiles(ctx.id)
     mkdirSync(join(wt, RETRO_DIR), { recursive: true })
-    writeFileSync(join(wt, json), `${JSON.stringify(retroDocument(sidecar, computed), null, 2)}\n`)
-    writeFileSync(join(wt, md), renderRetro(sidecar, computed))
+    writeFileSync(join(wt, json), `${JSON.stringify(retroDocument(sidecar, computed, issues), null, 2)}\n`)
+    writeFileSync(join(wt, md), renderRetro(sidecar, computed, issues))
     return { state: 'done', detail: { files: [json, md] } }
   })
 }
@@ -308,7 +393,7 @@ export function renderStep(ctx) {
 export function recordStep(ctx) {
   return runStep(ctx, 'record', (state) => {
     const wt = worktreeOf(state)
-    const files = state.steps.render.detail.files
+    const files = [...state.steps.render.detail.files, ...(filed(state)?.debtFiles ?? [])]
     const message = retroTitle(state)
     const git = gitIn(wt)
     // A run that committed and failed before its state was saved: the commit is the step's.
@@ -346,32 +431,6 @@ export function publishStep(ctx, { yes = false, no = false } = {}) {
     if (result.state === 'refused') return { state: 'failed', refusal: report, detail: { forge, report, error: result.error ?? report } }
     if (result.state === 'degraded') return { state: 'degraded', detail: { forge, report, hint: result.hint ?? null, fallback: result.fallback ?? [] } }
     return { state: 'done', detail: { forge, report, url: result.url ?? null, number: result.number ?? null, reused: Boolean(result.reused), ci: false, draft: false } }
-  })
-}
-
-// ---------------------------------------------------------------- file
-
-// findings: the ids to file, default every finding of the reply.
-export function fileStep(ctx, { yes = false, findings } = {}) {
-  return runStep(ctx, 'file', (state) => {
-    const wt = worktreeOf(state)
-    const all = state.steps.reply.detail.result.findings.map((f) => f.id)
-    const ids = findings ?? all
-    const unknown = ids.filter((id) => !all.includes(id))
-    if (unknown.length > 0) refuse(`${unknown.join(', ')} ${unknown.length === 1 ? 'is' : 'are'} not a finding of this retrospective; its findings: ${all.join(', ') || 'none'}`)
-    const report = state.steps.render.detail.files[0]
-    if (ids.length === 0) return { state: 'skipped', detail: { report, findings: [], text: 'Upstream: nothing to file; the retrospective has no finding.' } }
-    const probe = ctx.upstream('check', {}, wt)
-    if (probe.state === 'none') return { state: 'skipped', detail: { upstream: 'none', report, findings: ids, text: upstreamReport('file', probe) } }
-    const fileIn = { report, findings: ids }
-    if (!yes) return { hold: true, out: { upstream: probe.plugin ?? null, would: fileIn, waiting: `the developer's yes: retro.mjs file --id ${ctx.id} --yes${findings ? ` --findings ${ids.join(',')}` : ''}` } }
-    const result = ctx.upstream('file', fileIn, wt)
-    const text = upstreamReport('file', result)
-    const upstream = result.state === 'none' ? 'none' : (result.plugin ?? null)
-    if (result.state === 'none') return { state: 'skipped', detail: { upstream, report, findings: ids, text } }
-    if (result.state === 'refused') return { state: 'failed', refusal: text, detail: { upstream, report, findings: ids, text, error: result.error ?? text } }
-    if (result.state === 'degraded') return { state: 'degraded', detail: { upstream, report, findings: ids, text, hint: result.hint ?? null } }
-    return { state: 'done', detail: { upstream, report, findings: ids, issues: result.issues ?? [], text } }
   })
 }
 

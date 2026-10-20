@@ -11,8 +11,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { setBranches } from '../lib/branches.mjs'
 import { fromV1, validateRecord } from '../lib/metrics.mjs'
-import { initRegistry } from '../lib/registry.mjs'
-import { aggregate, buildSidecar, changeValues, delta, DIRECTION, fetchRef, integrationRef, METRICS, previousRetro, readWaiting, selectWindow, sinceLastRetro, waitingItems } from '../lib/window.mjs'
+import { addAdfRecord, markFiled } from '../lib/debt.mjs'
+import { initRegistry, setDebtRoot } from '../lib/registry.mjs'
+import { aggregate, buildSidecar, changeValues, delta, DIRECTION, fetchRef, integrationRef, METRICS, previousRetro, readWaiting, selectWindow, sinceLastRetro, unfiledAdfDebt, waitingItems } from '../lib/window.mjs'
 
 const ARCHIVE = 'openspec/changes/archive'
 const DATE = '2026-10-19'
@@ -354,6 +355,21 @@ test('fetchRef fetches the remote-tracking integration ref; the readers use it a
   assert.equal(failed.fetched, false)
   assert.match(failed.reason, /^git fetch failed/)
   assert.ok(failed.fetchedAt, 'a failed fetch keeps the last fetch time')
+})
+
+test('the window holds the ADF debt records with no Filed value, read from the checkout\'s debt tree', () => {
+  const root = repo()
+  assert.deepEqual(buildSidecar(root, { ref: 'develop', date: DATE, asOf: AS_OF }).adfDebt, [], 'no debt root, no record')
+  setDebtRoot(root, 'docs/debt')
+  const tree = join(root, 'docs', 'debt')
+  assert.deepEqual(unfiledAdfDebt(root), [], 'a root with no tree holds none')
+  const record = { plugin: 'adf', pluginVersion: '0.11.0', class: 'defect', title: 'The hook misses a staged rename', body: 'A rename staged before the commit is not checked.' }
+  addAdfRecord(tree, 'one', record)
+  addAdfRecord(tree, 'two', { ...record, class: 'deferred wording', title: 'Filed already', source: 'review R2' })
+  markFiled(tree, { id: 'adf-02', url: 'https://github.com/o/r/issues/4' })
+  const expected = [{ id: 'adf-01', title: 'The hook misses a staged rename', plugin: 'adf', pluginVersion: '0.11.0', change: 'one', class: 'defect', source: 'one', body: 'A rename staged before the commit is not checked.' }]
+  assert.deepEqual(unfiledAdfDebt(root), expected)
+  assert.deepEqual(buildSidecar(root, { ref: 'develop', date: DATE, asOf: AS_OF }).adfDebt, expected)
 })
 
 test('the token total counts thinking once, inside output', () => {

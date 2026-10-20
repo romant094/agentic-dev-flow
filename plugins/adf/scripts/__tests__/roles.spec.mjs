@@ -84,8 +84,8 @@ function knowledgeHost(declaration, script) {
   return root
 }
 
-test('contract 1.4 defines the forge, knowledge and upstream roles', () => {
-  assert.equal(CORE.coreContract, '1.4')
+test('contract 1.5 defines the forge, knowledge and upstream roles', () => {
+  assert.equal(CORE.coreContract, '1.5')
   assert.deepEqual(Object.keys(CORE.points), ['forge', 'knowledge', 'upstream'])
   assert.deepEqual(CORE.points.forge, { kind: 'role', operations: ['check', 'open', 'push', 'finalize'] })
   assert.deepEqual(CORE.points.knowledge, { kind: 'role', operations: ['context', 'log', 'check'] })
@@ -105,21 +105,27 @@ test('forgeInput passes ci false through, and the forge provider gets it', () =>
 test('with no upstream provider nothing is filed and the findings stay in the sidecar', () => {
   const root = knowledgeHost()
   const core = { ...CORE, home }
-  const none = callRole(root, 'upstream', 'file', { report: '.adf/retro/2026-10-19-window.json', findings: ['R1'] }, core)
+  const none = callRole(root, 'upstream', 'file', { repository: 'o/r', host: 'h', retro: '2026-10-19-window', findings: [], debt: [] }, core)
   assert.deepEqual(none, { state: 'none', point: 'upstream' })
-  assert.equal(upstreamReport('file', none), 'Upstream: none; no upstream plugin is enabled, so nothing was filed and the findings stay in the retrospective sidecar.')
-  assert.match(upstreamReport('check', none), /findings stay in the retrospective sidecar/)
+  assert.equal(upstreamReport('file', none), 'Upstream: none; no upstream plugin is enabled, so nothing was filed and the findings stay in the retrospective sidecar, the ADF debt unfiled in the debt tree.')
+  assert.match(upstreamReport('check', none), /findings stay in the retrospective sidecar and the ADF debt stays unfiled/)
   assert.throws(() => callRole(root, 'upstream', 'close', {}, core), /upstream has no operation close/)
 })
 
-test('an upstream provider declared for contract 1.4 files through the core', () => {
+test('an upstream provider declared for contract 1.4 runs under core 1.5 and files findings and ADF debt in one call', () => {
   const declaration = { name: 'u', contract: '1.4', provides: { upstream: { script: 'scripts/k.mjs', operations: ['check', 'file'] } } }
-  const script = `let t='';process.stdin.on('data',(d)=>t+=d).on('end',()=>{const j=JSON.parse(t);console.log(JSON.stringify({state:'done',issues:j.input.findings.map((f,i)=>({finding:f,number:i+1,url:'https://t/'+(i+1)}))}))})`
+  const script = `let t='';process.stdin.on('data',(d)=>t+=d).on('end',()=>{const j=JSON.parse(t).input;const items=[...j.findings.map((f)=>[f.id,'finding']),...j.debt.map((d)=>[d.id,'debt'])];console.log(JSON.stringify({state:'done',issues:items.map(([item,kind],i)=>({item,kind,number:i+1,url:'https://t/'+(i+1),existed:kind==='debt'}))}))})`
   const root = knowledgeHost(declaration, script)
   const core = { ...CORE, home }
-  const filed = callRole(root, 'upstream', 'file', { report: '.adf/retro/r.json', findings: ['R1', 'R2'] }, core)
-  assert.deepEqual(filed.issues, [{ finding: 'R1', number: 1, url: 'https://t/1' }, { finding: 'R2', number: 2, url: 'https://t/2' }])
-  assert.equal(upstreamReport('file', filed), 'Upstream: filed R1 as https://t/1, R2 as https://t/2')
+  const filed = callRole(root, 'upstream', 'file', { repository: 'o/r', host: 'h', retro: 'r', findings: [{ id: 'R1' }, { id: 'R2' }], debt: [{ id: 'adf-01' }] }, core)
+  assert.deepEqual(filed.issues, [
+    { item: 'R1', kind: 'finding', number: 1, url: 'https://t/1', existed: false },
+    { item: 'R2', kind: 'finding', number: 2, url: 'https://t/2', existed: false },
+    { item: 'adf-01', kind: 'debt', number: 3, url: 'https://t/3', existed: true }
+  ])
+  assert.equal(upstreamReport('file', filed), 'Upstream: 2 filed, 1 already filed; finding R1 as https://t/1, finding R2 as https://t/2, ADF debt adf-01 as https://t/3 (already filed)')
+  assert.equal(upstreamReport('file', { state: 'done', issues: [{ item: 'R1', kind: 'finding', number: 9 }] }), 'Upstream: 1 filed, 0 already filed; finding R1 as #9')
+  assert.equal(upstreamReport('file', { state: 'done', issues: [] }), 'Upstream: nothing filed')
   assert.equal(upstreamReport('check', { state: 'degraded', hint: 'gh auth login' }), 'Upstream check: not done. gh auth login')
 })
 
@@ -154,7 +160,7 @@ test('an absent maintainer entry is named for upstream only, and an old entry wi
   assert.deepEqual(upstream, { state: 'none', point: 'upstream', absent: [{ id: 'adf-maintainer@agentic-dev-flow', reason: 'not-installed' }] })
   assert.equal(
     upstreamReport('file', upstream),
-    'Upstream: none; no upstream plugin is enabled, so nothing was filed and the findings stay in the retrospective sidecar.\nadf-maintainer@agentic-dev-flow is in the registry but not installed; the upstream file was skipped.'
+    'Upstream: none; no upstream plugin is enabled, so nothing was filed and the findings stay in the retrospective sidecar, the ADF debt unfiled in the debt tree.\nadf-maintainer@agentic-dev-flow is in the registry but not installed; the upstream file was skipped.'
   )
 })
 

@@ -1,9 +1,9 @@
 // Calls a role: the one enabled plugin that provides it, or nothing. The plugin's script gets
 // one JSON object on stdin ({ root, config, input }) and prints one on stdout, whose `state`
 // is `done`, `degraded` or `refused` (contract/README.md). The core reads fields, never prose.
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync, realpathSync } from 'node:fs'
-import { dirname, isAbsolute, join, normalize } from 'node:path'
+import { basename, dirname, isAbsolute, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registryPlugins } from './registry.mjs'
 
@@ -11,7 +11,8 @@ export const STATES = ['done', 'degraded', 'refused']
 
 // The contract this core runs, in the shape the registry functions take ({ coreContract,
 // points }); a caller adds `home`.
-const contract = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'contract', 'contract.json'), 'utf8'))
+const CORE_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const contract = JSON.parse(readFileSync(join(CORE_ROOT, 'contract', 'contract.json'), 'utf8'))
 export const CORE = { coreContract: contract.version, points: contract.points }
 
 export function provider(root, point, core) {
@@ -167,18 +168,53 @@ export function knowledgeReport(operation, result) {
 
 // ---------------------------------------------------------------- the upstream role
 
+// The `owner/name` path of a git remote URL, https, ssh or scp-like (`git@host:owner/name.git`),
+// without `.git`; null for anything else, a local path among them.
+export function slugOf(url) {
+  if (typeof url !== 'string') return null
+  const text = url.trim()
+  const m = /^(?:https?|ssh|git):\/\/(?:[^@/]+@)?[^/]+\/(.+)$/.exec(text) ?? /^(?:[^@\s/]+@)?[^:\s/]+:(?!\/)(.+)$/.exec(text)
+  if (!m) return null
+  const path = m[1].replace(/\/+$/, '').replace(/\.git$/, '')
+  return /^[^/\s]+(\/[^/\s]+)+$/.test(path) ? path : null
+}
+
+// The repository the core's findings and ADF debt are filed in: the `repository` of its own
+// plugin.json, as `owner/name`. A manifest that names none, or no remote URL, is refused.
+export function coreRepository(manifest = JSON.parse(readFileSync(join(CORE_ROOT, '.claude-plugin', 'plugin.json'), 'utf8'))) {
+  const slug = slugOf(manifest?.repository)
+  if (!slug) throw new Error(`the core's plugin.json names no repository URL (repository: ${JSON.stringify(manifest?.repository ?? null)}); nothing can be filed upstream`)
+  return slug
+}
+
+// The host a retrospective files from, for the issue markers: the `origin` remote's `owner/name`,
+// else the base name of the host root.
+export function hostSlug(root) {
+  let url = null
+  try {
+    url = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  } catch {
+    url = null
+  }
+  return slugOf(url) ?? basename(root)
+}
+
 // The line a command shows for an upstream result; the default with no provider is stated here
-// once: nothing is filed, and the findings stay in the retrospective's sidecar.
+// once: nothing is filed, the findings stay in the retrospective's sidecar and the ADF debt in the
+// debt tree, unfiled.
 export function upstreamReport(operation, result) {
   if (result.state === 'none') {
     return `${{
-      check: 'Upstream: none; no upstream plugin is enabled, so the findings stay in the retrospective sidecar.',
-      file: 'Upstream: none; no upstream plugin is enabled, so nothing was filed and the findings stay in the retrospective sidecar.'
+      check: 'Upstream: none; no upstream plugin is enabled, so the findings stay in the retrospective sidecar and the ADF debt stays unfiled.',
+      file: 'Upstream: none; no upstream plugin is enabled, so nothing was filed and the findings stay in the retrospective sidecar, the ADF debt unfiled in the debt tree.'
     }[operation]}${absentLines(result, `the upstream ${operation}`)}`
   }
   if (result.state === 'refused') return `Upstream ${operation}: refused; ${result.error ?? 'no reason given'}`
   if (result.state === 'degraded') return `Upstream ${operation}: not done. ${result.hint ?? ''}`.trim()
   if (operation === 'check') return `Upstream: ${result.tool ?? 'ready'}`
   const issues = result.issues ?? []
-  return issues.length ? `Upstream: filed ${issues.map((i) => `${i.finding} as ${i.url ?? `#${i.number}`}`).join(', ')}` : 'Upstream: nothing filed'
+  if (issues.length === 0) return 'Upstream: nothing filed'
+  const existed = issues.filter((i) => i.existed).length
+  const what = (i) => `${i.kind === 'debt' ? 'ADF debt' : 'finding'} ${i.item} as ${i.url ?? `#${i.number}`}${i.existed ? ' (already filed)' : ''}`
+  return `Upstream: ${issues.length - existed} filed, ${existed} already filed; ${issues.map(what).join(', ')}`
 }

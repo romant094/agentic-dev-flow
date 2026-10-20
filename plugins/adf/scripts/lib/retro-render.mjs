@@ -4,8 +4,10 @@
 // by compute to `{ key, value }`. Deciding nothing: it renders.
 //
 // `retroDocument` is the committed sidecar, `.adf/retro/<id>.json`: the sidecar with the
-// computed reply's fields added, so the next window reads its cut-off and aggregates from it and
-// the `upstream` role reads the findings from it.
+// computed reply's fields added, so the next window reads its cut-off and aggregates from it.
+// `issues` are what the `upstream` role's `file` returned (`[{ item, kind, number, url, existed }]`,
+// none when it did not run or filed nothing): each finding gets `issue` and each ADF debt record
+// `filed`, the issue's URL or null.
 const HEADING = { window: 'Window', change: 'Change', period: 'Period' }
 
 const shown = (v) => (v === null || v === undefined ? 'n/a' : String(v))
@@ -15,9 +17,13 @@ const keys = (list) => (list.length === 0 ? 'none' : list.map(keyed).join('; '))
 const short = (sha) => String(sha ?? '').slice(0, 7)
 const day = (at) => (at ? String(at).slice(0, 10) : 'n/a')
 
-export function retroDocument(sidecar, computed) {
-  const { nothingFound, findings, decisions, removalCandidate, improvements } = computed
-  return { ...sidecar, nothingFound, findings, decisions, removalCandidate, improvements }
+const issueOf = (issues, kind, id) => issues.find((i) => i.kind === kind && i.item === id)?.url ?? null
+
+export function retroDocument(sidecar, computed, issues = []) {
+  const { nothingFound, decisions, removalCandidate, improvements } = computed
+  const findings = computed.findings.map((f) => ({ ...f, issue: issueOf(issues, 'finding', f.id) }))
+  const adfDebt = (sidecar.adfDebt ?? []).map((d) => ({ ...d, filed: issueOf(issues, 'debt', d.id) }))
+  return { ...sidecar, adfDebt, nothingFound, findings, decisions, removalCandidate, improvements }
 }
 
 function scopeLine(s) {
@@ -51,6 +57,7 @@ function findingLines(f) {
   return [
     `### ${f.id}: ${f.title}`,
     '',
+    ...(f.issue ? [`- Issue: ${f.issue}`] : []),
     `- Class: ${f.class}`,
     `- Changes: ${f.changes.join(', ')}`,
     `- Could have been caught: ${f.caughtWhere}`,
@@ -60,6 +67,15 @@ function findingLines(f) {
     '',
     f.body,
     ''
+  ]
+}
+
+function debtTable(debt) {
+  if (debt.length === 0) return ['No ADF debt was waiting to be filed.']
+  return [
+    '| ID | Title | Plugin | Change | Class | Filed |',
+    '|---|---|---|---|---|---|',
+    ...debt.map((d) => `| ${cell(d.id)} | ${cell(d.title)} | ${cell(`${d.plugin} ${d.pluginVersion}`)} | ${cell(d.change)} | ${cell(d.class)} | ${cell(d.filed ?? 'not filed')} |`)
   ]
 }
 
@@ -88,8 +104,9 @@ function deltaLines(d) {
   ]
 }
 
-// The Markdown of one retrospective.
-export function renderRetro(sidecar, computed) {
+// The Markdown of one retrospective; `issues` as retroDocument takes them.
+export function renderRetro(sidecar, computed, issues = []) {
+  const doc = retroDocument(sidecar, computed, issues)
   const lines = [
     `# ${HEADING[sidecar.mode] ?? sidecar.mode} retrospective ${sidecar.date}`,
     '',
@@ -101,7 +118,11 @@ export function renderRetro(sidecar, computed) {
     '',
     '## Findings',
     '',
-    ...(computed.nothingFound ? ['Nothing found.', ''] : computed.findings.flatMap(findingLines)),
+    ...(doc.nothingFound ? ['Nothing found.', ''] : doc.findings.flatMap(findingLines)),
+    '## ADF debt',
+    '',
+    ...debtTable(doc.adfDebt),
+    '',
     '## Decisions on the items waiting for data',
     '',
     ...decisionsTable(computed.decisions),

@@ -1,8 +1,8 @@
 The procedure `/adf:retro` executes: a retrospective over archived changes. A script selects
 the changes and computes every number, one agent reasons over them and replies in JSON, a
-script checks the reply, renders the report into `.adf/retro/`, commits it on the
-retrospective's own branch and integrates it, and the flow findings go upstream on the
-developer's yes. The command file carries the step order; the rules below are stated here in
+script checks the reply, files the flow findings and the open ADF debt upstream on the
+developer's yes, renders the report into `.adf/retro/`, commits it on the retrospective's own
+branch and integrates it. The command file carries the step order; the rules below are stated here in
 full and the command points at them. `<main>` is the main checkout, `<wt>` the retrospective's
 worktree, `detail.worktree` of `start`.
 
@@ -10,8 +10,9 @@ worktree, `detail.worktree` of `start`.
 
 It assesses how the flow worked over its changes, and nothing else. It writes no debt: product
 debt is the ingest's, and ADF debt records are archive's. The only files it commits are its
-report and its sidecar, `.adf/retro/<id>.md` and `.adf/retro/<id>.json`. The input, the replies,
-the prompt and the attempts log stay in `.superpowers/retro/<id>/`, which is ignored.
+report and its sidecar, `.adf/retro/<id>.md` and `.adf/retro/<id>.json`, and the Filed column
+of each ADF debt record it filed, in the debt tree's block index. The input, the replies, the
+prompt and the attempts log stay in `.superpowers/retro/<id>/`, which is ignored.
 
 **Modes and ids.**
 
@@ -39,12 +40,13 @@ scripts' results, counts and refusals.
 
 **The steps, their state, and resuming.**
 
-The steps run in this order: `start`, `window`, `reply`, `render`, `record`, `publish`, `file`,
+The steps run in this order: `start`, `window`, `reply`, `file`, `render`, `record`, `publish`,
 `remove`. Each step's state is `pending`, `done`, `degraded`, `failed` or `skipped`, kept in
 `<main>/.superpowers/retro/<id>/state.json`. A step runs once every step before it is settled
-(`done`, `degraded` or `skipped`); `file` needs only the steps before `publish`. A `done` or
-`skipped` step is reported as it is, not run again; a `failed` or `degraded` one runs again, as
-archive's steps do. `retro.mjs state --id <id>` names the next step, so `/adf:retro` run again resumes there.
+(`done`, `degraded` or `skipped`). A `done` or `skipped` step is reported as it is, not run
+again; a `failed` or `degraded` one runs again, as archive's steps do, except `file` once
+`render` has run: its issue links and the debt's Filed column would miss the report and the
+commit. `retro.mjs state --id <id>` names the next step, so `/adf:retro` run again resumes there.
 A step that waits for the developer's yes holds: `pending`, nothing recorded. Only the scripts
 write `state.json`.
 
@@ -54,9 +56,12 @@ write `state.json`.
    worktree a failed run made is adopted.
 
 2. **`window`.** `retro.mjs window --id <id> --root <wt>`: the sidecar over the fetched ref,
-   the knowledge base's paths left out of the diff figures; the agent's input and its prompt
-   written; the dispatch recorded. `detail.changes` lists the changes and `detail.coverage`
-   how many have a metrics record: show both. `detail.dispatch` is the plan of the dispatch.
+   the knowledge base's paths left out of the diff figures, and the ADF debt records with no
+   Filed value, read from the debt tree in `<wt>`; the agent's input and its prompt written; the
+   dispatch recorded. `detail.changes` lists the changes, `detail.coverage` how many have a
+   metrics record and `detail.adfDebt` the debt not yet filed: show them. `detail.dispatch` is
+   the plan of the dispatch. The agent sees the debt, so that a finding can name the record it
+   is seen again in.
 
 3. **`reply`: the `retro <id>` agent.** Dispatch the content of `detail.dispatch.promptFile` as
    it is, to `detail.dispatch.agent`, named `detail.dispatch.name`, in `<wt>`. The agent writes
@@ -77,17 +82,38 @@ write `state.json`.
    pass `--resume no` on the refused reply's call and dispatch the prompt afresh with the errors
    as its question (`fresh`). `next: stop` ends the retrospective: report it to the developer.
 
-4. **`render`.** `retro.mjs render --id <id> --root <wt>`: `.adf/retro/<id>.json`, the sidecar
-   with the computed reply, and `.adf/retro/<id>.md`, the report, in `<wt>`. Every figure in
-   the report comes from the sidecar or a key the reply cited; the agent writes no number.
+4. **`file`.** `retro.mjs file --id <id> --root <wt>` asks the `upstream` role. It first runs
+   the role's `check` with `{ repository }`, the `owner/name` of the core manifest's
+   `repository`. With no provider, the step is `skipped`: the findings stay in the sidecar and
+   the ADF debt unfiled. A `degraded` check is `degraded` with its `hint`, and a `refused` one
+   fails the step with its error; nothing is sent either way. The developer fixes the cause and
+   runs `file` again, or goes on to `render` past a degraded file, with no links. With a ready
+   provider, the call holds and returns `would`: the findings and the ADF debt records it would
+   file, by id and title. Show them and ask the developer. Only on their explicit yes, run it
+   again with `--yes`, and `--findings R1,R2` or `--debt adf-01` when they chose only some;
+   `none` files none of that kind, and nothing chosen at all is `skipped`. The role's `file`
+   gets `{ repository, host, retro, findings, debt }`: the computed findings, every key
+   resolved, the debt records with their bodies, `host` the host's `origin` remote `owner/name`
+   or its directory's name, and `retro` the id. It returns `issues`, each with the `item`, its
+   `kind` (`finding` or `debt`), `number`, `url` and whether it `existed`; the role finds an
+   issue filed before, so a rerun after a failure files nothing twice. After a `done` file,
+   each debt record filed is marked filed in `<wt>`'s debt tree, so `record` commits its Filed
+   column.
 
-5. **`record`.** `retro.mjs record --id <id> --root <wt>`: one commit of only those files,
-   `docs(retro): <mode> retrospective <date>`, with ` of <change>` for one change. Pass the
+5. **`render`.** `retro.mjs render --id <id> --root <wt>`: `.adf/retro/<id>.json`, the sidecar
+   with the computed reply, and `.adf/retro/<id>.md`, the report, in `<wt>`. Every figure in
+   the report comes from the sidecar or a key the reply cited; the agent writes no number. The
+   report lists the ADF debt the window found unfiled. After a `done` file, each finding filed
+   carries its `issue` and each debt record filed its `filed`, the issue's URL, in both files;
+   otherwise they are null and the report says `not filed`.
+
+6. **`record`.** `retro.mjs record --id <id> --root <wt>`: one commit of only those files and
+   the debt tree files `file` marked, `detail.debtFiles` of `file`, `docs(retro): <mode> retrospective <date>`, with ` of <change>` for one change. Pass the
    retro worktree as `--root`: the english-check hook reads the committed files under the
    `--root` the call names, and they exist only in `<wt>`. A commit a failed run made is
    adopted, not made twice.
 
-6. **`publish`.** `retro.mjs publish --id <id> --root <wt>`. With a forge, its `open` makes a
+7. **`publish`.** `retro.mjs publish --id <id> --root <wt>`. With a forge, its `open` makes a
    merge request into the integration branch that is not a draft and is pushed with no CI run
    (`ci: false`); the retrospective never merges it. `refused` fails the step with the forge's
    reason; `degraded` keeps the forge's fallback. With no forge, the call holds and returns the
@@ -96,14 +122,8 @@ write `state.json`.
    `--yes`: `git merge --no-ff` in the main checkout, when it has the integration branch checked
    out and is clean; otherwise refused with the commands. Nothing is pushed and the branch is
    kept. On a no, run it with `--no`: the step is `skipped`, the developer merges the branch by
-   hand with the commands it keeps, and `file` and `remove` can run. A local merge starts the next window only after the developer pushes the integration
+   hand with the commands it keeps, and `remove` can run. A local merge starts the next window only after the developer pushes the integration
    branch, since the window reads the fetched ref.
-
-7. **`file`.** `retro.mjs file --id <id> --root <wt>` asks the `upstream` role. With no
-   provider, the step is `skipped` and the findings stay in the sidecar. With one, the call
-   holds and returns `would`, the findings it would file: show them and ask the developer. Only
-   on their explicit yes, run it again with `--yes`, and `--findings R1,R2` when they chose only
-   some. A retrospective with no finding files nothing.
 
 8. **`remove`.** `retro.mjs remove --id <id> --root <main>`: the retro worktree goes from the
    main checkout, as archive removes a change's: never forced, the branch kept, a worktree with
@@ -111,5 +131,6 @@ write `state.json`.
    `--root <main>`.
 
 **Report.** Name the id, the changes covered, the findings by id and title, the removal
-candidate, the merge request or the local merge, what was filed upstream, and each step not
+candidate, the merge request or the local merge, the findings and the ADF debt filed upstream
+with their issues, and each step not
 finished with the next one to run.

@@ -1,5 +1,6 @@
 // retro.mjs against real git repositories: a host on develop with a bare remote, two archived
-// changes merged, `one` with its record and attempts log and `two` with its record. The roles and
+// changes merged, `one` with its record and attempts log and `two` with its record, and, when
+// asked, a debt tree with one ADF debt record unfiled and one filed. The roles and
 // the clock are injected: the knowledge, forge and upstream providers answer as the test needs,
 // and the Claude Code home is an empty directory, so nothing reads the developer's own plugins.
 import { test } from 'node:test'
@@ -13,7 +14,8 @@ import { run, UsageError } from '../retro.mjs'
 import { setBranches } from '../lib/branches.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { fromV1, validateRecord } from '../lib/metrics.mjs'
-import { initRegistry } from '../lib/registry.mjs'
+import { addAdfRecord, listTree, markFiled } from '../lib/debt.mjs'
+import { initRegistry, setDebtRoot } from '../lib/registry.mjs'
 import { localMerge, MergeRefusal } from '../lib/local-merge.mjs'
 import { renderRetro, retroDocument } from '../lib/retro-render.mjs'
 import { STEPS, statePath } from '../lib/retro-run.mjs'
@@ -27,6 +29,9 @@ const NOW = new Date('2026-10-19T12:00:00Z')
 const JSON_FILE = `.adf/retro/${ID}.json`
 const MD_FILE = `.adf/retro/${ID}.md`
 const TITLE = `docs(retro): window retrospective ${DATE}`
+const REPOSITORY = 'romant094/agentic-dev-flow'
+const DEBT_INDEX = 'docs/debt/adf/index.md'
+const DEBT_RECORD = { plugin: 'adf', pluginVersion: '0.11.0', class: 'defect', title: 'The hook misses a staged rename', body: 'A rename staged before the commit is not checked.' }
 const HOME = realpathSync(mkdtempSync(join(tmpdir(), 'adf-retro-cli-home-')))
 const NONE = {
   now: () => NOW,
@@ -81,8 +86,9 @@ const ATTEMPTS = [
 ]
 
 // The host checkout on develop, pushed to a bare remote, with `one` and `two` archived and merged.
-// `one` also writes three lines into the knowledge base, docs/kb/.
-function host() {
+// `one` also writes three lines into the knowledge base, docs/kb/. With `debt`, the registry's
+// debt root is docs/debt, holding adf-01 unfiled and adf-02 filed.
+function host({ debt = false } = {}) {
   const top = realpathSync(mkdtempSync(join(tmpdir(), 'adf-retro-cli-')))
   const remote = join(top, 'remote.git')
   const root = join(top, 'host')
@@ -93,6 +99,12 @@ function host() {
   initRegistry(root, '1.4')
   setBranches(root, { integration: 'develop', protected: [] })
   ignoreLocalDirs(root)
+  if (debt) {
+    setDebtRoot(root, 'docs/debt')
+    addAdfRecord(join(root, 'docs', 'debt'), 'one', DEBT_RECORD)
+    addAdfRecord(join(root, 'docs', 'debt'), 'two', { ...DEBT_RECORD, title: 'Filed already' })
+    markFiled(join(root, 'docs', 'debt'), { id: 'adf-02', url: 'https://github.com/o/r/issues/1' })
+  }
   write(root, { 'src/a.txt': 'a\n' })
   g(root, ['add', '.'])
   g(root, ['commit', '-q', '-m', 'init'], '2026-09-01T10:00:00Z')
@@ -149,11 +161,20 @@ function writeReply(win, reply) {
 
 const inputOf = (win) => JSON.parse(readFileSync(win.detail.inputFile, 'utf8'))
 
-// start, window, a valid reply, render and record: the retrospective committed on its branch.
-function recorded(h, deps = NONE) {
+// start, window and a valid reply: the retrospective ready to file.
+function replied(h, deps = NONE) {
   const steps = [call(h, ['start', '--date', DATE], deps), call(h, ['window'], deps)]
   const win = steps[1]
-  steps.push(call(h, ['reply', '--file', writeReply(win, validReply(inputOf(win)))], deps), call(h, ['render'], deps), call(h, ['record'], deps))
+  steps.push(call(h, ['reply', '--file', writeReply(win, validReply(inputOf(win)))], deps))
+  for (const s of steps) assert.equal(s.ok, true, `${s.step}: ${s.refusal ?? ''}`)
+  return { win, steps }
+}
+
+// replied, then file (skipped with no upstream provider), render and record: the retrospective
+// committed on its branch.
+function recorded(h, deps = NONE) {
+  const { win, steps } = replied(h, deps)
+  steps.push(call(h, ['file'], deps), call(h, ['render'], deps), call(h, ['record'], deps))
   for (const s of steps) assert.equal(s.ok, true, `${s.step}: ${s.refusal ?? ''}`)
   return { win, steps }
 }
@@ -191,6 +212,7 @@ test('a window retrospective with a forge: own worktree, checked reply, rendered
   const reply = call(h, ['reply', '--file', writeReply(win, validReply(inputOf(win)))], deps)
   assert.deepEqual([reply.ok, reply.state, reply.detail.next], [true, 'done', 'proceed'])
   assert.deepEqual(reply.detail.result.findings[0].cost, { key: 'changes.one.values.cost.tokens', value: 300 })
+  assert.deepEqual([reply.next, call(h, ['file'], deps).state], ['file', 'skipped'], 'file follows reply')
 
   const render = call(h, ['render'], deps)
   assert.deepEqual(render.detail.files, [JSON_FILE, MD_FILE])
@@ -214,7 +236,7 @@ test('a window retrospective with a forge: own worktree, checked reply, rendered
   assert.equal(g(h.wt, ['status', '--porcelain']), '', 'the input, replies and prompt stay out of the tree')
 
   const pub = call(h, ['publish'], deps)
-  assert.deepEqual([pub.ok, pub.state, pub.next], [true, 'done', 'file'])
+  assert.deepEqual([pub.ok, pub.state, pub.next], [true, 'done', 'remove'])
   assert.equal(calls.length, 1)
   assert.equal(calls[0].op, 'open')
   assert.deepEqual(calls[0].input, { ci: false, change: `retro-${ID}`, branch: `chore/retro/${ID}`, base: 'develop', protected: ['develop'], title: TITLE, draft: false })
@@ -227,7 +249,7 @@ test('a window retrospective with a forge: own worktree, checked reply, rendered
   assert.equal(calls.length, 1, 'a done publish opens nothing again')
   assert.equal(call(h, ['start', '--date', DATE], deps).already, true)
   const state = call(h, ['state'], deps)
-  assert.deepEqual([state.id, state.date, state.mode, state.next], [ID, DATE, 'window', 'file'])
+  assert.deepEqual([state.id, state.date, state.mode, state.next], [ID, DATE, 'window', 'remove'])
 })
 
 test('without a forge, publish holds for the developer, and --yes merges locally with nothing pushed', () => {
@@ -250,52 +272,145 @@ test('without a forge, publish holds for the developer, and --yes merges locally
   assert.equal(call(h, ['publish', '--yes']).already, true)
 })
 
-test('without a forge, publish --no is skipped with the branch and the commands kept, and file and remove run', () => {
+test('without a forge, publish --no is skipped with the branch and the commands kept, and remove runs', () => {
   const h = host()
   recorded(h)
   const developBefore = g(h.root, ['rev-parse', 'develop'])
   const declined = call(h, ['publish', '--no'])
-  assert.deepEqual([declined.ok, declined.state, declined.detail.forge, declined.detail.declined, declined.next], [true, 'skipped', 'none', true, 'file'])
+  assert.deepEqual([declined.ok, declined.state, declined.detail.forge, declined.detail.declined, declined.next], [true, 'skipped', 'none', true, 'remove'])
   assert.deepEqual(declined.detail.commands, [`git -C ${h.root} checkout develop`, `git -C ${h.root} merge --no-ff chore/retro/${ID}`])
   assert.equal(declined.detail.report, `Local merge: declined; the developer merges chore/retro/${ID} into develop.`)
   assert.equal(g(h.root, ['rev-parse', 'develop']), developBefore, 'nothing merged')
   assert.equal(call(h, ['publish', '--yes']).already, true, 'a skipped publish is not run again')
-  assert.equal(call(h, ['file']).state, 'skipped')
   assert.equal(call(h, ['remove']).state, 'done')
   assert.equal(g(h.root, ['rev-parse', '--verify', `chore/retro/${ID}`]).length, 40, 'the branch is kept')
   const both = spawnSync(process.execPath, [CLI, 'publish', '--yes', '--no'], { cwd: h.root, encoding: 'utf8' })
   assert.equal(both.status, 2, both.stdout)
 })
 
-test('file: with an upstream provider, what would be filed until the yes, then filed; findings named by id', () => {
-  const h = host()
+const ISSUE_R1 = 'https://github.com/romant094/agentic-dev-flow/issues/12'
+const ISSUE_DEBT = 'https://github.com/romant094/agentic-dev-flow/issues/13'
+
+// An upstream provider that answers each operation with what `answers[op]` gives, and records
+// every call.
+function upstream(answers) {
   const calls = []
-  const deps = { ...NONE, upstream: (op, input) => (calls.push({ op, input }), op === 'check' ? { state: 'done', plugin: 'adf-maintainer', tool: 'ready' } : { state: 'done', plugin: 'adf-maintainer', issues: [{ finding: 'R1', number: 12, url: 'https://t/12' }] }) }
-  recorded(h, deps)
-  // file needs the committed sidecar, not its merge: publish has not run.
+  const deps = { ...NONE, upstream: (op, input) => (calls.push({ op, input }), typeof answers[op] === 'function' ? answers[op](input) : answers[op]) }
+  return { calls, deps }
+}
+
+const READY = { state: 'done', plugin: 'adf-maintainer', tool: 'ready' }
+
+test('file: the check probe first, what would be filed until the yes, then the findings and the unfiled ADF debt filed, marked, rendered and committed', () => {
+  const h = host({ debt: true })
+  const issues = [
+    { item: 'R1', kind: 'finding', number: 12, url: ISSUE_R1, existed: false },
+    { item: 'adf-01', kind: 'debt', number: 13, url: ISSUE_DEBT, existed: true }
+  ]
+  const { calls, deps } = upstream({ check: READY, file: { state: 'done', plugin: 'adf-maintainer', issues } })
+  const { win } = replied(h, deps)
+  assert.deepEqual(win.detail.adfDebt, [{ id: 'adf-01', title: DEBT_RECORD.title }], 'only the record with no Filed value')
+  assert.deepEqual(inputOf(win).adfDebt.map((d) => [d.id, d.body]), [['adf-01', DEBT_RECORD.body]], "the agent's input shows the debt")
+  assert.throws(() => call(h, ['render'], deps), /render waits for file/)
+
   const held = call(h, ['file'], deps)
-  assert.deepEqual([held.ok, held.state, held.pending], [true, 'pending', true])
-  assert.deepEqual(held.would, { report: JSON_FILE, findings: ['R1'] })
-  assert.deepEqual(calls.map((c) => c.op), ['check'], 'nothing filed without the yes')
+  assert.deepEqual([held.ok, held.state, held.pending, held.upstream, held.repository], [true, 'pending', true, 'adf-maintainer', REPOSITORY])
+  assert.deepEqual(held.would, { findings: [{ id: 'R1', title: 'An implementation reported done before its review passed' }], debt: [{ id: 'adf-01', title: DEBT_RECORD.title }] })
+  assert.equal(held.waiting, `the developer's yes: retro.mjs file --id ${ID} --yes`)
+  assert.deepEqual(calls, [{ op: 'check', input: { repository: REPOSITORY } }], 'nothing filed without the yes')
+  assert.equal(JSON.parse(readFileSync(statePath(h.root, ID), 'utf8')).steps.file.state, 'pending')
 
-  const unknown = call(h, ['file', '--yes', '--findings', 'R9'], deps)
-  assert.equal(unknown.ok, false)
-  assert.match(unknown.refusal, /R9 is not a finding of this retrospective; its findings: R1/)
+  const filed = call(h, ['file', '--yes'], deps)
+  assert.deepEqual([filed.ok, filed.state, filed.next], [true, 'done', 'render'])
+  const sent = calls.at(-1)
+  assert.equal(sent.op, 'file')
+  assert.deepEqual(Object.keys(sent.input), ['repository', 'host', 'retro', 'findings', 'debt'])
+  assert.deepEqual([sent.input.repository, sent.input.host, sent.input.retro], [REPOSITORY, 'host', ID])
+  const [finding] = sent.input.findings
+  assert.deepEqual(Object.keys(finding), ['id', 'title', 'class', 'changes', 'evidence', 'cost', 'caughtWhere', 'plugin', 'version', 'body'])
+  assert.deepEqual([finding.id, finding.cost, finding.evidence], ['R1', { key: 'changes.one.values.cost.tokens', value: 300 }, [{ key: 'changes.one.signals.prematureDone', value: 1 }]])
+  assert.deepEqual(sent.input.debt, [{ id: 'adf-01', title: DEBT_RECORD.title, plugin: 'adf', pluginVersion: '0.11.0', change: 'one', class: 'defect', source: 'one', body: DEBT_RECORD.body }])
+  assert.equal(filed.detail.text, `Upstream: 1 filed, 1 already filed; finding R1 as ${ISSUE_R1}, ADF debt adf-01 as ${ISSUE_DEBT} (already filed)`)
+  assert.deepEqual([filed.detail.issues, filed.detail.debtFiles], [issues, [DEBT_INDEX]])
+  assert.equal(listTree(join(h.wt, 'docs', 'debt'), { kind: 'adf' }).entries.find((e) => e.id === 'adf-01').filed, ISSUE_DEBT, 'marked filed in the retro worktree')
 
-  const filed = call(h, ['file', '--yes', '--findings', 'R1'], deps)
-  assert.deepEqual([filed.ok, filed.state], [true, 'done'])
-  assert.deepEqual(calls.at(-1), { op: 'file', input: { report: JSON_FILE, findings: ['R1'] } })
-  assert.equal(filed.detail.text, 'Upstream: filed R1 as https://t/12')
+  assert.equal(call(h, ['render'], deps).ok, true)
+  const doc = JSON.parse(readFileSync(join(h.wt, JSON_FILE), 'utf8'))
+  assert.deepEqual(doc.findings.map((f) => [f.id, f.issue]), [['R1', ISSUE_R1]])
+  assert.deepEqual(doc.adfDebt.map((d) => [d.id, d.filed]), [['adf-01', ISSUE_DEBT]])
+  const md = readFileSync(join(h.wt, MD_FILE), 'utf8')
+  assert.match(md, new RegExp(`### R1: An implementation reported done before its review passed\n\n- Issue: ${ISSUE_R1}\n`))
+  assert.match(md, new RegExp(`## ADF debt\n\n\\| ID \\| Title \\| Plugin \\| Change \\| Class \\| Filed \\|\n\\|---\\|---\\|---\\|---\\|---\\|---\\|\n\\| adf-01 \\| The hook misses a staged rename \\| adf 0\\.11\\.0 \\| one \\| defect \\| ${ISSUE_DEBT} \\|\n`))
+
+  const rec = call(h, ['record'], deps)
+  assert.equal(rec.ok, true, rec.refusal)
+  assert.deepEqual(g(h.wt, ['show', '--name-only', '--format=', 'HEAD']).split('\n').sort(), [JSON_FILE, MD_FILE, DEBT_INDEX].sort(), 'the debt store change is in the retro commit')
+  assert.equal(g(h.wt, ['status', '--porcelain']), '')
   assert.equal(call(h, ['file', '--yes'], deps).already, true)
+  assert.equal(calls.filter((c) => c.op === 'file').length, 1)
+})
+
+test('file: --findings and --debt choose what is filed, none files none of a kind, an unknown id is refused', () => {
+  const h = host({ debt: true })
+  const { calls, deps } = upstream({ check: READY, file: { state: 'done', plugin: 'adf-maintainer', issues: [] } })
+  replied(h, deps)
+  const unknown = call(h, ['file', '--yes', '--findings', 'R9'], deps)
+  assert.deepEqual([unknown.ok, unknown.state], [false, 'failed'])
+  assert.match(unknown.refusal, /R9 is not a finding of this retrospective; its findings: R1/)
+  const noDebt = call(h, ['file', '--debt', 'adf-02'], deps)
+  assert.match(noDebt.refusal, /adf-02 is not an unfiled ADF debt record of this retrospective; the records: adf-01/)
+
+  const debtOnly = call(h, ['file', '--findings', 'none', '--debt', 'adf-01'], deps)
+  assert.deepEqual([debtOnly.state, debtOnly.would], ['pending', { findings: [], debt: [{ id: 'adf-01', title: DEBT_RECORD.title }] }])
+  assert.equal(debtOnly.waiting, `the developer's yes: retro.mjs file --id ${ID} --yes --findings none --debt adf-01`)
+  const findingsOnly = call(h, ['file', '--findings', 'R1', '--debt', 'none'], deps)
+  assert.deepEqual(findingsOnly.would, { findings: [{ id: 'R1', title: 'An implementation reported done before its review passed' }], debt: [] })
+
+  const nothing = call(h, ['file', '--yes', '--findings', 'none', '--debt', 'none'], deps)
+  assert.deepEqual([nothing.ok, nothing.state, nothing.detail.text], [true, 'skipped', 'Upstream: nothing to file; no finding and no ADF debt chosen.'])
+  assert.equal(calls.filter((c) => c.op === 'file').length, 0)
+  for (const args of [['file', '--debt', 'R1'], ['file', '--debt', 'adf-'], ['window', '--debt', 'adf-01']]) {
+    const r = spawnSync(process.execPath, [CLI, ...args], { cwd: h.root, encoding: 'utf8' })
+    assert.equal(r.status, 2, `${args.join(' ')}: ${r.stdout}`)
+  }
+})
+
+test('file: a degraded check is degraded with its hint, a refused one fails, nothing sent; a rerun files, but not once render has run', () => {
+  const h = host({ debt: true })
+  let probe = { state: 'degraded', plugin: 'adf-maintainer', tool: 'unauthenticated', hint: 'gh auth login' }
+  const { calls, deps } = upstream({ check: () => probe, file: { state: 'done', plugin: 'adf-maintainer', issues: [{ item: 'adf-01', kind: 'debt', number: 13, url: ISSUE_DEBT, existed: false }] } })
+  replied(h, deps)
+  const degraded = call(h, ['file', '--yes'], deps)
+  assert.deepEqual([degraded.ok, degraded.state, degraded.detail.hint, degraded.detail.text, degraded.next], [true, 'degraded', 'gh auth login', 'Upstream check: not done. gh auth login', 'render'])
+  probe = { state: 'refused', plugin: 'adf-maintainer', error: `no push permission on ${REPOSITORY}; nothing was sent` }
+  const refused = call(h, ['file', '--yes'], deps)
+  assert.deepEqual([refused.ok, refused.state, refused.detail.error], [false, 'failed', `no push permission on ${REPOSITORY}; nothing was sent`])
+  assert.equal(refused.refusal, `Upstream check: refused; no push permission on ${REPOSITORY}; nothing was sent`)
+  assert.equal(calls.filter((c) => c.op === 'file').length, 0, 'nothing sent on a degraded or refused check')
+  probe = READY
+  const rerun = call(h, ['file', '--yes', '--findings', 'none'], deps)
+  assert.deepEqual([rerun.ok, rerun.state, rerun.detail.debtFiles], [true, 'done', [DEBT_INDEX]])
+
+  const late = host({ debt: true })
+  probe = { state: 'degraded', plugin: 'adf-maintainer', hint: 'gh auth login' }
+  replied(late, deps)
+  assert.equal(call(late, ['file'], deps).state, 'degraded')
+  assert.equal(call(late, ['render'], deps).ok, true, 'render proceeds past a degraded file, with no links')
+  assert.match(readFileSync(join(late.wt, MD_FILE), 'utf8'), /\| adf-01 \| .* \| not filed \|/)
+  probe = READY
+  assert.throws(() => call(late, ['file', '--yes'], deps), /file cannot run again: render has run/)
 })
 
 test('file with no upstream provider: skipped, the findings stay in the sidecar', () => {
-  const h = host()
-  recorded(h)
-  const out = call(h, ['file'])
-  assert.deepEqual([out.ok, out.state, out.detail.upstream], [true, 'skipped', 'none'])
-  assert.equal(out.detail.text, 'Upstream: none; no upstream plugin is enabled, so nothing was filed and the findings stay in the retrospective sidecar.')
-  assert.deepEqual(JSON.parse(readFileSync(join(h.wt, JSON_FILE), 'utf8')).findings.map((f) => f.id), ['R1'])
+  const h = host({ debt: true })
+  const { steps } = recorded(h)
+  const out = steps[3]
+  assert.deepEqual([out.step, out.ok, out.state, out.detail.upstream], ['file', true, 'skipped', 'none'])
+  assert.equal(out.detail.text, 'Upstream: none; no upstream plugin is enabled, so nothing was filed and the findings stay in the retrospective sidecar, the ADF debt unfiled in the debt tree.')
+  const doc = JSON.parse(readFileSync(join(h.wt, JSON_FILE), 'utf8'))
+  assert.deepEqual(doc.findings.map((f) => [f.id, f.issue]), [['R1', null]])
+  assert.deepEqual(doc.adfDebt.map((d) => [d.id, d.filed]), [['adf-01', null]])
+  assert.deepEqual(g(h.wt, ['show', '--name-only', '--format=', 'HEAD']).split('\n'), [JSON_FILE, MD_FILE], 'no debt file changed')
 })
 
 test('a failure injected at a step is recorded, the steps after it wait, and a re-run resumes from it', () => {
@@ -309,7 +424,7 @@ test('a failure injected at a step is recorded, the steps after it wait, and a r
   } }
   const { steps } = (() => {
     const out = [call(h, ['start', '--date', DATE], deps), call(h, ['window'], deps)]
-    out.push(call(h, ['reply', '--file', writeReply(out[1], validReply(inputOf(out[1])))], deps), call(h, ['render'], deps))
+    out.push(call(h, ['reply', '--file', writeReply(out[1], validReply(inputOf(out[1])))], deps), call(h, ['file'], deps), call(h, ['render'], deps))
     return { steps: out }
   })()
   assert.ok(steps.every((s) => s.ok))
@@ -327,7 +442,7 @@ test('a failure injected at a step is recorded, the steps after it wait, and a r
 test('a commit made by a run that failed before saving its state is adopted, not made twice', () => {
   const h = host()
   const out = [call(h, ['start', '--date', DATE]), call(h, ['window'])]
-  out.push(call(h, ['reply', '--file', writeReply(out[1], validReply(inputOf(out[1])))]), call(h, ['render']))
+  out.push(call(h, ['reply', '--file', writeReply(out[1], validReply(inputOf(out[1])))]), call(h, ['file']), call(h, ['render']))
   g(h.wt, ['add', JSON_FILE, MD_FILE])
   g(h.wt, ['commit', '-q', '-m', TITLE])
   const head = g(h.wt, ['rev-parse', 'HEAD'])
@@ -404,6 +519,7 @@ test('wrong mode arguments are usage errors, exit 2; retros of several modes sha
   const win = call(h, ['window', '--id', `${DATE}-one`])
   assert.deepEqual([win.ok, win.id, win.detail.changes, win.detail.dispatch.name], [true, `${DATE}-one`, ['one'], `retro ${DATE}-one`])
   call(h, ['reply', '--id', `${DATE}-one`, '--file', writeReply(win, validReply(inputOf(win)))])
+  call(h, ['file', '--id', `${DATE}-one`])
   const render = call(h, ['render', '--id', `${DATE}-one`])
   assert.deepEqual(render.detail.files, [`.adf/retro/${DATE}-one.json`, `.adf/retro/${DATE}-one.md`])
   const rec = call(h, ['record', '--id', `${DATE}-one`])
@@ -444,12 +560,11 @@ test('the next window starts at this retrospective once its merge request merged
   assert.equal(call(h, ['state'], deps).id, `${next}-window`, 'without --id, the newest retrospective')
 })
 
-test('remove: after file, the retro worktree goes from the main checkout, never forced, its branch kept', () => {
+test('remove: after publish, the retro worktree goes from the main checkout, never forced, its branch kept', () => {
   const h = host()
   recorded(h)
+  assert.throws(() => call(h, ['remove']), /remove waits for publish; run retro\.mjs publish --id 2026-10-19-window first/)
   call(h, ['publish', '--yes'])
-  assert.throws(() => call(h, ['remove']), /remove waits for file; run retro\.mjs file --id 2026-10-19-window first/)
-  assert.equal(call(h, ['file']).state, 'skipped')
   write(h.wt, { [MD_FILE]: 'edited\n' })
   const dirty = call(h, ['remove'])
   assert.deepEqual([dirty.ok, dirty.state], [false, 'failed'])
@@ -491,7 +606,7 @@ test('renderRetro: every figure from the sidecar or a resolved key; nothing foun
   assert.match(md, /- Scope: the changes merged from 2026-10-01 to 2026-10-15/)
   assert.doesNotMatch(md, /Next window/, 'only a window names where the next one starts')
   assert.match(md, /\| a\\\|b \| 2026-10-02 \| n\/a \| n\/a \| 0 \| none: no metrics\.json \|/)
-  assert.match(md, /## Findings\n\nNothing found\.\n/)
+  assert.match(md, /## Findings\n\nNothing found\.\n\n## ADF debt\n\nNo ADF debt was waiting to be filed\.\n/)
   assert.match(md, /\| lite-path \| wait \| `aggregates\.cost\.tokens\.n` = 0 \| No data\. \|/)
   assert.match(md, /\*\*sweep\*\* \(layer\): Quiet for long\.\n\nBasis: `coverage\.records` = 0/)
   assert.match(md, /## Improvements\n\nnone\n/)

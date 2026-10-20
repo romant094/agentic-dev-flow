@@ -25,7 +25,8 @@ runtime) and the `operations` it implements: every operation the point defines.
 
 Each point arrives with the first plugin that needs it. Version `1.0` defined none; `1.1` adds
 the `forge` role; `1.2` adds its `push` operation; `1.3` adds the `knowledge` role; `1.4` adds
-the `forge` operations' `ci` field and the `upstream` role.
+the `forge` operations' `ci` field and the `upstream` role; `1.5` gives `upstream` its content:
+`check` takes the repository, and `file` takes the findings and the ADF debt themselves.
 
 ## Calling convention
 
@@ -89,18 +90,25 @@ allows every path `paths` names, so an ingest no plan names is not a finding. De
 provider: brainstorm reads no index, archive skips the ingest and says so in its report, and
 no log entry is written.
 
-### `upstream` (role, since 1.4)
+### `upstream` (role, since 1.4; content since 1.5)
 
 Where a retrospective's flow findings are filed, outside the host project: the issue tracker
-of the flow itself. The core never names a tracker.
+of the flow itself. The core never names a tracker. The repository is the `owner/name` path of
+the `repository` URL in the core's own `plugin.json`, read by the core and passed in.
 
 | Operation | Input | Result when `done` |
 |---|---|---|
-| `check` | `{}` | `tool: "ready"`; degraded: `tool` is `missing` or `unauthenticated`, with `hint` |
-| `file` | `report`: the host-relative path of a retrospective's sidecar JSON; `findings`: the ids of the findings in it to file | `issues`: a list of `{ finding, number, url }`, one per finding filed |
+| `check` | `repository`: `owner/name` | `tool: "ready"`, the repository reachable and writable; degraded: `tool` is `missing` or `unauthenticated`, with `hint`; refused: no push permission, with `error`, nothing sent |
+| `file` | `repository`; `host`: the host's `origin` remote path (`owner/name`, from an https or ssh URL), else its root directory's name; `retro`: the retrospective's id; `findings`: the resolved findings, each `{ id, title, class, changes, evidence: [{ key, value }], cost: { key, value } \| null, caughtWhere, plugin, version, body }`; `debt`: the ADF debt records, each `{ id, title, plugin, pluginVersion, change, class, source, body }` | `issues`: a list of `{ item, kind, number, url, existed }`, one per item filed: `item` the finding or record id, `kind` `finding` or `debt`, `existed` true when an issue for the item was already there and was returned, not created |
 
-The provider reads the findings from the sidecar; the core passes only their ids. Default with
-no provider: nothing is filed, and the findings stay in the retrospective's sidecar.
+The core sends the content; the provider reads no host file. The core calls `check` before
+anything else and sends `file` only on a `done` check and the developer's yes. A rerun of
+`file` after a failure is safe: the provider finds the issue filed before for each item and
+returns it with `existed: true`. After a `done` file, the core marks each debt record filed
+with its issue's URL. Default with no provider: nothing is filed, the findings stay in the
+retrospective's sidecar and the ADF debt stays unfiled. No provider existed under 1.4, whose
+`file` took the sidecar's path and the finding ids; a 1.4 declaration still runs, by the
+minor rule, and gets the 1.5 input.
 
 ## Versioning
 
@@ -121,7 +129,7 @@ plugin and name both versions.
 
 ```json
 {
-  "contract": "1.4",
+  "contract": "1.5",
   "branches": { "integration": "develop", "protected": ["develop", "main"] },
   "extensions": [
     { "plugin": "gitlab@agentic-dev-flow", "points": ["forge"], "config": { "host": "gitlab.example.com" } },

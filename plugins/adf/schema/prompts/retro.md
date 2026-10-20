@@ -6,8 +6,14 @@ the report.
 Read the input file, `{{inputFile}}`. It carries, for each change, a summary of its metrics
 record, the ledger's deviations and rulings, the review stage's dispositions, verify's warnings
 and the signals a script computed; then the delta against the previous window, the removal
-candidates, the items waiting for data, the plugins in force, and `values`, every key you may
-cite with its value. Open a flow file only when a signal needs it to be understood.
+candidates, the items waiting for data, the ADF debt not yet filed (`adfDebt`), the plugins in
+force, and `values`, every key you may cite with its value. Open a flow file only when a signal
+needs it to be understood.
+
+`adfDebt` lists the defects of the flow's own plugins that archive recorded and nobody has filed
+yet; they are filed with your findings. A finding that is one of these defects seen again says
+so in its body, naming the record's id, and adds the evidence this retrospective has. A record
+with no new evidence here is no finding of yours.
 
 Look for three classes of finding, and give each finding the class it belongs to:
 

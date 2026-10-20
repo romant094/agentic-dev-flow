@@ -5,6 +5,8 @@
 // and `.md` (the report). Everything here is read from the integration ref's tree and history,
 // never from the working tree, so a retrospective committed on a branch that has not merged
 // does not move the window. Fetching the ref is the caller's: `fetchRef` does it and says when.
+// The one exception is the ADF debt not yet filed, read from the checkout's debt tree, which the
+// retrospective's `file` step marks filed in the same checkout.
 //
 //   previousRetro  the newest window sidecar in the ref's tree; only a window retro anchors
 //   selectWindow   the changes of a mode: `window` (every change whose archive directory a
@@ -15,6 +17,8 @@
 //                  values and coverage, git figures, aggregates, the delta against the previous
 //                  window, removal candidates and the items waiting for data
 //   sinceLastRetro archive's report line: the changes archived since the last window retro
+//   unfiledAdfDebt the ADF debt records with no Filed value, read through lib/debt.mjs from the
+//                  registry's debt root in the checkout, as archive reads it
 //
 // A change whose record is absent or unreadable is listed with coverage `{ none: reason }` for
 // every group and contributes no value: no data is never a zero. A record is never written or
@@ -24,6 +28,7 @@ import { readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { requireBranches } from './branches.mjs'
 import { ARCHIVE, CHANGES_DIR, globToRegExp, parseTasks } from './changes.mjs'
+import { listTree } from './debt.mjs'
 import { median, TOKEN_FIELDS } from './metrics-facts.mjs'
 import { LAYERS, removalCandidates } from './metrics-records.mjs'
 import { asV2, GROUPS, PLUGIN_ROOT, RECORD_FILE, validateRecord } from './metrics.mjs'
@@ -538,13 +543,28 @@ export function waitingItems(aggregates, items = readWaiting()) {
   return items.map((item) => ({ ...item, metrics: item.metrics.map((key) => ({ key, ...aggregates[key] })) }))
 }
 
+// ---------------------------------------------------------------- ADF debt
+
+// The ADF debt records not yet filed upstream, in the tree's order: the checkout's debt tree at
+// the registry's `debt.root`, none when the registry names no root or the tree holds no record.
+// The tree is read from the files, as archive writes it; the retro worktree holds the integration
+// branch's.
+export function unfiledAdfDebt(root) {
+  const debt = attempt(() => readDebtRoot(root))
+  if (!debt) return []
+  return listTree(join(root, debt), { kind: 'adf' })
+    .entries.filter((e) => !e.filed)
+    .map(({ id, title, plugin, pluginVersion, change, class: cls, source, body }) => ({ id, title, plugin, pluginVersion, change, class: cls, source, body }))
+}
+
 // ---------------------------------------------------------------- sidecar
 
 const today = () => new Date().toISOString().slice(0, 10)
 
 // The sidecar of a retrospective: the retro agent's input and, for a window, the next window's
-// anchor. Reads the ref's tree and history only and writes nothing. `asOf` bounds the fix
-// commits counted after each merge: the end of `date`, or now when that is earlier.
+// anchor. Reads the ref's tree and history, and the checkout's debt tree for `adfDebt`, and
+// writes nothing. `asOf` bounds the fix commits counted after each merge: the end of `date`, or
+// now when that is earlier.
 export function buildSidecar(root, { mode = 'window', change, from, to, ref = integrationRef(root), date = today(), asOf, exclude = [], fetchedAt = null, waiting = readWaiting() } = {}) {
   if (!DAY.test(date)) throw new Error('date must be YYYY-MM-DD')
   asOf ??= new Date(Math.min(Date.parse(`${date}T23:59:59.999Z`), Date.now())).toISOString()
@@ -615,7 +635,8 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
       skipped: everyDir.map((e) => records.get(e.archiveDir)).filter((r) => !r.record && !r.absent).map((r) => r.reason),
       ...removalCandidates(usable.map((r) => r.record))
     },
-    waiting: waitingItems(aggregates, waiting)
+    waiting: waitingItems(aggregates, waiting),
+    adfDebt: unfiledAdfDebt(root)
   }
 }
 

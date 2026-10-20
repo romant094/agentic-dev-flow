@@ -200,6 +200,13 @@ test('the input carries each change, its signals and every citable key with its 
   ])
 })
 
+test('the input shows the ADF debt not yet filed, so a finding can relate to it; none when the window holds none', () => {
+  const { root, home, sidecar, input: inp } = fixture()
+  assert.deepEqual(inp.adfDebt, [])
+  const adfDebt = [{ id: 'adf-01', title: 'The hook misses a staged rename', plugin: 'adf', pluginVersion: '0.11.0', change: 'one', class: 'defect', source: 'one', body: 'A rename staged before the commit is not checked.' }]
+  assert.deepEqual(input({ ...sidecar, adfDebt }, { root, home }).adfDebt, adfDebt)
+})
+
 test('signals: a task review left open counts nothing late; a DONE impl followed by a re-review round is premature', () => {
   const open = [ev('T1 review', 'valid', { result: 'clean' }), ev('T2 review', 'valid', { result: 'fix' })]
   assert.deepEqual(lateCaught({ findings: { 'ai-review': { findings: 4 } } }, open), { value: 0, taskReviewsPassed: false, notClean: [2], caught: [] })
