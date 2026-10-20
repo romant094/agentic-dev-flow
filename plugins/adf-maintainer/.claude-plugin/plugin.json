@@ -1,0 +1,8 @@
+{
+  "name": "adf-maintainer",
+  "description": "Upstream for the Agentic Dev Flow maintainer: files a retrospective's flow findings and the open ADF debt as GitHub issues through gh",
+  "version": "0.1.0",
+  "author": { "name": "Anton Romankov" },
+  "license": "MIT",
+  "keywords": ["github", "issues", "retrospective", "workflow"]
+}

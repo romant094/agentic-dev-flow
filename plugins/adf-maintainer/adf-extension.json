@@ -1,0 +1,10 @@
+{
+  "name": "adf-maintainer",
+  "contract": "1.5",
+  "provides": {
+    "upstream": {
+      "script": "scripts/upstream.mjs",
+      "operations": ["check", "file"]
+    }
+  }
+}
