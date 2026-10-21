@@ -1,0 +1,8 @@
+{
+  "name": "adf-prisma",
+  "description": "Prisma for ADF worktrees: gives a worktree its own generated client when the change can alter it, migrates and seeds a worktree's own database, and checks the migration order at verify",
+  "version": "0.1.0",
+  "author": { "name": "Anton Romankov" },
+  "license": "MIT",
+  "keywords": ["prisma", "migrations", "worktree", "workflow"]
+}

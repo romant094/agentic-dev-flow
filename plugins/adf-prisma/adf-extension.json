@@ -1,0 +1,14 @@
+{
+  "name": "adf-prisma",
+  "contract": "1.6",
+  "provides": {
+    "provision": {
+      "script": "scripts/prisma.mjs",
+      "operations": ["provision"]
+    },
+    "verify-check": {
+      "script": "scripts/prisma.mjs",
+      "operations": ["verify-check"]
+    }
+  }
+}
