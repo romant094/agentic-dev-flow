@@ -1,5 +1,5 @@
 ---
-description: Run a retrospective - how the flow worked over a window of archived changes, one change or a period
+description: Run a retrospective - how the flow worked over a window of archived changes, one change or a period. Triggers may be phrased in any language.
 argument-hint: "[--change <name> | --from <YYYY-MM-DD> --to <YYYY-MM-DD>]"
 effort: medium
 ---

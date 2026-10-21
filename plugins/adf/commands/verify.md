@@ -1,5 +1,5 @@
 ---
-description: Verify a change - check that the implementation matches its artifacts, and commit the record
+description: Verify a change - check that the implementation matches its artifacts, and commit the record. Triggers may be phrased in any language.
 argument-hint: <change-name>
 effort: medium
 ---

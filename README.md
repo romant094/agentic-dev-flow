@@ -42,6 +42,9 @@ The order is in `docs/roadmap.md`.
 - **Plugins** (`plugins/<name>/`): each declares in `adf-extension.json` which contract points
   it provides. The contract, its points and its version rule are in
   `plugins/adf/contract/README.md`.
+- **Triggers**, in every plugin: each trigger phrase of a skill or a command is written in
+  English, and its frontmatter `description` carries the note "Triggers may be phrased in any
+  language." (`plugins/adf/scripts/__tests__/triggers.spec.mjs` checks every file).
 
 ## Install
 

@@ -1,5 +1,5 @@
 ---
-description: Enable an ADF plugin in this project
+description: Enable an ADF plugin in this project. Triggers may be phrased in any language.
 argument-hint: <plugin id or path> [config as JSON]
 ---
 

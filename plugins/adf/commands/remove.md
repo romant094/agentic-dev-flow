@@ -1,5 +1,5 @@
 ---
-description: Disable an ADF plugin in this project
+description: Disable an ADF plugin in this project. Triggers may be phrased in any language.
 argument-hint: <plugin name>
 ---
 

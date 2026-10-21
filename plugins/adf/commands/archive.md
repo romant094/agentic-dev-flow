@@ -1,5 +1,5 @@
 ---
-description: Archive a change - merge its specs, place its debt, ingest what it taught, finalize the merge request and remove the worktree
+description: Archive a change - merge its specs, place its debt, ingest what it taught, finalize the merge request and remove the worktree. Triggers may be phrased in any language.
 argument-hint: <change-name> [--no-ci]
 effort: medium
 ---

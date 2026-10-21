@@ -1,5 +1,5 @@
 ---
-description: Review a change - run the project's tuned code review, fix what blocks, and commit the record
+description: Review a change - run the project's tuned code review, fix what blocks, and commit the record. Triggers may be phrased in any language.
 argument-hint: <change-name>
 effort: medium
 ---

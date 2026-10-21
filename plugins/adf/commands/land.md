@@ -1,5 +1,5 @@
 ---
-description: Land a merged change - write the hand-off comment of each tracker issue it took and hand each to its tester. Triggers on "land the change", "hand off the issues", "the merge request is merged"; the request may come in any language.
+description: Land a merged change - write the hand-off comment of each tracker issue it took and hand each to its tester. Triggers on "land the change", "hand off the issues", "the merge request is merged". Triggers may be phrased in any language.
 argument-hint: <change-name>
 effort: medium
 ---
@@ -9,8 +9,6 @@ the tracker plugin from fields an agent writes and the script checks, and goes t
 partial issue gets a comment of what remains and keeps its status. Land runs after
 `/adf:archive`, once the merge request is merged, or with no forge once the branch is merged into
 its base. Land merges nothing and pushes nothing.
-
-Triggers are written in English; a developer may ask for this command in any language.
 
 Each step below is one `land.mjs` call, or the dispatch whose prompt `comment-input` writes;
 what is yours is the judgement on its result and the talk with the developer. Every step records

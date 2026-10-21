@@ -1,5 +1,5 @@
 ---
-description: Apply a change - execute its plan task by task with subagents, in its own worktree
+description: Apply a change - execute its plan task by task with subagents, in its own worktree. Triggers may be phrased in any language.
 argument-hint: <change-name>
 effort: medium
 ---

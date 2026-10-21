@@ -1,5 +1,5 @@
 ---
-description: Set up ADF in this project, or report what is missing if it is already set up
+description: Set up ADF in this project, or report what is missing if it is already set up. Triggers may be phrased in any language.
 ---
 
 Set up the ADF core in the current project. Running it again is safe: it creates only what is

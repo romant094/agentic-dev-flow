@@ -1,5 +1,5 @@
 ---
-description: Propose a change - make its branch and worktree, then write every artifact up to the plan
+description: Propose a change - make its branch and worktree, then write every artifact up to the plan. Triggers may be phrased in any language.
 argument-hint: <change-name or description>
 effort: high
 ---
