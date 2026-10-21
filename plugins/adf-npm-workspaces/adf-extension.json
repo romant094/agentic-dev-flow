@@ -1,0 +1,10 @@
+{
+  "name": "adf-npm-workspaces",
+  "contract": "1.6",
+  "provides": {
+    "provision": {
+      "script": "scripts/provision.mjs",
+      "operations": ["provision"]
+    }
+  }
+}
