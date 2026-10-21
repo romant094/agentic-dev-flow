@@ -27,6 +27,7 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Metrics and the retrospective: one checked metrics record per change, written by archive from the SDD records, git and the session transcripts, tokens only and priced by a dated price table; `/adf:retro` over a window, one change or a period, every number by script, one agent's JSON reply checked by script, committed in `.adf/retro/` on its own branch with a non-draft merge request and no CI run; contract `1.4`: the forge's `ci` and the `upstream` role | done (iteration 11) |
 | Wiki memory and technical debt: the `adf-memory` plugin (the `knowledge` role, contract `1.3`) and the core's debt store | done (iteration 10) |
 | Maintainer upstream: the `adf-maintainer` plugin (the `upstream` role, contract `1.5`) files a retrospective's flow findings and the ADF debt not yet filed as GitHub issues through `gh`; every extension is optional, and a registry entry whose plugin is not installed is skipped | done (iteration 10b) |
+| Project stack: the core provisions every worktree it makes through the `provision` and `teardown` hooks and runs extension checks at verify (contract `1.6`); the plugins `adf-npm-workspaces`, `adf-postgres` and `adf-prisma` | done (iteration 12) |
 | Plugins: tracker (Jira), project stack | not started |
 | `/adf:quick`, a small fix or feature without the full artifact set | not started |
 | `/adf:update` | not started |
@@ -84,6 +85,19 @@ The English check works as soon as it is installed: it is a Claude Code hook on 
 `git commit`. `/adf:add adf-english-check@agentic-dev-flow '{"include":[...]}'` only changes its
 scope (`plugins/adf-english-check/README.md`).
 
+A project on npm workspaces, PostgreSQL or Prisma provisions every worktree the flow makes
+with the stack plugins, enabled in this order, each with its project values in `config`:
+
+```
+/adf:add adf-npm-workspaces@agentic-dev-flow '{"build":["npm run build:shared"]}'
+/adf:add adf-postgres@agentic-dev-flow '{"prefix":"app","url":{"file":".env","key":"DATABASE_URL"},"exec":{"docker":"db"}}'
+/adf:add adf-prisma@agentic-dev-flow
+```
+
+Each is installed first, like the plugins above. The planning guide names the files every
+worktree gets a copy of (`## Worktree copies`), and a plan that needs a database says so
+(`**Needs:** database`).
+
 Only the flow's maintainer installs `adf-maintainer@agentic-dev-flow`: it files the
 retrospective's findings and the ADF debt upstream (`plugins/adf-maintainer/README.md`). Every
 other host has no `upstream` provider, and the retrospective skips the step.
@@ -109,9 +123,12 @@ plugins/adf/                      the core
   scripts/                        extensions, superpowers, workspace, changes, specs,
                                   plan-symbols, ledger, forge, reply, sdd, tasks, guard, with
                                   their library and tests
-plugins/adf-gitlab/                   the forge role for GitLab, through glab; the merge request template
-plugins/adf-english-check/            a PreToolUse hook that blocks a commit with non-English text
-plugins/adf-memory/                   the wiki memory: the knowledge role, its log and its workflows
+plugins/adf-gitlab/               the forge role for GitLab, through glab; the merge request template
+plugins/adf-english-check/        a PreToolUse hook that blocks a commit with non-English text
+plugins/adf-memory/               the wiki memory: the knowledge role, its log and its workflows
+plugins/adf-npm-workspaces/       provision: a worktree's own node_modules; a guard against npm install in a worktree
+plugins/adf-postgres/             provision and teardown: a database per worktree
+plugins/adf-prisma/               provision: an own client, migrations and seed; verify-check: migration order
 plugins/adf-maintainer/           the upstream role on GitHub, through gh: the maintainer's only
 scripts/parity/                   dev tools: compare the ported scripts with the origin's and the
                                   openspec CLI on the origin project (npm run parity -- <root>)

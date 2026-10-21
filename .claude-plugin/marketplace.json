@@ -11,7 +11,7 @@
     {
       "name": "adf",
       "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
-      "version": "0.12.0",
+      "version": "0.13.0",
       "source": "./plugins/adf"
     },
     {
@@ -37,6 +37,24 @@
       "description": "Upstream for the Agentic Dev Flow maintainer: files a retrospective's flow findings and the open ADF debt as GitHub issues through gh",
       "version": "0.1.0",
       "source": "./plugins/adf-maintainer"
+    },
+    {
+      "name": "adf-npm-workspaces",
+      "description": "ADF provisioning for npm workspaces: a worktree's own node_modules with its workspace links inside the worktree, and a guard against npm install in a worktree",
+      "version": "0.1.0",
+      "source": "./plugins/adf-npm-workspaces"
+    },
+    {
+      "name": "adf-postgres",
+      "description": "ADF provisioning for PostgreSQL: a database per worktree, named from its branch, its URL in the worktree's env file, dropped at teardown",
+      "version": "0.1.0",
+      "source": "./plugins/adf-postgres"
+    },
+    {
+      "name": "adf-prisma",
+      "description": "ADF provisioning for Prisma: an own generated client, migrations and seed into a worktree's own database, and the migration-order check at verify",
+      "version": "0.1.0",
+      "source": "./plugins/adf-prisma"
     }
   ]
 }

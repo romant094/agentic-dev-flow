@@ -87,3 +87,27 @@ Measured while deciding:
   checkout.
 - The origin's lefthook launcher finds `lefthook` on the developer's `PATH`, so the hook ran
   Biome in unprovisioned worktrees; the origin's "silently does nothing" holds only without it.
+
+## Result
+
+- `npm test`: 1051 tests, 1049 pass, 0 failures, 2 skipped (the live openspec parity with
+  `OPENSPEC_DIST` not set, and the live origin name parity of `adf-postgres` with
+  `ADF_ORIGIN` not set); `check-lessons.mjs`: ok, 770 rows, 24 pending, none on 12.
+- `npm run parity -- <origin>`: 21 of 21 PASS, after two fixes the origin's new data exposed
+  (its `develop` gained seven commits since the analysis). `plannedPaths` dropped a Files path
+  with no slash and no known extension (`Dockerfile`, `./.env.example`), so verify would have
+  reported it out of plan; fixed in the core. `origin-verify-history` reads the origin's newer
+  task count forms, and `origin-log` explains two entries a merge interleaved.
+- `claude plugin validate .`: passed.
+- A test provisions a fixture npm-workspaces host through the core and the three real plugins:
+  the change and base-check worktrees, a re-run, teardown and the migration-order check. No
+  test runs npm install, Docker, psql or npx.
+- Measured on 2026-10-21: in xnms the unit suite needs no `.env` and builds `@barox-nms/shared`
+  from its sources; a stale Prisma client is what an unprovisioned worktree breaks.
+- Not run: a live provision against xnms (iteration 15 writes its registry and guide values),
+  a real database create and drop, a real `prisma generate`.
+- Open: the analysis sent "re-run the suite after a fix that touches a `## Packages` directory"
+  to the core; it is not built (`docs/lessons/apply.md`, open findings).
+- Versions: adf 0.13.0, contract 1.6; adf-npm-workspaces, adf-postgres and adf-prisma 0.1.0;
+  renamed before the iteration: adf-gitlab 0.4.0, adf-memory 0.2.0, adf-english-check 0.6.0;
+  adf-maintainer 0.1.0 unchanged.

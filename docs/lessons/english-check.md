@@ -99,7 +99,7 @@ plugin:
 - "The check's pattern is written with escapes, not literal characters."
 - "The check's scope is a list of origin paths (`.claude/CLAUDE.md`, `.claude/scripts/`, `.claude/commands/opsx/`, `openspec/`)." (the origin's scope: pending iteration 15)
 - "A change's `plan.md` is exempt, before and after archiving."
-- "The commit disables the host's hooks with `LEFTHOOK=0`." (pending iteration 12)
+- "The commit disables the host's hooks with `LEFTHOOK=0`." (rejected in iteration 12, D9: `docs/lessons/propose.md`)
 
 Also covered in `docs/lessons/schema-and-engine.md:89`: "English-only templates and
 instructions" (requirement "English-only artifact templates").
