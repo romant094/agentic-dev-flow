@@ -14,7 +14,7 @@ estimate lives, and what the anchor for a day is are team decisions recorded the
 ## Step 0 — preflight
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs" --skill epic
 ```
 
 `discovered.json` must exist and be fresh; the required fields per issue type come from it.
@@ -119,7 +119,9 @@ A create row has no key until Jira assigns one, so it carries `key: "(new)"` and
 One row per child. `parent` is a system field, so there is no field id to look up; `Epic Link`
 and `Epic Name` are custom fields, written by their `fieldMap` id. `<JIRA_ASSIGNEE>` is a
 placeholder: `apply-plan.mjs` replaces it with the developer's login from the env file, inside
-its own process. Write the plan under `plans.dir`.
+its own process. Write the plan under `plans.dir`. `plans.dir` is `.adf/jira/epic/` in the main
+checkout. When `plans.ignored` is false, stop and ask the developer to run `/adf:init`, or to
+add `.adf/jira/` to `.gitignore`: `apply-plan.mjs` refuses a plan git does not ignore.
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/apply-plan.mjs" <plan-path>

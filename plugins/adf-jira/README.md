@@ -172,17 +172,21 @@ The skills run the plugin's scripts:
 
 | Script | Does |
 |---|---|
-| `scripts/profile.mjs` | Prints the profile's paths, whether git ignores the personal files, the profile's age, the non-secret config, `gitAuthor` (`JIRA_GIT_AUTHOR`, null when unset) and the plan directory. Reads the env file for that one value, prints no other, and calls nothing. |
+| `scripts/profile.mjs [--skill <name>]` | Prints the profile's paths, whether git ignores the personal files, the profile's age, the non-secret config, `gitAuthor` (`JIRA_GIT_AUTHOR`, null when unset) and, with `--skill`, that skill's plan directory. Reads the env file for that one value, prints no other, and calls nothing. |
 | `scripts/discover.mjs [<KEY>]` | Writes `discovered.json`. |
 | `scripts/read-issues.mjs "<JQL>" [out]` | Reads issues; a result outside the allowlist fails the read. |
 | `scripts/read-comments.mjs "<KEY>" [out]` | Reads every comment of an issue, with its id; the allowlist is checked before the request. |
-| `scripts/apply-plan.mjs <plan> [--confirm]` | Prints the plan's summary, or applies it with `--confirm`. |
+| `scripts/apply-plan.mjs <plan> [--confirm]` | Prints the plan's summary, or applies it with `--confirm`. Refuses a plan git does not ignore. |
 | `scripts/core-debt.mjs <args>` | Runs the core's `scripts/debt.mjs` with the same arguments: the core beside this plugin in a checkout, else the `adf` plugin of this plugin's marketplace from Claude Code's install records. |
 
 `read-issues.mjs` and `read-comments.mjs` print JSON on stdout when no output path is given;
-`JIRA_READ_VERBOSE=1` adds the env diagnostics on stderr. The skills write their plans under
-`.claude-reports/jira/`, which `profile.mjs` reports as `plans.dir`, with whether git ignores
-it.
+`JIRA_READ_VERBOSE=1` adds the env diagnostics on stderr. Each skill writes its plans under
+`.adf/jira/<skill>/` in the main checkout, like the env file and the profile, so the plans of
+`bulk`, `comment`, `epic`, `sync-debt`, `task` and `worklog` stay apart; `profile.mjs --skill
+<skill>` reports the directory as `plans.dir`, with whether git ignores it as `plans.ignored`.
+A plan is local and never committed: `apply-plan.mjs` refuses one git does not ignore.
+`/adf:init` ignores `.adf/`; in a host set up before it did, add `.adf/jira/` to `.gitignore`.
+The tracker role's plans stay in the core's state directory.
 
 ## Boundaries
 

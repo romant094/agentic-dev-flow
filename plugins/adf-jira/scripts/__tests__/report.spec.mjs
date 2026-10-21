@@ -26,7 +26,7 @@ function oneRow(summary, fields) {
 
 describe('renderPlan', () => {
   it('collapses identical step sequences into one counted line', () => {
-    const text = renderPlan({ plan: transitionPlan(14), planPath: '.claude-reports/jira/plan-transition-2026-09-09-1412.json', title: 'adf-jira:bulk — close 14 issues, reassign to PM' })
+    const text = renderPlan({ plan: transitionPlan(14), planPath: '.adf/jira/bulk/plan-transition-2026-09-09-1412.json', title: 'adf-jira:bulk — close 14 issues, reassign to PM' })
     assert.ok(text.includes('14 ×'))
     assert.ok(text.includes('In Progress → Review → Resolved'))
   })
@@ -66,8 +66,8 @@ describe('renderPlan', () => {
   })
 
   it('always quotes the full plan path so the detail is reachable', () => {
-    const text = renderPlan({ plan: transitionPlan(1), planPath: '.claude-reports/jira/plan-transition-2026-09-09-1412.json', title: 't' })
-    assert.ok(text.includes('.claude-reports/jira/plan-transition-2026-09-09-1412.json'))
+    const text = renderPlan({ plan: transitionPlan(1), planPath: '.adf/jira/bulk/plan-transition-2026-09-09-1412.json', title: 't' })
+    assert.ok(text.includes('.adf/jira/bulk/plan-transition-2026-09-09-1412.json'))
   })
 
   it('renders an empty plan as nothing to do rather than an empty confirmation', () => {

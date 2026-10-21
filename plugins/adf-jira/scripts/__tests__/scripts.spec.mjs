@@ -40,14 +40,15 @@ function deps(root, extra = {}) {
       out: (l) => lines.out.push(l),
       err: (l) => lines.err.push(l),
       warn: (l) => lines.err.push(l),
+      ignored: () => true,
       ...extra
     }
   }
 }
 
 function planFile(root, rows, extra = {}) {
-  const path = join(root, '.claude-reports', 'jira', 'plan.json')
-  mkdirSync(join(root, '.claude-reports', 'jira'), { recursive: true })
+  const path = join(root, '.adf', 'jira', 'bulk', 'plan.json')
+  mkdirSync(join(root, '.adf', 'jira', 'bulk'), { recursive: true })
   writeFileSync(path, JSON.stringify({ version: 1, operation: 'transition', allowlist: ['PROJ'], discoveredAt: DISCOVERED_AT, rows, ...extra }))
   return path
 }
@@ -92,6 +93,19 @@ describe('apply-plan.mjs', () => {
     const root = host()
     const path = planFile(root, [{ ...handToQa, steps: [{ fields: { assignee: { name: '<JIRA_PM>' } } }] }])
     await assert.rejects(applyPlan([path], deps(root, { fetch: fakeJira().fetch }).deps), /JIRA_PM is not set in the env file/)
+  })
+
+  it('refuses a plan git does not ignore, before sending or writing anything', async () => {
+    const root = host()
+    const jira = fakeJira({ issues: { 'PROJ-1': issue('PROJ-1', { status: 'In Progress' }) } })
+    const path = planFile(root, [handToQa])
+    const before = readFileSync(path, 'utf8')
+    const seen = []
+    const ignored = (dir, p) => (seen.push([dir, p]), false)
+    await assert.rejects(applyPlan([path, '--confirm'], deps(root, { fetch: jira.fetch, ignored }).deps), /git does not ignore .*plan\.json.*run \/adf:init/)
+    assert.deepEqual(seen, [[root, path]])
+    assert.equal(jira.calls.length, 0)
+    assert.equal(readFileSync(path, 'utf8'), before)
   })
 
   it('refuses a plan built against an older profile', async () => {

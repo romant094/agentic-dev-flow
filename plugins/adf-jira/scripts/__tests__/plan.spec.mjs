@@ -1,9 +1,10 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { assertAllowlist, assertConfiguredAllowlist, loadPlan, planFileName, projectOf, savePlan, validatePlan } from '../lib/plan.mjs'
+import { dirname, join } from 'node:path'
+import { PLAN_SKILLS, assertAllowlist, assertConfiguredAllowlist, loadPlan, planFileName, plansDir, projectOf, savePlan, validatePlan } from '../lib/plan.mjs'
 
 function plan(rows) {
   return {
@@ -148,12 +149,37 @@ describe('planFileName', () => {
 })
 
 describe('savePlan and loadPlan', () => {
-  it('writes under .claude-reports/jira and reads back identically', () => {
+  it('writes under .adf/jira/<skill> and reads back identically', () => {
     const dir = mkdtempSync(join(tmpdir(), 'jira-plan-'))
     const p = plan([{ key: 'PROJ-1' }])
-    const path = savePlan(dir, p, new Date('2026-09-09T14:12:00Z'))
-    assert.ok(path.includes(join('.claude-reports', 'jira')))
+    const path = savePlan(dir, 'bulk', p, new Date('2026-09-09T14:12:00Z'), () => true)
+    assert.equal(dirname(path), join(dir, '.adf', 'jira', 'bulk'))
     assert.deepEqual(loadPlan(path), p)
+  })
+
+  it('keeps each skill\'s plans in a directory of its own', () => {
+    assert.deepEqual(
+      PLAN_SKILLS.map((skill) => plansDir('/repo', skill)),
+      ['bulk', 'comment', 'epic', 'setup', 'sync-debt', 'task', 'worklog'].map((skill) => join('/repo', '.adf', 'jira', skill))
+    )
+    assert.throws(() => plansDir('/repo', 'bulk/../x'), /Unknown skill: bulk\/\.\.\/x/)
+  })
+
+  it('refuses to write while git does not ignore the plan, and writes nothing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jira-plan-'))
+    assert.throws(
+      () => savePlan(dir, 'worklog', plan([{ key: 'PROJ-1' }]), new Date('2026-09-09T14:12:00Z'), () => false),
+      /Refusing to write the plan: git does not ignore .*\.adf\/jira\/worklog\/plan-.*run \/adf:init, which ignores \.adf\/, or add \.adf\/jira\/ to \.gitignore/
+    )
+    assert.equal(existsSync(join(dir, '.adf')), false)
+  })
+
+  it('writes where a real git ignores .adf/', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jira-plan-'))
+    execFileSync('git', ['init', '-q', dir])
+    assert.throws(() => savePlan(dir, 'task', plan([{ key: 'PROJ-1' }]), new Date('2026-09-09T14:12:00Z')), /git does not ignore/)
+    writeFileSync(join(dir, '.gitignore'), '.adf/*\n')
+    assert.ok(existsSync(savePlan(dir, 'task', plan([{ key: 'PROJ-1' }]), new Date('2026-09-09T14:12:00Z'))))
   })
 })
 

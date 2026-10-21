@@ -13,7 +13,7 @@ Jira treats them as optional, and how the work is organized, are recorded there.
 ## Step 0 — preflight
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs" --skill task
 ```
 
 `discovered.json` must exist and be fresh; the required fields per issue type come from it,
@@ -105,7 +105,9 @@ to `Sub-task` and keep `parent`; for a standalone issue, drop `parent` entirely 
 rejected on a type that is not a sub-task. `<JIRA_ASSIGNEE>` is a placeholder the apply
 process resolves from the env file; never read that file for it.
 
-Write it under `plans.dir`, then:
+Write it under `plans.dir`. `plans.dir` is `.adf/jira/task/` in the main checkout. When
+`plans.ignored` is false, stop and ask the developer to run `/adf:init`, or to add `.adf/jira/`
+to `.gitignore`: `apply-plan.mjs` refuses a plan git does not ignore. Then:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/apply-plan.mjs" <plan-path>

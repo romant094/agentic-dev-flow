@@ -4,7 +4,9 @@
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { PRICES_DIR } from './prices.mjs'
 import { readRegistry, validateReviewSettings, writeRegistry } from './registry.mjs'
+import { RETRO_DIR } from './window.mjs'
 import { gitIn, WORKTREES_DIR } from './workspace.mjs'
 
 export const PLANNING_GUIDE = 'openspec/planning.md'
@@ -14,26 +16,34 @@ const GUIDE_TEMPLATE = join(HOST_DIR, 'planning.md')
 const REVIEW_TEMPLATE = join(HOST_DIR, 'review-prompt.md')
 
 // Local working state of the flow, never committed: change worktrees, the execution ledger
-// and Superpowers' own workspace, and the Superpowers skills' default output folder, which the
-// flow redirects into the change.
-export const IGNORED = [`${WORKTREES_DIR}/`, '.superpowers/', 'docs/superpowers/']
+// and Superpowers' own workspace, the Superpowers skills' default output folder, which the
+// flow redirects into the change, and `.adf/`, the extension plugins' local work directory.
+export const IGNORED = [`${WORKTREES_DIR}/`, '.superpowers/', 'docs/superpowers/', '.adf/*']
+// The core's own directories in `.adf/`, committed: re-included after `.adf/*`.
+export const COMMITTED = [`${PRICES_DIR}/`, `${RETRO_DIR}/`]
 
 export function ignoreLocalDirs(root) {
   const git = gitIn(root)
-  const missing = IGNORED.filter((dir) => {
+  const ignored = (dir) => {
     try {
-      git('check-ignore', '-q', `${dir}probe`)
-      return false
-    } catch {
+      git('check-ignore', '-q', `${dir.replace(/\*$/, '')}probe`)
       return true
+    } catch {
+      return false
     }
-  })
-  if (missing.length > 0) {
-    const file = join(root, '.gitignore')
-    const text = existsSync(file) ? readFileSync(file, 'utf8') : ''
-    appendFileSync(file, `${text === '' || text.endsWith('\n') ? '' : '\n'}${missing.join('\n')}\n`)
   }
-  return { added: missing }
+  const missing = IGNORED.filter((dir) => !ignored(dir))
+  append(root, missing)
+  const reincluded = COMMITTED.filter(ignored).map((dir) => `!${dir}`)
+  append(root, reincluded)
+  return { added: [...missing, ...reincluded] }
+}
+
+function append(root, lines) {
+  if (lines.length === 0) return
+  const file = join(root, '.gitignore')
+  const text = existsSync(file) ? readFileSync(file, 'utf8') : ''
+  appendFileSync(file, `${text === '' || text.endsWith('\n') ? '' : '\n'}${lines.join('\n')}\n`)
 }
 
 export function createPlanningGuide(root) {

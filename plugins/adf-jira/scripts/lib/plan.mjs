@@ -2,10 +2,28 @@
 // built against, and per-row state. The allowlist gate rejects a whole plan, never filters it.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { isIgnored } from './profile.mjs'
 
 export const OPERATIONS = ['transition', 'edit', 'create', 'worklog', 'comment']
 export const STATES = ['pending', 'done', 'failed', 'skipped-drift']
-export const PLANS_DIR = join('.claude-reports', 'jira')
+export const PLANS_ROOT = join('.adf', 'jira')
+// The skills that write a plan; each has its own directory under PLANS_ROOT.
+export const PLAN_SKILLS = ['bulk', 'comment', 'epic', 'setup', 'sync-debt', 'task', 'worklog']
+
+// The directory of one skill's plans, in the project (the main checkout).
+export function plansDir(projectDir, skill) {
+  if (!PLAN_SKILLS.includes(skill)) throw new Error(`Unknown skill: ${String(skill)}; one of ${PLAN_SKILLS.join(', ')}.`)
+  return join(projectDir, PLANS_ROOT, skill)
+}
+
+// A plan is personal and local: refused while git does not ignore where it would be written.
+export function assertPlanIgnored(projectDir, path, ignored = isIgnored) {
+  if (!ignored(projectDir, path)) {
+    throw new Error(
+      `Refusing to write the plan: git does not ignore ${path}. Plans are local and never committed; run /adf:init, which ignores .adf/, or add .adf/jira/ to .gitignore, check with git check-ignore -v, and re-run.`
+    )
+  }
+}
 
 export function projectOf(issueKey) {
   const match = /^([A-Z][A-Z0-9]*)-\d+$/.exec(issueKey)
@@ -78,8 +96,9 @@ export function writePlan(path, plan) {
   writeFileSync(path, `${JSON.stringify(plan, null, 2)}\n`, 'utf8')
 }
 
-export function savePlan(projectDir, plan, now, dir = PLANS_DIR) {
-  const path = join(projectDir, dir, planFileName(plan.operation, now))
+export function savePlan(projectDir, skill, plan, now, ignored = isIgnored) {
+  const path = join(plansDir(projectDir, skill), planFileName(plan.operation, now))
+  assertPlanIgnored(projectDir, path, ignored)
   writePlan(path, plan)
   return path
 }

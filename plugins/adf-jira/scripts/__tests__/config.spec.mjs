@@ -95,6 +95,19 @@ describe('profile.mjs', () => {
     assert.ok(!text.includes('qa.login'))
   })
 
+  it('reports the named skill\'s plan directory in the main checkout, with whether git ignores it', () => {
+    const root = host()
+    const home = mkdtempSync(join(tmpdir(), 'adf-jira-home-'))
+    const seen = []
+    const ignored = (_dir, path) => (seen.push(path), path.includes(join('.adf', 'jira')))
+    const out = describeProfile({ cwd: join(root, '.claude', 'worktrees', 'x'), run: () => join(root, '.git'), ignored, home, processEnv: {}, skill: 'epic' })
+    assert.deepEqual(out.plans, { dir: join(root, '.adf', 'jira', 'epic'), ignored: true })
+    assert.ok(seen.includes(join(root, '.adf', 'jira', 'epic', 'probe.json')))
+    assert.equal(describeProfile({ cwd: root, run: () => null, ignored: () => false, home, processEnv: {}, skill: 'worklog' }).plans.ignored, false)
+    assert.equal(describeProfile({ cwd: root, run: () => null, ignored: () => true, home, processEnv: {} }).plans, null)
+    assert.throws(() => describeProfile({ cwd: root, run: () => null, ignored: () => true, home, processEnv: {}, skill: 'nope' }), /Unknown skill: nope/)
+  })
+
   it('prints gitAuthor null when JIRA_GIT_AUTHOR is unset', () => {
     const root = host()
     const home = mkdtempSync(join(tmpdir(), 'adf-jira-home-'))

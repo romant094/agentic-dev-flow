@@ -17,7 +17,7 @@ mechanics and the discipline.
 select them by the `gitAuthor` that
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs" --skill worklog
 ```
 
 prints (`JIRA_GIT_AUTHOR` in the env file). Do not record an author in `local.md`, and ignore
@@ -134,7 +134,10 @@ business; the format is not.
 back as `1d` when the instance is configured at 8h per day; that is display, not a different
 value.
 
-**The gate.** Write the plan under `plans.dir` (from `profile.mjs`), then:
+**The gate.** Write the plan under `plans.dir` (from `profile.mjs`). `plans.dir` is
+`.adf/jira/worklog/` in the main checkout. When `plans.ignored` is false, stop and ask the
+developer to run `/adf:init`, or to add `.adf/jira/` to `.gitignore`: `apply-plan.mjs` refuses
+a plan git does not ignore. Then:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/apply-plan.mjs" <plan-path>

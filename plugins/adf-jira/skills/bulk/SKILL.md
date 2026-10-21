@@ -15,7 +15,7 @@ there, not defaults to pick.
 ## Step 0 — preflight
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs" --skill bulk
 ```
 
 `discovered.json` must exist and be fresh. Every transition id comes from it; ids belong to
@@ -132,7 +132,9 @@ Use `operation: "edit"` for a field edit. Always read the transition ids from
 `discovered.json`. The allowlist is `config.allowlist`; a plan naming another project is
 refused.
 
-Write the plan under `plans.dir`, then:
+Write the plan under `plans.dir`. `plans.dir` is `.adf/jira/bulk/` in the main checkout. When
+`plans.ignored` is false, stop and ask the developer to run `/adf:init`, or to add `.adf/jira/`
+to `.gitignore`: `apply-plan.mjs` refuses a plan git does not ignore. Then:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/apply-plan.mjs" <plan-path>

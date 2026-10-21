@@ -4,24 +4,26 @@
 // env file inside its own process for one value, JIRA_GIT_AUTHOR, which is not secret; it
 // prints no other value of the env file.
 //
-//   profile.mjs
+//   profile.mjs [--skill <name>]
 //
 // { ok, projectDir, config: { baseUrl, allowlist, debtEpic, fields, statuses, commentTemplate,
 //   correctionTemplate, profileDir }, gitAuthor, profile: { dir, discovered, conventions, local,
 //   exists, ignored, discoveredAt, stale }, plans: { dir, ignored } }
 // `gitAuthor` is JIRA_GIT_AUTHOR, the developer's git author name, or null when unset.
 // `ignored` says whether git ignores the personal files; setup refuses to write them when it
-// does not.
+// does not. `plans` is the directory of the named skill's plans, `.adf/jira/<skill>/` in the main
+// checkout, with whether git ignores it; null without --skill. apply-plan.mjs refuses a plan
+// git does not ignore.
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { loadConfig } from './lib/context.mjs'
 import { resolveLayers } from './lib/env.mjs'
-import { PLANS_DIR } from './lib/plan.mjs'
+import { plansDir } from './lib/plan.mjs'
 import { MAX_AGE_DAYS, isIgnored, isStale, profilePaths } from './lib/profile.mjs'
 import { isMain } from './lib/main.mjs'
 
-export function describeProfile({ cwd = process.cwd(), now = new Date(), run, ignored = isIgnored, home = homedir(), processEnv = process.env } = {}) {
+export function describeProfile({ cwd = process.cwd(), now = new Date(), run, ignored = isIgnored, home = homedir(), processEnv = process.env, skill } = {}) {
   const { projectDir, config } = loadConfig({ cwd, run })
   const { resolved } = resolveLayers({ projectDir, homeDir: home, processEnv, envFile: config.envFile })
   const paths = profilePaths(projectDir, config.profileDir)
@@ -31,6 +33,7 @@ export function describeProfile({ cwd = process.cwd(), now = new Date(), run, ig
   } catch {
     // no profile yet
   }
+  const plans = skill === undefined ? null : plansDir(projectDir, skill)
   const { baseUrl = null, allowlist = null, debtEpic = null, fields, statuses, commentTemplate = null, correctionTemplate = null, profileDir } = config
   return {
     ok: true,
@@ -44,13 +47,16 @@ export function describeProfile({ cwd = process.cwd(), now = new Date(), run, ig
       discoveredAt,
       stale: discoveredAt === null ? null : isStale({ discoveredAt }, now, MAX_AGE_DAYS)
     },
-    plans: { dir: join(projectDir, PLANS_DIR), ignored: ignored(projectDir, join(projectDir, PLANS_DIR, 'probe.json')) }
+    plans: plans === null ? null : { dir: plans, ignored: ignored(projectDir, join(plans, 'probe.json')) }
   }
 }
 
 if (isMain(import.meta.url)) {
   try {
-    process.stdout.write(`${JSON.stringify(describeProfile(), null, 2)}\n`)
+    const args = process.argv.slice(2)
+    const at = args.indexOf('--skill')
+    if (at !== -1 && args[at + 1] === undefined) throw new Error('Usage: profile.mjs [--skill <name>]')
+    process.stdout.write(`${JSON.stringify(describeProfile({ skill: at === -1 ? undefined : args[at + 1] }), null, 2)}\n`)
   } catch (error) {
     process.stdout.write(`${JSON.stringify({ ok: false, error: error.message })}\n`)
     process.exitCode = 1

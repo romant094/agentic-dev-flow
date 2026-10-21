@@ -15,7 +15,7 @@ carry, and in whose voice, is recorded there.
 ## Step 0 — preflight
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs" --skill comment
 ```
 
 `discovered.json` must exist and be fresh. Missing → send the developer to `/adf-jira:setup`.
@@ -83,7 +83,9 @@ A correction carries the id instead:
 { "comment": { "action": "edit", "id": "45678", "body": "<the replacement body>" } }
 ```
 
-Write it under `plans.dir` (from `profile.mjs`), then:
+Write it under `plans.dir` (from `profile.mjs`). `plans.dir` is `.adf/jira/comment/` in the
+main checkout. When `plans.ignored` is false, stop and ask the developer to run `/adf:init`, or
+to add `.adf/jira/` to `.gitignore`: `apply-plan.mjs` refuses a plan git does not ignore. Then:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/apply-plan.mjs" <plan-path>

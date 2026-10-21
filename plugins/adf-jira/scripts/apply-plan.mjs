@@ -4,23 +4,25 @@
 //   apply-plan.mjs <plan.json>             print the summary and exit 1 without applying
 //   apply-plan.mjs <plan.json> --confirm   apply; per-row state is written back to the file
 //
-// Refuses a plan outside the allowlist (its own, and the configured one), a plan built against
-// an older profile, and a profile more than 7 days old. Login placeholders (<JIRA_ASSIGNEE>,
+// Refuses a plan git does not ignore (plans are local, in .adf/jira/<skill>/), a plan outside
+// the allowlist (its own, and the configured one), a plan built against an older profile, and a
+// profile more than 7 days old. Login placeholders (<JIRA_ASSIGNEE>,
 // <JIRA_PM>, <JIRA_QA>) are resolved here, from the env file this process reads; the plan file
 // keeps them, and the summary prints the resolved login.
 import { writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import { JiraClient } from './lib/client.mjs'
 import { loadContext } from './lib/context.mjs'
 import { applyPlan } from './lib/apply.mjs'
-import { assertAllowlist, assertConfiguredAllowlist, loadPlan } from './lib/plan.mjs'
+import { assertAllowlist, assertConfiguredAllowlist, assertPlanIgnored, loadPlan } from './lib/plan.mjs'
 import { assertResolvable, placeholderValues, resolvePlaceholders } from './lib/placeholders.mjs'
 import { MAX_AGE_DAYS, isStale, readDiscovered } from './lib/profile.mjs'
 import { renderPlan } from './lib/report.mjs'
 import { isMain } from './lib/main.mjs'
 
 // Returns the exit code; prints through `out` and `err`. deps: { cwd, home, processEnv, fetch,
-// now, run (git common dir) }, each defaulting to the real one.
+// now, run (git common dir), ignored }, each defaulting to the real one.
 export async function main(argv, deps = {}) {
   const { out = console.log, err = console.error, fetch = globalThis.fetch, now = () => new Date() } = deps
   const path = argv[0]
@@ -28,6 +30,7 @@ export async function main(argv, deps = {}) {
   const confirm = argv.includes('--confirm')
 
   const { projectDir, config, env } = loadContext({ cwd: deps.cwd, home: deps.home ?? homedir(), processEnv: deps.processEnv ?? process.env, run: deps.run })
+  assertPlanIgnored(projectDir, resolve(deps.cwd ?? process.cwd(), path), deps.ignored)
   const plan = loadPlan(path)
   assertAllowlist(plan)
   assertConfiguredAllowlist(plan, env.allowedProjects)

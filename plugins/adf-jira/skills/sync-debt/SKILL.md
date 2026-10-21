@@ -31,7 +31,7 @@ it is the model `conventions.md` records (see `/adf-jira:epic`, Step 1).
 ## Step 0 — preflight
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs"
+node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs" --skill sync-debt
 ```
 
 `discovered.json` must exist and be under 7 days old. Missing or stale → `/adf-jira:setup`.
@@ -121,9 +121,11 @@ in the tracker. The mirror does not own them and must never overwrite them.
 
 ## Step 4 — plan, show, apply
 
-Build one plan file per operation under `plans.dir` — creates in one, edits in another,
-links in a third. Render each without `--confirm` and show the developer what it would do.
-Apply only what they approve:
+Build one plan file per operation under `plans.dir` — creates in one, edits in another, links
+in a third. `plans.dir` is `.adf/jira/sync-debt/` in the main checkout. When `plans.ignored` is
+false, stop and ask the developer to run `/adf:init`, or to add `.adf/jira/` to `.gitignore`:
+`apply-plan.mjs` refuses a plan git does not ignore. Render each without `--confirm` and show
+the developer what it would do. Apply only what they approve:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/apply-plan.mjs" <plan>.json           # render

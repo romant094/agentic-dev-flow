@@ -107,9 +107,11 @@ other host has no `upstream` provider, and the retrospective skips the step.
 
 `/adf:init` writes the registry, `.claude/adf-extensions.json` (its keys are in
 `plugins/adf/contract/README.md`), and `.gitignore` lines for the flow's local state
-(`.claude/worktrees/`, `.superpowers/`, `docs/superpowers/`). The core's committed directory in
-the host is `.adf/`: the dated price table in `.adf/prices/` and the retrospectives in
-`.adf/retro/`.
+(`.claude/worktrees/`, `.superpowers/`, `docs/superpowers/`, `.adf/*`). The core's committed
+directories in the host are in `.adf/`: the dated price table in `.adf/prices/` and the
+retrospectives in `.adf/retro/`, which `.gitignore` re-includes. The rest of `.adf/` is the
+extension plugins' local work directory, ignored: a directory per plugin, for example the plans
+of `adf-jira` in `.adf/jira/<skill>/`.
 
 ## Layout
 

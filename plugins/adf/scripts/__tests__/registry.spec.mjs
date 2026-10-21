@@ -233,7 +233,7 @@ test('validateMetricsSettings takes metrics.pricesUrl as an optional http(s) URL
   assert.deepEqual(validateRegistry({ contract: '1.0', extensions: [], metrics: { pricesUrl: 'http://prices.example/x' } }), [])
 })
 
-test('init asks for no metrics.pricesUrl: the default stands, and .adf/ stays out of .gitignore', () => {
+test('init asks for no metrics.pricesUrl: the default stands, and .adf/prices/ and .adf/retro/ stay out of .gitignore', () => {
   const root = host()
   execFileSync('git', ['init', '-q', root])
   initRegistry(root, CORE)
@@ -245,6 +245,21 @@ test('init asks for no metrics.pricesUrl: the default stands, and .adf/ stays ou
     const probe = () => execFileSync('git', ['check-ignore', '-q', path], { cwd: root, stdio: 'ignore' })
     assert.throws(probe, undefined, `${path} is committed, never ignored`)
   }
+})
+
+test('init ignores .adf/, the extension plugins\' local work directory, once, and keeps the core\'s committed directories', () => {
+  const root = host()
+  execFileSync('git', ['init', '-q', root])
+  writeFileSync(join(root, '.gitignore'), 'node_modules/')
+  assert.deepEqual(ignoreLocalDirs(root).added, ['.claude/worktrees/', '.superpowers/', 'docs/superpowers/', '.adf/*', '!.adf/prices/', '!.adf/retro/'])
+  execFileSync('git', ['check-ignore', '-q', '.adf/jira/bulk/plan-transition-2026-10-21-1000.json'], { cwd: root, stdio: 'ignore' })
+  for (const path of ['.adf/retro/2026-10-19-window.json', '.adf/prices/2026-10-19.json']) {
+    assert.throws(() => execFileSync('git', ['check-ignore', '-q', path], { cwd: root, stdio: 'ignore' }), undefined, `${path} is committed, never ignored`)
+  }
+  const once = readFileSync(join(root, '.gitignore'), 'utf8')
+  assert.equal(once, 'node_modules/\n.claude/worktrees/\n.superpowers/\ndocs/superpowers/\n.adf/*\n!.adf/prices/\n!.adf/retro/\n')
+  assert.deepEqual(ignoreLocalDirs(root).added, [])
+  assert.equal(readFileSync(join(root, '.gitignore'), 'utf8'), once)
 })
 
 test('setDebtRoot records debt.root, readDebtRoot reads it, and a registry is required', () => {

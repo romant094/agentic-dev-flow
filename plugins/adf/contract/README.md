@@ -268,13 +268,19 @@ or https URL; without it the core uses its default, and `/adf:init` does not ask
 
 ## The core's host directory
 
-`.adf/` in the host project is the core's own directory, committed and never ignored:
+`.adf/` in the host project holds the core's own directories, committed and never ignored:
 
 - `.adf/prices/<YYYY-MM-DD>.json`: the dated price table, one entry per change of prices
   (`metrics-format.md`), written by archive's `metrics` step.
 - `.adf/retro/<id>.md` and `.json`, the id `<YYYY-MM-DD>-window`, `<YYYY-MM-DD>-period` or
   `<YYYY-MM-DD>-<change>`: each retrospective's report and its sidecar; the newest window
   sidecar on the integration branch starts the next window.
+
+Everything else in `.adf/` is the extension plugins' local work directory, in the main
+checkout and never committed: a plugin keeps its local files in a directory of its own there
+(`adf-jira` in `.adf/jira/`). `/adf:init` adds `.adf/*` to `.gitignore`, followed by
+`!.adf/prices/` and `!.adf/retro/`, which re-include the core's directories; a plugin refuses
+to write there while git does not ignore the path.
 
 ## The declaration
 
