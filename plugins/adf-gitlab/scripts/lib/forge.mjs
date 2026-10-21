@@ -1,7 +1,7 @@
 // The `forge` role on GitLab, through the `glab` CLI: `check` reports whether glab can be used,
 // `open` pushes a change branch and opens (or reuses) its merge request, `push` pushes the
 // branch alone, `finalize` writes the change's description, takes the merge request out of
-// draft and pushes the last commit.
+// draft and pushes the last commit, `state` reads where the merge request stands.
 //
 // Every operation returns one result object with `state`: `done`, `degraded` (glab is missing
 // or not logged in: nothing was sent, and `fallback` says what to run later) or `refused`
@@ -322,7 +322,68 @@ export function push(ctx) {
   return { state: 'done' }
 }
 
-export const OPERATIONS = { check, open, push, finalize }
+// Reads where a change's merge request stands and writes nothing. The url wins over the
+// branch: the forge may delete the source branch on merge, and then the branch finds nothing.
+export function mrNumberFromUrl(url) {
+  const match = /\/-\/merge_requests\/(\d+)(?:[/?#]|$)/.exec(String(url ?? ''))
+  return match ? match[1] : null
+}
+
+// glab prints the GitLab API object: `state` is opened, merged, closed (or locked); a draft is
+// `draft` (current API) or `work_in_progress` (older API). A squash merge leaves its commit in
+// `squash_commit_sha` and may leave `merge_commit_sha` null.
+export function mrStatus(view) {
+  if (view.state === 'merged') return 'merged'
+  if (view.state === 'closed' || view.state === 'locked') return 'closed'
+  if (view.state === 'opened') return view.draft === true || view.work_in_progress === true ? 'draft' : 'open'
+  return null
+}
+
+export function state(ctx) {
+  const { run, root, input } = ctx
+  const NOTHING = 'nothing was changed'
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) return refused(`input must be an object; ${NOTHING}.`)
+  for (const field of ['change', 'branch', 'base']) {
+    if (typeof input[field] !== 'string' || input[field].trim() === '') return refused(`input.${field} is required; ${NOTHING}.`)
+  }
+  if (input.url !== undefined && input.url !== null && typeof input.url !== 'string') return refused(`input.url must be a string; ${NOTHING}.`)
+  let target = input.branch
+  if (typeof input.url === 'string' && input.url.trim() !== '') {
+    target = mrNumberFromUrl(input.url)
+    if (!target) return refused(`input.url is not a GitLab merge request URL: ${input.url}; ${NOTHING}.`)
+  }
+
+  const tool = detectTool(ctx)
+  if (tool.state !== 'done') {
+    return {
+      ...tool,
+      message: tool.tool === 'missing' ? `glab is not installed, so the merge request was not read.` : `glab is installed but not authenticated, so the merge request was not read.`,
+      fallback: [`cd ${quote(root)}`, `glab mr view ${quote(target)} --output json`]
+    }
+  }
+  const viewed = run('glab', ['mr', 'view', target, '--output', 'json'], { cwd: root })
+  if (!ok(viewed)) return refused(`could not read the merge request ${target}: ${output(viewed)}; ${NOTHING}.`)
+  let view
+  try {
+    view = JSON.parse(viewed.stdout)
+    if (view === null || typeof view !== 'object' || Array.isArray(view)) throw new Error('not an object')
+  } catch {
+    return refused(`could not parse the merge request ${target}; ${NOTHING}.`)
+  }
+  const status = mrStatus(view)
+  if (!status) return refused(`unknown merge request state "${view.state}"; ${NOTHING}.`)
+  const merged = status === 'merged'
+  return {
+    state: 'done',
+    number: view.iid ?? null,
+    url: view.web_url ?? null,
+    status,
+    mergedAt: merged ? (view.merged_at ?? null) : null,
+    mergeCommit: merged ? (view.merge_commit_sha ?? view.squash_commit_sha ?? null) : null
+  }
+}
+
+export const OPERATIONS = { check, open, push, finalize, state }
 
 // Runs one operation on the payload the core writes: { root, config, input }. Returns the exit
 // code and the result object. An unexpected error is a refusal that says what was already sent.

@@ -1,10 +1,10 @@
 {
   "name": "adf-gitlab",
-  "contract": "1.4",
+  "contract": "1.7",
   "provides": {
     "forge": {
       "script": "scripts/forge.mjs",
-      "operations": ["check", "open", "push", "finalize"]
+      "operations": ["check", "open", "push", "finalize", "state"]
     }
   },
   "hostFiles": [{ "from": "templates/merge_request.md", "to": ".gitlab/merge_request_templates/adf.md" }]

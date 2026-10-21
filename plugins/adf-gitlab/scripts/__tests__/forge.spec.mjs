@@ -205,7 +205,7 @@ test('the template carries an adf marker pair for description scoping', () => {
 test('the declaration installs the shipped template where the validator reads it', () => {
   const declaration = JSON.parse(readFileSync(join(pluginDir, 'adf-extension.json'), 'utf8'))
   assert.deepEqual(declaration.hostFiles, [{ from: 'templates/merge_request.md', to: HOST_TEMPLATE }])
-  assert.deepEqual(declaration.provides.forge.operations, ['check', 'open', 'push', 'finalize'])
+  assert.deepEqual(declaration.provides.forge.operations, ['check', 'open', 'push', 'finalize', 'state'])
   assert.ok(existsSync(join(pluginDir, declaration.provides.forge.script)))
 })
 
@@ -555,9 +555,9 @@ test("a failed push is refused with git's output and nothing else changed", () =
   assert.deepEqual(result, { state: 'refused', error: 'git push failed: rejected: non-fast-forward; nothing else changed.' })
 })
 
-test('the declaration names contract 1.4, which defines ci', () => {
+test('the declaration names contract 1.7, which defines ci and state', () => {
   const declared = JSON.parse(readFileSync(join(pluginDir, 'adf-extension.json'), 'utf8'))
-  assert.equal(declared.contract, '1.4')
+  assert.equal(declared.contract, '1.7')
 })
 
 // ---------------------------------------------------------------- ci
@@ -604,4 +604,79 @@ test('the CLI dispatches push', () => {
   const { code, out } = cliRun(['push'], JSON.stringify({ root: ROOT, input: { ...pushInput, branch: 'main' } }))
   assert.equal(code, 1)
   assert.match(out.error, /protected branch "main"/)
+})
+
+// ---------------------------------------------------------------- state
+
+const MR_URL = 'https://gitlab.example.com/g/p/-/merge_requests/42'
+const stateInput = { change: 'my-change', branch: 'feat/x', base: 'develop' }
+const view = (fields) => ['glab mr view', yes(JSON.stringify({ iid: 42, web_url: MR_URL, ...fields }))]
+
+test('state reads by the number in the url, not the branch', () => {
+  const { code, result, calls } = op('state', { ...stateInput, url: MR_URL }, [...ready, view({ state: 'opened', draft: false })])
+  assert.equal(code, 0)
+  assert.ok(calls.includes('glab mr view 42 --output json'))
+  assert.deepEqual(result, { state: 'done', number: 42, url: MR_URL, status: 'open', mergedAt: null, mergeCommit: null })
+})
+
+test('state reads by branch when there is no url', () => {
+  const { result, calls } = op('state', stateInput, [...ready, view({ state: 'opened' })])
+  assert.ok(calls.includes('glab mr view feat/x --output json'))
+  assert.equal(result.status, 'open')
+})
+
+test('state maps draft and work_in_progress to draft', () => {
+  assert.equal(op('state', stateInput, [...ready, view({ state: 'opened', draft: true })]).result.status, 'draft')
+  assert.equal(op('state', stateInput, [...ready, view({ state: 'opened', work_in_progress: true })]).result.status, 'draft')
+})
+
+test('state maps closed and leaves the merge fields null', () => {
+  const { result } = op('state', stateInput, [...ready, view({ state: 'closed', merged_at: null })])
+  assert.equal(result.status, 'closed')
+  assert.equal(result.mergedAt, null)
+  assert.equal(result.mergeCommit, null)
+})
+
+test('state returns the merge time and commit when merged', () => {
+  const { result } = op('state', stateInput, [...ready, view({ state: 'merged', merged_at: '2026-10-21T10:00:00Z', merge_commit_sha: 'abc', squash_commit_sha: 'sq' })])
+  assert.equal(result.status, 'merged')
+  assert.equal(result.mergedAt, '2026-10-21T10:00:00Z')
+  assert.equal(result.mergeCommit, 'abc')
+})
+
+test('state falls back to the squash commit when the merge commit is null', () => {
+  const { result } = op('state', stateInput, [...ready, view({ state: 'merged', merged_at: 't', merge_commit_sha: null, squash_commit_sha: 'sq' })])
+  assert.equal(result.mergeCommit, 'sq')
+})
+
+test('state degrades when glab is missing and calls nothing else', () => {
+  const { code, result, calls } = op('state', stateInput, [])
+  assert.equal(code, 0)
+  assert.equal(result.state, 'degraded')
+  assert.equal(result.tool, 'missing')
+  assert.deepEqual(calls, ['glab --version'])
+})
+
+test('state degrades when glab is not authenticated', () => {
+  const { result } = op('state', stateInput, [['glab --version', yes('glab 1.113.0')]])
+  assert.equal(result.state, 'degraded')
+  assert.equal(result.tool, 'unauthenticated')
+})
+
+test('state refuses a failed call', () => {
+  const { code, result } = op('state', stateInput, [...ready, ['glab mr view', no('404 Not Found')]])
+  assert.equal(code, 1)
+  assert.equal(result.state, 'refused')
+  assert.match(result.error, /404/)
+})
+
+test('state refuses unparseable JSON', () => {
+  const { code, result } = op('state', stateInput, [...ready, ['glab mr view', yes('not json')]])
+  assert.equal(code, 1)
+  assert.equal(result.state, 'refused')
+})
+
+test('state never writes', () => {
+  const { calls } = op('state', { ...stateInput, url: MR_URL }, [...ready, view({ state: 'merged' })])
+  assert.deepEqual(touched(calls), ['glab mr view 42 --output json'])
 })
