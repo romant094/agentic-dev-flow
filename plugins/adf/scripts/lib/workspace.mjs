@@ -53,7 +53,12 @@ export function worktreePath(root, change) {
   return join(root, WORKTREES_DIR, change)
 }
 
-export function suggest(root, change, { git = gitIn(root) } = {}) {
+// A key (a tracker issue's branch token) names the branch `<type>/<key>/<change>`; the worktree
+// path stays per change name. `keyChoices` lists the keys of a tie, for the developer to choose.
+const BRANCH_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+
+export function suggest(root, change, { git = gitIn(root), key = null, keyChoices = null } = {}) {
+  if (key !== null && !BRANCH_TOKEN.test(key)) throw new Error(`"${key}" cannot name a branch: a key is letters, digits, dots, underscores and hyphens`)
   const branches = requireBranches(root)
   const current = attempt(git, 'branch', '--show-current') || null
   const currentProtected = current === null || isProtected(branches, current)
@@ -65,7 +70,9 @@ export function suggest(root, change, { git = gitIn(root) } = {}) {
     current,
     bases: currentProtected ? ['integration'] : ['integration', 'current'],
     type,
-    branch: type ? `${type}/${change}` : null,
+    branch: type ? (key ? `${type}/${key}/${change}` : `${type}/${change}`) : null,
+    ...(key ? { key } : {}),
+    ...(keyChoices ? { keyChoices } : {}),
     path: worktreePath(root, change),
     dirty: dirtyFiles(git)
   }

@@ -807,3 +807,13 @@ test('the deferred minors and out-of-scope items are collected into deferred.jso
   assert.ok(final.includes(`- Deferred file: ${file}`))
   assert.match(call(host(), 'prompt', '--role', 'final-review', '--question-file', q).prompt, /- Deferred: none/)
 })
+
+test('scope-check <KEY> is a fixed-form name: parsed with its key, refused with a space, a colon or no key', async () => {
+  const { scopeCheckName, SCOPE_ROLES } = await import('../lib/dispatch.mjs')
+  assert.deepEqual(parseName('scope-check PROJ-12'), { role: 'scope-check', key: 'PROJ-12' })
+  assert.deepEqual(parseName('scope-check #41'), { role: 'scope-check', key: '#41' })
+  for (const name of ['scope-check', 'scope-check two words', 'scope-check A:B']) assert.equal(parseName(name), null, name)
+  assert.equal(scopeCheckName('PROJ-12'), 'scope-check PROJ-12')
+  assert.throws(() => scopeCheckName('a b'), /is not a scope key/)
+  assert.deepEqual(SCOPE_ROLES['scope-check'], { level: 'integration', schema: 'scope-check.schema.json' })
+})

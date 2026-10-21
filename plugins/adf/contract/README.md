@@ -7,7 +7,7 @@ names a plugin: it reads the project registry and calls whatever the enabled plu
 
 | File | Holds |
 |---|---|
-| `contract.json` | the contract version and the points it defines, each with its kind and operations |
+| `contract.json` | the contract version and the points it defines, each with its kind, the version that added it (`since`), its operations, and the version of each operation added after the point (`operationSince`) |
 | `README.md` | the format, the calling convention, and every point's input and output |
 
 ## Points
@@ -21,13 +21,17 @@ A point is a named place in the flow where the core calls plugins. There are two
   default, which the point's documentation states.
 
 A plugin declares, per point, the `script` that runs it (deterministic, runs under any agent
-runtime) and the `operations` it implements: every operation the point defines.
+runtime) and the `operations` it implements: every operation the point defined at the contract
+version the plugin names. An operation added later is optional for it: the core treats it as not
+provided.
 
 Each point arrives with the first plugin that needs it. Version `1.0` defined none; `1.1` adds
 the `forge` role; `1.2` adds its `push` operation; `1.3` adds the `knowledge` role; `1.4` adds
 the `forge` operations' `ci` field and the `upstream` role; `1.5` gives `upstream` its content:
 `check` takes the repository, and `file` takes the findings and the ADF debt themselves; `1.6`
-adds the first hooks, `provision`, `teardown` and `verify-check`.
+adds the first hooks, `provision`, `teardown` and `verify-check`; `1.7` adds the `tracker` role
+and the `forge` operation `state`, and checks a declaration against the operations of its own
+contract version.
 
 ## Calling convention
 
@@ -47,7 +51,10 @@ The script prints one JSON object on stdout. Its `state` is:
   Exit 1.
 
 A script that prints no such object is treated as `refused`. With no provider of a role the
-core gets `{ "state": "none" }` and applies the role's default. A hook point has one operation,
+core gets `{ "state": "none" }` and applies the role's default. A provider written for a contract
+before an operation was added, which does not declare it, is not called for it: the core gets
+`{ "state": "none", "point", "operation", "reason": "not-provided", "plugin" }` and applies the
+operation's default, as with no provider. A hook point has one operation,
 named like the point. The core calls its providers one after another: the hook's state is
 `done` when every provider is done, `degraded` when one is degraded and none refused, and
 `refused` at the first provider that refuses, after which no provider is called; with no
@@ -58,7 +65,7 @@ the point's only provider, the result is `none` with `absent` (`[{ id, reason }]
 
 ## Points
 
-### `forge` (role, since 1.1; `push` since 1.2; `ci` since 1.4)
+### `forge` (role, since 1.1; `push` since 1.2; `ci` since 1.4; `state` since 1.7)
 
 Pushes the change branch and keeps its merge request. The core never names a forge.
 
@@ -68,6 +75,7 @@ Pushes the change branch and keeps its merge request. The core never names a for
 | `open` | `change`, `branch`, `base`, `title`, `draft` (default true), `protected` | the branch pushed, never forced; a merge request into `base`, reused when one is open: `number`, `url`, `reused` |
 | `push` (since 1.2) | `change`, `branch`, `protected` | the branch pushed, never forced; nothing else changes |
 | `finalize` | `change`, `branch`, `base`, `title`, `body`, `protected` | the description holds `body` in this change's block, other text kept; the merge request leaves draft, then the branch is pushed: `number`, `url` |
+| `state` (since 1.7) | `change`, `branch`, `base`, `url` (optional: the merge request archive recorded, preferred to the branch) | the merge request's state, nothing sent: `number`, `url`, `status` (`open`, `draft`, `merged` or `closed`), and when merged `mergedAt` and `mergeCommit`; degraded as `check` |
 
 `open`, `push` and `finalize` take an optional `ci` (boolean, since 1.4, default `true`).
 `ci: false` pushes with no CI run: the provider asks the forge to start no pipeline for each
@@ -114,6 +122,41 @@ with its issue's URL. Default with no provider: nothing is filed, the findings s
 retrospective's sidecar and the ADF debt stays unfiled. No provider existed under 1.4, whose
 `file` took the sidecar's path and the finding ids; a 1.4 declaration still runs, by the
 minor rule, and gets the 1.5 input.
+
+### `tracker` (role, since 1.7)
+
+The host project's issue tracker: what propose gathers and starts, and what is handed to the
+tester after the merge. The core never names a tracker, its statuses or its markup. Every
+operation's `stateDir` is an absolute directory in the main checkout the core owns and git
+ignores, `<main>/.superpowers/sdd/<change>/tracker/`, where the provider keeps its files and
+plans, so they outlive the worktree.
+
+| Operation | Caller and moment | Input | Result when `done` |
+|---|---|---|---|
+| `check` | `scope.mjs gather`, and the hand-off after the merge, before any other tracker call | `{}` | `tool: "ready"`, `account`; degraded: `tool` is `missing`, `unauthenticated` or `unconfigured`, with `hint`; never a secret value |
+| `gather` | propose, in the main checkout, before the branch | `keys` (a list) or `text`, `change`, `stateDir` | `items`: `[{ key, url, kind, title, status, open, parent, links: [{ key, relation }], branchToken, branchRank, excluded, flags, file }]`, `file` a file under `stateDir` holding the issue's description, comments and fields; `notes` |
+| `start` | propose, after the branch and the worktree exist; held | `items: [{ key, state, corrections, answers }]`, `change`, `stateDir`, `apply` | without `apply`: `held: true`, `plan` (its id), `preview` (lines); with `apply: <plan id>`: `applied`, `skipped`, `failed`, each a list of keys or of `{ key, reason }` |
+| `handoff` | the hand-off after the merge, and `scope.mjs retest`; held | `items: [{ key, state, fields }]`, `state` `taken`, `partial` or `not-reproduced`; `mr: { url } \| null`; `change`, `stateDir`, `apply` | as `start`. `taken` and `not-reproduced`: the comment, the hand-off status and the tester; `partial`: the comment only |
+
+`kind` is the tracker's issue type, lowercase; the core reads `bug`, for which the check needs
+a reproduction and the expected behaviour. `branchRank` orders the items for the branch name
+(the lowest names it, `branchToken` the text put in it), null for an item that never names a
+branch. `excluded` is the provider's reason an item is out (a suspended or closed issue), else
+null. `flags` are lines the developer is shown once. `fields` are the core's checked text, never
+markup: for `not-reproduced`, `{ tried, commit }`; the provider renders its own comment from
+them and adds the merge request line only when `mr` is not null.
+
+Every write holds for the developer's yes: the core calls `start` and `handoff` without `apply`,
+shows the preview, and calls again with `apply` only on the yes. A call again with the same
+`apply` resumes from the plan's own state; an issue moved by hand meanwhile is `skipped`, not
+failed. `refused` sends nothing: an input error, an issue outside what the provider may touch,
+or a stale plan, which the core rebuilds by calling without `apply`.
+
+Default with no provider: `gather` returns no item, and the scope holds only the core's own
+sources, the debt store and the changes in flight; `start` and `handoff` are skipped, and the
+verify key check maps no tracker key; each report says "no tracker plugin is enabled; the tracker
+step was skipped". After a `degraded` check the developer may skip the tracker for one change;
+the scope records it once, and every later tracker step skips and says so.
 
 ### `provision` (hook, since 1.6)
 
@@ -164,7 +207,8 @@ provider: no section.
 The version is `major.minor`.
 
 - Adding a point, an operation or an optional field raises the **minor** version. Existing
-  plugins keep working.
+  plugins keep working: `contract.json` records the version of each operation added after its
+  point (`operationSince`), and a plugin must implement only the operations of its own version.
 - Changing the meaning of a point, or adding or changing a required field, raises the **major**
   version.
 

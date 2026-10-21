@@ -23,3 +23,7 @@ an existing capability, forks the spec corpus at archive. The `specs` gate `spec
 checks the contract; which capabilities the change has, and their scope, is yours.
 
 Keep it concise (1-2 pages). Focus on the "why", not the "how".
+
+When the change holds a `scope.json`, the proposal ends with a `## Scope sources` section that
+`scope.mjs render` writes from it; write the rest of the proposal, then render. The `scope-sources`
+gate checks the section.

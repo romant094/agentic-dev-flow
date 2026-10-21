@@ -26,9 +26,25 @@ export function isCompatible(core, plugin) {
 // A path inside the plugin or the host: relative, and never climbing out with `..`.
 const inside = (path) => typeof path === 'string' && path !== '' && !isAbsolute(path) && !normalize(path).startsWith('..')
 
-// `points` is the contract's map of point name to { kind, operations }. A plugin that
-// provides a point names the script that runs it and implements every operation the point
-// defines: the core calls any of them.
+// Whether version `a` is at or below version `b`, both major.minor.
+const atOrBelow = (a, b) => {
+  const x = parseVersion(a)
+  const y = parseVersion(b)
+  return Boolean(x && y && (x.major < y.major || (x.major === y.major && x.minor <= y.minor)))
+}
+
+// The operations of a point a declaration of contract `version` must implement: every operation
+// the point had at that version. `operationSince` maps an operation added after the point to the
+// contract version that added it; an operation it does not name came with the point. A later
+// operation is optional for an earlier declaration, and the core treats it as not provided.
+export function requiredOperations(point, version) {
+  const since = point?.operationSince ?? {}
+  return (point?.operations ?? []).filter((op) => !Object.hasOwn(since, op) || atOrBelow(since[op], version))
+}
+
+// `points` is the contract's map of point name to { kind, operations, operationSince? }. A
+// plugin that provides a point names the script that runs it and implements every operation the
+// point defined at the plugin's contract version (requiredOperations).
 export function validateDeclaration(declaration, points) {
   const errors = []
   if (!NAME.test(declaration?.name ?? '')) errors.push(`name "${declaration?.name}" is not kebab-case`)
@@ -44,7 +60,7 @@ export function validateDeclaration(declaration, points) {
       continue
     }
     if (!inside(given?.script)) errors.push(`${point}: script must be a path inside the plugin`)
-    const missing = points[point].operations.filter((op) => !given?.operations?.includes(op))
+    const missing = requiredOperations(points[point], declaration.contract).filter((op) => !given?.operations?.includes(op))
     if (missing.length) errors.push(`${point}: operations ${missing.join(', ')} are missing`)
   }
   const hostFiles = declaration.hostFiles ?? []

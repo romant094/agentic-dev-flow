@@ -24,7 +24,9 @@ export function provider(root, point, core) {
 // A registry entry whose plugin is not installed or is disabled is absent. When no enabled
 // plugin provides the point, `absent` lists the absent entries that recorded the point
 // ({ id, reason }), and the report says the step was skipped; an entry that recorded no points
-// is named for none.
+// is named for none. A provider written for a contract before the operation was added, which
+// does not declare it, is `{ state: 'none', point, operation, reason: 'not-provided', plugin }`:
+// the operation's default applies, as with no provider.
 export function callRole(root, point, operation, input, core) {
   if (!core.points[point]?.operations.includes(operation)) {
     throw new Error(`${point} has no operation ${operation}`)
@@ -34,6 +36,9 @@ export function callRole(root, point, operation, input, core) {
   if (!found) {
     const named = absent.filter((a) => a.points.includes(point)).map(({ id, reason }) => ({ id, reason }))
     return named.length ? { state: 'none', point, absent: named } : { state: 'none', point }
+  }
+  if (!found.declaration.provides[point].operations?.includes(operation)) {
+    return { state: 'none', point, operation, reason: 'not-provided', plugin: found.declaration.name }
   }
   return runProvider(root, found, point, operation, input)
 }
@@ -259,4 +264,39 @@ export function upstreamReport(operation, result) {
   const existed = issues.filter((i) => i.existed).length
   const what = (i) => `${i.kind === 'debt' ? 'ADF debt' : 'finding'} ${i.item} as ${i.url ?? `#${i.number}`}${i.existed ? ' (already filed)' : ''}`
   return `Upstream: ${issues.length - existed} filed, ${existed} already filed; ${issues.map(what).join(', ')}`
+}
+
+// ---------------------------------------------------------------- the tracker role
+
+// The issue tracker of the host project (contract 1.7): `check`, `gather`, `start` and
+// `handoff`. The core never names a tracker. `start` and `handoff` write to the tracker, so each
+// holds for the developer's yes: called without `apply` the provider writes a plan under the
+// core's `stateDir` and returns `held`, `plan` (its id) and `preview` (lines); called with
+// `apply: <plan id>` it returns `applied`, `skipped` and `failed`, each a list of keys or of
+// `{ key, reason }`.
+
+export const TRACKER_SKIPPED = 'no tracker plugin is enabled; the tracker step was skipped'
+
+const keyLine = (entry) => (typeof entry === 'string' ? entry : `${entry?.key ?? '?'}${entry?.reason ? ` (${entry.reason})` : ''}`)
+const keyList = (list) => (Array.isArray(list) && list.length ? list.map(keyLine).join(', ') : 'none')
+
+// The lines a command shows for a tracker result; the default with no provider is stated here
+// once, so no command words it itself.
+export function trackerReport(operation, result) {
+  const label = `Tracker ${operation}`
+  if (result.state === 'none') {
+    if (result.reason === 'not-provided') return `${label}: none; ${result.plugin ?? 'the tracker plugin'} does not provide ${operation}; the tracker step was skipped.`
+    return `${label}: none; ${TRACKER_SKIPPED}.${absentLines(result, `the tracker ${operation}`)}`
+  }
+  if (result.state === 'refused') return `${label}: refused; ${result.error ?? 'no reason given'}`
+  if (result.state === 'degraded') return `${label}: not done (${result.tool ?? 'degraded'}). ${result.hint ?? ''}`.trim()
+  if (operation === 'check') return `Tracker: ${result.tool ?? 'ready'}${result.account ? ` as ${result.account}` : ''}`
+  if (operation === 'gather') {
+    const items = Array.isArray(result.items) ? result.items : []
+    return [`${label}: ${items.length} item(s)${items.length ? `: ${items.map((i) => i?.key).join(', ')}` : ''}`, ...(result.notes ?? []).map((n) => `  note: ${n}`)].join('\n')
+  }
+  if (result.held) {
+    return [`${label}: held for the developer's yes; plan ${result.plan ?? '(no id)'}`, ...(result.preview ?? []).map((line) => `  ${line}`)].join('\n')
+  }
+  return `${label}: applied ${keyList(result.applied)}; skipped ${keyList(result.skipped)}; failed ${keyList(result.failed)}`
 }

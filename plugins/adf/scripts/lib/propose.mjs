@@ -12,7 +12,7 @@
 // `done` also does two things the instructions asked the agent to remember: it moves what a
 // Superpowers skill wrote to its own default folder into the change, and it reports any project
 // rule, context or guide paragraph copied verbatim into the artifact.
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -28,6 +28,7 @@ import {
 import { commitPaths } from './commit.mjs'
 import { mainCheckout } from './installed.mjs'
 import { appendRecord } from './ledger.mjs'
+import { changeScopeFile, readScope, recordable, scopeSourcesGate } from './scope.mjs'
 import { changeAgainstMain, checkCapabilities, validateProject, writeSpecsBase } from './specs.mjs'
 import { create as createWorkspace } from './workspace.mjs'
 import { run as tasksCli } from '../tasks.mjs'
@@ -64,7 +65,8 @@ const RUNNERS = {
   },
   'tasks-lint': (root, change) => cliGate(tasksCli(['lint', '--change', change, '--root', root])),
   'plan-symbols': async (root, change) => cliGate(await planSymbolsCli([change, '--root', root])),
-  'plan-lint': async (root, change) => cliGate(await planCli(['lint', '--change', change, '--root', root]))
+  'plan-lint': async (root, change) => cliGate(await planCli(['lint', '--change', change, '--root', root])),
+  'scope-sources': (root, change) => scopeSourcesGate(root, change)
 }
 
 export const GATE_RUNNERS = Object.keys(RUNNERS)
@@ -245,10 +247,18 @@ export async function nextArtifact(root, change, schema) {
 // ---------------------------------------------------------------- create and commit
 
 // From the main checkout, after the developer chose the base and confirmed the branch: the
-// worktree and branch, the change with its base, and the propose session in the ledger.
+// worktree and branch, the change with its base, and the propose session in the ledger. A scope
+// gathered for the change (lib/scope.mjs) that holds an item or a skipped tracker is copied into
+// the change as scope.json, which the propose commit carries; `scope` names it.
 export function createChange(mainRoot, { change, branch, base }, schema, { env = process.env } = {}) {
   const made = createWorkspace(mainRoot, { change, branch, base })
   const created = newChange(made.root, change, schema, { base: made.base })
+  const scope = readScope(mainCheckout(mainRoot), change)
+  let copied = null
+  if (recordable(scope)) {
+    writeFileSync(changeScopeFile(made.root, change), `${JSON.stringify(scope, null, 2)}\n`)
+    copied = `openspec/changes/${change}/scope.json`
+  }
   let ledger
   try {
     const { record, path } = appendRecord(made.root, change, 'session', { phase: 'propose' }, { env })
@@ -256,7 +266,7 @@ export function createChange(mainRoot, { change, branch, base }, schema, { env =
   } catch (error) {
     ledger = { recorded: false, error: error.message }
   }
-  return { ok: true, change, root: made.root, branch: made.branch, base: made.base, baseRef: made.baseRef, changeRoot: created.changeRoot, ledger }
+  return { ok: true, change, root: made.root, branch: made.branch, base: made.base, baseRef: made.baseRef, changeRoot: created.changeRoot, ledger, ...(copied ? { scope: copied } : {}) }
 }
 
 export const proposeMessage = (change) => `docs(openspec): propose ${change}`

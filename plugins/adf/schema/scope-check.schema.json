@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf/scope-check.schema.json",
+  "title": "ADF scope check reply",
+  "description": "Propose's check of one taken or partial scope item, a tracker issue or a debt entry: its requirements as the agent reads them, checked against the evidence, what it settled itself and what only the developer can answer. scope.mjs check also refuses what the schema cannot see: a corrected verdict with no correction, a correction or a non-current requirement with no source, a question without what it checked or needs, a question under a verdict other than needs-developer, a needs-developer verdict with no question, a bug with no reproduction or expected behaviour and no question about the missing one, and a not-reproduced verdict that is not a bug or names no reproduction or nothing tried.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["role", "key", "verdict", "requirements", "corrections", "questions", "checked"],
+  "properties": {
+    "role": { "const": "scope-check" },
+    "key": { "type": "string", "minLength": 1 },
+    "verdict": { "enum": ["current", "corrected", "needs-developer", "obsolete", "not-reproduced"] },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "status", "sources"],
+        "properties": {
+          "text": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["current", "done", "changed", "contradicted"] },
+          "sources": { "$ref": "#/$defs/sources" }
+        }
+      }
+    },
+    "bug": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["reproduction", "expected", "actual", "sources"],
+      "properties": {
+        "reproduction": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "expected": { "type": "string" },
+        "actual": { "type": "string" },
+        "sources": { "$ref": "#/$defs/sources" },
+        "tried": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "corrections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["what", "was", "now", "sources"],
+        "properties": {
+          "what": { "type": "string", "minLength": 1 },
+          "was": { "type": "string" },
+          "now": { "type": "string", "minLength": 1 },
+          "sources": { "$ref": "#/$defs/sources" }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question", "about", "checked", "needs"],
+        "properties": {
+          "question": { "type": "string", "minLength": 1 },
+          "about": { "enum": ["requirement", "reproduction", "expected", "scope", "other"] },
+          "checked": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "needs": { "type": "string" }
+        }
+      }
+    },
+    "checked": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "ref", "finding"],
+        "properties": {
+          "kind": { "enum": ["code", "spec", "memory", "issue", "comment", "git", "live"] },
+          "ref": { "type": "string", "minLength": 1 },
+          "finding": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sources": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  }
+}

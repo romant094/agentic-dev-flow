@@ -35,9 +35,13 @@
 //       same plugin, change and title again changes nothing. { ok, created, record, files }
 //   debt.mjs mark-filed --id <adf id> --url <issue url>
 //       the issue the maintainer filed the record as. { ok, changed, record }
+//   debt.mjs track --id <debt id> --key <tracker key>
+//       the tracker key a product entry is mirrored as, in its Tracker cell. The same key again
+//       changes nothing; another key, a key another entry holds, an ADF record and an unknown
+//       id are refused. { ok, changed, entry, files }
 import { readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
-import { addAnchor, addEntry, addAdfRecord, checkTree, ensureRootIndex, listTree, markFiled, removeEntry } from './lib/debt.mjs'
+import { addAnchor, addEntry, addAdfRecord, checkTree, ensureRootIndex, listTree, markFiled, removeEntry, setTracker } from './lib/debt.mjs'
 import { isMain } from './lib/main.mjs'
 import { readDebtRoot, setDebtRoot } from './lib/registry.mjs'
 
@@ -49,7 +53,8 @@ export const USAGE = `usage:
   debt.mjs remove --id <id> [--root <dir>] [--tree <dir>]
   debt.mjs check [--root <dir>] [--tree <dir>]
   debt.mjs adf --change <name> --file <json> [--root <dir>] [--tree <dir>]
-  debt.mjs mark-filed --id <adf id> --url <url> [--root <dir>] [--tree <dir>]`
+  debt.mjs mark-filed --id <adf id> --url <url> [--root <dir>] [--tree <dir>]
+  debt.mjs track --id <debt id> --key <tracker key> [--root <dir>] [--tree <dir>]`
 
 export class UsageError extends Error {}
 
@@ -62,7 +67,8 @@ const TAKES = {
   remove: { required: ['id'], optional: [] },
   check: { required: [], optional: [] },
   adf: { required: ['change', 'file'], optional: [] },
-  'mark-filed': { required: ['id', 'url'], optional: [] }
+  'mark-filed': { required: ['id', 'url'], optional: [] },
+  track: { required: ['id', 'key'], optional: [] }
 }
 
 function parse(argv) {
@@ -145,6 +151,8 @@ export function run(argv, { cwd = process.cwd() } = {}) {
       return { ok: true, ...addAdfRecord(tree, values.change, readJson(cwd, values.file)) }
     case 'mark-filed':
       return { ok: true, ...markFiled(tree, { id: values.id, url: values.url }) }
+    case 'track':
+      return { ok: true, ...setTracker(tree, { id: values.id, key: values.key }) }
   }
 }
 

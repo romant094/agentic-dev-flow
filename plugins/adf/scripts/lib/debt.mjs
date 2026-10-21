@@ -497,3 +497,25 @@ export function markFiled(tree, { id, url }) {
   rewriteRow(at, at.row.cells)
   return { changed: true, record: record() }
 }
+
+// The tracker key a product debt entry is mirrored as, written into its Tracker cell. The same
+// key again changes nothing; another key is refused, since the key is the entry's identity, and
+// so is a key another entry already holds.
+export function setTracker(tree, { id, key: trackerKey }) {
+  trackerKey = oneLine('key', trackerKey)
+  if (/[\s|`]/.test(trackerKey)) throw new Error(`"${trackerKey}" is not a tracker key: it holds a space, a pipe or a backtick`)
+  const at = locate(tree, id)
+  if (isAdfBlock(at.block)) throw new Error(`${id} is an ADF record; it has no Tracker cell`)
+  const column = at.table.columns.indexOf('Tracker')
+  if (column === -1) throw new Error(`${id}: its table has no Tracker column`)
+  const current = key(at.row.cells[column] ?? '')
+  const entry = () => entryOf(at.block, at.table.columns, at.row.cells, at.table.subBlock)
+  if (current === trackerKey) return { changed: false, entry: entry(), files: [] }
+  if (current) throw new Error(`${id} is already tracked as ${current}`)
+  const holder = listTree(tree, { kind: 'debt' }).entries.find((e) => e.tracker === trackerKey)
+  if (holder) throw new Error(`${trackerKey} is already the tracker key of ${holder.id}`)
+  while (at.row.cells.length < at.table.columns.length) at.row.cells.push('')
+  at.row.cells[column] = trackerKey
+  rewriteRow(at, at.row.cells)
+  return { changed: true, entry: entry(), files: [`${at.block}/${BLOCK_INDEX}`] }
+}

@@ -17,6 +17,7 @@
       "description": "Initial proposal document outlining the change",
       "template": "proposal.md",
       "instruction": "proposal.md",
+      "gates": ["scope-sources"],
       "requires": ["brainstorm"]
     },
     {

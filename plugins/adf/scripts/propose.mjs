@@ -5,8 +5,10 @@
 //   propose.mjs create --change <name> --branch <branch> --base integration|current [--root <main>]
 //       From the main checkout, after `preflight.mjs --phase propose` passed and the developer
 //       chose the base and confirmed the branch: makes the branch and its worktree, the change
-//       with its base recorded, and the propose session in the ledger.
-//       { ok, change, root, branch, base, baseRef, changeRoot, ledger }
+//       with its base recorded, and the propose session in the ledger. A scope gathered for the
+//       change (scope.mjs) that holds an item or a skipped tracker is copied into the change as
+//       scope.json, which the commit carries; `scope` names it.
+//       { ok, change, root, branch, base, baseRef, changeRoot, ledger, scope? }
 //   propose.mjs commit [--change <name>] [--root <worktree>]
 //       Refused until every artifact apply needs is done and every gate of every written
 //       artifact passes; then commits openspec/changes/<name>/ alone with the message

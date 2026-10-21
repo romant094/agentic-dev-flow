@@ -67,6 +67,15 @@ test('suggest offers only the integration base on a protected branch', () => {
   assert.deepEqual(s.dirty, [])
 })
 
+test('suggest with a key names the branch <type>/<KEY>/<change>; the worktree path stays per change', () => {
+  const root = host()
+  const s = suggest(root, 'add-thing', { key: 'PROJ-12' })
+  assert.deepEqual([s.branch, s.key, s.path], ['feat/PROJ-12/add-thing', 'PROJ-12', join(root, '.claude/worktrees/add-thing')])
+  assert.deepEqual(suggest(root, 'add-thing', { keyChoices: ['A-1', 'B-2'] }).keyChoices, ['A-1', 'B-2'])
+  assert.equal(suggest(root, 'thing', { key: 'PROJ-12' }).branch, null, 'no type: the developer names the type first')
+  assert.throws(() => suggest(root, 'add-thing', { key: 'a b' }), /cannot name a branch/)
+})
+
 test('suggest keeps every dirty line as git prints it, the first one included', () => {
   const root = host({ remote: false })
   writeFileSync(join(root, 'README.md'), 'changed\n')

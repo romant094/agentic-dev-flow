@@ -12,6 +12,7 @@
 //   verify c4 | verify c8   (schema/instructions/verify.md)
 //   ai-review r<k>, ai-review r<k> s<n>, ai-fix F<n> r<k>   (the review stage)
 //   spec-merge <capability>, ingest   (archive)
+//   scope-check <KEY>   (propose's issue check, lib/scope.mjs; checked by scope.mjs check)
 //   retro <id>     (the retrospective, lib/retro.mjs; no change; <id> is <date>-window,
 //                  <date>-period or <date>-<change>)
 //
@@ -56,6 +57,19 @@ export const ARCHIVE_ROLES = {
 // lives in .superpowers/retro/<id>/ of the retrospective's worktree.
 export const RETRO_ROLES = {
   retro: { level: 'architecture', schema: 'retro.schema.json' }
+}
+// Propose's issue check: one read-only agent per taken or partial scope item, named
+// `scope-check <KEY>`, replying in JSON checked by `scope.mjs check` (lib/scope.mjs). It runs in
+// the main checkout before the change has a worktree; its input and reply live in
+// .superpowers/sdd/<change>/scope/.
+export const SCOPE_ROLES = {
+  'scope-check': { level: 'integration', schema: 'scope-check.schema.json' }
+}
+// A scope item's key: a tracker key or a debt id, with no space, colon, pipe or backtick.
+export const SCOPE_KEY = /^[^\s:|`]+$/
+export const scopeCheckName = (key) => {
+  if (!SCOPE_KEY.test(key ?? '')) refuse(`"${key ?? ''}" is not a scope key`)
+  return `scope-check ${key}`
 }
 // The JSON Schema under schema/ of each apply role's reply: lib/reply.mjs ROLES checks the reply
 // under it, and the role's prompt names its path in the `reply` rule.
@@ -238,6 +252,8 @@ export function parseName(name) {
   if (m && RETRO_ID.test(m[1])) return { role: 'retro', id: m[1] }
   m = /^investigate ([A-Za-z0-9]+)$/.exec(text)
   if (m) return { role: 'investigate', topic: m[1] }
+  m = /^scope-check (\S+)$/.exec(text)
+  if (m && SCOPE_KEY.test(m[1])) return { role: 'scope-check', key: m[1] }
   m = /^(final-review|sweep)$/.exec(text)
   if (m) return { role: m[1] }
   m = /^(merge-review) ([A-Z])$/.exec(text) ?? /^(fix|re-review)(?: ([A-Z]))?(?: r([1-9]\d*))?$/.exec(text)

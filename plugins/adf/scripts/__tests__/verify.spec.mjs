@@ -177,7 +177,37 @@ test('tasks fails and names every open item', () => {
   const checks = runIn(root)
   assert.equal(checks.tasks.verdict, 'fail')
   assert.equal(checks.tasks.summary, '2 of 3 tasks open')
-  assert.equal(readFileSync(join(root, checks.tasks.output), 'utf8'), '1 of 3 ticked\nopen: 1.2 wave\nopen: 1.3 bow\n')
+  assert.equal(readFileSync(join(root, checks.tasks.output), 'utf8'), '1 of 3 ticked\nopen: 1.2 wave\nopen: 1.3 bow\nscope: the change has no scope.json; no key to map\n')
+})
+
+const scopeOf = (items, tracker = { state: 'done', plugin: 't' }) => JSON.stringify({ version: 1, change: CHANGE, tracker, items })
+
+test('tasks fails a taken or partial scope key that no task names, and names the tasks that do', () => {
+  const { root } = host({ tasks: '- [x] 1.1 greet the user (PROJ-1)\n- [x] 1.2 wave for snmp-01\n' })
+  const items = [
+    { source: 'tracker', key: 'PROJ-1', state: 'taken' },
+    { source: 'tracker', key: 'PROJ-12', state: 'partial' },
+    { source: 'debt', key: 'snmp-01', state: 'taken' },
+    { source: 'tracker', key: 'PROJ-3', state: 'excluded', reason: 'later' }
+  ]
+  commit(root, { [changeFile('scope.json')]: scopeOf(items) })
+  const checks = runIn(root)
+  assert.equal(checks.tasks.verdict, 'fail')
+  assert.equal(checks.tasks.summary, 'all 2 tasks ticked; 1 scope key(s) no task names: PROJ-12')
+  assert.equal(
+    readFileSync(join(root, checks.tasks.output), 'utf8'),
+    '2 of 2 ticked\nscope: PROJ-1 (taken) named by 1.1\nscope: PROJ-12 (partial) named by no task\nscope: snmp-01 (taken) named by 1.2\n'
+  )
+  commit(root, { [changeFile('tasks.md')]: '- [x] 1.1 greet the user (PROJ-1)\n- [x] 1.2 wave for snmp-01\n- [x] 1.3 the rest of PROJ-12\n' })
+  assert.equal(runIn(root).tasks.verdict, 'pass')
+})
+
+test('tasks passes a scope whose tracker was skipped, with a note', () => {
+  const { root } = host({ tasks: '- [x] 1.1 greet\n' })
+  commit(root, { [changeFile('scope.json')]: scopeOf([], { state: 'skipped', reason: 'no token today' }) })
+  const checks = runIn(root)
+  assert.equal(checks.tasks.verdict, 'pass')
+  assert.equal(readFileSync(join(root, checks.tasks.output), 'utf8'), '1 of 1 ticked\nscope: the tracker was skipped for this change (no token today); no tracker key to map\n')
 })
 
 test('deltas warns on a capability still to sync and fails on one archive cannot merge', () => {

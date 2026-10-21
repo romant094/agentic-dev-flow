@@ -2,9 +2,13 @@
 // CLI over lib/workspace.mjs. Prints one JSON object on stdout and exits 1 on a refusal, or
 // when the result says `ok: false`.
 //
-//   workspace.mjs suggest --change <name>
+//   workspace.mjs suggest --change <name> [--key <KEY>]
 //       the branch policy, the current branch, the bases the developer may choose, a branch
-//       name to propose, the worktree path, and any uncommitted tracked changes
+//       name to propose, the worktree path, and any uncommitted tracked changes. With a key the
+//       branch is <type>/<KEY>/<change>; without one, the scope's key of the lowest rank
+//       (scope.mjs select's `branch`) names it, its branch token as `key`; a tie leaves the
+//       branch keyless and lists the tied items' tokens in `keyChoices`. The worktree path stays
+//       per change name
 //   workspace.mjs create --change <name> --branch <branch> --base integration|current
 //       make the branch and its worktree; prints the worktree root and the base branch
 //   workspace.mjs provision --change <name> [--worktree <path>] [--kind change|group|base-check|proof]
@@ -54,6 +58,8 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { create, remove, suggest } from './lib/workspace.mjs'
+import { mainCheckout } from './lib/installed.mjs'
+import { branchKey, readScope } from './lib/scope.mjs'
 import { addBaseCheck, addGroup, finishGroup, listGroups, mergeGroup, removeBaseCheck, removeGroup } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
 import { NEED_WORD, planInputs } from './lib/plan.mjs'
@@ -74,6 +80,18 @@ function withPackage(root, change, merge, home) {
     pkg = { ok: false, error: error.message }
   }
   return { ...merge, package: pkg }
+}
+
+// The key that names the branch: the one given, else the scope's key of the lowest rank.
+function scopeKey(root, change, key) {
+  if (key !== undefined) return { key }
+  const found = branchKey(readScope(mainCheckout(root), change))
+  if (!found) return {}
+  if (found.tie) {
+    const scope = readScope(mainCheckout(root), change)
+    return { keyChoices: found.tie.map((k) => scope.items.find((i) => i.key === k).branchToken) }
+  }
+  return { key: found.token }
 }
 
 function option(args, name) {
@@ -111,6 +129,7 @@ export function run(argv) {
   const worktree = option(args, '--worktree')
   const kind = option(args, '--kind')
   const need = repeated(args, '--need')
+  const key = option(args, '--key')
   const [command] = args
   if (!change) throw new Error('usage: workspace.mjs <command> --change <name>')
   // The contract and home the hooks of a worktree are called with.
@@ -118,7 +137,7 @@ export function run(argv) {
   const core = { coreContract: c.version, points: c.points, home: home ?? claudeHome() }
   switch (command) {
     case 'suggest':
-      return suggest(root, change)
+      return suggest(root, change, scopeKey(root, change, key))
     case 'create':
       return create(root, { change, branch, base })
     case 'provision':

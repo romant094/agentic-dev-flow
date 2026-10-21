@@ -36,7 +36,8 @@ A block index holds tables with exactly these columns:
   `decision` (a decision still to be made). An accepted item is not work and gets no row.
 - **Source** is the change or the store the entry came from.
 - **Tracker** is the tracker's key once a tracker plugin has mirrored the entry, its identity:
-  empty (or a dash) until then, and one key per row.
+  empty (or a dash) until then, and one key per row. The plugin writes it with
+  `debt.mjs track --id <id> --key <key>`, once.
 
 A **sub-block** is a heading (level two or deeper) above a table in the block index; the
 entries of that table belong to it. It is never a row and never a file.

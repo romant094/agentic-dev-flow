@@ -24,12 +24,62 @@ The change forks from one of two bases, and the developer chooses:
 The merge request targets the base; with no forge plugin, archive offers to merge the change
 back into it, and merges only on the developer's yes.
 
+**The scope is gathered before the branch is named.**
+
+Whatever the start, `scope.mjs gather` in the main checkout collects what fits the same change:
+the technical debt store always, the tracker when a tracker plugin is enabled, and the changes in
+flight whose scope already takes a gathered key. The start is the tracker keys the developer
+named and the description as the phrase. With a tracker enabled (`tracker.state` is `done`) and
+neither a key nor a phrase, ask once for the keys, or none, and gather again with them. With no
+tracker plugin and no debt match the result is `empty`: show its one-line `report`, and the
+proposal goes on to the branch with no scope, as it did before scopes existed.
+
+A degraded tracker (its tool missing, not logged in, or not configured) sends nothing: show its
+`hint` and ask whether the developer fixes it and gathers again, or works without the tracker
+for this change, with the reason, given once as `--skip-tracker "<reason>"`. A refused tracker
+stops the proposal with its error.
+
+Show the gathered items with their state, status and flags, and propose which of them fit one
+change; the developer decides. An item another change in flight takes is named with that change.
+Every item ends taken, partial or excluded, and every one not taken carries the developer's
+reason; the tracker's own exclusions (a suspended or closed issue) arrive excluded with theirs.
+
+**Each taken or partial item is checked before the branch, by one read-only agent.**
+
+`scope.mjs check-input` writes each item's input and prompt, its comments included. Dispatch each
+one under its `name`, `scope-check <KEY>`, at its `agent`, in parallel, sending its prompt file as
+it is; the prompt states what the agent does. `scope.mjs check` checks the reply; a refused reply
+goes back once to the same agent with its errors, and a second refusal puts the item to the
+developer. Then put every question of every item to the developer in one message, each with what
+was checked and what it needs, and record the answers and the verdict with `scope.mjs answer`.
+An obsolete item leaves the scope with its reason. A bug that does not reproduce is not closed:
+`scope.mjs retest` sends it back to its tester through the tracker, and it leaves the scope.
+
 **The developer confirms the branch name.**
 
-The preflight proposes `<type>/<change>`; when it has no type, ask which type applies. Show the
-name and wait for an explicit answer; the developer may edit it. Do NOT validate a confirmed
-name with a regular expression: a confirmed name is a decision, and convention compliance is the
-developer's responsibility. No branch operation happens without that answer.
+`workspace.mjs suggest` proposes `<type>/<change>`, or `<type>/<KEY>/<change>` when the scope
+takes a tracker issue: the key of the lowest rank, read from the scope by script. On a tie
+(`keyChoices`), ask which key names the branch and suggest again with `--key`. When it has no
+type, ask which type applies. Show the name and wait for an explicit answer; the developer may
+edit it. Do NOT validate a confirmed name with a regular expression: a confirmed name is a
+decision, and convention compliance is the developer's responsibility. No branch operation
+happens without that answer. The worktree path stays per change name.
+
+**Every tracker write holds for the developer's yes.**
+
+`scope.mjs start` (after `propose.mjs create`, so the branch and the worktree exist) and
+`scope.mjs retest` first return the plan as `pending`, with its preview in `report`. Show the
+preview and run the same command with `--yes` only on the developer's explicit yes. A failed
+apply resumes when the same command runs again with `--yes`. With no tracker plugin, or a tracker
+skipped for the change, each says so and sends nothing.
+
+**The scope record is committed with the artifacts.**
+
+`propose.mjs create` copies the scope into the change as `scope.json` when it holds an item or a
+skipped tracker. After the proposal is written, `scope.mjs render` writes its `## Scope sources`
+section from that record, and the proposal's `scope-sources` gate refuses any other text there:
+change the scope through `scope.mjs`, then render again. Neither `scope.json` nor the section is
+edited by hand.
 
 **Uncommitted tracked work stops the proposal.**
 

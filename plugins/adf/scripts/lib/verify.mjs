@@ -24,6 +24,7 @@ import { baseRef, EXTENSIONS } from './plan-symbols.mjs'
 import { readRegistry } from './registry.mjs'
 import { c4Lines, c8Lines, fence as fenceText } from './reply-render.mjs'
 import { callHook, CORE, hookProviders, knowledgePaths } from './roles.mjs'
+import { changeScopeFile } from './scope.mjs'
 import { checkSpecsBase, extractRequirementsSection, parseDeltaSpec, validateProject } from './specs.mjs'
 import { countsOf, readTestRecord } from './suite.mjs'
 import { claudeHome } from './superpowers.mjs'
@@ -124,14 +125,36 @@ function checkValidation(root, change) {
     : { verdict: 'fail', summary: `${change} has ${errors} validation issue${errors === 1 ? '' : 's'}`, text: lines.join('\n') }
 }
 
+// The change's scope (lib/scope.mjs): each taken or partial item's key, a tracker key or a debt
+// id, must be named by a task, as a whole word. A change with no scope.json, or whose tracker
+// was skipped, passes with a note.
+function scopeKeys(root, change, tasks) {
+  const file = changeScopeFile(root, change)
+  if (!existsSync(file)) return { lines: ['scope: the change has no scope.json; no key to map'], unnamed: [] }
+  const scope = JSON.parse(readFileSync(file, 'utf8'))
+  const lines = scope.tracker?.state === 'skipped' ? [`scope: the tracker was skipped for this change (${scope.tracker.reason}); no tracker key to map`] : []
+  const unnamed = []
+  for (const item of (scope.items ?? []).filter((i) => ['taken', 'partial'].includes(i.state))) {
+    const word = new RegExp(`(?<![A-Za-z0-9_-])${item.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`)
+    const naming = tasks.filter((t) => word.test(t.description)).map((t) => t.description.split(/\s/)[0])
+    if (naming.length === 0) unnamed.push(item.key)
+    lines.push(`scope: ${item.key} (${item.state}) ${naming.length ? `named by ${naming.join(', ')}` : 'named by no task'}`)
+  }
+  if (lines.length === 0) lines.push('scope: no item is taken or partial')
+  return { lines, unnamed }
+}
+
 function checkTasks(root, change, tracks) {
   const path = join(changeDir(root, change), tracks)
   if (!existsSync(path)) return { verdict: 'fail', summary: `${change} has no ${tracks}`, text: `${path} is missing` }
   const tasks = parseTasks(readFileSync(path, 'utf8'))
   const open = tasks.filter((t) => !t.done)
-  const text = [`${tasks.length - open.length} of ${tasks.length} ticked`, ...open.map((t) => `open: ${t.description}`)].join('\n')
-  if (tasks.length === 0) return { verdict: 'fail', summary: `${tracks} lists no tasks`, text }
-  if (open.length > 0) return { verdict: 'fail', summary: `${open.length} of ${tasks.length} tasks open`, text, open: open.map((t) => t.description) }
+  const keys = scopeKeys(root, change, tasks)
+  const text = [`${tasks.length - open.length} of ${tasks.length} ticked`, ...open.map((t) => `open: ${t.description}`), ...keys.lines].join('\n')
+  const unnamed = keys.unnamed.length ? `; ${keys.unnamed.length} scope key(s) no task names: ${keys.unnamed.join(', ')}` : ''
+  if (tasks.length === 0) return { verdict: 'fail', summary: `${tracks} lists no tasks${unnamed}`, text }
+  if (open.length > 0) return { verdict: 'fail', summary: `${open.length} of ${tasks.length} tasks open${unnamed}`, text, open: open.map((t) => t.description) }
+  if (unnamed) return { verdict: 'fail', summary: `all ${tasks.length} tasks ticked${unnamed}`, text, unnamed: keys.unnamed }
   return { verdict: 'pass', summary: `all ${tasks.length} tasks ticked`, text }
 }
 

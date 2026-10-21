@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { addExtension, checkRegistry, initRegistry, validateDeclaration, writeRegistry, readRegistry } from '../lib/registry.mjs'
-import { callHook, callRole, CORE, forgeInput, forgeReport, hookProviders, knowledgePaths, knowledgeReport, upstreamReport } from '../lib/roles.mjs'
+import { callHook, callRole, CORE, forgeInput, forgeReport, hookProviders, knowledgePaths, knowledgeReport, trackerReport, upstreamReport } from '../lib/roles.mjs'
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'forge.mjs')
 const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
@@ -84,13 +84,32 @@ function knowledgeHost(declaration, script) {
   return root
 }
 
-test('contract 1.6 defines the forge, knowledge and upstream roles and the provision, teardown and verify-check hooks', () => {
-  assert.equal(CORE.coreContract, '1.6')
-  assert.deepEqual(Object.keys(CORE.points), ['forge', 'knowledge', 'upstream', 'provision', 'teardown', 'verify-check'])
-  assert.deepEqual(CORE.points.forge, { kind: 'role', operations: ['check', 'open', 'push', 'finalize'] })
-  assert.deepEqual(CORE.points.knowledge, { kind: 'role', operations: ['context', 'log', 'check'] })
-  assert.deepEqual(CORE.points.upstream, { kind: 'role', operations: ['check', 'file'] })
-  for (const hook of ['provision', 'teardown', 'verify-check']) assert.deepEqual(CORE.points[hook], { kind: 'hook', operations: [hook] })
+test('contract 1.7 defines the forge, knowledge, upstream and tracker roles and the provision, teardown and verify-check hooks', () => {
+  assert.equal(CORE.coreContract, '1.7')
+  assert.deepEqual(Object.keys(CORE.points), ['forge', 'knowledge', 'upstream', 'provision', 'teardown', 'verify-check', 'tracker'])
+  assert.deepEqual(CORE.points.forge, { kind: 'role', since: '1.1', operations: ['check', 'open', 'push', 'finalize', 'state'], operationSince: { push: '1.2', state: '1.7' } })
+  assert.deepEqual(CORE.points.knowledge, { kind: 'role', since: '1.3', operations: ['context', 'log', 'check'] })
+  assert.deepEqual(CORE.points.upstream, { kind: 'role', since: '1.4', operations: ['check', 'file'] })
+  assert.deepEqual(CORE.points.tracker, { kind: 'role', since: '1.7', operations: ['check', 'gather', 'start', 'handoff'] })
+  for (const hook of ['provision', 'teardown', 'verify-check']) assert.deepEqual(CORE.points[hook], { kind: 'hook', since: '1.6', operations: [hook] })
+})
+
+test('validation by operation version: a 1.6 forge without state stays valid, a 1.7 one needs it, and a missing later operation is none', () => {
+  const ops = ['check', 'open', 'push', 'finalize']
+  assert.deepEqual(validateDeclaration({ name: 'f', contract: '1.6', provides: { forge: { script: 's.mjs', operations: ops } } }, CORE.points), [])
+  assert.deepEqual(validateDeclaration({ name: 'f', contract: '1.1', provides: { forge: { script: 's.mjs', operations: ['check', 'open', 'finalize'] } } }, CORE.points), [])
+  assert.deepEqual(validateDeclaration({ name: 'f', contract: '1.7', provides: { forge: { script: 's.mjs', operations: ops } } }, CORE.points), ['forge: operations state are missing'])
+  assert.deepEqual(validateDeclaration({ name: 'f', contract: '1.7', provides: { forge: { script: 's.mjs', operations: [...ops, 'state'] } } }, CORE.points), [])
+  const root = mkdtempSync(join(tmpdir(), 'adf-opver-'))
+  initRegistry(root, CORE.coreContract)
+  const dir = join(root, 'plugins', 'f')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'adf-extension.json'), JSON.stringify({ name: 'f', contract: '1.6', provides: { forge: { script: 's.mjs', operations: ops } } }))
+  writeFileSync(join(dir, 's.mjs'), ECHO)
+  writeRegistry(root, { ...readRegistry(root), extensions: [{ path: 'plugins/f' }] })
+  assert.deepEqual(checkRegistry(root, { ...CORE, home }).errors, ['no branches are set; run /adf:init'])
+  assert.deepEqual(callRole(root, 'forge', 'state', {}, { ...CORE, home }), { state: 'none', point: 'forge', operation: 'state', reason: 'not-provided', plugin: 'f' })
+  assert.equal(callRole(root, 'forge', 'check', {}, { ...CORE, home }).state, 'done')
 })
 
 test('forgeInput passes ci false through, and the forge provider gets it', () => {
@@ -307,4 +326,60 @@ test('the registry takes declarations providing hooks, two providers of one hook
   const check = checkRegistry(root, { ...CORE, home })
   assert.equal(check.ok, true, check.errors.join('; '))
   assert.deepEqual(check.plugins.map((p) => p.name), ['a', 'b'])
+})
+
+// ---------------------------------------------------------------- the tracker role
+
+// A fixture tracker: answers each operation from a table, and records its calls.
+function trackerHost(answers, { entries } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'adf-tracker-'))
+  initRegistry(root, CORE.coreContract)
+  if (answers) {
+    const dir = join(root, 'plugins', 't')
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'adf-extension.json'), JSON.stringify({ name: 't', contract: '1.7', provides: { tracker: { script: 't.mjs', operations: ['check', 'gather', 'start', 'handoff'] } } }))
+    writeFileSync(
+      join(dir, 't.mjs'),
+      `const answers=${JSON.stringify(answers)};let t='';process.stdin.on('data',(d)=>t+=d).on('end',()=>{const op=process.argv[2];const j=JSON.parse(t);const a=answers[op+(j.input.apply?':apply':'')]??answers[op];console.log(JSON.stringify(a))})`
+    )
+  }
+  writeRegistry(root, { ...readRegistry(root), extensions: entries ?? (answers ? [{ path: 'plugins/t', points: ['tracker'] }] : []) })
+  return root
+}
+
+test('tracker: with no provider every operation is none and the report says the step was skipped', () => {
+  const root = trackerHost(null)
+  for (const op of ['check', 'gather', 'start', 'handoff']) {
+    const result = callRole(root, 'tracker', op, {}, { ...CORE, home })
+    assert.deepEqual(result, { state: 'none', point: 'tracker' })
+    assert.equal(trackerReport(op, result), `Tracker ${op}: none; no tracker plugin is enabled; the tracker step was skipped.`)
+  }
+})
+
+test('tracker: an absent registry entry is named as callRole names it', () => {
+  const root = trackerHost(null, { entries: [{ plugin: 'adf-tracker@mk', points: ['tracker'] }] })
+  const result = callRole(root, 'tracker', 'start', {}, { ...CORE, home })
+  assert.deepEqual(result, { state: 'none', point: 'tracker', absent: [{ id: 'adf-tracker@mk', reason: 'not-installed' }] })
+  assert.equal(
+    trackerReport('start', result),
+    'Tracker start: none; no tracker plugin is enabled; the tracker step was skipped.\nadf-tracker@mk is in the registry but not installed; the tracker start was skipped.'
+  )
+})
+
+test('tracker: the held shape and the applied shape are rendered for the developer', () => {
+  const root = trackerHost({
+    check: { state: 'done', tool: 'ready', account: 'dev' },
+    start: { state: 'done', held: true, plan: 'p1', preview: ['K-1: Open -> In Progress, assignee dev'] },
+    'start:apply': { state: 'done', applied: ['K-1'], skipped: [{ key: 'K-2', reason: 'moved by hand' }], failed: [] },
+    handoff: { state: 'degraded', tool: 'unauthenticated', hint: 'create a new token' }
+  })
+  const core = { ...CORE, home }
+  assert.equal(trackerReport('check', callRole(root, 'tracker', 'check', {}, core)), 'Tracker: ready as dev')
+  const held = callRole(root, 'tracker', 'start', { items: [{ key: 'K-1' }] }, core)
+  assert.deepEqual([held.held, held.plan, held.plugin], [true, 'p1', 't'])
+  assert.equal(trackerReport('start', held), "Tracker start: held for the developer's yes; plan p1\n  K-1: Open -> In Progress, assignee dev")
+  assert.equal(trackerReport('start', callRole(root, 'tracker', 'start', { apply: 'p1' }, core)), 'Tracker start: applied K-1; skipped K-2 (moved by hand); failed none')
+  assert.equal(trackerReport('handoff', callRole(root, 'tracker', 'handoff', {}, core)), 'Tracker handoff: not done (unauthenticated). create a new token')
+  assert.equal(trackerReport('gather', { state: 'refused', error: 'K-9 is outside the allowlist' }), 'Tracker gather: refused; K-9 is outside the allowlist')
+  assert.equal(trackerReport('gather', { state: 'done', items: [{ key: 'K-1' }], notes: ['K-9 is outside the allowlist'] }), 'Tracker gather: 1 item(s): K-1\n  note: K-9 is outside the allowlist')
 })

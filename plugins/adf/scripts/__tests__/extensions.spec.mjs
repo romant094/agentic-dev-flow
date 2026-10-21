@@ -38,7 +38,7 @@ test('init, add, check, remove on a fresh host', () => {
   assert.equal(adf(root, 'check').code, 1)
   const init = adf(root, 'init').out
   assert.equal(init.created, true)
-  assert.equal(init.contract, '1.6')
+  assert.equal(init.contract, '1.7')
   assert.deepEqual(init.settings.added, ['enabledPlugins.adf@agentic-dev-flow'])
   assert.deepEqual(init.planningGuide, { path: 'openspec/planning.md', created: true })
   assert.deepEqual(init.reviewPrompt, { path: 'openspec/review-prompt.md', created: true, registered: true })

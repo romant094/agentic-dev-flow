@@ -47,7 +47,9 @@ pass. What resolves each check:
   the corpus is reported as advisory text and never gates.
 - `tasks`: every item of the tracked tasks file is ticked. Each open item blocks until it is
   ticked, or until the developer rules on it with the reason it stays open (manual, out of
-  scope, blocked).
+  scope, blocked). It also fails a key of the change's `scope.json` (a tracker key or a debt id),
+  taken or partial, that no task names as a whole word. A change with no `scope.json` passes
+  with a note, and so does a tracker skipped for the change, which leaves no tracker key.
 - `deltas`: each capability's delta against its main spec. `needs sync` is expected before
   archive, which merges the deltas: a warning naming the capabilities, not a failure. A
   `conflict` is a delta archive could not apply, and fails.
