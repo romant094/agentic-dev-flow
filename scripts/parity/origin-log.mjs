@@ -47,6 +47,8 @@ import { check } from '../../plugins/adf-memory/scripts/lib/memory.mjs'
 
 // The findings the origin's entries are known to carry, by file, kind and header timestamp.
 const EXPECTED_FINDINGS = [
+  { file: 'log.md', kind: 'out-of-order', at: '2026-10-20 12:39', explained: 'merge-interleaving' },
+  { file: 'log.md', kind: 'out-of-order', at: '2026-10-18 18:01', explained: 'merge-interleaving' },
   { file: 'log.md', kind: 'out-of-order', at: '2026-10-15 17:38', explained: 'merge-interleaving' },
   { file: 'log.md', kind: 'out-of-order', at: '2026-10-12 18:28', explained: 'merge-interleaving' },
   { file: 'log.md', kind: 'out-of-order', at: '2026-10-12 17:56', explained: 'merge-interleaving' },

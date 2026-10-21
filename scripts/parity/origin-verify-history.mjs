@@ -107,8 +107,8 @@ const firstNumber = (text, patterns) => {
 
 export function recordedTasks(section) {
   const box = /^\s*-\s+\[([ xX])\]\s+Every/m.exec(section)
-  const ticked = firstNumber(section, [/ticked:\s*(\d+)/i, /`- \[x\]`:\s*(\d+)/i, /(\d+)\s+of\s+\d+\s+(?:ticked|checked|checkboxes)/i, /(\d+)\s+(?:tasks?\s+|checkboxes,?\s+|items,?\s+|`- \[x\]`,?\s+)?(?:ticked|checked)\b/i])
-  const open = firstNumber(section, [/unticked:\s*(\d+)/i, /`- \[ \]`:\s*(\d+)/i, /(\d+)\s+(?:unticked|unchecked|open|remaining)\b/i, /(\d+)\s+`- \[ \]`/])
+  const ticked = firstNumber(section, [/(?<!un)checked:\s*(\d+)/i, /\bx=(\d+)/, /ticked:\s*(\d+)/i, /`- \[x\]`:\s*(\d+)/i, /(\d+)\s+of\s+\d+\s+(?:ticked|checked|checkboxes)/i, /(\d+)\s+(?:tasks?\s+|checkboxes,?\s+|items,?\s+|`- \[x\]`,?\s+)?(?:ticked|checked)\b/i])
+  const open = firstNumber(section, [/unchecked:\s*(\d+)/i, /\bopen=(\d+)/, /unticked:\s*(\d+)/i, /`- \[ \]`:\s*(\d+)/i, /(\d+)\s+(?:unticked|unchecked|open|remaining)\b/i, /(\d+)\s+`- \[ \]`/])
   let verdict = null
   if (box) verdict = box[1] === ' ' ? 'fail' : 'pass'
   else if (open !== null) verdict = open === 0 ? 'pass' : 'fail'
