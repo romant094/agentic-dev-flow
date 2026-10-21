@@ -253,8 +253,8 @@ function psql({ run, root, exec }, url, sql) {
 const where = (exec) => (exec === 'local' ? 'psql' : `the "${exec.docker}" container`)
 const startHint = (exec) =>
   exec === 'local'
-    ? 'install the PostgreSQL client (psql) and start the server, then rerun the core's provision step with --need database'
-    : `start the "${exec.docker}" container (docker start ${exec.docker}), then rerun the core's provision step with --need database`
+    ? 'install the PostgreSQL client (psql) and start the server, then rerun the core provision step with --need database'
+    : `start the "${exec.docker}" container (docker start ${exec.docker}), then rerun the core provision step with --need database`
 
 // ---------------------------------------------------------------- operations
 
