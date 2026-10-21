@@ -11,13 +11,13 @@
     {
       "name": "adf",
       "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "source": "./plugins/adf"
     },
     {
       "name": "adf-gitlab",
       "description": "ADF forge plugin for GitLab: pushes a change branch and keeps its merge request through glab",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "source": "./plugins/adf-gitlab"
     },
     {
@@ -55,6 +55,12 @@
       "description": "ADF provisioning for Prisma: an own generated client, migrations and seed into a worktree's own database, and the migration-order check at verify",
       "version": "0.1.0",
       "source": "./plugins/adf-prisma"
+    },
+    {
+      "name": "adf-jira",
+      "description": "ADF tracker for Jira: gathers issues at propose, starts them and hands them to the tester after the merge, plus guarded two-phase Jira skills",
+      "version": "0.1.0",
+      "source": "./plugins/adf-jira"
     }
   ]
 }

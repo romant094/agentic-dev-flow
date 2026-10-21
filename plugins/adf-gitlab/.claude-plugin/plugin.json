@@ -1,7 +1,7 @@
 {
   "name": "adf-gitlab",
   "description": "GitLab forge for the Agentic Dev Flow: pushes a change branch, opens its merge request and finalizes it through glab",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "author": { "name": "Anton Romankov" },
   "license": "MIT",
   "keywords": ["gitlab", "merge-request", "workflow"]

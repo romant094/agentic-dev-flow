@@ -10,8 +10,8 @@ Every write is two-phase: a plan is built and shown, and it is applied only afte
 developer's yes. Install it in the host project, then add it to the registry:
 
 ```
-/plugin install adf-jira --marketplace romant094/agentic-dev-flow
-/adf:add adf-jira@agentic-dev-flow --config '{"baseUrl":"https://jira.example.com","allowlist":["PROJ"]}'
+claude plugin install adf-jira@agentic-dev-flow --scope project
+/adf:add adf-jira@agentic-dev-flow '{"baseUrl":"https://jira.example.com","allowlist":["PROJ"],"statuses":{"start":"In Progress","handoff":"Review"}}'
 ```
 
 Then run `/adf-jira:setup` once: it discovers the project's workflow and writes the profile

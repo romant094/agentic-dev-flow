@@ -28,7 +28,7 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Wiki memory and technical debt: the `adf-memory` plugin (the `knowledge` role, contract `1.3`) and the core's debt store | done (iteration 10) |
 | Maintainer upstream: the `adf-maintainer` plugin (the `upstream` role, contract `1.5`) files a retrospective's flow findings and the ADF debt not yet filed as GitHub issues through `gh`; every extension is optional, and a registry entry whose plugin is not installed is skipped | done (iteration 10b) |
 | Project stack: the core provisions every worktree it makes through the `provision` and `teardown` hooks and runs extension checks at verify (contract `1.6`); the plugins `adf-npm-workspaces`, `adf-postgres` and `adf-prisma` | done (iteration 12) |
-| Plugins: tracker (Jira), project stack | not started |
+| Tracker: the `tracker` role and the `forge` operation `state` (contract `1.7`); propose gathers the scope from a key or a phrase (the tracker and the debt store), checks each taken issue by a read-only agent and starts the taken ones; `/adf:land` hands them to the tester after the merge; the plugin `adf-jira` | done (iteration 13) |
 | `/adf:quick`, a small fix or feature without the full artifact set | not started |
 | `/adf:update` | not started |
 
@@ -102,6 +102,18 @@ Each is installed first, like the plugins above. The planning guide names the fi
 worktree gets a copy of (`## Worktree copies`), and a plan that needs a database says so
 (`**Needs:** database`).
 
+A project on Jira enables the tracker with its non-secret values in `config`, then sets up its
+profile once:
+
+```
+/adf:add adf-jira@agentic-dev-flow '{"baseUrl":"https://jira.example.com","allowlist":["PROJ"],"statuses":{"start":"In Progress","handoff":"Review"}}'
+/adf-jira:setup
+```
+
+The token and the personal logins go in the env file, never in the registry
+(`plugins/adf-jira/README.md`, `plugins/adf-jira/env.example`). After a change is merged,
+`/adf:land <change>` writes one comment per taken issue and hands it to the tester.
+
 Only the flow's maintainer installs `adf-maintainer@agentic-dev-flow`: it files the
 retrospective's findings and the ADF debt upstream (`plugins/adf-maintainer/README.md`). Every
 other host has no `upstream` provider, and the retrospective skips the step.
@@ -135,6 +147,7 @@ plugins/adf-memory/               the wiki memory: the knowledge role, its log a
 plugins/adf-npm-workspaces/       provision: a worktree's own node_modules; a guard against npm install in a worktree
 plugins/adf-postgres/             provision and teardown: a database per worktree
 plugins/adf-prisma/               provision: an own client, migrations and seed; verify-check: migration order
+plugins/adf-jira/                 the tracker role on Jira Server and Data Center; guarded two-phase Jira skills
 plugins/adf-maintainer/           the upstream role on GitHub, through gh: the maintainer's only
 scripts/parity/                   dev tools: compare the ported scripts with the origin's and the
                                   openspec CLI on the origin project (npm run parity -- <root>)

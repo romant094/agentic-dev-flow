@@ -86,3 +86,144 @@ Settled by the developer on 2026-10-21. Analysis: the iteration 13 analysis of 2
 - D18 A partial issue at land gets a comment of what remains and keeps its status.
 - D19 Land with no forge decides "merged" from git ancestry.
 - D20 Skipping the tracker for one change is recorded once in `scope.json`.
+
+## Inputs for iteration 15
+
+The origin project's values for `adf-jira`, recorded here for the switch. They are the only
+place this repository names the origin's Jira; no plugin file carries them.
+
+The registry entry, `.claude/adf-extensions.json`:
+
+```json
+{
+  "id": "adf-jira@agentic-dev-flow",
+  "config": {
+    "baseUrl": "https://jira.promwad.com",
+    "allowlist": ["DESTELENG"],
+    "profileDir": ".claude/jira/profile",
+    "debtEpic": "DESTELENG-399",
+    "statuses": { "start": "In Progress", "handoff": "Review", "excluded": ["Suspended"] },
+    "fields": ["Reproduce steps", "Expected result"]
+  }
+}
+```
+
+- `commentTemplate` and `correctionTemplate`: none. The origin has no hand-off comment
+  template of its own, so the plugin's `templates/handoff.md` and `templates/corrections.md`
+  apply; a host copy is made only if the team asks for another shape.
+- `envFile`: not set; the default `.claude/.env` is the origin's file.
+- The profile stays where it is, `.claude/jira/profile/`, the default `profileDir`:
+  `conventions.md` committed, `discovered.json` and `local.md` ignored by the origin's
+  `.gitignore` (checked on 2026-10-21 with `git check-ignore -v`). Run `/adf-jira:setup` once
+  after the switch, which refuses to write while git does not ignore the personal files.
+- The env keys each developer sets in `.claude/.env` (names only): `JIRA_PAT`,
+  `JIRA_ASSIGNEE`, `JIRA_QA`, `JIRA_PM`, `JIRA_GIT_AUTHOR`, `JIRA_DEFAULT_PROJECT`. With
+  `baseUrl` and `allowlist` in the registry, `JIRA_URL` and `JIRA_ALLOWED_PROJECTS` in the env
+  file are no longer read and may be removed.
+- The debt tree: the header of every `.claude/memory/tech-debt/*/index.md` (eight on
+  2026-10-21) is `| ID | Title | Anchors | Class | Source | Jira |`; its last column becomes
+  `Tracker`, the column `debt.mjs` checks and `track` writes (`docs/lessons/memory.md`).
+- The project facts the origin's skills carried are no longer in the port's skills, which read
+  them from `conventions.md` or from `config`:
+  - the epic model (children are `Sub-task` issues with `parent`, `Epic Link` unused, a
+    sub-task allowed directly under an epic on this instance; `epic` and `task` step 1):
+    already in the origin's `conventions.md`, `## Work structure`;
+  - the estimate through `timetracking` on the child, never on the epic (`epic`): already in
+    `## Estimation`;
+  - the debt epic `DESTELENG-399`, "Tech Debt", and its children's model (`sync-debt`): now
+    `config.debtEpic`; the model is `## Work structure`;
+  - the required fields per type (a `Bug` requires `Reproduce steps` and `Expected result`; a
+    `ProjectInfo` requires `ProjectStatus`, `ProjectEstimate(Plan)`, `ProjectType`; `task`):
+    read from `discovered.json`'s `requiredFields`, no longer from the skill;
+  - `## Review hand-off` in `conventions.md` says the hop to `Review` and the reassignment are
+    "two steps of one row"; since 9829c1f each is its own row. Reword it at the switch.
+- The origin's old plans in `.claude-reports/jira/` (85 plan files at the top level and the
+  directory `epic-performance-stability/` on 2026-10-21) do not migrate: the port writes its
+  plans in `.adf/jira/<skill>/`, and `apply-plan.mjs` would refuse an old plan built against an
+  older profile anyway. They stay where they are, gitignored. `customer/created-issues.md` is
+  not a plan and stays too.
+- The origin's own plugin `.claude/plugins/jira/` and its `jira:*` skills are removed when
+  `adf-jira` is enabled, so the two skill sets do not trigger on the same phrases.
+
+## Result
+
+Commits (`git log --oneline 5721643^..HEAD`, before this release step):
+
+```
+ebb231e test(adf): triggers in English with the any-language note, checked in every plugin
+0b6be81 test(parity): compare the adf-jira port with the origin's Jira plugin offline
+baaf592 feat(adf-jira): plans in .adf/jira/<skill>/, ignored by default
+9829c1f fix(adf-jira): resumable tracker writes, correction comment at start, git author
+3e20a37 feat(adf): land command, archive scope key check and hand-off fields
+19ac51e feat(adf-jira): port the Jira plugin and provide the tracker role
+159c4a9 feat(adf-gitlab): forge state operation for contract 1.7
+d2e4184 feat(adf): contract 1.7 tracker role, propose scope gathering and issue check
+5721643 docs(iterations): plan iteration 13, tracker plugin Jira
+```
+
+Shipped, by step:
+
+- 1–9 (d2e4184, 3e20a37): contract 1.7 with the `tracker` role and `forge.state`, a
+  declaration validated against its own contract version; the roles' tracker report;
+  `scope.mjs` with `gather`, `select`, `check-input`, `check`, `answer`, `render`, `start` and
+  `retest`, and `scope-check.schema.json`; propose's scope steps before the branch, the branch
+  key, the held start, `scope.json` committed and `## Scope sources` rendered and gated;
+  verify's key check; archive's `mr` key check and the `/adf:land` hint.
+- 2 (159c4a9): `adf-gitlab` `state` through `glab mr view`, by url and by branch.
+- 10–12 (3e20a37): `land.mjs` and `/adf:land`, resumable, never merging or pushing; the
+  hand-off fields checked by the core and rendered by the plugin; `debt.mjs track`.
+- 13 (19ac51e, 9829c1f, baaf592): `adf-jira`, every skill and script of the origin's plugin
+  ported to `.mjs`, its eight suites on `node:test`, `tracker.mjs` with the four operations.
+- 14 (ebb231e): every trigger in English with the any-language note, checked by
+  `plugins/adf/scripts/__tests__/triggers.spec.mjs` over every plugin.
+- 15 (0b6be81): `scripts/parity/origin-jira.mjs`, offline against the origin's TypeScript.
+- 16 (this step): the lessons rows pending on 13 closed, the inputs for iteration 15 above,
+  versions, marketplace, README and roadmap.
+
+Decided after the plan:
+
+- `start` and `handoff` write one plan row per step (`transition`, `assignee`, `comment`), so
+  a rerun of the same plan sends only the rows not yet done; a comment row posts nothing when
+  the issue already holds a comment with the same body.
+- `start` gives an item a templated correction comment when the issue check corrected it: by
+  the verdict `corrected` with its corrections, or by the developer's answers; the core sends
+  each item's verdict. An item with no correction gets no comment.
+- The standalone skills' plans go to `.adf/jira/<skill>/` in the main checkout, and
+  `apply-plan.mjs` refuses a plan git does not ignore. `/adf:init` ignores `.adf/*` and
+  re-includes `.adf/prices/` and `.adf/retro/`, so a plugin's local work directory under `.adf/`
+  is ignored by default.
+- A stale status: an excluded issue whose latest comment is newer than its move into its
+  status is flagged once, with both dates; the exclusion still holds.
+- An item's `kind` is one of a fixed set, `bug`, `sub-task`, `epic`, `story`, `task`, named in
+  the contract.
+- `JIRA_GIT_AUTHOR` reaches the worklog skill through `profile.mjs` (`gitAuthor`), which reads
+  the env file for that one value; the agent still never reads the env file.
+- `land.mjs wait` reads `forge.state`, or git ancestry when no forge is enabled or the forge
+  does not provide `state`; a closed merge request stops land.
+- The hand-off field limits: `done` 80 words, `test` 120, `remains` 80, `tried` 80
+  (`FIELD_LIMITS` in `plugins/adf/scripts/lib/tracker.mjs`).
+
+Checks, on 2026-10-21:
+
+- `npm test`: 1320 tests, 1318 pass, 0 failures, 2 skipped (the live openspec parity with
+  `OPENSPEC_DIST` not set, and the live origin name parity of `adf-postgres` with
+  `ADF_ORIGIN` not set); `check-lessons.mjs`: ok, 770 rows, 19 pending, none on 13.
+- `npm run parity -- <origin>`: 22 of 22 PASS, `origin-jira.mjs` among them, with no network.
+- `claude plugin validate .`: passed, and each of the nine plugins passes alone.
+- Not run: any call to a live Jira; a live `glab mr view`; a propose, land or sync-debt in the
+  origin (iteration 15 writes its registry values, above).
+
+Left for later:
+
+- `sync-debt` reads the epic's children into `<plans.dir>/epic.json`; that file is not checked
+  against `.gitignore` the way `apply-plan.mjs` checks a plan.
+- No migration of the origin's old plans in `.claude-reports/jira/` (above).
+- The parity tool does not cover the apply engine's run against Jira or the client's paging;
+  the ported suites and the fake `fetch` cover them.
+- The English check's default scope still keeps every skill out; whether the origin includes
+  its skills now that every plugin's trigger is English is decided at the switch, iteration 15
+  (`docs/lessons/english-check.md`).
+
+Versions: adf 0.14.0, contract 1.7; adf-gitlab 0.5.0; adf-jira 0.1.0 (new);
+adf-english-check 0.6.0, adf-memory 0.2.0, adf-maintainer 0.1.0, adf-npm-workspaces 0.1.0,
+adf-postgres 0.1.0 and adf-prisma 0.1.0 unchanged.
