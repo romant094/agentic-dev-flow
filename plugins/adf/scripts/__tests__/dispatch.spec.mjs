@@ -817,3 +817,12 @@ test('scope-check <KEY> is a fixed-form name: parsed with its key, refused with 
   assert.throws(() => scopeCheckName('a b'), /is not a scope key/)
   assert.deepEqual(SCOPE_ROLES['scope-check'], { level: 'integration', schema: 'scope-check.schema.json' })
 })
+
+test('land-comment <KEY> is a fixed-form name: parsed with its key, refused with a space, a colon or no key', async () => {
+  const { landCommentName, LAND_ROLES } = await import('../lib/dispatch.mjs')
+  assert.deepEqual(parseName('land-comment PROJ-12'), { role: 'land-comment', key: 'PROJ-12' })
+  for (const name of ['land-comment', 'land-comment two words', 'land-comment A:B']) assert.equal(parseName(name), null, name)
+  assert.equal(landCommentName('PROJ-12'), 'land-comment PROJ-12')
+  assert.throws(() => landCommentName('a b'), /is not a scope key/)
+  assert.deepEqual(LAND_ROLES['land-comment'], { level: 'integration', schema: 'land-comment.schema.json' })
+})

@@ -86,6 +86,9 @@ description or a commit message.
 A provider refuses a branch that is empty or in `protected`. `body` holds the sections of the
 plugin's merge request template. Default with no provider: nothing is pushed, no merge request
 exists; archive offers to merge the change into its base, and merges only on the developer's yes.
+The default of `state`, with no provider or with one written before 1.7: the hand-off after the
+merge decides "merged" from git ancestry, the branch tip an ancestor of the local base or of
+`origin/<base>`, with nothing fetched.
 
 ### `knowledge` (role, since 1.3)
 
@@ -142,9 +145,23 @@ plans, so they outlive the worktree.
 a reproduction and the expected behaviour. `branchRank` orders the items for the branch name
 (the lowest names it, `branchToken` the text put in it), null for an item that never names a
 branch. `excluded` is the provider's reason an item is out (a suspended or closed issue), else
-null. `flags` are lines the developer is shown once. `fields` are the core's checked text, never
-markup: for `not-reproduced`, `{ tried, commit }`; the provider renders its own comment from
-them and adds the merge request line only when `mr` is not null.
+null. `flags` are lines the developer is shown once.
+
+`fields` are an agent's plain text, checked by the core (`lib/tracker.mjs`), never markup. The
+provider renders its own comment from them with its own template, and adds the merge request
+line only when `mr` is not null: the core passes the `url` of the forge's `state`, and `null`
+with no forge.
+
+| `state` | Fields | Word limit |
+|---|---|---|
+| `taken` | `done`: what the change did; `test`: how a tester checks it | `done` 80, `test` 120 |
+| `partial` | `done`, `test`, and `remains`: what the change left undone | `remains` 80 |
+| `not-reproduced` | `tried`: the attempts, a list of lines; and `commit`, the base commit, set by the core | `tried` 80 over all its lines |
+
+The core refuses a missing or empty field, a field the state does not take (`remains` on a
+`taken` item), a field over its limit, and a link or URL in any field: a scheme such as
+`https://`, a `www.` host, or Markdown link syntax. `handoff` is called once every in-scope
+issue has its fields.
 
 Every write holds for the developer's yes: the core calls `start` and `handoff` without `apply`,
 shows the preview, and calls again with `apply` only on the yes. A call again with the same

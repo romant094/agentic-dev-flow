@@ -36,12 +36,14 @@ import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readBranches } from './branches.mjs'
 import { listTree } from './debt.mjs'
+import { findChangeDir } from './ingest.mjs'
 import { SCOPE_KEY, SCOPE_ROLES, scopeCheckName, sddDir } from './dispatch.mjs'
 import { mainCheckout } from './installed.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { readDebtRoot, readRegistry } from './registry.mjs'
 import { checkouts } from './resolve.mjs'
 import { callRole, knowledgeReport, TRACKER_SKIPPED, trackerReport } from './roles.mjs'
+import { checkFields, heldWrite as trackerHold, trackerCall as tracker } from './tracker.mjs'
 import { worktreePath } from './workspace.mjs'
 
 const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -50,7 +52,7 @@ const PROMPT = join(PLUGIN_ROOT, 'schema', 'prompts', 'scope-check.md')
 export const SCOPE_FILE = 'scope.json'
 export const SECTION = 'Scope sources'
 export const RETEST_REASON = 'does not reproduce; sent to retest'
-const IN_SCOPE = ['taken', 'partial']
+export const IN_SCOPE = ['taken', 'partial']
 const SETTLED = ['current', 'corrected']
 
 export class Refusal extends Error {
@@ -117,15 +119,20 @@ const itemOf = (scope, key) => {
   return item
 }
 
-// ---------------------------------------------------------------- the tracker call
+// ---------------------------------------------------------------- the scope's keys
 
-// The tracker role, or none on a host with no registry.
-function tracker(root, operation, input, core) {
-  if (!readRegistry(root)) return { state: 'none', point: 'tracker' }
-  return callRole(root, 'tracker', operation, input, core)
+// The keys a change takes on: every taken or partial item, a tracker key or a debt id.
+export const scopeKeys = (scope) => (scope?.items ?? []).filter((i) => IN_SCOPE.includes(i.state)).map((i) => i.key)
+
+// The tracker issues a change works on and hands off: taken or partial, except a bug that did
+// not reproduce, which retest sends back instead.
+export const trackerTargets = (scope) => (scope?.items ?? []).filter((i) => i.source === 'tracker' && IN_SCOPE.includes(i.state) && i.verdict !== 'not-reproduced')
+
+// Whether a text names a key as a whole word: no letter, digit, underscore or hyphen on either
+// side, so PROJ-1 is not named by PROJ-12.
+export function namesKey(text, key) {
+  return new RegExp(`(?<![A-Za-z0-9_-])${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`).test(text)
 }
-
-const keyOf = (entry) => (typeof entry === 'string' ? entry : entry?.key)
 
 // ---------------------------------------------------------------- words
 
@@ -450,8 +457,10 @@ function matchedSpecs(main, item, names) {
   return names.filter((name) => name.split('-').every((w) => own.has(w)))
 }
 
-function renderPrompt(fields) {
-  return readFileSync(PROMPT, 'utf8')
+// A prompt skeleton under schema/prompts/ filled: its comment lines dropped, each {{field}}
+// replaced (an unknown field by nothing).
+export function renderSkeleton(file, fields) {
+  return readFileSync(file, 'utf8')
     .split('\n')
     .filter((l) => !/^\s*<!--.*-->\s*$/.test(l))
     .join('\n')
@@ -512,7 +521,7 @@ export function checkInput(root, change, { key = null, core }) {
     }
     writeFileSync(inputFile, `${JSON.stringify(input, null, 2)}\n`)
     const level = SCOPE_ROLES['scope-check'].level
-    writeFileSync(promptFile, renderPrompt({ name, level, key: item.key, change, inputFile, replyFile, schema: SCOPE_SCHEMA }))
+    writeFileSync(promptFile, renderSkeleton(PROMPT, { name, level, key: item.key, change, inputFile, replyFile, schema: SCOPE_SCHEMA }))
     dispatches.push({ name, key: item.key, agent: `adf:${level}`, worktree: main, inputFile, promptFile, replyFile })
   }
   writeScope(main, change, scope)
@@ -562,6 +571,7 @@ export function checkScopeReply(reply, item) {
     else {
       if (!(reply.bug?.reproduction?.length > 0)) errors.push('a not-reproduced verdict names no reproduction it tried')
       if (!(reply.bug?.tried?.length > 0)) errors.push('a not-reproduced verdict lists nothing tried (bug.tried)')
+      else errors.push(...checkFields('not-reproduced', { tried: reply.bug.tried }, { prefix: 'bug' }))
     }
   }
   return errors
@@ -725,38 +735,16 @@ export function scopeSourcesGate(root, change) {
 
 // ---------------------------------------------------------------- the held tracker writes
 
-const held = (change, step) => `the developer's yes: scope.mjs ${step} --change ${change} --yes`
-
-// Runs a held tracker write: without yes the plan and its preview, with it the plan applied.
+// Runs a held tracker write (lib/tracker.mjs heldWrite) and records it in the scope.
 function heldWrite(main, change, scope, { step, operation, input, yes, core, after }) {
-  const record = scope[step]
-  const stateDir = trackerDir(main, change)
-  mkdirSync(stateDir, { recursive: true })
-  if (yes && !(record?.plan && ['held', 'failed'].includes(record.state))) refuse(`there is no held ${step} plan to apply; run scope.mjs ${step} --change ${change} without --yes first`)
-  const result = tracker(main, operation, { ...input, change, stateDir, ...(yes ? { apply: record.plan } : {}) }, core)
-  const report = trackerReport(operation, result)
-  if (result.state === 'none') {
-    scope[step] = { state: 'skipped', report }
+  const { record, out, applied } = trackerHold({ root: main, operation, input: { ...input, change }, stateDir: trackerDir(main, change), record: scope[step], yes, core, command: `scope.mjs ${step} --change ${change}`, label: step, refuse })
+  if (record) {
+    scope[step] = record
+    if (applied) after?.(applied)
     writeScope(main, change, scope)
-    return { ok: true, change, step, state: 'skipped', report }
   }
-  if (result.state === 'refused') {
-    scope[step] = { state: 'refused', report }
-    writeScope(main, change, scope)
-    return { ok: false, change, step, state: 'refused', report, error: result.error ?? report, next: `run scope.mjs ${step} --change ${change} without --yes to build a new plan` }
-  }
-  if (result.state === 'degraded') return { ok: true, change, step, state: 'degraded', report, hint: result.hint ?? null }
-  if (result.held) {
-    scope[step] = { state: 'held', plan: result.plan ?? null, preview: result.preview ?? [], report }
-    writeScope(main, change, scope)
-    return { ok: true, change, step, state: 'pending', held: true, plan: result.plan ?? null, preview: result.preview ?? [], report, waiting: held(change, step) }
-  }
-  const applied = (result.applied ?? []).map(keyOf)
-  const failed = result.failed ?? []
-  scope[step] = { state: failed.length ? 'failed' : 'done', plan: record?.plan ?? result.plan ?? null, applied: result.applied ?? [], skipped: result.skipped ?? [], failed, report }
-  after?.(applied)
-  writeScope(main, change, scope)
-  return { ok: failed.length === 0, change, step, state: scope[step].state, applied: result.applied ?? [], skipped: result.skipped ?? [], failed, report, ...(failed.length ? { next: `rerun scope.mjs ${step} --change ${change} --yes: the plan resumes where it stopped` } : {}) }
+  const { ok, ...rest } = out
+  return { ok, change, step, ...rest }
 }
 
 function trackerOff(scope) {
@@ -776,7 +764,7 @@ export function start(root, change, { yes = false, core }) {
     writeScope(main, change, scope)
     return { ok: true, change, step: 'start', state: 'skipped', report: off }
   }
-  const targets = scope.items.filter((i) => i.source === 'tracker' && IN_SCOPE.includes(i.state) && i.verdict !== 'not-reproduced')
+  const targets = trackerTargets(scope)
   if (targets.length === 0) return { ok: true, change, step: 'start', state: 'skipped', report: 'Tracker start: no tracker item is taken or partial; nothing to start.' }
   const unsettled = targets.filter((i) => !SETTLED.includes(i.verdict)).map((i) => `${i.key} (${i.verdict ?? 'not checked'})`)
   if (unsettled.length) refuse(`check and settle every taken or partial issue before start: ${unsettled.join(', ')}`)
@@ -816,6 +804,24 @@ export function retest(root, change, { yes = false, core }) {
 }
 
 // ---------------------------------------------------------------- read-only
+
+// The change's scope once the change exists: the committed copy in its directory, active or
+// archived, in the main checkout, else in the change's worktree while it exists, else the state
+// propose kept in the main checkout. { file, scope }, or null when propose gathered none.
+export function findScope(main, change) {
+  for (const root of [main, worktreePath(main, change)]) {
+    let dir
+    try {
+      dir = findChangeDir(root, change)
+    } catch {
+      continue
+    }
+    const file = join(dir, SCOPE_FILE)
+    if (existsSync(file)) return { file, scope: JSON.parse(readFileSync(file, 'utf8')) }
+  }
+  const scope = readScope(main, change)
+  return scope ? { file: scopeFile(main, change), scope } : null
+}
 
 export function state(root, change) {
   const { main, scope } = requireScope(root, change)

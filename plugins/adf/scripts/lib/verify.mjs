@@ -24,7 +24,7 @@ import { baseRef, EXTENSIONS } from './plan-symbols.mjs'
 import { readRegistry } from './registry.mjs'
 import { c4Lines, c8Lines, fence as fenceText } from './reply-render.mjs'
 import { callHook, CORE, hookProviders, knowledgePaths } from './roles.mjs'
-import { changeScopeFile } from './scope.mjs'
+import { changeScopeFile, namesKey } from './scope.mjs'
 import { checkSpecsBase, extractRequirementsSection, parseDeltaSpec, validateProject } from './specs.mjs'
 import { countsOf, readTestRecord } from './suite.mjs'
 import { claudeHome } from './superpowers.mjs'
@@ -135,8 +135,7 @@ function scopeKeys(root, change, tasks) {
   const lines = scope.tracker?.state === 'skipped' ? [`scope: the tracker was skipped for this change (${scope.tracker.reason}); no tracker key to map`] : []
   const unnamed = []
   for (const item of (scope.items ?? []).filter((i) => ['taken', 'partial'].includes(i.state))) {
-    const word = new RegExp(`(?<![A-Za-z0-9_-])${item.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`)
-    const naming = tasks.filter((t) => word.test(t.description)).map((t) => t.description.split(/\s/)[0])
+    const naming = tasks.filter((t) => namesKey(t.description, item.key)).map((t) => t.description.split(/\s/)[0])
     if (naming.length === 0) unnamed.push(item.key)
     lines.push(`scope: ${item.key} (${item.state}) ${naming.length ? `named by ${naming.join(', ')}` : 'named by no task'}`)
   }

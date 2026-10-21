@@ -153,14 +153,17 @@ const ABSENT = { 'not-installed': 'not installed', disabled: 'disabled' }
 const absentLines = (result, step) =>
   (result.absent ?? []).map((a) => `\n${a.id} is in the registry but ${ABSENT[a.reason] ?? a.reason}; ${step} was skipped.`).join('')
 
-const LABEL = { check: 'Forge', open: 'Merge request', push: 'Push', finalize: 'Merge request' }
+const LABEL = { check: 'Forge', open: 'Merge request', push: 'Push', finalize: 'Merge request', state: 'Merge request' }
 
 // The lines a command shows for a forge result, so no caller renders the forge's JSON itself:
 // what happened to the merge request (or the push), the hint and fallback commands of a degraded
 // forge, and the refusal's reason. Nothing is claimed that the result does not carry. `draft` is
-// what the caller asked `open` for: false opens it ready to merge (the retrospective's).
+// what the caller asked `open` for: false opens it ready to merge (the retrospective's). A forge
+// written before the operation existed (`reason: 'not-provided'`) is named, and the operation's
+// default applies, as with no forge.
 export function forgeReport(operation, result, { draft = true } = {}) {
   const label = LABEL[operation] ?? 'Forge'
+  if (result.state === 'none' && result.reason === 'not-provided') return `${label}: none; ${result.plugin ?? 'the forge plugin'} does not provide ${operation}, so the step's default applies.`
   if (result.state === 'none') return `${label}: none; no forge plugin is enabled, so nothing was pushed and no merge request exists.${absentLines(result, `the forge ${operation}`)}`
   if (result.state === 'refused') return `${label}: refused; ${result.error ?? 'no reason given'}`
   if (result.state === 'degraded') {
@@ -168,6 +171,11 @@ export function forgeReport(operation, result, { draft = true } = {}) {
   }
   if (operation === 'check') return `Forge: ${result.tool ?? 'ready'}`
   if (operation === 'push') return `Push: done${result.url ? `; merge request ${result.url}` : ''}`
+  if (operation === 'state') {
+    const where = result.url ?? (result.number ? `!${result.number}` : 'no link returned')
+    const merged = result.status === 'merged' ? `merged${result.mergedAt ? ` at ${result.mergedAt}` : ''}${result.mergeCommit ? `, commit ${String(result.mergeCommit).slice(0, 7)}` : ''}` : result.status ?? 'no status returned'
+    return `${label}: ${where} (${merged})`
+  }
   const what = operation === 'finalize' ? 'out of draft, ready to merge' : result.reused ? 'reused' : draft ? 'opened as a draft' : 'opened, ready to merge'
   return `${label}: ${result.url ?? (result.number ? `!${result.number}` : 'no link returned')} (${what})`
 }

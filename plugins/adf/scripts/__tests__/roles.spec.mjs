@@ -112,6 +112,15 @@ test('validation by operation version: a 1.6 forge without state stays valid, a 
   assert.equal(callRole(root, 'forge', 'check', {}, { ...CORE, home }).state, 'done')
 })
 
+test('forgeReport: a forge that does not provide an operation is named, and the state of a merge request is rendered', () => {
+  assert.equal(forgeReport('state', { state: 'none', point: 'forge', operation: 'state', reason: 'not-provided', plugin: 'f' }), "Merge request: none; f does not provide state, so the step's default applies.")
+  assert.equal(forgeReport('state', { state: 'none', point: 'forge' }), 'Merge request: none; no forge plugin is enabled, so nothing was pushed and no merge request exists.')
+  assert.equal(forgeReport('state', { state: 'done', url: 'https://g/mr/7', status: 'open' }), 'Merge request: https://g/mr/7 (open)')
+  assert.equal(forgeReport('state', { state: 'done', number: 7, status: 'draft' }), 'Merge request: !7 (draft)')
+  assert.equal(forgeReport('state', { state: 'done', url: 'u', status: 'merged', mergedAt: '2026-10-20T10:00:00Z', mergeCommit: 'abcdef1234567' }), 'Merge request: u (merged at 2026-10-20T10:00:00Z, commit abcdef1)')
+  assert.equal(forgeReport('state', { state: 'degraded', hint: 'run glab auth login' }), 'Merge request: not done yet. run glab auth login')
+})
+
 test('forgeInput passes ci false through, and the forge provider gets it', () => {
   const state = { change: 'x', branch: 'feat/x', base: 'develop', protected: ['develop'] }
   for (const operation of ['open', 'push', 'finalize']) {

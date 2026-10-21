@@ -52,7 +52,9 @@
 //                 fallback file and the step is `degraded`. With a forge and no `--body` the step
 //                 holds, `pending`, and returns what it needs: mr-input, then the body file.
 //                 With the run's `ci: false` (archive.mjs --no-ci, kept in the state) the
-//                 forge pushes with no CI run.
+//                 forge pushes with no CI run. A body that does not name, as a whole word,
+//                 every key the change's scope.json takes (its taken and partial tracker keys
+//                 and debt ids) fails the step, nothing sent; no scope.json is no check.
 //   merge-local   with no forge only, after the developer's yes: `git merge --no-ff <branch>` in
 //                 the main checkout when it has the base checked out and is clean; nothing pushed,
 //                 the branch kept.
@@ -79,6 +81,7 @@ import { addEntry, pricesUrl } from './prices.mjs'
 import { readDebtRoot } from './registry.mjs'
 import { checkRecord, ROUND_CAP } from './review-state.mjs'
 import { callRole, CORE, forgeInput, forgeReport, knowledgeReport } from './roles.mjs'
+import { findScope, namesKey, SCOPE_FILE, scopeKeys, trackerTargets } from './scope.mjs'
 import { checkResolutions, checkSpecsBase, mergePreview, writeMerge } from './specs.mjs'
 import { writeConflictTexts } from './spec-merge.mjs'
 import { loadSchema } from './schema.mjs'
@@ -707,6 +710,8 @@ export function mrStep(ctx, { body = null, title, summary } = {}) {
     } catch (error) {
       return refuse(`--body ${body}: ${error.message}`)
     }
+    const unnamed = unnamedKeys(ctx, text)
+    if (unnamed.length) refuse(`the merge request body names no ${unnamed.join(', ')}; name every key of the change's scope.json (its taken and partial tracker keys and debt ids) in ${body}, then run mr again`, { unnamed })
     const input = forgeInput(
       'finalize',
       { change: ctx.change, branch: branchOf(ctx), base: baseOf(ctx), protected: readBranches(ctx.root)?.protected ?? null },
@@ -720,8 +725,16 @@ export function mrStep(ctx, { body = null, title, summary } = {}) {
     if (result.state === 'degraded') {
       return { state: 'degraded', detail: { forge, report, hint: result.hint ?? null, fallback: result.fallback ?? [], inputFile: result.inputFile ?? null, body, ...ci } }
     }
-    return { state: 'done', detail: { forge, report, url: result.url ?? null, ...ci } }
+    return { state: 'done', detail: { forge, report, url: result.url ?? null, branch: input.branch, base: input.base, ...ci } }
   })
+}
+
+// The keys of the change's scope.json that a merge request body does not name as a whole word.
+// No scope.json, or one that takes nothing, has none.
+function unnamedKeys(ctx, text) {
+  const file = join(findChangeDir(ctx.root, ctx.change), SCOPE_FILE)
+  if (!existsSync(file)) return []
+  return scopeKeys(JSON.parse(readFileSync(file, 'utf8'))).filter((key) => !namesKey(text, key))
 }
 
 // ---------------------------------------------------------------- the local merge
@@ -896,9 +909,12 @@ export function report(ctx) {
     ...hurt.lines
   ]
   const mr = state.steps.mr
+  const land = trackerTargets(findScope(ctx.main, ctx.change)?.scope).length ? `/adf:land ${ctx.change}` : null
   const heading = complete ? `## Archive complete: ${ctx.change}` : `## Archive not complete: ${ctx.change}`
   const tail = complete
-    ? []
+    ? land
+      ? ['', `Next: ${land}, once the change is merged: it hands each tracker issue of the scope to its tester.`]
+      : []
     : [
         '',
         `Not finished: ${open.map((s) => `${s} (${state.steps[s].state})`).join(', ')}.`,
@@ -910,6 +926,7 @@ export function report(ctx) {
     change: ctx.change,
     complete,
     next: nextStep(state),
+    land,
     steps: state.steps,
     handEdited,
     window: { fetch: window.fetch, since: window.since },

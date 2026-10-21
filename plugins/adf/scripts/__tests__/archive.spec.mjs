@@ -81,8 +81,9 @@ const VERIFY = '# Verify\n\n## Apply test record\n\n**Result:** PASS, 12 tests\n
 
 // The host, the change worktree, and the reviewed commit. `delta` maps capability -> delta text;
 // `ledger` writes the ledger; `debt` sets the registry's debt root; `specsBase` writes the
-// change's specs-base.json, as propose does; `verify` is verify.md's text.
-function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widgets dry\n', verdict = 'PASS', ledger = placedLedger, debt = null, extra = {}, meta = {}, omit = [], specsBase = true, verify = VERIFY } = {}) {
+// change's specs-base.json, as propose does; `verify` is verify.md's text; `scope` is the change's
+// scope.json, as propose commits it.
+function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widgets dry\n', verdict = 'PASS', ledger = placedLedger, debt = null, extra = {}, meta = {}, omit = [], specsBase = true, verify = VERIFY, scope = null } = {}) {
   const top = realpathSync(mkdtempSync(join(tmpdir(), 'adf-archive-')))
   const root = join(top, 'host')
   execFileSync('git', ['init', '-q', '-b', 'develop', root])
@@ -106,6 +107,7 @@ function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widg
       [`${dir}/tasks.md`]: tasks,
       [`${dir}/plan.md`]: '# Plan\n',
       [`${dir}/verify.md`]: verify,
+      ...(scope ? { [`${dir}/scope.json`]: `${JSON.stringify(scope, null, 2)}\n` } : {}),
       'src/x.txt': 'dry\n'
   }
   for (const name of omit) delete files[`${dir}/${name}`]
@@ -643,6 +645,57 @@ test('a refused finalize fails the step', () => {
   const out = call(h, ['mr', '--body', body, '--title', 'feat: x'], deps)
   assert.equal(out.state, 'failed')
   assert.match(out.refusal, /Merge request: refused; Description rejected/)
+})
+
+// A scope as propose commits it: a taken tracker issue, a partial debt entry, an excluded issue.
+const SCOPE = {
+  version: 1,
+  change: 'add-x',
+  tracker: { state: 'done', plugin: 't', notes: [] },
+  items: [
+    { source: 'tracker', key: 'PROJ-1', title: 'Wet store', kind: 'task', state: 'taken', reason: null, verdict: 'current' },
+    { source: 'debt', key: 'store-01', title: 'Store rots', kind: 'debt', state: 'partial', reason: 'the dry part only', verdict: 'current' },
+    { source: 'tracker', key: 'PROJ-12', title: 'Old store', kind: 'task', state: 'excluded', reason: 'Suspended', verdict: null }
+  ]
+}
+
+test('mr refuses a body that does not name every in-scope key, sending nothing, and finalizes once it does', () => {
+  const h = archiveHost({ scope: SCOPE })
+  const calls = []
+  const deps = { ...NONE, forge: (op, input) => (calls.push({ op, input }), op === 'check' ? { state: 'done', plugin: 'gitlab' } : { state: 'done', plugin: 'gitlab', url: 'https://g/mr/1' }) }
+  for (const step of BEFORE_MR) assert.equal(call(h, [step], deps).ok, true, step)
+  const body = join(h.wt, '..', 'body.md')
+  writeFileSync(body, '## What\n\n- dry store for PROJ-12\n')
+  const refused = call(h, ['mr', '--body', body, '--title', 'feat: x'], deps)
+  assert.deepEqual([refused.ok, refused.state, refused.detail.unnamed], [false, 'failed', ['PROJ-1', 'store-01']])
+  assert.match(refused.refusal, /the merge request body names no PROJ-1, store-01; name every key of the change's scope\.json/)
+  assert.equal(calls.filter((c) => c.op === 'finalize').length, 0, 'nothing was sent')
+  writeFileSync(body, '## What\n\n- dry store (PROJ-1), the dry part of store-01\n')
+  const done = call(h, ['mr', '--body', body, '--title', 'feat: x'], deps)
+  assert.deepEqual([done.ok, done.state, done.detail.branch, done.detail.base], [true, 'done', 'feat/add-x', 'develop'])
+})
+
+test('a scope that takes no key, or a change with no scope.json, is no body check', () => {
+  const h = archiveHost({ scope: { ...SCOPE, tracker: { state: 'skipped', reason: 'tracker down', notes: [] }, items: [] } })
+  const deps = { ...NONE, forge: (op) => (op === 'check' ? { state: 'done', plugin: 'gitlab' } : { state: 'done', plugin: 'gitlab', url: 'u' }) }
+  for (const step of BEFORE_MR) call(h, [step], deps)
+  const body = join(h.wt, '..', 'body.md')
+  writeFileSync(body, '## What\n\n- dry\n')
+  assert.equal(call(h, ['mr', '--body', body, '--title', 'feat: x'], deps).state, 'done')
+})
+
+test('the report names /adf:land when the scope holds a tracker issue, and not for debt alone', () => {
+  const h = archiveHost({ scope: SCOPE })
+  drive(h)
+  const report = call(h, ['report'])
+  assert.equal(report.complete, true)
+  assert.equal(report.land, '/adf:land add-x')
+  assert.match(report.report, /\nNext: \/adf:land add-x, once the change is merged: it hands each tracker issue of the scope to its tester\.$/)
+  const debt = archiveHost({ scope: { ...SCOPE, items: SCOPE.items.filter((i) => i.source === 'debt') } })
+  drive(debt)
+  const plain = call(debt, ['report'])
+  assert.deepEqual([plain.complete, plain.land], [true, null])
+  assert.doesNotMatch(plain.report, /adf:land/)
 })
 
 test('merge-local waits for the yes, refuses a main checkout off its base or dirty with the commands, and --no records the choice', () => {

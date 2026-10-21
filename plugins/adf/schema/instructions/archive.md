@@ -238,8 +238,10 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    Run `archive.mjs mr-input`, and from
    its `tasks`, `why`, `scenarios` and `evidence` write the merge request body to its `bodyFile`:
    the sections of the forge plugin's merge request template, the steps a tester follows taken
-   from the scenarios, and the evidence `verify.md` recorded. Write the body in English: it is
-   an ignored file outside the change, so no commit hook checks it. Then:
+   from the scenarios, and the evidence `verify.md` recorded. When the change holds a
+   `scope.json`, the body names each key it takes, its taken and partial tracker keys and debt
+   ids: `mr` fails the step with the keys missing, and sends nothing. Write the body in English:
+   it is an ignored file outside the change, so no commit hook checks it. Then:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/archive.mjs" mr --change <change> --body <bodyFile> --summary "<scope>: <description>" --root <root>
@@ -286,7 +288,9 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
     Show its `report` as it is. It is built last, by script, from the states, from git and from
     the change's metrics record: `Archive complete` only when every step is done or skipped, or
     `metrics` is degraded; otherwise it names each step not finished and the next one to run.
-    Then, each line only when it has content:
+    A complete archive whose scope holds a taken or partial tracker issue names `/adf:land
+    <change>` as the next step, `land` in the result: after the merge it hands each issue to its
+    tester. Then, each line only when it has content:
 
     - **The window line**: the changes archived since the last window retrospective on the
       integration ref, with the age of its fetch. The ref is fetched once; a failed fetch or

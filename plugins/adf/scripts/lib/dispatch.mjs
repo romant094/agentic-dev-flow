@@ -13,6 +13,7 @@
 //   ai-review r<k>, ai-review r<k> s<n>, ai-fix F<n> r<k>   (the review stage)
 //   spec-merge <capability>, ingest   (archive)
 //   scope-check <KEY>   (propose's issue check, lib/scope.mjs; checked by scope.mjs check)
+//   land-comment <KEY>  (the hand-off fields after the merge, lib/land.mjs; checked by land.mjs comment)
 //   retro <id>     (the retrospective, lib/retro.mjs; no change; <id> is <date>-window,
 //                  <date>-period or <date>-<change>)
 //
@@ -70,6 +71,17 @@ export const SCOPE_KEY = /^[^\s:|`]+$/
 export const scopeCheckName = (key) => {
   if (!SCOPE_KEY.test(key ?? '')) refuse(`"${key ?? ''}" is not a scope key`)
   return `scope-check ${key}`
+}
+// The hand-off after the merge: one read-only agent per taken or partial tracker issue, named
+// `land-comment <KEY>`, writing the comment's fields in JSON checked by `land.mjs comment`
+// (lib/land.mjs). It runs in the main checkout; its input and reply live in
+// .superpowers/sdd/<change>/land/.
+export const LAND_ROLES = {
+  'land-comment': { level: 'integration', schema: 'land-comment.schema.json' }
+}
+export const landCommentName = (key) => {
+  if (!SCOPE_KEY.test(key ?? '')) refuse(`"${key ?? ''}" is not a scope key`)
+  return `land-comment ${key}`
 }
 // The JSON Schema under schema/ of each apply role's reply: lib/reply.mjs ROLES checks the reply
 // under it, and the role's prompt names its path in the `reply` rule.
@@ -254,6 +266,8 @@ export function parseName(name) {
   if (m) return { role: 'investigate', topic: m[1] }
   m = /^scope-check (\S+)$/.exec(text)
   if (m && SCOPE_KEY.test(m[1])) return { role: 'scope-check', key: m[1] }
+  m = /^land-comment (\S+)$/.exec(text)
+  if (m && SCOPE_KEY.test(m[1])) return { role: 'land-comment', key: m[1] }
   m = /^(final-review|sweep)$/.exec(text)
   if (m) return { role: m[1] }
   m = /^(merge-review) ([A-Z])$/.exec(text) ?? /^(fix|re-review)(?: ([A-Z]))?(?: r([1-9]\d*))?$/.exec(text)

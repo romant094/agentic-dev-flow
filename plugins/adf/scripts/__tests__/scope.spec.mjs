@@ -283,6 +283,8 @@ test('check refuses every rule the schema cannot state, and records a valid repl
   assert.deepEqual(refused('PROJ-1', valid('PROJ-1', { bug: { ...BUG, expected: '' } })), ['a bug with no expected behaviour asks no question about it'])
   assert.deepEqual(refused('PROJ-2', valid('PROJ-2', { verdict: 'not-reproduced' })), ['not-reproduced is a bug\'s verdict; PROJ-2 is a task'])
   assert.deepEqual(refused('PROJ-1', valid('PROJ-1', { verdict: 'not-reproduced', bug: BUG })), ['a not-reproduced verdict lists nothing tried (bug.tried)'])
+  assert.deepEqual(refused('PROJ-1', valid('PROJ-1', { verdict: 'not-reproduced', bug: { ...BUG, tried: ['see https://ci.example/run/4'] } })), ['bug.tried holds a link or URL ("https://ci.example/run/4"); write plain text: the provider adds the merge request link itself'])
+  assert.deepEqual(refused('PROJ-1', valid('PROJ-1', { verdict: 'not-reproduced', bug: { ...BUG, tried: [Array.from({ length: 81 }, () => 'step').join(' ')] } })), ['bug.tried has 81 words; the limit is 80'])
   assert.deepEqual(refused('PROJ-1', valid('PROJ-1', { verdict: 'not-reproduced', bug: { ...BUG, reproduction: [] }, questions: [] })), [
     'a bug with no reproduction asks no question about it',
     'a not-reproduced verdict names no reproduction it tried',

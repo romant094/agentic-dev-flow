@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf/land-comment.schema.json",
+  "title": "ADF land comment reply",
+  "description": "The fields of one tracker issue's hand-off comment after the change's merge: what was done, how a tester checks it, and for a partial issue what remains. Plain text only; the tracker plugin renders its own comment from the fields and adds the merge request link itself. land.mjs comment also refuses what the schema cannot see: a key or state other than the dispatch's, a missing or empty field, remains on a taken issue, a field over its word limit (done 80, test 120, remains 80), and a link or URL in any field.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["role", "key", "state", "fields"],
+  "properties": {
+    "role": { "const": "land-comment" },
+    "key": { "type": "string", "minLength": 1 },
+    "state": { "enum": ["taken", "partial"] },
+    "fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["done", "test"],
+      "properties": {
+        "done": { "type": "string", "minLength": 1 },
+        "test": { "type": "string", "minLength": 1 },
+        "remains": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
