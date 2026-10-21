@@ -209,8 +209,12 @@ their heading.
   without scoped runs (D4). The Redis of a worktree server is the host's serve script (D8),
   iteration 15.
 - **DF 395-423** — a green report true only of a reverted configuration; the re-run after a fix
-  touching a shared package. The reply carries the configuration now; the re-run is the stack
-  plugin's (iteration 12).
+  touching a shared package. Closed in iteration 12 with no new code: every covering run of an
+  `impl` or `fix` reply is the script's record (`suite.mjs covering`, iteration 10a); the whole
+  suite runs by script once at apply's end, after every fix of the stage; a commit outside the
+  change directory after the apply record makes verify's `test-record` check fail as stale, and
+  a review fix re-runs the suite (`suite.mjs --section review`). A run after each fix touching a
+  `## Packages` directory would only find a break earlier, at a whole-suite run per fix.
 - **K1 — bench steps in implementer tasks.** Handled by propose decision 7; the consent-gated
   pass is verify's check that needs the developer, and its text is the host planning guide's
   (iteration 15). No plugin carries it.

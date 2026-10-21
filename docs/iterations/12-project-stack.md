@@ -106,8 +106,11 @@ Measured while deciding:
   from its sources; a stale Prisma client is what an unprovisioned worktree breaks.
 - Not run: a live provision against xnms (iteration 15 writes its registry and guide values),
   a real database create and drop, a real `prisma generate`.
-- Open: the analysis sent "re-run the suite after a fix that touches a `## Packages` directory"
-  to the core; it is not built (`docs/lessons/apply.md`, open findings).
+- Closed with no new code: "re-run the suite after a fix that touches a `## Packages`
+  directory" (analysis 4h). The script's covering record, the whole suite at apply's end, the
+  stale-record check at verify and the review re-run already hold it (`docs/lessons/apply.md`,
+  open findings); a run after each such fix was rejected by the developer on 2026-10-21 as a
+  whole-suite run per fix for an earlier signal only.
 - Versions: adf 0.13.0, contract 1.6; adf-npm-workspaces, adf-postgres and adf-prisma 0.1.0;
   renamed before the iteration: adf-gitlab 0.4.0, adf-memory 0.2.0, adf-english-check 0.6.0;
   adf-maintainer 0.1.0 unchanged.
