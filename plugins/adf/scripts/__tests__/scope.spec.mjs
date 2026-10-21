@@ -362,8 +362,8 @@ test('propose: create copies the scope, start holds then applies after the workt
   const pending = scope(root, 'start', '--change', 'fix-pool')
   assert.deepEqual([pending.state, pending.plan, pending.preview], ['pending', 'start-plan', ['PROJ-1: start', 'PROJ-2: start']])
   assert.deepEqual(calls(root).at(-1).input.items, [
-    { key: 'PROJ-1', state: 'taken', corrections: [], answers: [] },
-    { key: 'PROJ-2', state: 'partial', corrections: [{ what: 'unit', was: 'count', now: 'gauge' }], answers: [] }
+    { key: 'PROJ-1', state: 'taken', verdict: 'current', corrections: [], answers: [] },
+    { key: 'PROJ-2', state: 'partial', verdict: 'corrected', corrections: [{ what: 'unit', was: 'count', now: 'gauge' }], answers: [] }
   ])
   const started = scope(root, 'start', '--change', 'fix-pool', '--yes')
   assert.deepEqual([started.ok, started.state, started.applied, started.report], [true, 'done', ['PROJ-1', 'PROJ-2'], 'Tracker start: applied PROJ-1, PROJ-2; skipped none; failed none'])

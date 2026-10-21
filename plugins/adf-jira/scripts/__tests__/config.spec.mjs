@@ -23,6 +23,7 @@ describe('normalizeConfig', () => {
       profileDir: '../outside',
       debtEpic: 'PROJ',
       commentTemplate: '/abs.md',
+      correctionTemplate: '../c.md',
       statuses: { handoff: '', done: 'x' },
       token: 'x'
     })
@@ -33,6 +34,7 @@ describe('normalizeConfig', () => {
       'config.profileDir is not a path inside the project',
       'config.debtEpic is not an issue key',
       'config.commentTemplate is not a path inside the project',
+      'config.correctionTemplate is not a path inside the project',
       'config.statuses.done is not a key of adf-jira',
       'config.statuses.handoff is not a status name'
     ])
@@ -74,12 +76,29 @@ describe('mainCheckout', () => {
 describe('profile.mjs', () => {
   it('describes the profile and the config, with what git ignores', () => {
     const root = host({ extensions: [{ plugin: 'adf-jira@m', config: { baseUrl: 'https://j.example', allowlist: ['PROJ'], debtEpic: 'PROJ-9' } }] })
-    const out = describeProfile({ cwd: root, run: () => null, ignored: (_dir, path) => path.endsWith('local.md') })
+    const out = describeProfile({ cwd: root, run: () => null, ignored: (_dir, path) => path.endsWith('local.md'), home: root, processEnv: {} })
     assert.equal(out.config.debtEpic, 'PROJ-9')
     assert.equal(out.profile.discovered, join(root, '.claude', 'jira', 'profile', 'discovered.json'))
     assert.deepEqual(out.profile.ignored, { discovered: false, local: true })
     assert.equal(out.profile.discoveredAt, null)
     assert.ok(!('envFile' in out.config))
+  })
+
+  it('prints JIRA_GIT_AUTHOR from the env file as gitAuthor, and no other env value', () => {
+    const root = host({ extensions: [{ plugin: 'adf-jira@m', config: { baseUrl: 'https://j.example', allowlist: ['PROJ'] } }] })
+    const home = mkdtempSync(join(tmpdir(), 'adf-jira-home-'))
+    writeFileSync(join(root, '.claude', '.env'), 'JIRA_PAT=secret-token\nJIRA_QA=qa.login\nJIRA_GIT_AUTHOR="Dev Person"\n')
+    const out = describeProfile({ cwd: root, run: () => null, ignored: () => true, home, processEnv: {} })
+    assert.equal(out.gitAuthor, 'Dev Person')
+    const text = JSON.stringify(out)
+    assert.ok(!text.includes('secret-token'))
+    assert.ok(!text.includes('qa.login'))
+  })
+
+  it('prints gitAuthor null when JIRA_GIT_AUTHOR is unset', () => {
+    const root = host()
+    const home = mkdtempSync(join(tmpdir(), 'adf-jira-home-'))
+    assert.equal(describeProfile({ cwd: root, run: () => null, ignored: () => true, home, processEnv: {} }).gitAuthor, null)
   })
 })
 

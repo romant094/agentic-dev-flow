@@ -11,6 +11,11 @@
 //                       is not empty.
 // The values are done, test, remains, tried (lists of short sentences, the agent's), commit
 // (a commit hash) and mr (the merge request URL, the forge's; null with no forge).
+//
+// The correction comment of `start` (decision D7) has the same format with one section,
+// `<!-- corrected -->`, and two lists: corrections (one line per correction the issue check
+// made) and answers (one line per question the developer answered). The default is
+// templates/corrections.md; the registry config's `correctionTemplate` replaces it.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -18,6 +23,11 @@ export const STATES = ['taken', 'partial', 'not-reproduced']
 export const LISTS = ['done', 'test', 'remains', 'tried']
 export const SCALARS = ['commit', 'mr']
 export const DEFAULT_TEMPLATE = join('templates', 'handoff.md')
+export const DEFAULT_CORRECTION_TEMPLATE = join('templates', 'corrections.md')
+
+// What a template may hold: its sections, its lists and its scalars.
+const HANDOFF = { states: STATES, lists: LISTS, scalars: SCALARS }
+const CORRECTION = { states: ['corrected'], lists: ['corrections', 'answers'], scalars: [] }
 
 // The fields each state takes, required first.
 export const FIELDS = {
@@ -33,14 +43,15 @@ const BLOCK_CLOSE = /^\s*\{\{\/([a-z]+)\}\}\s*$/
 const LINK = /(?:\b[a-z][a-z0-9+.-]*:\/\/|\bwww\.)\S/i
 const COMMIT = /^[0-9a-f]{7,40}$/
 
-export function parseTemplate(text, source) {
+export function parseTemplate(text, source, shape = HANDOFF) {
+  const { states } = shape
   const sections = {}
   let current = null
   for (const line of text.replace(/\r\n/g, '\n').split('\n')) {
     const marker = MARKER.exec(line)
     if (marker) {
       const state = marker[1]
-      if (!STATES.includes(state)) throw new Error(`${source}: unknown section "${state}"; the sections are ${STATES.join(', ')}`)
+      if (!states.includes(state)) throw new Error(`${source}: unknown section "${state}"; the sections are ${states.join(', ')}`)
       if (sections[state]) throw new Error(`${source}: section "${state}" appears twice`)
       sections[state] = []
       current = state
@@ -48,19 +59,19 @@ export function parseTemplate(text, source) {
     }
     if (current) sections[current].push(line)
   }
-  for (const state of STATES) {
-    if (!sections[state]) throw new Error(`${source}: no section "${state}"; every template has ${STATES.join(', ')}`)
-    checkSection(sections[state], `${source} (${state})`)
+  for (const state of states) {
+    if (!sections[state]) throw new Error(`${source}: no section "${state}"; every template has ${states.join(', ')}`)
+    checkSection(sections[state], `${source} (${state})`, shape)
   }
   return sections
 }
 
-function checkSection(lines, where) {
+function checkSection(lines, where, { lists, scalars }) {
   const open = []
   for (const line of lines) {
     const tokens = [...line.matchAll(TOKEN)]
     for (const [, kind, name] of tokens) {
-      if (![...LISTS, ...SCALARS].includes(name)) throw new Error(`${where}: unknown placeholder {{${kind}${name}}}`)
+      if (![...lists, ...scalars].includes(name)) throw new Error(`${where}: unknown placeholder {{${kind}${name}}}`)
     }
     const opened = BLOCK_OPEN.exec(line)
     const closed = BLOCK_CLOSE.exec(line)
@@ -69,7 +80,7 @@ function checkSection(lines, where) {
       if (open.pop() !== closed[1]) throw new Error(`${where}: {{/${closed[1]}}} closes no open block`)
     } else {
       if (tokens.some(([, kind]) => kind !== '')) throw new Error(`${where}: a block marker must stand on a line of its own`)
-      if (tokens.filter(([, , name]) => LISTS.includes(name)).length > 1) throw new Error(`${where}: a line holds more than one list`)
+      if (tokens.filter(([, , name]) => lists.includes(name)).length > 1) throw new Error(`${where}: a line holds more than one list`)
     }
   }
   if (open.length > 0) throw new Error(`${where}: {{#${open.at(-1)}}} is never closed`)
@@ -77,14 +88,23 @@ function checkSection(lines, where) {
 
 // The template in force: the host's file named by config.commentTemplate, else the plugin's.
 export function loadTemplate({ root, pluginRoot, commentTemplate }) {
-  const path = commentTemplate ? join(root, commentTemplate) : join(pluginRoot, DEFAULT_TEMPLATE)
+  return readTemplate(root, pluginRoot, commentTemplate, DEFAULT_TEMPLATE, HANDOFF)
+}
+
+// The correction template in force: config.correctionTemplate, else the plugin's.
+export function loadCorrectionTemplate({ root, pluginRoot, correctionTemplate }) {
+  return readTemplate(root, pluginRoot, correctionTemplate, DEFAULT_CORRECTION_TEMPLATE, CORRECTION)
+}
+
+function readTemplate(root, pluginRoot, configured, fallback, shape) {
+  const path = configured ? join(root, configured) : join(pluginRoot, fallback)
   let text
   try {
     text = readFileSync(path, 'utf8')
   } catch {
-    throw new Error(`cannot read the comment template ${commentTemplate ?? DEFAULT_TEMPLATE}`)
+    throw new Error(`cannot read the comment template ${configured ?? fallback}`)
   }
-  return parseTemplate(text, commentTemplate ?? DEFAULT_TEMPLATE)
+  return parseTemplate(text, configured ?? fallback, shape)
 }
 
 const present = (value) => (Array.isArray(value) ? value.length > 0 : value !== null && value !== undefined && value !== '')
@@ -94,7 +114,7 @@ export function escapeWiki(text) {
   return String(text).replace(/[[\]{}]/g, (c) => `\\${c}`)
 }
 
-export function renderSection(lines, values) {
+export function renderSection(lines, values, lists = LISTS) {
   const out = []
   const keep = []
   for (const line of lines) {
@@ -110,7 +130,7 @@ export function renderSection(lines, values) {
     if (keep.includes(false)) continue
     const names = [...line.matchAll(TOKEN)].map(([, , name]) => name)
     if (names.some((n) => !present(values[n]))) continue
-    const list = names.find((n) => LISTS.includes(n))
+    const list = names.find((n) => lists.includes(n))
     const fill = (item) => line.replace(TOKEN, (_, __, name) => (name === list ? escapeWiki(item) : name === 'mr' ? values.mr : escapeWiki(values[name])))
     if (list) for (const item of values[list]) out.push(fill(item))
     else out.push(fill(null))
@@ -121,6 +141,18 @@ export function renderSection(lines, values) {
 export function renderComment(template, state, fields, mr) {
   const values = { done: [], test: [], remains: [], tried: [], commit: null, ...fields, mr: mr?.url ?? null }
   return renderSection(template[state], values)
+}
+
+// The correction comment of a start item: one line per correction (`what: now (was was)`) and
+// one per answered question (`question — answer`), whitespace folded so each stays one list line.
+const oneLine = (text) => String(text ?? '').replace(/\s+/g, ' ').trim()
+
+export function renderCorrection(template, corrections = [], answers = []) {
+  const values = {
+    corrections: corrections.map(({ what, was, now }) => `${oneLine(what)}: ${oneLine(now)}${oneLine(was) ? ` (was ${oneLine(was)})` : ''}`),
+    answers: answers.map(({ question, answer }) => `${oneLine(question)} — ${oneLine(answer)}`)
+  }
+  return renderSection(template.corrected, values, CORRECTION.lists)
 }
 
 // The fields of one hand-off item, checked before anything is read or sent: the state's

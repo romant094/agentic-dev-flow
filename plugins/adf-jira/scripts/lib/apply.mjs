@@ -1,7 +1,10 @@
 // The runner of a confirmed plan. Before a row whose plan recorded its status (`from`), it reads
 // the issue's status again and skips the row as drifted when someone moved it by hand. State is
 // persisted after every row, so an interrupted run resumes; three failures in a row stop it.
+// A comment step marked `once` is posted only when the issue holds no comment with the same
+// body, so a rerun after a lost response posts no second copy.
 import { resolvePlaceholders } from './placeholders.mjs'
+import { readAllComments } from './readers.mjs'
 
 const SUPPORTED_OPERATIONS = ['transition', 'edit', 'worklog', 'create', 'comment']
 
@@ -68,6 +71,13 @@ async function currentStatus(client, key) {
   return issue.fields.status?.name
 }
 
+const sameBody = (text) => String(text ?? '').replace(/\r\n/g, '\n').trim()
+
+async function alreadyPosted(client, key, body) {
+  const comments = await readAllComments(client, key)
+  return comments.some((c) => sameBody(c.body) === sameBody(body))
+}
+
 async function runStep(client, row, step) {
   if (step.create !== undefined) {
     const created = await client.post('/rest/api/2/issue', { fields: step.create.fields })
@@ -89,6 +99,10 @@ async function runStep(client, row, step) {
   if (step.comment !== undefined) {
     const { comment } = step
     if (comment.action === 'add') {
+      if (comment.once && (await alreadyPosted(client, row.key, comment.body))) {
+        row.note = 'the comment was already posted; not posted again'
+        return
+      }
       await client.post(`/rest/api/2/issue/${row.key}/comment`, { body: comment.body })
     } else {
       await client.put(`/rest/api/2/issue/${row.key}/comment/${comment.id}`, { body: comment.body })

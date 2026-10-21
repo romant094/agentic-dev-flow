@@ -13,6 +13,17 @@ The method lives in `local.md` in the profile directory (`profile.mjs` prints it
 `## Worklog practice` heading. Read that file in full first. It is the specification for the run; this document is only the
 mechanics and the discipline.
 
+**The git author comes from `profile.mjs`, not from `local.md`.** When the material is commits,
+select them by the `gitAuthor` that
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs"
+```
+
+prints (`JIRA_GIT_AUTHOR` in the env file). Do not record an author in `local.md`, and ignore
+one recorded there before. When `gitAuthor` is null, ask the developer to set
+`JIRA_GIT_AUTHOR` (`/adf-jira:setup` asks for it) before reading commits.
+
 Two developers on the same project will legitimately have different practices. One works
 from commits, another from a notebook, a third from a timer. One allocates hours agreed with
 a client, another logs measured time. None of that is settled here.

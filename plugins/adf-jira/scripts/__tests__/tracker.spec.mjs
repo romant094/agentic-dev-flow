@@ -30,6 +30,26 @@ function project({ env = 'JIRA_PAT=token-value\nJIRA_QA=qa.login\n', discoveredA
   return { root, home, stateDir: join(root, '.superpowers', 'sdd', 'my-change', 'tracker') }
 }
 
+// A Jira whose next comment POSTs fail with a 500: `before` sends nothing, `after` posts the
+// comment and loses the response.
+function failingComments(jira, { times = 1, mode = 'before' } = {}) {
+  let left = times
+  const fetch = async (url, init = {}) => {
+    const comment = (init.method ?? 'GET') === 'POST' && new URL(url).pathname.endsWith('/comment')
+    if (comment && left > 0) {
+      left -= 1
+      if (mode === 'after') await jira.fetch(url, init)
+      return new Response(JSON.stringify({ errorMessages: ['Internal error'] }), { status: 500 })
+    }
+    return jira.fetch(url, init)
+  }
+  return { ...jira, fetch }
+}
+
+const commentPosts = (jira) => jira.writes().filter((c) => c.path.endsWith('/comment'))
+
+const rowOf = (plan, key, step) => plan.rows.find((r) => r.key === key && r.step === step)
+
 function call(jira, where, operation, input = {}, config = CONFIG) {
   return runOperation(operation, { root: where.root, config, input }, { fetch: jira.fetch, home: where.home, processEnv: {}, now: () => NOW, git: () => null, pluginRoot: PLUGIN_ROOT })
 }
@@ -252,7 +272,7 @@ describe('tracker start', () => {
     assert.ok(result.preview.includes('PROJ-2 skipped: already In Progress and assigned to the developer'))
     assert.ok(result.preview.some((l) => l.startsWith('PROJ-3 skipped: no route')))
     const plan = JSON.parse(readFileSync(result.file, 'utf8'))
-    assert.equal(plan.rows[0].steps.at(-1).fields.assignee.name, '<JIRA_ASSIGNEE>')
+    assert.equal(rowOf(plan, 'PROJ-1', 'assignee').steps[0].fields.assignee.name, '<JIRA_ASSIGNEE>')
   })
 
   it('applies the held plan, and a rerun with the same id sends nothing again', async () => {
@@ -326,6 +346,71 @@ describe('tracker start', () => {
     assert.equal(result.held, true)
   })
 
+  const corrected = {
+    key: 'PROJ-1',
+    state: 'taken',
+    corrections: [{ what: 'The port range', was: '1-65535', now: '1-65534' }, { what: 'The default\nport', was: null, now: '8080' }],
+    answers: [{ question: 'Does the bulk edit count?', answer: 'No, a later change.' }]
+  }
+
+  it('adds the correction comment of a corrected item to the plan and the preview, and none for another item', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: issues() })
+    const plain = { key: 'PROJ-2', state: 'taken', corrections: [], answers: [{ question: 'Q?', answer: 'A.' }] }
+    const { result } = await call(jira, where, 'start', { items: [corrected, plain], change: 'my-change', stateDir: where.stateDir })
+    assert.equal(jira.writes().length, 0)
+    const plan = JSON.parse(readFileSync(result.file, 'utf8'))
+    assert.deepEqual(
+      plan.rows.map((r) => `${r.key} ${r.step} ${r.from}`),
+      ['PROJ-1 transition Opened', 'PROJ-1 assignee In Progress', 'PROJ-1 comment In Progress']
+    )
+    const body = 'h3. Corrected before the work started\n# The port range: 1-65534 (was 1-65535)\n# The default port: 8080\n\nh3. Answered by the developer\n# Does the bulk edit count? — No, a later change.'
+    assert.equal(rowOf(plan, 'PROJ-1', 'comment').steps[0].comment.body, body)
+    assert.ok(result.preview.includes('PROJ-1 Summary of PROJ-1: Opened → In Progress; assignee dev.login; comment:'))
+    assert.ok(result.preview.includes('    # The port range: 1-65534 (was 1-65535)'))
+    assert.ok(result.preview.includes('PROJ-2 skipped: already In Progress and assigned to the developer'))
+  })
+
+  it('adds the comment of an item corrected only by the answers', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: issues() })
+    const answered = { key: 'PROJ-1', state: 'taken', verdict: 'corrected', corrections: [], answers: [{ question: 'Q?', answer: 'A.' }] }
+    const { result } = await call(jira, where, 'start', { items: [answered], change: 'my-change', stateDir: where.stateDir })
+    const plan = JSON.parse(readFileSync(result.file, 'utf8'))
+    assert.equal(rowOf(plan, 'PROJ-1', 'comment').steps[0].comment.body, 'h3. Answered by the developer\n# Q? — A.')
+  })
+
+  it('posts the correction comment on an issue already started and assigned', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: issues() })
+    const { result: held } = await call(jira, where, 'start', { items: [{ ...corrected, key: 'PROJ-2' }], change: 'my-change', stateDir: where.stateDir })
+    const { result } = await call(jira, where, 'start', { stateDir: where.stateDir, apply: held.plan })
+    assert.deepEqual(result.applied, ['PROJ-2'])
+    assert.deepEqual(
+      jira.writes().map((c) => `${c.method} ${c.path}`),
+      ['POST /rest/api/2/issue/PROJ-2/comment']
+    )
+    assert.match(jira.comments['PROJ-2'][0].body, /^h3\. Corrected before the work started/)
+  })
+
+  it('renders the host template named by config.correctionTemplate', async () => {
+    const where = project()
+    writeFileSync(join(where.root, 'corrections.md'), '<!-- corrected -->\nFixed:\n* {{corrections}}\n')
+    const { result } = await call(fakeJira({ issues: issues() }), where, 'start', { items: [corrected], change: 'my-change', stateDir: where.stateDir }, { ...CONFIG, correctionTemplate: 'corrections.md' })
+    const body = rowOf(JSON.parse(readFileSync(result.file, 'utf8')), 'PROJ-1', 'comment').steps[0].comment.body
+    assert.equal(body, 'Fixed:\n* The port range: 1-65534 (was 1-65535)\n* The default port: 8080')
+  })
+
+  it('refuses a correction template without its section, sending nothing', async () => {
+    const where = project()
+    writeFileSync(join(where.root, 'corrections.md'), 'no section\n')
+    const jira = fakeJira({ issues: issues() })
+    const { code, result } = await call(jira, where, 'start', { items: [corrected], change: 'my-change', stateDir: where.stateDir }, { ...CONFIG, correctionTemplate: 'corrections.md' })
+    assert.equal(code, 1)
+    assert.match(result.error, /no section "corrected"/)
+    assert.equal(jira.writes().length, 0)
+  })
+
   it('refuses an apply of an unknown plan id', async () => {
     const where = project()
     const { result } = await call(fakeJira(), where, 'start', { stateDir: where.stateDir, apply: 'start-20261021T100000Z' })
@@ -345,7 +430,7 @@ describe('tracker handoff', () => {
   const retest = { key: 'PROJ-3', state: 'not-reproduced', fields: { tried: ['Followed the reproduction steps.'], commit: 'abc1234' } }
   const mr = { url: 'https://git.example.com/group/repo/-/merge_requests/7' }
 
-  it('holds one row per issue: taken and not-reproduced move to the tester with the comment, partial gets the comment only', async () => {
+  it('holds a row per step: taken and not-reproduced move to the tester with the comment, partial gets the comment only', async () => {
     const where = project()
     const jira = fakeJira({ issues: issues() })
     const { code, result } = await call(jira, where, 'handoff', { items: [taken, partial, retest], mr, stateDir: where.stateDir })
@@ -355,13 +440,12 @@ describe('tracker handoff', () => {
     assert.ok(result.preview.includes('PROJ-2 Summary of PROJ-2: comment:'))
     assert.ok(result.preview.includes('    Merge request: https://git.example.com/group/repo/-/merge_requests/7'))
     const plan = JSON.parse(readFileSync(result.file, 'utf8'))
-    assert.equal(plan.rows[1].from, undefined)
     assert.deepEqual(
-      plan.rows[1].steps.map((s) => Object.keys(s)[0]),
-      ['comment']
+      plan.rows.map((r) => `${r.key} ${r.step} ${r.from ?? '-'}`),
+      ['PROJ-1 transition In Progress', 'PROJ-1 assignee Review', 'PROJ-1 comment Review', 'PROJ-2 comment -', 'PROJ-3 transition In Progress', 'PROJ-3 assignee Review', 'PROJ-3 comment Review']
     )
-    assert.equal(plan.rows[0].steps[1].fields.assignee.name, '<JIRA_QA>')
-    assert.match(plan.rows[2].steps.at(-1).comment.body, /does not reproduce on commit abc1234/)
+    assert.equal(rowOf(plan, 'PROJ-1', 'assignee').steps[0].fields.assignee.name, '<JIRA_QA>')
+    assert.match(rowOf(plan, 'PROJ-3', 'comment').steps[0].comment.body, /does not reproduce on commit abc1234/)
   })
 
   it('applies: the hand-off status, the tester, the comment; partial keeps its status', async () => {
@@ -380,11 +464,60 @@ describe('tracker handoff', () => {
     assert.match(jira.comments['PROJ-2'][0].body, /h3\. Remains\n# The bulk edit is not covered\./)
   })
 
+  it('resumes a hand-off that failed after the transition: the rerun posts only the comment', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: issues() })
+    const { result: held } = await call(jira, where, 'handoff', { items: [taken], mr, stateDir: where.stateDir })
+    const flaky = failingComments(jira)
+    const { result: first } = await call(flaky, where, 'handoff', { stateDir: where.stateDir, apply: held.plan })
+    assert.deepEqual(first.applied, [])
+    assert.equal(first.failed[0].key, 'PROJ-1')
+    assert.match(first.failed[0].reason, /^comment: Jira responded 500/)
+    assert.equal(jira.store['PROJ-1'].fields.status, 'Review')
+    assert.equal(jira.comments['PROJ-1'], undefined)
+    const before = jira.writes().length
+    const { result } = await call(jira, where, 'handoff', { stateDir: where.stateDir, apply: held.plan })
+    assert.deepEqual(result.applied, ['PROJ-1'])
+    assert.deepEqual(result.skipped, [])
+    assert.deepEqual(
+      jira.writes().slice(before).map((c) => `${c.method} ${c.path}`),
+      ['POST /rest/api/2/issue/PROJ-1/comment']
+    )
+    assert.equal(jira.comments['PROJ-1'].length, 1)
+  })
+
+  it('posts no second comment when the first was posted and its response lost', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: issues() })
+    const { result: held } = await call(jira, where, 'handoff', { items: [taken], mr, stateDir: where.stateDir })
+    await call(failingComments(jira, { mode: 'after' }), where, 'handoff', { stateDir: where.stateDir, apply: held.plan })
+    assert.equal(jira.comments['PROJ-1'].length, 1)
+    const { result } = await call(jira, where, 'handoff', { stateDir: where.stateDir, apply: held.plan })
+    assert.deepEqual(result.applied, ['PROJ-1'])
+    assert.equal(commentPosts(jira).length, 1)
+    assert.equal(jira.comments['PROJ-1'].length, 1)
+    const plan = JSON.parse(readFileSync(held.file, 'utf8'))
+    assert.match(rowOf(plan, 'PROJ-1', 'comment').note, /already posted/)
+  })
+
+  it('changes nothing on a full rerun after a successful hand-off', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: issues() })
+    const { result: held } = await call(jira, where, 'handoff', { items: [taken, partial], mr, stateDir: where.stateDir })
+    await call(jira, where, 'handoff', { stateDir: where.stateDir, apply: held.plan })
+    const writes = jira.writes().length
+    const { result } = await call(jira, where, 'handoff', { stateDir: where.stateDir, apply: held.plan })
+    assert.deepEqual(result.applied, ['PROJ-1', 'PROJ-2'])
+    assert.equal(jira.writes().length, writes)
+    assert.equal(jira.comments['PROJ-1'].length, 1)
+    assert.equal(jira.comments['PROJ-2'].length, 1)
+  })
+
   it('renders no merge request line with no forge', async () => {
     const where = project()
     const jira = fakeJira({ issues: issues() })
     const { result } = await call(jira, where, 'handoff', { items: [taken], mr: null, stateDir: where.stateDir })
-    const body = JSON.parse(readFileSync(result.file, 'utf8')).rows[0].steps.at(-1).comment.body
+    const body = rowOf(JSON.parse(readFileSync(result.file, 'utf8')), 'PROJ-1', 'comment').steps[0].comment.body
     assert.equal(body, 'h3. Done\n# The form validates the port.\n\nh3. How to test\n# Open the port page.\n# Enter 70000 and save.')
   })
 
@@ -427,7 +560,7 @@ describe('tracker handoff', () => {
     writeFileSync(join(where.root, 'handoff.md'), '<!-- taken -->\nShipped:\n* {{done}}\n<!-- partial -->\nLeft: {{remains}}\n<!-- not-reproduced -->\nNo repro on {{commit}}\n')
     const jira = fakeJira({ issues: issues() })
     const { result } = await call(jira, where, 'handoff', { items: [taken], mr: null, stateDir: where.stateDir }, { ...CONFIG, commentTemplate: 'handoff.md' })
-    const body = JSON.parse(readFileSync(result.file, 'utf8')).rows[0].steps.at(-1).comment.body
+    const body = rowOf(JSON.parse(readFileSync(result.file, 'utf8')), 'PROJ-1', 'comment').steps[0].comment.body
     assert.equal(body, 'Shipped:\n* The form validates the port.')
   })
 })

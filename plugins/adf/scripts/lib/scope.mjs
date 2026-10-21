@@ -772,6 +772,7 @@ export function start(root, change, { yes = false, core }) {
   const items = targets.map((i) => ({
     key: i.key,
     state: i.state,
+    verdict: i.verdict,
     corrections: (i.check?.corrections ?? []).map(({ what, was, now }) => ({ what, was, now })),
     answers: (i.check?.questions ?? []).filter((q) => q.answer).map(({ question, answer: a }) => ({ question, answer: a }))
   }))

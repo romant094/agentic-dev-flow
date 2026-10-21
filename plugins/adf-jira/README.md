@@ -31,6 +31,7 @@ holds nothing secret.
 | `fields` | `[]` | Field names, as the profile's field map spells them, that `gather` reads for each issue, for example `["Reproduce steps", "Expected result"]`. |
 | `statuses` | `{ "start": "In Progress", "handoff": null, "excluded": [] }` | `start`: the status `start` moves an issue to. `handoff`: the status `handoff` moves a taken issue to; required for a hand-off. `excluded`: statuses that keep an issue out of a change's scope besides the closed ones (for example a suspended status). |
 | `commentTemplate` | the plugin's `templates/handoff.md` | A host file that replaces the hand-off comment template. |
+| `correctionTemplate` | the plugin's `templates/corrections.md` | A host file that replaces the correction comment template of `start`. |
 | `envFile` | `.claude/.env` | The project's env file, relative to the main checkout. |
 
 An unknown key is refused, so a typo is not silently ignored. The status names are the team's;
@@ -48,7 +49,8 @@ keys are optional.
 | `JIRA_ASSIGNEE` | The developer's login: the assignee at `start` and on created issues. Empty: the token's own account. |
 | `JIRA_QA` | The tester's login: the assignee at `handoff`. Required for a hand-off. |
 | `JIRA_PM` | The project manager's login, for a bulk close. |
-| `JIRA_GIT_AUTHOR`, `JIRA_DEFAULT_PROJECT` | For the worklog practice and for discovery. |
+| `JIRA_GIT_AUTHOR` | The developer's git author name, for a worklog built from commits. Not secret: `profile.mjs` prints it as `gitAuthor`. |
+| `JIRA_DEFAULT_PROJECT` | For discovery. |
 | `JIRA_URL`, `JIRA_ALLOWED_PROJECTS` | Used only when the config sets no `baseUrl` or `allowlist`. |
 
 The resolution order is the process environment, then the project's env file, then
@@ -72,7 +74,7 @@ exit code is 0 for `done` and `degraded`, 1 for `refused`.
 |---|---|---|
 | `check` | `{}` | `tool: "ready"`, `account` (the token's login from `/rest/api/2/myself`), `sources` (each env value's name, layer and length), `profile.discoveredAt` |
 | `gather` | `keys` (issue keys) or `text`; `change`; `stateDir` (absolute) | `items` and `notes`, below; one JSON file per issue in `stateDir` |
-| `start` | `items: [{ key }]`, `stateDir`; `apply` (a plan id) | without `apply`: `held: true`, `plan`, `file`, `preview`; with it: `applied` (keys), `skipped` and `failed` (`{ key, reason }`), `aborted` |
+| `start` | `items: [{ key, corrections, answers }]`, `stateDir`; `apply` (a plan id) | without `apply`: `held: true`, `plan`, `file`, `preview`; with it: `applied` (keys), `skipped` and `failed` (`{ key, reason }`), `aborted` |
 | `handoff` | `items: [{ key, state, fields }]`, `mr: { url } \| null`, `stateDir`; `apply` | as `start` |
 
 `check` is `degraded` with `tool` and `hint`, and sends nothing past the probe:
@@ -83,8 +85,8 @@ exit code is 0 for `done` and `degraded`, 1 for `refused`.
   the hint names the config to set or `/adf-jira:setup`.
 
 `gather`, `start` and `handoff` degrade the same way when the env or the profile is not ready.
-An input field the plugin does not use (`change`; an item's `state`, `corrections` or `answers`
-at `start`) is accepted and ignored.
+An input field the plugin does not use (`change`; an item's `state` at `start`) is accepted and
+ignored.
 
 **`gather`** reads each named issue (or, for a `text`, the open issues of the allowlisted
 projects whose text matches, at most 20), and one level of related issues: its parent, its
@@ -105,13 +107,16 @@ excluded, flags, file }`:
 
 **`start`** without `apply` builds a plan in `stateDir` and sends nothing: per issue, the
 shortest route from its status to `statuses.start`, then the developer as assignee when the
-issue is not assigned to them. An issue with no route, a route through an unsampled status,
-a hop whose screen requires a field, or nothing to do is skipped with its reason. With
-`apply: <plan id>` the plan runs.
+issue is not assigned to them, then, for an item with `corrections`, the correction comment:
+the corrections and the developer's `answers`, rendered with `templates/corrections.md` (one
+`<!-- corrected -->` section, lists `corrections` and `answers`), or the host file named by
+`config.correctionTemplate`. An item with no corrections gets no comment. An issue with no
+route, a route through an unsampled status, a hop whose screen requires a field, or nothing to
+do is skipped with its reason. With `apply: <plan id>` the plan runs.
 
 **`handoff`** checks the fields first and sends nothing on an error. Per item state:
 
-| State | Fields | The row |
+| State | Fields | The rows |
 |---|---|---|
 | `taken` | `done`, `test` (lists); `commit` | the route to `statuses.handoff`, the tester (`JIRA_QA`) as assignee, the comment |
 | `partial` | `remains`; `done`, `commit` | the comment only; the status stays |
@@ -122,10 +127,16 @@ Each field list holds one-line texts; a text holding a link or a URL is refused,
 
 **Held plans and resume.** A plan is `start-<UTC stamp>` or `handoff-<UTC stamp>`, a file in
 `stateDir`. Before it applies, the plugin refuses a plan whose allowlist reaches past the
-configured one, and a plan built against an older profile than the current one. A rerun with
-the same plan id resumes from the per-row state: a row already done is not sent again. An issue
-moved by hand since the plan was built is skipped as drifted, not failed. Three failures in a
-row stop the run; rerun the same plan after fixing the cause.
+configured one, and a plan built against an older profile than the current one. Each write of
+an issue is its own row, with `step` `transition`, `assignee` or `comment`, and each row checks
+the status it expects before it runs (a partial hand-off's comment checks none). A rerun with
+the same plan id resumes from the per-row state: a row already done is not sent again, so a
+hand-off that failed after its transition posts only the comment. A comment row also reads the
+issue's comments and posts nothing when one with the same body is there. An issue moved by hand
+since the plan was built is skipped as drifted, not failed. The result names each issue once:
+`applied` when every row of it is done, `failed` when a row failed, else `skipped`; a reason
+starts with the row's step. Three failures in a row stop the run; rerun the same plan after
+fixing the cause.
 
 With no `adf-jira` entry, the role is `none` and the core skips every tracker step and says so.
 
@@ -161,7 +172,7 @@ The skills run the plugin's scripts:
 
 | Script | Does |
 |---|---|
-| `scripts/profile.mjs` | Prints the profile's paths, whether git ignores the personal files, the profile's age, the non-secret config and the plan directory. Reads no env file and calls nothing. |
+| `scripts/profile.mjs` | Prints the profile's paths, whether git ignores the personal files, the profile's age, the non-secret config, `gitAuthor` (`JIRA_GIT_AUTHOR`, null when unset) and the plan directory. Reads the env file for that one value, prints no other, and calls nothing. |
 | `scripts/discover.mjs [<KEY>]` | Writes `discovered.json`. |
 | `scripts/read-issues.mjs "<JQL>" [out]` | Reads issues; a result outside the allowlist fails the read. |
 | `scripts/read-comments.mjs "<KEY>" [out]` | Reads every comment of an issue, with its id; the allowlist is checked before the request. |

@@ -4,13 +4,16 @@
 //   check    the env, the config, the token (GET /rest/api/2/myself) and the profile
 //   gather   the named issues (or a text search in the allowlisted projects), their parent,
 //            sub-tasks and linked issues; one JSON file per issue under input.stateDir
-//   start    a held plan: each issue to the start status, assigned to the developer
+//   start    a held plan: each issue to the start status, assigned to the developer; an item
+//            with corrections also gets the templated correction comment (decision D7)
 //   handoff  a held plan: the templated comment; for taken and not-reproduced items also the
 //            hand-off status and the tester (JIRA_QA) as assignee
 //
 // start and handoff without `apply` build the plan in input.stateDir and send nothing
-// (`held`); with `apply: <plan id>` they run that plan. A rerun with the same id resumes from
-// the plan's per-row state; an issue moved by hand meanwhile is skipped, not failed.
+// (`held`); with `apply: <plan id>` they run that plan. Each write of an issue is its own row
+// (`step`: transition, assignee, comment), each with its own status check, so a rerun with the
+// same id applies only the rows not done yet; a comment row also skips a comment already
+// posted. An issue moved by hand meanwhile is skipped, not failed.
 //
 // Every result is one object with `state`: done, degraded (nothing sent; `tool` and `hint`)
 // or refused (`error`). No result carries a secret: the env is described by name, layer and
@@ -18,7 +21,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { JiraClient, JiraError } from './client.mjs'
-import { checkFields, checkMr, loadTemplate, renderComment } from './comment.mjs'
+import { checkFields, checkMr, loadCorrectionTemplate, loadTemplate, renderComment, renderCorrection } from './comment.mjs'
 import { mainCheckout, normalizeConfig } from './config.mjs'
 import { EnvError, resolveEnv } from './env.mjs'
 import { applyPlan } from './apply.mjs'
@@ -377,20 +380,28 @@ function savePlanIn(stateDir, kind, plan, now) {
   return { id, file }
 }
 
+// The plan's rows of each issue, in plan order.
+function rowsByKey(rows) {
+  const byKey = new Map()
+  for (const row of rows) byKey.set(row.key, [...(byKey.get(row.key) ?? []), row])
+  return byKey
+}
+
 function previewOf(plan, values) {
   const lines = []
-  for (const row of plan.rows) {
-    const resolved = resolvePlaceholders(row, values)
-    const stops = resolved.steps.map((s) => s.to).filter(Boolean)
-    const assignee = resolved.steps.find((s) => s.fields?.assignee)?.fields.assignee.name
+  for (const [key, rows] of rowsByKey(plan.rows)) {
+    const steps = rows.flatMap((row) => resolvePlaceholders(row, values).steps)
+    const from = rows[0].from
+    const stops = steps.map((s) => s.to).filter(Boolean)
+    const assignee = steps.find((s) => s.fields?.assignee)?.fields.assignee.name
     const parts = []
-    if (stops.length > 0) parts.push(`${[row.from, ...stops].join(' → ')}`)
-    else if (row.from !== undefined) parts.push(`stays ${row.from}`)
+    if (stops.length > 0) parts.push(`${[from, ...stops].join(' → ')}`)
+    else if (from !== undefined) parts.push(`stays ${from}`)
     if (assignee) parts.push(`assignee ${assignee}`)
-    const comment = resolved.steps.find((s) => s.comment)?.comment.body
-    if (comment !== undefined) parts.push('comment:')
-    lines.push(`${row.key} ${row.summary}: ${parts.join('; ')}`)
-    if (comment !== undefined) for (const line of comment.split('\n')) lines.push(`    ${line}`)
+    const comments = steps.filter((s) => s.comment).map((s) => s.comment.body)
+    if (comments.length > 0) parts.push('comment:')
+    lines.push(`${key} ${rows[0].summary}: ${parts.join('; ')}`)
+    for (const comment of comments) for (const line of comment.split('\n')) lines.push(`    ${line}`)
   }
   for (const { key, reason } of plan.excluded ?? []) lines.push(`${key} skipped: ${reason}`)
   return lines
@@ -442,23 +453,53 @@ async function applyHeld(ctx, kind) {
   const applied = []
   const skipped = (plan.excluded ?? []).map(({ key, reason }) => ({ key, reason }))
   const failed = []
-  for (const row of plan.rows) {
-    if (row.state === 'done') applied.push(row.key)
-    else if (row.state === 'skipped-drift') skipped.push({ key: row.key, reason: row.error })
-    else if (row.state === 'failed') failed.push({ key: row.key, reason: row.error })
-    else failed.push({ key: row.key, reason: 'not attempted: the run stopped after 3 consecutive failures; fix the cause and rerun the same plan' })
+  // An issue is applied when every row of it is done, failed when one failed or was not
+  // attempted, else skipped; the reason names the row's step.
+  const reasonOf = (rows, states) =>
+    rows
+      .filter((r) => states.includes(r.state))
+      .map((r) => `${r.step ? `${r.step}: ` : ''}${r.state === 'pending' ? 'not attempted: the run stopped after 3 consecutive failures; fix the cause and rerun the same plan' : r.error}`)
+      .join('; ')
+  for (const [key, rows] of rowsByKey(plan.rows)) {
+    if (rows.some((r) => r.state === 'failed' || r.state === 'pending')) failed.push({ key, reason: reasonOf(rows, ['failed', 'pending']) })
+    else if (rows.some((r) => r.state === 'skipped-drift')) skipped.push({ key, reason: reasonOf(rows, ['skipped-drift']) })
+    else applied.push(key)
   }
   return done({ plan: input.apply, applied, skipped, failed, aborted: outcome.abortedAfterConsecutiveFailures })
 }
 
+// One issue's rows: the transition from its status, the assignee and the comment, each checked
+// against the status it expects when it runs. A row without `from` (a partial hand-off's
+// comment) is not checked.
+function issueRows({ key, summary, from, hops, target, assignee, body }) {
+  const rows = []
+  const row = (step, steps, expected) => rows.push({ key, summary, step, ...(expected === undefined ? {} : { from: expected }), steps, state: 'pending' })
+  if (hops.length > 0) row('transition', hops, from)
+  const after = hops.length > 0 ? target : from
+  if (assignee) row('assignee', [{ fields: { assignee: { name: assignee } } }], after)
+  if (body !== undefined) row('comment', [{ comment: { action: 'add', body, once: true } }], after)
+  return rows
+}
+
 async function start(ctx) {
-  const { input, config, env, client, facts } = ctx
+  const { input, config, env, client, facts, root, pluginRoot } = ctx
   checkHeldInput(input, 'start')
   if (input.apply !== undefined) return applyHeld(ctx, 'start')
   const keys = [...new Set(input.items.map((i) => i.key))]
   assertKeysAllowed(keys, env)
   const target = config.statuses.start
   const login = env.assignee ?? (await myself(client))?.name
+  // The core sends each item's verdict, corrections and answers; a corrected verdict, or an
+  // item with corrections, gets its correction comment in the plan.
+  const corrected = new Map(input.items.filter((i) => i.verdict === 'corrected' || (Array.isArray(i.corrections) && i.corrections.length > 0)).map((i) => [i.key, i]))
+  let template = null
+  if (corrected.size > 0) {
+    try {
+      template = loadCorrectionTemplate({ root, pluginRoot, correctionTemplate: config.correctionTemplate })
+    } catch (error) {
+      throw new Refusal(`${error.message}; ${NOTHING_SENT}.`)
+    }
+  }
   const rows = []
   const excluded = []
   for (const key of keys) {
@@ -469,13 +510,21 @@ async function start(ctx) {
       excluded.push({ key, reason: way.reason })
       continue
     }
-    const steps = [...way.steps]
-    if (issue.fields.assignee?.name !== login) steps.push({ fields: { assignee: { name: '<JIRA_ASSIGNEE>' } } })
-    if (steps.length === 0) {
+    const item = corrected.get(key)
+    const own = issueRows({
+      key,
+      summary: issue.fields.summary ?? '',
+      from,
+      hops: way.steps,
+      target,
+      assignee: issue.fields.assignee?.name !== login ? '<JIRA_ASSIGNEE>' : null,
+      body: item ? renderCorrection(template, Array.isArray(item.corrections) ? item.corrections : [], Array.isArray(item.answers) ? item.answers : []) : undefined
+    })
+    if (own.length === 0) {
       excluded.push({ key, reason: `already ${target} and assigned to the developer` })
       continue
     }
-    rows.push({ key, summary: issue.fields.summary ?? '', from, steps, state: 'pending' })
+    rows.push(...own)
   }
   const plan = { version: 1, operation: 'transition', purpose: 'start', allowlist: env.allowedProjects, discoveredAt: facts.discoveredAt, rows, excluded }
   return held(ctx, 'start', plan)
@@ -508,9 +557,8 @@ async function handoff(ctx) {
     const body = renderComment(template, item.state, item.fields, input.mr)
     const issue = await issueSummary(client, item.key)
     const summary = issue.fields.summary ?? ''
-    const comment = { comment: { action: 'add', body } }
     if (item.state === 'partial') {
-      rows.push({ key: item.key, summary, steps: [comment], state: 'pending' })
+      rows.push(...issueRows({ key: item.key, summary, from: undefined, hops: [], target, assignee: null, body }))
       continue
     }
     const from = issue.fields.status?.name
@@ -519,7 +567,7 @@ async function handoff(ctx) {
       excluded.push({ key: item.key, reason: way.reason })
       continue
     }
-    rows.push({ key: item.key, summary, from, steps: [...way.steps, { fields: { assignee: { name: '<JIRA_QA>' } } }, comment], state: 'pending' })
+    rows.push(...issueRows({ key: item.key, summary, from, hops: way.steps, target, assignee: '<JIRA_QA>', body }))
   }
   const operation = rows.some((r) => r.steps.some((s) => s.transitionId)) ? 'transition' : 'comment'
   const plan = { version: 1, operation, purpose: 'handoff', allowlist: env.allowedProjects, discoveredAt: facts.discoveredAt, rows, excluded }

@@ -58,7 +58,9 @@ export function projectEnvFile(projectDir, envFile) {
   return isAbsolute(envFile) ? envFile : join(projectDir, envFile)
 }
 
-export function resolveEnv({ projectDir, homeDir, processEnv = process.env, envFile, config = {} }) {
+// The JIRA_ values of the three layers, first non-empty wins, with no check of what is
+// required: { resolved, sources, files }.
+export function resolveLayers({ projectDir, homeDir, processEnv = process.env, envFile }) {
   const projectPath = projectEnvFile(projectDir, envFile)
   const homePath = join(homeDir, '.claude', '.env')
   const project = readIfPresent(projectPath)
@@ -80,6 +82,12 @@ export function resolveEnv({ projectDir, homeDir, processEnv = process.env, envF
       sources.push({ key, layer, length: value.length })
     }
   }
+  return { resolved, sources, files: { project: { path: projectPath, found: project.found }, home: { path: homePath, found: home.found } } }
+}
+
+export function resolveEnv({ projectDir, homeDir, processEnv = process.env, envFile, config = {} }) {
+  const { resolved, sources, files } = resolveLayers({ projectDir, homeDir, processEnv, envFile })
+  const projectPath = files.project.path
 
   let url = resolved.JIRA_URL
   let allowedProjects = resolved.JIRA_ALLOWED_PROJECTS?.split(',')
@@ -119,7 +127,7 @@ export function resolveEnv({ projectDir, homeDir, processEnv = process.env, envF
     pm: resolved.JIRA_PM,
     qa: resolved.JIRA_QA
   }
-  return { env, sources, files: { project: { path: projectPath, found: project.found }, home: { path: homePath, found: home.found } } }
+  return { env, sources, files }
 }
 
 function replaceSource(sources, key, entry) {

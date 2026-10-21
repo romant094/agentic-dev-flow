@@ -13,7 +13,7 @@ export const DEFAULT_START_STATUS = 'In Progress'
 
 const PROJECT_KEY = /^[A-Z][A-Z0-9]*$/
 const ISSUE_KEY = /^[A-Z][A-Z0-9]*-\d+$/
-const KEYS = ['baseUrl', 'allowlist', 'profileDir', 'debtEpic', 'fields', 'commentTemplate', 'envFile', 'statuses']
+const KEYS = ['baseUrl', 'allowlist', 'profileDir', 'debtEpic', 'fields', 'commentTemplate', 'correctionTemplate', 'envFile', 'statuses']
 const STATUS_KEYS = ['start', 'handoff', 'excluded']
 
 const inside = (path) => typeof path === 'string' && path !== '' && !isAbsolute(path) && !normalize(path).startsWith('..')
@@ -34,6 +34,7 @@ export function normalizeConfig(raw = {}) {
   if (raw.debtEpic !== undefined && !ISSUE_KEY.test(String(raw.debtEpic))) errors.push('config.debtEpic is not an issue key')
   if (raw.fields !== undefined && !(Array.isArray(raw.fields) && raw.fields.every(nonEmpty))) errors.push('config.fields is not a list of field names')
   if (raw.commentTemplate !== undefined && !inside(raw.commentTemplate)) errors.push('config.commentTemplate is not a path inside the project')
+  if (raw.correctionTemplate !== undefined && !inside(raw.correctionTemplate)) errors.push('config.correctionTemplate is not a path inside the project')
   if (raw.envFile !== undefined && !nonEmpty(raw.envFile)) errors.push('config.envFile is not a path')
 
   const statuses = raw.statuses ?? {}
