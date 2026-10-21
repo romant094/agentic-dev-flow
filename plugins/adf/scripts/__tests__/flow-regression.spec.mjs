@@ -376,7 +376,7 @@ test('every core script that commits is named in the english-check hook', async 
     .filter((p) => dirname(p) === scripts)
     .map((p) => basename(p))
   assert.ok(found.includes('commit.mjs') && found.includes('tasks.mjs'), `the detector found too little: ${found.join(', ')}`)
-  const { CORE_COMMIT_SCRIPTS } = await import(join(repo, 'plugins', 'english-check', 'scripts', 'lib', 'english.mjs'))
+  const { CORE_COMMIT_SCRIPTS } = await import(join(repo, 'plugins', 'adf-english-check', 'scripts', 'lib', 'english.mjs'))
   const missing = found.filter((name) => !Object.hasOwn(CORE_COMMIT_SCRIPTS, name))
   assert.deepEqual(missing, [], `core scripts that commit and are not in CORE_COMMIT_SCRIPTS:\n  ${missing.join('\n  ')}`)
 })

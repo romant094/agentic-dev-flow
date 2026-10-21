@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Dev tool: compares the GitLab forge role (plugins/gitlab/scripts/lib/forge.mjs) with the
+// Dev tool: compares the GitLab forge role (plugins/adf-gitlab/scripts/lib/forge.mjs) with the
 // origin's .claude/scripts/mr.mjs. The origin module is imported, never run as a script, and
 // both sides are driven in process by the same fake `run` over a scenario matrix: no git or
 // glab command runs and nothing is written in the origin project.
@@ -26,7 +26,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { mergeDescription, placeholder, runOperation } from '../../plugins/gitlab/scripts/lib/forge.mjs'
+import { mergeDescription, placeholder, runOperation } from '../../plugins/adf-gitlab/scripts/lib/forge.mjs'
 
 const origin = process.argv[2]
 const originScript = origin && join(origin, '.claude', 'scripts', 'mr.mjs')
@@ -35,7 +35,7 @@ if (!originScript || !existsSync(originScript)) {
   process.exit(2)
 }
 const theirs = await import(pathToFileURL(originScript).href)
-const pluginDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'plugins', 'gitlab')
+const pluginDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'plugins', 'adf-gitlab')
 
 // ---------------------------------------------------------------- normalized calls
 

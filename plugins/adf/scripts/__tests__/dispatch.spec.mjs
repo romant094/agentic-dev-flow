@@ -690,7 +690,7 @@ test('the ingest prompt reads its input file and runs on the archived change; wi
     change: CHANGE,
     changeDir: `openspec/changes/archive/2026-10-19-${CHANGE}`,
     base: 'abc1234',
-    knowledge: { index: '.claude/memory/index.md', instruction: '/plugins/memory/instructions/ingest.md', paths: ['.claude/memory/**'], log: ['.claude/memory/log.md'] },
+    knowledge: { index: '.claude/memory/index.md', instruction: '/plugins/adf-memory/instructions/ingest.md', paths: ['.claude/memory/**'], log: ['.claude/memory/log.md'] },
     stale: [{ path: '.claude/memory/entities/a.md', reasons: ['names src/a.mjs, which the change deleted'] }]
   }))
   const out = run(['prompt', '--change', CHANGE, '--role', 'ingest', '--root', root], { main: MAIN })
@@ -698,7 +698,7 @@ test('the ingest prompt reads its input file and runs on the archived change; wi
   for (const text of [
     join(archived, 'proposal.md'),
     join(archived, 'specs', 'widgets', 'spec.md'),
-    '/plugins/memory/instructions/ingest.md',
+    '/plugins/adf-memory/instructions/ingest.md',
     join(root, '.claude/memory/index.md'),
     `${join(root, '.claude/memory/entities/a.md')}: names src/a.mjs, which the change deleted`,
     'What invariant does this change rely on that no single file shows?',

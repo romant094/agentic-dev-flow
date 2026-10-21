@@ -132,7 +132,7 @@ plugin and name both versions.
   "contract": "1.5",
   "branches": { "integration": "develop", "protected": ["develop", "main"] },
   "extensions": [
-    { "plugin": "gitlab@agentic-dev-flow", "points": ["forge"], "config": { "host": "gitlab.example.com" } },
+    { "plugin": "adf-gitlab@agentic-dev-flow", "points": ["forge"], "config": { "host": "gitlab.example.com" } },
     { "path": "plugins/local-draft", "points": [] }
   ]
 }

@@ -313,7 +313,7 @@ test('out-of-plan allows the paths the knowledge provider declares, and says whe
   assert.equal(check.summary, '2 file(s) outside every task: .claude/memory/concepts/x.md, .claude/memory/log.md')
   assert.match(readFileSync(join(root, check.output), 'utf8'), /^knowledge paths: none \(knowledge role none\)$/m)
   // The registry change stays uncommitted: out-of-plan reads commits only.
-  const memory = join(SCRIPTS, '..', '..', 'memory')
+  const memory = join(SCRIPTS, '..', '..', 'adf-memory')
   writeRegistry(root, { ...readRegistry(root), extensions: [{ path: memory }] })
   check = runIn(root)['out-of-plan']
   assert.equal(check.verdict, 'pass')

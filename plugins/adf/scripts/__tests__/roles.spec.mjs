@@ -67,7 +67,7 @@ test('callRole refuses an operation the point does not declare, before looking f
 
 // ---------------------------------------------------------------- the knowledge role
 
-const memoryPlugin = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'memory')
+const memoryPlugin = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'adf-memory')
 
 function knowledgeHost(declaration, script) {
   const root = mkdtempSync(join(tmpdir(), 'adf-knowledge-'))
@@ -133,19 +133,19 @@ test('an absent entry is skipped: an installed provider still runs, and a point 
   const declaration = { name: 'u', contract: '1.4', provides: { upstream: { script: 'scripts/k.mjs', operations: ['check', 'file'] } } }
   const root = knowledgeHost(declaration, `console.log(JSON.stringify({state:'done',tool:'t'}))`)
   const off = mkdtempSync(join(tmpdir(), 'adf-home-'))
-  writeFileSync(join(off, 'settings.json'), JSON.stringify({ enabledPlugins: { 'gitlab@agentic-dev-flow': false } }))
-  const extensions = [{ plugin: 'memory@agentic-dev-flow', points: ['knowledge'] }, { plugin: 'gitlab@agentic-dev-flow', points: ['forge'] }, { plugin: 'old@mk' }, ...readRegistry(root).extensions]
+  writeFileSync(join(off, 'settings.json'), JSON.stringify({ enabledPlugins: { 'adf-gitlab@agentic-dev-flow': false } }))
+  const extensions = [{ plugin: 'adf-memory@agentic-dev-flow', points: ['knowledge'] }, { plugin: 'adf-gitlab@agentic-dev-flow', points: ['forge'] }, { plugin: 'old@mk' }, ...readRegistry(root).extensions]
   writeRegistry(root, { ...readRegistry(root), extensions })
   const core = { ...CORE, home: off }
   assert.deepEqual(callRole(root, 'upstream', 'check', {}, core), { state: 'done', tool: 't', plugin: 'u' })
   const none = callRole(root, 'knowledge', 'context', {}, core)
-  assert.deepEqual(none, { state: 'none', point: 'knowledge', absent: [{ id: 'memory@agentic-dev-flow', reason: 'not-installed' }] })
+  assert.deepEqual(none, { state: 'none', point: 'knowledge', absent: [{ id: 'adf-memory@agentic-dev-flow', reason: 'not-installed' }] })
   assert.equal(
     knowledgeReport('context', none),
-    'Knowledge: none; no knowledge plugin is enabled, so brainstorm reads no index and archive skips the ingest.\nmemory@agentic-dev-flow is in the registry but not installed; the knowledge context was skipped.'
+    'Knowledge: none; no knowledge plugin is enabled, so brainstorm reads no index and archive skips the ingest.\nadf-memory@agentic-dev-flow is in the registry but not installed; the knowledge context was skipped.'
   )
-  assert.deepEqual(knowledgePaths(root, core), { state: 'none', paths: [], absent: [{ id: 'memory@agentic-dev-flow', reason: 'not-installed' }] })
-  assert.match(forgeReport('push', callRole(root, 'forge', 'push', {}, core)), /\ngitlab@agentic-dev-flow is in the registry but disabled; the forge push was skipped\.$/)
+  assert.deepEqual(knowledgePaths(root, core), { state: 'none', paths: [], absent: [{ id: 'adf-memory@agentic-dev-flow', reason: 'not-installed' }] })
+  assert.match(forgeReport('push', callRole(root, 'forge', 'push', {}, core)), /\nadf-gitlab@agentic-dev-flow is in the registry but disabled; the forge push was skipped\.$/)
   assert.doesNotMatch(upstreamReport('check', { state: 'none', point: 'upstream' }), /in the registry/)
 })
 
@@ -180,10 +180,10 @@ test('the memory plugin answers context through the core, and its paths are allo
   const core = { ...CORE, home }
   const context = callRole(root, 'knowledge', 'context', {}, core)
   assert.equal(context.state, 'done')
-  assert.equal(context.plugin, 'memory')
+  assert.equal(context.plugin, 'adf-memory')
   assert.equal(context.index, '.claude/memory/index.md')
   assert.equal(knowledgeReport('context', context), 'Knowledge: index .claude/memory/index.md (missing)')
-  assert.deepEqual(knowledgePaths(root, core), { state: 'done', plugin: 'memory', paths: ['.claude/memory/**'] })
+  assert.deepEqual(knowledgePaths(root, core), { state: 'done', plugin: 'adf-memory', paths: ['.claude/memory/**'] })
   const check = callRole(root, 'knowledge', 'check', {}, core)
   assert.equal(knowledgeReport('check', check), 'Knowledge check: 2 finding(s)')
 })

@@ -6,7 +6,7 @@ rotated monthly, and the instructions of the ingest, query and lint workflows.
 
 ## What it adds to the host
 
-`/adf:add memory@agentic-dev-flow` copies the skeleton when a file is missing; a host that
+`/adf:add adf-memory@agentic-dev-flow` copies the skeleton when a file is missing; a host that
 edited its copy keeps it.
 
 | File | Holds |

@@ -6,7 +6,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { isAbsolute, join, posix, relative, resolve } from 'node:path'
 
-export const PLUGIN_NAME = 'english-check'
+export const PLUGIN_NAME = 'adf-english-check'
 export const REGISTRY_PATH = '.claude/adf-extensions.json'
 const DECLARATION_FILE = 'adf-extension.json'
 

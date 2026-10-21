@@ -61,7 +61,7 @@ the message says the commit was not checked.
 ## Configuration
 
 The scope comes from the host's ADF registry, `.claude/adf-extensions.json` at the repository
-root: the entry `{"plugin": "english-check@agentic-dev-flow", "config": {...}}`, or a `path`
+root: the entry `{"plugin": "adf-english-check@agentic-dev-flow", "config": {...}}`, or a `path`
 entry whose directory holds this plugin's `adf-extension.json`. `/adf:add` can write it.
 
 | Key | Meaning | Default |
@@ -86,5 +86,5 @@ segment. The default exclusion exempts a change's `plan.md`, also after it is ar
 ## Tests
 
 ```
-node --test plugins/english-check/scripts/__tests__/*.spec.mjs
+node --test plugins/adf-english-check/scripts/__tests__/*.spec.mjs
 ```

@@ -175,7 +175,7 @@ test('the registry entry for the plugin sets include and exclude', (t) => {
       contract: '1.1',
       extensions: [
         { plugin: 'other@agentic-dev-flow', config: { include: ['nothing/**'] } },
-        { plugin: 'english-check@agentic-dev-flow', config: { include: ['docs/**'], exclude: ['docs/raw/**'] } }
+        { plugin: 'adf-english-check@agentic-dev-flow', config: { include: ['docs/**'], exclude: ['docs/raw/**'] } }
       ]
     })
   )
@@ -192,7 +192,7 @@ test('the registry entry for the plugin sets include and exclude', (t) => {
 test('a path entry whose declaration is named english-check gives the configuration', (t) => {
   const r = repo()
   t.after(() => rmSync(r.root, { recursive: true, force: true }))
-  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'english-check', contract: '1.1', provides: {} }))
+  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'adf-english-check', contract: '1.1', provides: {} }))
   r.write('.claude/adf-extensions.json', JSON.stringify({ contract: '1.1', extensions: [{ path: 'vendor/ec', config: { include: ['notes/**'] } }] }))
   r.write('notes/a.md', `${RU}\n`)
   r.git('add', '.')
@@ -216,7 +216,7 @@ test('a check that cannot run fails open: exit 1 and a warning, never a block', 
   r.git('add', '.')
   const out = hook('git commit -m x', r.root)
   assert.equal(out.code, 1)
-  assert.match(out.stderr, /^english-check: the check could not run \(.*\); this commit was not checked\.\n$/)
+  assert.match(out.stderr, /^adf-english-check: the check could not run \(.*\); this commit was not checked\.\n$/)
   const garbled = spawnSync('node', [HOOK], { input: 'not json', encoding: 'utf8' })
   assert.equal(garbled.status, 1)
 })
@@ -296,7 +296,7 @@ test('verify.mjs assemble --commit checks the record; without --commit, and run,
 test('verify.mjs skill-edit checks the host skills when the registry puts them in scope', (t) => {
   const r = repo()
   t.after(() => rmSync(r.root, { recursive: true, force: true }))
-  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'english-check', contract: '1.1', provides: {} }))
+  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'adf-english-check', contract: '1.1', provides: {} }))
   r.write('.claude/adf-extensions.json', JSON.stringify({ contract: '1.1', extensions: [{ path: 'vendor/ec', config: { include: ['.claude/skills/**'] } }] }))
   r.write('.claude/skills/deploy/SKILL.md', `${RU}\n`)
   const out = hook(`node /p/scripts/verify.mjs skill-edit --change x --message 'docs(skills): x' --root ${r.root}`, '/')
@@ -307,7 +307,7 @@ test('verify.mjs skill-edit checks the host skills when the registry puts them i
 test('verify.mjs skill-edit --diff-file checks the lines the diff adds, by their new line number', (t) => {
   const r = repo()
   t.after(() => rmSync(r.root, { recursive: true, force: true }))
-  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'english-check', contract: '1.1', provides: {} }))
+  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'adf-english-check', contract: '1.1', provides: {} }))
   r.write('.claude/adf-extensions.json', JSON.stringify({ contract: '1.1', extensions: [{ path: 'vendor/ec', config: { include: ['.claude/skills/**'] } }] }))
   r.write('.claude/skills/deploy/SKILL.md', 'one\ntwo\nthree\n')
   const diff = (added) =>
@@ -355,7 +355,7 @@ test('archive.mjs commit-specs checks the change, the archive and the specs; com
 test('retro.mjs record checks the retrospective it commits, under the retro worktree --root names', (t) => {
   const r = repo()
   t.after(() => rmSync(r.root, { recursive: true, force: true }))
-  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'english-check', contract: '1.1', provides: {} }))
+  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'adf-english-check', contract: '1.1', provides: {} }))
   r.write('.claude/adf-extensions.json', JSON.stringify({ contract: '1.1', extensions: [{ path: 'vendor/ec', config: { include: ['.adf/**'] } }] }))
   r.write('.adf/retro/2026-10-19-window.md', `${RU}\n`)
   const record = hook(`node /p/scripts/retro.mjs record --date 2026-10-19 --root ${r.root}`, '/')
@@ -368,7 +368,7 @@ test('suite.mjs, dup.mjs and plan.mjs check what they commit only with --commit'
   const r = repo()
   t.after(() => rmSync(r.root, { recursive: true, force: true }))
   // planning.md is out of the default scope and plan.md is in the default exclusion.
-  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'english-check', contract: '1.1', provides: {} }))
+  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'adf-english-check', contract: '1.1', provides: {} }))
   r.write('.claude/adf-extensions.json', JSON.stringify({ contract: '1.1', extensions: [{ path: 'vendor/ec', config: { include: ['openspec/**'], exclude: [] } }] }))
   r.write('openspec/changes/x/.apply-test-record.md', `${RU}\n`)
   r.write('openspec/planning.md', `${RU}\n`)

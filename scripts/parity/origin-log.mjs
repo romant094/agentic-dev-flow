@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Dev tool: compares the log rotation of the memory plugin (plugins/memory/scripts/lib/rotate.mjs)
+// Dev tool: compares the log rotation of the memory plugin (plugins/adf-memory/scripts/lib/rotate.mjs)
 // with the origin's `.claude/scripts/rotate-log.mjs`, then runs the plugin's log check over the
 // origin's entries. Nothing is written in the origin: its files are read with `git show HEAD:`,
 // and the origin's script is copied into a directory under the system temp directory and run
@@ -26,7 +26,7 @@
 //                      removed from the inputs.
 //   missing-directory  with no log-archive directory the origin's script stops with ENOENT; the
 //                      port creates the directory
-// The check: the port's `check` (plugins/memory/scripts/lib/memory.mjs) over the log, and over
+// The check: the port's `check` (plugins/adf-memory/scripts/lib/memory.mjs) over the log, and over
 // each archive put in the place of the log, keeping its log findings: `malformed-header` (a
 // second-level heading outside the documented form, the header types are part of it) and
 // `out-of-order` (an entry newer than the entry above it). Each finding is explained below or
@@ -42,8 +42,8 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpath
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { rotate as portRotate, rotateFiles, splitEntries } from '../../plugins/memory/scripts/lib/rotate.mjs'
-import { check } from '../../plugins/memory/scripts/lib/memory.mjs'
+import { rotate as portRotate, rotateFiles, splitEntries } from '../../plugins/adf-memory/scripts/lib/rotate.mjs'
+import { check } from '../../plugins/adf-memory/scripts/lib/memory.mjs'
 
 // The findings the origin's entries are known to carry, by file, kind and header timestamp.
 const EXPECTED_FINDINGS = [

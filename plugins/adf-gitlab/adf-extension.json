@@ -1,5 +1,5 @@
 {
-  "name": "gitlab",
+  "name": "adf-gitlab",
   "contract": "1.4",
   "provides": {
     "forge": {

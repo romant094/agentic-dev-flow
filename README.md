@@ -25,7 +25,7 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Archive: `/adf:archive`, resumable; the spec merge, the placements, the ingest, the merge request or a local merge and the worktree removal by script; the LLM keeps the conflicts, a new capability's Purpose, the ingest and the merge request's prose | done (iteration 10) |
 | Structured replies: every apply and verify role replies in JSON under a schema the core owns; the statuses, the test result and every verdict computed by script; one retry mechanism for every role | done (iteration 10a) |
 | Metrics and the retrospective: one checked metrics record per change, written by archive from the SDD records, git and the session transcripts, tokens only and priced by a dated price table; `/adf:retro` over a window, one change or a period, every number by script, one agent's JSON reply checked by script, committed in `.adf/retro/` on its own branch with a non-draft merge request and no CI run; contract `1.4`: the forge's `ci` and the `upstream` role | done (iteration 11) |
-| Wiki memory and technical debt: the `memory` plugin (the `knowledge` role, contract `1.3`) and the core's debt store | done (iteration 10) |
+| Wiki memory and technical debt: the `adf-memory` plugin (the `knowledge` role, contract `1.3`) and the core's debt store | done (iteration 10) |
 | Maintainer upstream: the `adf-maintainer` plugin (the `upstream` role, contract `1.5`) files a retrospective's flow findings and the ADF debt not yet filed as GitHub issues through `gh`; every extension is optional, and a registry entry whose plugin is not installed is skipped | done (iteration 10b) |
 | Plugins: tracker (Jira), project stack | not started |
 | `/adf:quick`, a small fix or feature without the full artifact set | not started |
@@ -73,16 +73,16 @@ A plugin is installed for the project, then enabled by its id. For example, GitL
 requests, the wiki memory and the English check:
 
 ```
-claude plugin install gitlab@agentic-dev-flow --scope project
-/adf:add gitlab@agentic-dev-flow
-claude plugin install memory@agentic-dev-flow --scope project
-/adf:add memory@agentic-dev-flow
-claude plugin install english-check@agentic-dev-flow --scope project
+claude plugin install adf-gitlab@agentic-dev-flow --scope project
+/adf:add adf-gitlab@agentic-dev-flow
+claude plugin install adf-memory@agentic-dev-flow --scope project
+/adf:add adf-memory@agentic-dev-flow
+claude plugin install adf-english-check@agentic-dev-flow --scope project
 ```
 
 The English check works as soon as it is installed: it is a Claude Code hook on every agent's
-`git commit`. `/adf:add english-check@agentic-dev-flow '{"include":[...]}'` only changes its
-scope (`plugins/english-check/README.md`).
+`git commit`. `/adf:add adf-english-check@agentic-dev-flow '{"include":[...]}'` only changes its
+scope (`plugins/adf-english-check/README.md`).
 
 Only the flow's maintainer installs `adf-maintainer@agentic-dev-flow`: it files the
 retrospective's findings and the ADF debt upstream (`plugins/adf-maintainer/README.md`). Every
@@ -109,9 +109,9 @@ plugins/adf/                      the core
   scripts/                        extensions, superpowers, workspace, changes, specs,
                                   plan-symbols, ledger, forge, reply, sdd, tasks, guard, with
                                   their library and tests
-plugins/gitlab/                   the forge role for GitLab, through glab; the merge request template
-plugins/english-check/            a PreToolUse hook that blocks a commit with non-English text
-plugins/memory/                   the wiki memory: the knowledge role, its log and its workflows
+plugins/adf-gitlab/                   the forge role for GitLab, through glab; the merge request template
+plugins/adf-english-check/            a PreToolUse hook that blocks a commit with non-English text
+plugins/adf-memory/                   the wiki memory: the knowledge role, its log and its workflows
 plugins/adf-maintainer/           the upstream role on GitHub, through gh: the maintainer's only
 scripts/parity/                   dev tools: compare the ported scripts with the origin's and the
                                   openspec CLI on the origin project (npm run parity -- <root>)

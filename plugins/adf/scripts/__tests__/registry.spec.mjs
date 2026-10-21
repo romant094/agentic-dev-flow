@@ -168,25 +168,25 @@ test('a registry entry whose plugin is not installed or disabled is absent: no t
   const points = { ...FORGE, knowledge: { kind: 'role', operations: ['context', 'log', 'check'] } }
   const core = { coreContract: CORE, points, home }
   plugin(root, 'f', { name: 'f', contract: '1.0', provides: { forge: { script: 's.mjs', operations: ['check', 'open', 'push', 'finalize'] } } })
-  writeFileSync(join(root, REGISTRY_PATH), JSON.stringify({ contract: CORE, extensions: [{ plugin: 'memory@agentic-dev-flow', points: ['knowledge'] }, { plugin: 'off@mk' }, { path: 'plugins/f', points: ['forge'] }] }))
+  writeFileSync(join(root, REGISTRY_PATH), JSON.stringify({ contract: CORE, extensions: [{ plugin: 'adf-memory@agentic-dev-flow', points: ['knowledge'] }, { plugin: 'off@mk' }, { path: 'plugins/f', points: ['forge'] }] }))
   const found = registryPlugins(root, core)
   assert.deepEqual(found.plugins.map((p) => p.declaration.name), ['f'])
   assert.deepEqual(found.absent, [
-    { id: 'memory@agentic-dev-flow', reason: 'not-installed', points: ['knowledge'] },
+    { id: 'adf-memory@agentic-dev-flow', reason: 'not-installed', points: ['knowledge'] },
     { id: 'off@mk', reason: 'disabled', points: [] }
   ])
   assert.deepEqual(enabledPlugins(root, core).map((p) => p.declaration.name), ['f'])
   const check = checkRegistry(root, core)
-  assert.equal(check.errors.some((e) => e.includes('memory@agentic-dev-flow')), false)
+  assert.equal(check.errors.some((e) => e.includes('adf-memory@agentic-dev-flow')), false)
   assert.deepEqual(check.warnings, [
-    'memory@agentic-dev-flow is in the registry but not installed; its points are skipped (run: claude plugin install memory@agentic-dev-flow --scope project)',
+    'adf-memory@agentic-dev-flow is in the registry but not installed; its points are skipped (run: claude plugin install adf-memory@agentic-dev-flow --scope project)',
     'off@mk is in the registry but disabled; its points are skipped (run: claude plugin enable off@mk)'
   ])
   assert.deepEqual(check.plugins.map((p) => p.name), ['f'])
   plugin(root, 'g', { name: 'g', contract: '1.0', provides: { knowledge: { script: 's.mjs', operations: ['context', 'log', 'check'] } } })
   const added = addExtension(root, 'plugins/g', core)
   assert.deepEqual(readRegistry(root).extensions.at(-1), { path: 'plugins/g', points: ['knowledge'] })
-  assert.match(addReport(added, checkRegistry(root, core)), /\nWarning: memory@agentic-dev-flow is in the registry but not installed/)
+  assert.match(addReport(added, checkRegistry(root, core)), /\nWarning: adf-memory@agentic-dev-flow is in the registry but not installed/)
 })
 
 test('validateDeclaration needs a script inside the plugin and every operation of the point', () => {

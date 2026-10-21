@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Dev tool: compares the English check (plugins/english-check/scripts/lib/english.mjs) with the
+// Dev tool: compares the English check (plugins/adf-english-check/scripts/lib/english.mjs) with the
 // origin's .claude/scripts/check-english.mjs over the origin's own tree. The origin's HEAD is
 // exported with `git archive` into a temporary directory; nothing is written in the origin.
 //
@@ -18,7 +18,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { appendFileSync, copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { findForeign, inScope, resolveConfig } from '../../plugins/english-check/scripts/lib/english.mjs'
+import { findForeign, inScope, resolveConfig } from '../../plugins/adf-english-check/scripts/lib/english.mjs'
 
 const origin = process.argv[2]
 if (!origin || !existsSync(join(origin, '.claude', 'scripts', 'check-english.mjs'))) {

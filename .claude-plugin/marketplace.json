@@ -15,22 +15,22 @@
       "source": "./plugins/adf"
     },
     {
-      "name": "gitlab",
+      "name": "adf-gitlab",
       "description": "ADF forge plugin for GitLab: pushes a change branch and keeps its merge request through glab",
-      "version": "0.3.0",
-      "source": "./plugins/gitlab"
+      "version": "0.4.0",
+      "source": "./plugins/adf-gitlab"
     },
     {
-      "name": "english-check",
+      "name": "adf-english-check",
       "description": "Blocks an agent's git commit when a file in scope holds non-English prose",
-      "version": "0.5.0",
-      "source": "./plugins/english-check"
+      "version": "0.6.0",
+      "source": "./plugins/adf-english-check"
     },
     {
-      "name": "memory",
+      "name": "adf-memory",
       "description": "ADF knowledge plugin: an indexed wiki memory, a log rotated monthly, and the ingest, query and lint workflows",
-      "version": "0.1.0",
-      "source": "./plugins/memory"
+      "version": "0.2.0",
+      "source": "./plugins/adf-memory"
     },
     {
       "name": "adf-maintainer",

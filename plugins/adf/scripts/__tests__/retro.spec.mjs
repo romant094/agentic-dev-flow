@@ -112,8 +112,8 @@ function host() {
 
   const home = join(tmp, 'home')
   const gitlab = join(tmp, 'cache', 'gitlab')
-  write(gitlab, { '.claude-plugin/plugin.json': JSON.stringify({ name: 'gitlab', version: '0.3.0' }) })
-  write(home, { 'plugins/installed_plugins.json': JSON.stringify({ version: 2, plugins: { 'gitlab@adf': [{ scope: 'user', installPath: gitlab }] } }) })
+  write(gitlab, { '.claude-plugin/plugin.json': JSON.stringify({ name: 'adf-gitlab', version: '0.3.0' }) })
+  write(home, { 'plugins/installed_plugins.json': JSON.stringify({ version: 2, plugins: { 'adf-gitlab@adf': [{ scope: 'user', installPath: gitlab }] } }) })
   return { root, home }
 }
 
@@ -141,7 +141,7 @@ function validReply(inp) {
         evidence: ['changes.one.signals.lateCaught', 'changes.one.verify.checks.tests'],
         cost: 'changes.one.values.cost.tokens',
         caughtWhere: 'the task review',
-        plugin: 'gitlab',
+        plugin: 'adf-gitlab',
         body: 'Two findings and a failed test check came after every task review was clean.'
       }
     ],
@@ -196,7 +196,7 @@ test('the input carries each change, its signals and every citable key with its 
   assert.ok(inp.removable.layers.includes('sweep'))
   assert.deepEqual(inp.plugins, [
     { name: 'adf', version: CORE_VERSION, source: 'core' },
-    { name: 'gitlab', version: '0.3.0', source: 'installed', id: 'gitlab@adf' }
+    { name: 'adf-gitlab', version: '0.3.0', source: 'installed', id: 'adf-gitlab@adf' }
   ])
 })
 
@@ -270,7 +270,7 @@ test('each rule the schema cannot state refuses the reply', () => {
   refused((r) => (r.decisions[0].basis = ['the numbers']), /decisions\[0\]\.basis\[0\]/)
   refused((r) => (r.removalCandidate.name = 'the planning guide'), /removalCandidate\.name: the planning guide is no computed candidate/)
   refused((r) => (r.removalCandidate.basis = []), /a named candidate cites at least one key/)
-  refused((r) => (r.findings[0].plugin = 'jira'), /plugin: jira is neither enabled nor installed; known: adf, gitlab/)
+  refused((r) => (r.findings[0].plugin = 'jira'), /plugin: jira is neither enabled nor installed; known: adf, adf-gitlab/)
   refused((r) => (r.nothingFound = true), /nothingFound: true, yet the reply has 1 finding/)
   refused((r) => (r.findings = []), /nothingFound: false, yet the reply has no finding/)
   refused((r) => r.findings.push({ ...r.findings[0] }), /id: R1 is used twice/)
