@@ -343,6 +343,13 @@ test('out-of-plan warns naming an unparsed Files bullet', () => {
   assert.equal(check.summary, 'every file is in the plan; unparsed Files bullets: Task 1: - Modify: lib/ without backticks')
 })
 
+test('plannedPaths takes the path a bullet names right after its verb, and dotfiles, whatever their shape', () => {
+  const plan = ['### Task 1: env', '', '**Files:**', '- Modify: `./.env.example` - one flag', '- Modify: `Dockerfile`', '- Create: `src/a.ts` (exports `helper`)', '- Test: `.gitignore` and `notes`', ''].join('\n')
+  const { paths, unparsed } = plannedPaths(plan)
+  assert.deepEqual(paths, ['.env.example', 'Dockerfile', 'src/a.ts', '.gitignore'])
+  assert.deepEqual(unparsed, [])
+})
+
 test('plannedPaths takes every backticked path of a Files bullet, past prose and parentheses', () => {
   const plan = `### Task 1: t
 

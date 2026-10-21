@@ -316,10 +316,11 @@ const stripDot = (p) => p.replace(/^\.\//, '')
 // a Move's two ends or any other verb's. A `:12-30` suffix is dropped. A bare file name is a
 // sibling of the bullet's first path, and may also be the file at the repository root. A
 // bullet or line naming no backticked path is unparsed, unless it is a no-op (`<Verb>: none`,
-// `Revert: commits …`).
+// `Revert: commits …`). The token right after the bullet's verb is a path whatever its shape
+// (`Dockerfile`, `.env.example`), and so is any dotfile name.
 const PATH_TOKEN = new RegExp(`^[^\\s()\`]+$`)
 const PATH_EXT = new RegExp(`\\.(?:${EXTENSIONS})$`)
-const isPlanPath = (t) => PATH_TOKEN.test(t) && (t.includes('/') || PATH_EXT.test(t))
+const isPlanPath = (t) => PATH_TOKEN.test(t) && (t.includes('/') || PATH_EXT.test(t) || /^\.[\w.-]+$/.test(t))
 
 function filesBlock(lines, from) {
   const out = []
@@ -347,7 +348,10 @@ export function plannedPaths(planText) {
     const at = body.findIndex((l) => /^\*\*Files:\*\*/.test(l))
     if (at < 0) return
     for (const { text } of filesBlock(body, at + 1)) {
-      const tokens = [...text.matchAll(/`([^`]+)`/g)].map((m) => stripDot(m[1].replace(/:\d+(?:-\d+)?$/, ''))).filter(isPlanPath)
+      const lead = /^-\s+\w+:\s*`/.test(text) ? 0 : -1
+      const tokens = [...text.matchAll(/`([^`]+)`/g)]
+        .map((m) => stripDot(m[1].replace(/:\d+(?:-\d+)?$/, '')))
+        .filter((t, k) => isPlanPath(t) || (k === lead && PATH_TOKEN.test(t)))
       if (tokens.length === 0) {
         if (!/^-\s+\w+:\s*none\.?\s*$/i.test(text) && !/^-\s+Revert:\s*commits?\b/i.test(text)) unparsed.push({ task: number, line: text.split('\n')[0] })
         continue
