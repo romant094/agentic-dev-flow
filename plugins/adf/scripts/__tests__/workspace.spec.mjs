@@ -169,8 +169,9 @@ function withChange() {
 
 test('remove takes the change worktree away from the main checkout, keeps the branch, and a re-run reports absent', () => {
   const { root, worktree } = withChange()
-  const result = remove(root, { change: 'add-x' })
+  const { teardown, ...result } = remove(root, { change: 'add-x' })
   assert.deepEqual(result, { ok: true, state: 'removed', change: 'add-x', path: worktree, branch: 'feat/add-x' })
+  assert.equal(teardown.state, 'none', 'no teardown plugin: nothing to tear down')
   assert.equal(existsSync(worktree), false)
   assert.equal(gitIn(root)('branch', '--list', 'feat/add-x').trim(), 'feat/add-x', 'the branch is kept')
   assert.deepEqual(remove(root, { change: 'add-x' }), { ok: true, state: 'absent', change: 'add-x' })

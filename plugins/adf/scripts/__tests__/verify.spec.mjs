@@ -73,7 +73,7 @@ const changeFile = (file) => `openspec/changes/${CHANGE}/${file}`
 
 // A host on develop with a synced main spec, and one complete change in its own worktree: a
 // code commit in the plan, then the apply test record naming that commit.
-function host({ outsidePlan, plan = PLAN, tasks = '- [x] 1.1 greet\n', record = true } = {}) {
+function host({ outsidePlan, extensions, plan = PLAN, tasks = '- [x] 1.1 greet\n', record = true } = {}) {
   const main = join(realpathSync(mkdtempSync(join(tmpdir(), 'adf-verify-'))), 'host')
   execFileSync('git', ['init', '-q', '-b', 'develop', main])
   git(main, 'config', 'user.email', 't@example.com')
@@ -81,6 +81,7 @@ function host({ outsidePlan, plan = PLAN, tasks = '- [x] 1.1 greet\n', record = 
   initRegistry(main, '1.2')
   setBranches(main, { integration: 'develop', protected: [] })
   if (outsidePlan) writeRegistry(main, { ...readRegistry(main), outsidePlan })
+  if (extensions) writeRegistry(main, { ...readRegistry(main), extensions })
   ignoreLocalDirs(main)
   write(main, 'openspec/specs/greeting/spec.md', MAIN)
   git(main, 'add', '.')
@@ -529,6 +530,8 @@ test('the ledger takes a check ruling and refuses a malformed one', () => {
   assert.deepEqual(record, { id: 'ruling-1', kind: 'ruling', at: 'T', check: 'out-of-plan', reason: 'why' })
   assert.throws(() => buildRecord('ruling', { check: 'out-of-plan' }), /ruling needs --reason/)
   assert.throws(() => buildRecord('ruling', { check: 'Out Of Plan', reason: 'r' }), /--check must be a check id/)
+  assert.equal(buildRecord('ruling', { check: 'ext:prisma:migration-order', reason: 'r' }).check, 'ext:prisma:migration-order', 'an extension check is ruled by its id')
+  assert.throws(() => buildRecord('ruling', { check: 'ext:Prisma:x', reason: 'r' }), /--check must be a check id/)
   assert.throws(() => buildRecord('ruling', { check: 'tree', reason: 'r', finding: 'f' }), /ruling takes no --finding; it takes --check, --reason/)
   assert.equal(buildRecord('ruling', { finding: 'f', decision: 'd' }, { now: 'T' }).finding, 'f', 'the adjudication shape is unchanged')
 })
@@ -876,4 +879,100 @@ test('a verify reply goes through dispatch.mjs reply: one retry, then stop; a ne
   write(root, `.superpowers/sdd/${CHANGE}/replies/verify-c4.json`, JSON.stringify(c4Reply()))
   out = reply()
   assert.deepEqual([out.valid, out.next, out.section, out.result.verdict], [true, 'proceed', `.superpowers/sdd/${CHANGE}/verify/c4.json`, 'pass'])
+})
+
+// ---------------------------------------------------------------- the verify-check hook
+
+// verify-check providers by absolute registry path: each prints config.answer, and logs its input
+// to config.log when given.
+const CHECKER = `import { appendFileSync } from 'node:fs'
+let t = ''
+process.stdin.on('data', (d) => (t += d)).on('end', () => {
+  const { config, input } = JSON.parse(t)
+  if (config.log) appendFileSync(config.log, JSON.stringify(input) + '\\n')
+  console.log(JSON.stringify(config.answer))
+})
+`
+function checkers(list) {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'adf-checkers-')))
+  return list.map(({ name, answer, log }) => {
+    mkdirSync(join(dir, name))
+    writeFileSync(join(dir, name, 'adf-extension.json'), JSON.stringify({ name, contract: '1.6', provides: { 'verify-check': { script: 'c.mjs', operations: ['verify-check'] } } }))
+    writeFileSync(join(dir, name, 'c.mjs'), CHECKER)
+    return { path: join(dir, name), points: ['verify-check'], config: { answer, ...(log ? { log } : {}) } }
+  })
+}
+
+test('verify-check: one section per returned check after the core\'s, rulable, and the hook gets the range', () => {
+  const log = join(realpathSync(mkdtempSync(join(tmpdir(), 'adf-log-'))), 'input.jsonl')
+  const answer = { state: 'done', checks: [{ id: 'migration-order', title: 'Migration order', verdict: 'fail', summary: 'm2 sorts before the base\'s m3', text: 'branch m2, base m3' }, { id: 'naming', verdict: 'pass', summary: 'ok' }] }
+  const { main, root } = host({ extensions: checkers([{ name: 'db', answer, log }]) })
+  const result = runChecks(root, { change: CHANGE, now: 'T' })
+  assert.deepEqual(result.checks.slice(-2).map((c) => [c.id, c.title, c.verdict, c.summary]), [
+    ['ext:db:migration-order', 'Migration order (db)', 'fail', "m2 sorts before the base's m3"],
+    ['ext:db:naming', 'naming (db)', 'pass', 'ok']
+  ])
+  assert.equal(result.checks.at(-2).output, `.superpowers/sdd/${CHANGE}/verify/ext.db.migration-order.txt`)
+  assert.equal(readFileSync(join(root, result.checks.at(-2).output), 'utf8'), 'branch m2, base m3\n')
+  const input = JSON.parse(readFileSync(log, 'utf8'))
+  assert.deepEqual(input, {
+    change: CHANGE,
+    base: { ref: 'develop', commit: git(main, 'rev-parse', 'develop') },
+    head: git(root, 'rev-parse', 'HEAD'),
+    files: git(root, 'diff', '--name-only', 'develop...HEAD').split('\n')
+  })
+  assert.equal(input.files.includes('src/a.mjs'), true)
+  judged(root)
+  assert.deepEqual(computeVerdict(root, { change: CHANGE }).failing, ['ext:db:migration-order'])
+  appendRecord(root, CHANGE, 'ruling', { check: 'ext:db:migration-order', reason: 'the base migration is reverted' }, { env: {} })
+  const ruled = computeVerdict(root, { change: CHANGE })
+  assert.equal(ruled.line, 'Verdict: PASS WITH WARNINGS')
+  assert.equal(ruled.checks.find((c) => c.id === 'ext:db:migration-order').display, 'FAIL, accepted by the developer: the base migration is reverted')
+  const text = readFileSync(join(root, assemble(root, { change: CHANGE }).file), 'utf8')
+  assert.match(text, /## Migration order \(db\)\n\n\*\*Result:\*\* FAIL, accepted by the developer: the base migration is reverted: m2 sorts before the base's m3\n\n```text\nbranch m2, base m3\n```/)
+})
+
+test('verify-check: a refused, degraded, skipped, malformed or absent provider is a section of its own, never a crash', () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'adf-home-')))
+  const extensions = [
+    ...checkers([
+      { name: 'deg', answer: { state: 'degraded', hint: 'install the tool' } },
+      { name: 'bad', answer: { state: 'done', checks: [{ id: 'Bad Id', verdict: 'pass' }, { id: 'odd', verdict: 'maybe' }, { id: 'fine', verdict: 'warn', summary: 'w' }, { id: 'verify-check', verdict: 'pass' }] } },
+      { name: 'nolist', answer: { state: 'done' } },
+      { name: 'no', answer: { state: 'refused', error: 'boom' } },
+      { name: 'after', answer: { state: 'done', checks: [] } }
+    ]),
+    { plugin: 'adf-gone@mk', points: ['verify-check'] }
+  ]
+  const { root } = host({ extensions })
+  const ext = runChecks(root, { change: CHANGE, now: 'T', home }).checks.filter((c) => c.id.startsWith('ext:'))
+  assert.deepEqual(ext.map((c) => [c.id, c.verdict]), [
+    ['ext:deg:verify-check', 'not-run'],
+    ['ext:bad:fine', 'warn'],
+    ['ext:bad:verify-check', 'not-run'],
+    ['ext:nolist:verify-check', 'not-run'],
+    ['ext:no:verify-check', 'not-run'],
+    ['ext:after:verify-check', 'not-run'],
+    ['ext:adf-gone:verify-check', 'warn']
+  ])
+  const summary = Object.fromEntries(ext.map((c) => [c.id, c.summary]))
+  assert.equal(summary['ext:deg:verify-check'], 'deg could not run its checks: install the tool')
+  assert.match(summary['ext:bad:verify-check'], /^bad returned malformed check\(s\) "Bad Id", "odd", "verify-check": /)
+  assert.equal(summary['ext:no:verify-check'], 'no refused: boom')
+  assert.equal(summary['ext:after:verify-check'], 'not called: an earlier verify-check provider refused')
+  assert.equal(summary['ext:adf-gone:verify-check'], 'adf-gone@mk is in the registry but not installed; its checks did not run')
+  judged(root)
+  const verdict = computeVerdict(root, { change: CHANGE })
+  assert.deepEqual(verdict.needsRuling, ['ext:deg:verify-check', 'ext:bad:verify-check', 'ext:nolist:verify-check', 'ext:no:verify-check', 'ext:after:verify-check'])
+  assert.match(verdict.rulingCommands[0].command, /ledger\.mjs" ruling --check ext:deg:verify-check --reason/)
+})
+
+test('verify-check with no commit range calls no provider; each is a not-run section', () => {
+  const log = join(realpathSync(mkdtempSync(join(tmpdir(), 'adf-log-'))), 'input.jsonl')
+  const { root } = host({ extensions: checkers([{ name: 'db', answer: { state: 'done', checks: [] }, log }]) })
+  write(root, changeFile('.adf.json'), '{}\n')
+  const ext = runChecks(root, { change: CHANGE, now: 'T' }).checks.filter((c) => c.id.startsWith('ext:'))
+  assert.deepEqual(ext.map((c) => [c.id, c.verdict]), [['ext:db:verify-check', 'not-run']])
+  assert.match(ext[0].summary, /^no commit range: /)
+  assert.equal(existsSync(log), false)
 })

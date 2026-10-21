@@ -2,12 +2,18 @@
 // are merged back into it one by one. Every path is rooted at the main checkout: run from
 // inside the change worktree, a relative `.claude/worktrees/...` would nest the group inside
 // it, where removing the change worktree strands the group.
+//
+// Each worktree made here is provisioned once git made it, and torn down before git removes it
+// (lib/provision.mjs); a refused teardown leaves the worktree. A refused provisioning leaves the
+// worktree made, and the result says so with `ok: false`.
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { requireBranches } from './branches.mjs'
 import { changeDir, META_FILE } from './changes.mjs'
 import { mainCheckout } from './installed.mjs'
+import { planInputs } from './plan.mjs'
 import { baseRef } from './plan-symbols.mjs'
+import { provisionWorktree, teardownWorktree } from './provision.mjs'
 import { callRole } from './roles.mjs'
 import { gitIn, WORKTREES_DIR } from './workspace.mjs'
 
@@ -42,7 +48,18 @@ function names(changeRoot, change, group) {
 const isWorktree = (git, path) =>
   (attempt(git, 'worktree', 'list', '--porcelain') ?? '').split('\n').includes(`worktree ${path}`)
 
-export function addGroup(changeRoot, { change, group }) {
+// The summary of a provisioning a result carries; the whole of it is in `report`.
+const provisioned = (p) => ({ ok: p.ok, state: p.state, report: p.report, ...(p.error ? { error: p.error } : {}) })
+
+// A provisioning that refused leaves the worktree it was given: the result is `ok: false`, with
+// the command that provisions it again once the cause is fixed.
+function withProvision(made, p, { change, kind, changeRoot }) {
+  if (p.ok) return { ...made, provision: provisioned(p) }
+  const again = `workspace.mjs provision --change ${change} --kind ${kind} --worktree "${made.root}" --root "${changeRoot}"`
+  return { ok: false, error: `the ${kind} worktree is made at ${made.root}, but ${p.error}; fix the cause, then run ${again}`, ...made, provision: provisioned(p) }
+}
+
+export function addGroup(changeRoot, { change, group }, { core } = {}) {
   const { git, branch, groupBranch, path } = names(changeRoot, change, group)
   if (isWorktree(git, path)) throw new Error(`group ${group} of ${change} already has a worktree at ${path}`)
   if (attempt(git, 'rev-parse', '--verify', '--quiet', `refs/heads/${groupBranch}`)) {
@@ -52,7 +69,8 @@ export function addGroup(changeRoot, { change, group }) {
   if (realpathSync(gitIn(path)('rev-parse', '--show-toplevel')) !== realpathSync(path)) {
     throw new Error(`the group worktree does not resolve to ${path}; stop`)
   }
-  return { root: path, branch: groupBranch, from: branch }
+  const p = provisionWorktree(changeRoot, { worktree: path, kind: 'group', change, ...planInputs(changeRoot, change) }, core)
+  return withProvision({ root: path, branch: groupBranch, from: branch }, p, { change, kind: 'group', changeRoot })
 }
 
 // A conflict leaves the merge in progress for the subagent that resolves it. A merge that is
@@ -95,14 +113,19 @@ function mergeOf(git, tip) {
 }
 
 // Only a merged group is removed; a blocked group keeps its worktree and branch.
-export function removeGroup(changeRoot, { change, group }) {
+export function removeGroup(changeRoot, { change, group }, { core } = {}) {
   const { git, groupBranch, path } = names(changeRoot, change, group)
   if (attempt(git, 'merge-base', '--is-ancestor', groupBranch, 'HEAD') === null) {
     throw new Error(`${groupBranch} is not merged into the change branch; a blocked group keeps its worktree`)
   }
-  if (isWorktree(git, path)) git('worktree', 'remove', path)
+  let teardown = null
+  if (isWorktree(git, path)) {
+    teardown = teardownWorktree(changeRoot, { worktree: path, kind: 'group', change, branch: groupBranch }, core)
+    if (!teardown.ok) throw new Error(`${teardown.error}\n${teardown.report}`)
+    git('worktree', 'remove', path)
+  }
   git('branch', '-d', groupBranch)
-  return { removed: path, branch: groupBranch }
+  return { removed: path, branch: groupBranch, ...(teardown ? { teardown: { state: teardown.state, report: teardown.report } } : {}) }
 }
 
 // Each group's state on disk, for the schedule: merged when the change branch holds the merge
@@ -117,7 +140,7 @@ export const pushPath = (changeRoot, change) => join(changeRoot, '.superpowers',
 
 export function finishGroup(changeRoot, { change, group }, core) {
   const branches = requireBranches(changeRoot)
-  const removed = removeGroup(changeRoot, { change, group })
+  const removed = removeGroup(changeRoot, { change, group }, { core })
   const branch = changeBranch(gitIn(changeRoot))
   const result = callRole(changeRoot, 'forge', 'push', { change, branch, protected: branches.protected }, core)
   const push = { state: result.state, ...(result.plugin ? { plugin: result.plugin } : {}), ...(result.hint ? { hint: result.hint } : {}), ...(result.error ? { error: result.error } : {}) }
@@ -167,7 +190,7 @@ function gitError(error) {
   return stderr || error.message
 }
 
-export function addBaseCheck(changeRoot, { change }) {
+export function addBaseCheck(changeRoot, { change }, { core } = {}) {
   if (!change) throw new Error('no change name')
   const git = gitIn(changeRoot)
   let meta
@@ -189,19 +212,23 @@ export function addBaseCheck(changeRoot, { change }) {
     throw new Error(`git refused to add the base-check worktree: ${gitError(error)}`)
   }
   if (!isWorktree(git, path)) throw new Error(`the base-check worktree is not listed at ${path}; stop`)
-  return { root: path, ref, commit: gitIn(path)('rev-parse', 'HEAD') }
+  const p = provisionWorktree(changeRoot, { worktree: path, kind: 'base-check', change, files: planInputs(changeRoot, change).files }, core)
+  return withProvision({ root: path, ref, commit: gitIn(path)('rev-parse', 'HEAD') }, p, { change, kind: 'base-check', changeRoot })
 }
 
-// Never forced: a base-check worktree git will not remove is reported and left.
-export function removeBaseCheck(changeRoot, { change }) {
+// Never forced: a base-check worktree git will not remove, or whose teardown refused, is reported
+// and left.
+export function removeBaseCheck(changeRoot, { change }, { core } = {}) {
   if (!change) throw new Error('no change name')
   const git = gitIn(changeRoot)
   const path = baseCheckPath(changeRoot, change)
   if (!isWorktree(git, path)) throw new Error(`${path} is not a worktree; there is no base check to remove`)
+  const teardown = teardownWorktree(changeRoot, { worktree: path, kind: 'base-check', change }, core)
+  if (!teardown.ok) throw new Error(`${teardown.error}; leave it and report it\n${teardown.report}`)
   try {
     git('worktree', 'remove', path)
   } catch (error) {
     throw new Error(`git refused to remove ${path}; leave it and report it: ${gitError(error)}`)
   }
-  return { removed: path }
+  return { removed: path, teardown: { state: teardown.state, report: teardown.report } }
 }

@@ -33,7 +33,7 @@ const GRAPH = [
 const PLAN = `# Plan\n\n${GRAPH}\n${[task(1, '1.1'), task(2, '1.2'), task(3, '2.1')].join('\n')}`
 const TASKS = '## 1. One\n\n- [ ] 1.1 first\n- [ ] 1.2 second\n\n## 2. Two\n\n- [ ] 2.1 third\n'
 const env = { CLAUDE_CODE_SESSION_ID: 's1' }
-const core = { coreContract: '1.2', points: { forge: { operations: ['push'] } } }
+const core = { coreContract: '1.2', points: { forge: { operations: ['push'] }, teardown: { kind: 'hook', operations: ['teardown'] } } }
 
 function tick(change, item) {
   tickTask(change, 'add-x', item)

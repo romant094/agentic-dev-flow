@@ -4,7 +4,8 @@
 //   plan.mjs lint --change <name> [--root <dir>]
 //       { ok, testFirst, tasks, findings }: plan.md against tasks.md, the task fields, the
 //       design risks, the Execution Graph and the Delete sweep. Exit 1 on an error finding;
-//       warnings (cross-package span, an export named elsewhere) do not fail.
+//       warnings (cross-package span, an export named elsewhere, a `**Needs:**` word with no
+//       provision plugin in the registry) do not fail.
 //   plan.mjs graph --change <name> --groups "A=1,2;B=3" [--depends "C=A,B"]
 //                  [--coupling '{"A/B":{"coupling":"medium","criticality":"low","reason":"…"}}'] [--write]
 //       The Execution Graph of the partition the agent chose: Files union per group, the
@@ -51,7 +52,9 @@ import {
   unplannedIn,
   writeGraph
 } from './lib/plan.mjs'
+import { CORE, hookProviders } from './lib/roles.mjs'
 import { loadSchema } from './lib/schema.mjs'
+import { claudeHome } from './lib/superpowers.mjs'
 import { gitIn } from './lib/workspace.mjs'
 
 const USAGE = 'usage: plan.mjs lint|graph|schedule|unplanned|added [--change <name>] [--root <dir>] (see the header for each command; without --change, the one active change under the root)'
@@ -105,9 +108,21 @@ function grepIn(root) {
   }
 }
 
+// Whether the registry holds a `provision` provider, enabled or absent; an unreadable registry
+// holds none.
+function provisioned(root) {
+  try {
+    const { plugins, absent } = hookProviders(root, 'provision', { ...CORE, home: claudeHome() })
+    return plugins.length + absent.length > 0
+  } catch {
+    return false
+  }
+}
+
 async function lint(o) {
   const { planText, tasksText, tracks, dir } = changeFiles(o.root, o.change)
   const { tasks, findings } = lintPlanText({
+    provisioned: provisioned(o.root),
     planText,
     tasksText,
     designText: read(join(dir, 'design.md')),

@@ -11,7 +11,9 @@
 // Windows). A shell is right here because the command is the project's own whole-suite command
 // line, written by the developer into the planning guide, not a string built from input.
 // Running it uncached is the command's own job (`--no-cache`, `--force` and the like belong in
-// the guide): this script cannot tell a replayed result from a fresh one.
+// the guide): this script cannot tell a replayed result from a fresh one by itself. When the
+// guide has a `## Fresh-run proof` section, its one line (such as a cache counter at zero) must
+// appear in the output, or the run fails with the reason that it may be cached.
 //
 // Stdout and stderr go together, interleaved, to `.superpowers/sdd/<change>/suite/<stamp>.txt`
 // and never into the result. The counts are the runner's own summary lines, quoted verbatim:
@@ -19,7 +21,8 @@
 //
 // A failure with `baseCheck` is checked on the change's base: a detached worktree made by
 // addBaseCheck, the same command run there (its output to `<stamp>-base.txt`), then
-// removeBaseCheck, never forced; a refused removal is reported and the worktree left.
+// removeBaseCheck, never forced; a refused removal is reported and the worktree left. A base-check
+// worktree whose provisioning refused runs nothing: the base check could not run.
 // Failing test identifiers are parsed from the output (TAP `not ok`, Jest/Vitest `FAIL` and
 // `✕`/`×` lines, the node:test spec reporter's `✖` lines but its `✖ failing tests:` header,
 // pytest `FAILED`, Go `--- FAIL:`). When both runs name their failures, a failure
@@ -47,6 +50,7 @@ import { gitIn } from './workspace.mjs'
 
 export const PLANNING_FILE = 'openspec/planning.md'
 export const HEADING = '## Whole-suite command'
+export const PROOF_HEADING = '## Fresh-run proof'
 export const SECTION_ID = 'test-record'
 // `--section review`: the run after the review stage's last fix, always with the base check,
 // written to the review state as `review/suite.json` (lib/review-state.mjs reads it).
@@ -75,18 +79,30 @@ export function sectionBounds(lines, heading = HEADING) {
   return { at, start: at + 1, end }
 }
 
-export function commandIn(text) {
+// The one line of a guide section: a fenced block, an inline code span or a plain line; null
+// when the section is absent or empty.
+function sectionLine(text, heading, what) {
   const lines = String(text ?? '').split(/\r?\n/)
-  const bounds = sectionBounds(lines)
+  const bounds = sectionBounds(lines, heading)
   if (!bounds) return null
   const body = lines.slice(bounds.start, bounds.end).join('\n').replace(/<!--[\s\S]*?-->/g, '')
   const fence = /^(```|~~~)[^\n]*\n([\s\S]*?)^\1\s*$/m.exec(body)
   const candidates = (fence ? fence[2] : body).split('\n').map((l) => l.trim()).filter(Boolean)
   if (candidates.length === 0) return null
-  if (candidates.length > 1) throw new Error(`the ${HEADING} section holds ${candidates.length} lines; it must hold one command`)
+  if (candidates.length > 1) throw new Error(`the ${heading} section holds ${candidates.length} lines; it must hold one ${what}`)
   const line = candidates[0]
   const inline = /^`([^`]+)`\.?$/.exec(line)
   return (inline ? inline[1] : line).trim() || null
+}
+
+export const commandIn = (text) => sectionLine(text, HEADING, 'command')
+
+// The line the whole-suite output must contain to prove the run fresh; null without the section.
+export const proofIn = (text) => sectionLine(text, PROOF_HEADING, 'line')
+
+export function readProof(root) {
+  const file = join(resolve(root), PLANNING_FILE)
+  return existsSync(file) ? proofIn(readFileSync(file, 'utf8')) : null
 }
 
 export function readCommand(root) {
@@ -239,16 +255,20 @@ function baseCheck(root, change, command, file, timeoutMinutes) {
   } catch (error) {
     return { error: `no base-check worktree: ${error.message}`, cannotRun: true }
   }
-  const ran = runOnce(command, made.root, file, timeoutMinutes)
-  const base = {
-    ref: made.ref,
-    commit: made.commit,
-    exit: ran.exit,
-    outputFile: rel(root, file),
-    failing: failingIn(ran.text),
-    cannotRun: ran.cannotRun,
-    ...(ran.timedOut ? { timedOut: true } : {}),
-    ...(ran.error ? { error: ran.error } : {})
+  let base
+  if (made.ok === false) base = { ref: made.ref, commit: made.commit, error: made.error, cannotRun: true }
+  else {
+    const ran = runOnce(command, made.root, file, timeoutMinutes)
+    base = {
+      ref: made.ref,
+      commit: made.commit,
+      exit: ran.exit,
+      outputFile: rel(root, file),
+      failing: failingIn(ran.text),
+      cannotRun: ran.cannotRun,
+      ...(ran.timedOut ? { timedOut: true } : {}),
+      ...(ran.error ? { error: ran.error } : {})
+    }
   }
   try {
     removeBaseCheck(root, { change })
@@ -302,6 +322,7 @@ export function recordText(result) {
     return lines.join('\n')
   }
   lines.push(`**Ran on:** \`${result.commit}\``, `**Exit:** ${result.exit}`, `**Result:** ${result.status}`, `**Output file:** \`${result.outputFile}\``)
+  if (result.fresh === false) lines.push(`**Fresh-run proof:** ${result.reason}`)
   if (result.timedOut) lines.push(`**Timed out:** ${result.error}`)
   if (result.dirty.length) lines.push(`**Uncommitted paths when the suite ran:** ${result.dirty.map((p) => `\`${p}\``).join(', ')}`)
   lines.push('', "## The runner's counts", '', ...fence(result.counts), '')
@@ -327,6 +348,7 @@ function sectionVerdict(result) {
   if (result.status === 'pre-existing') {
     return { verdict: 'warn', summary: `the suite fails (exit ${result.exit}) only on what also fails on the base: ${result.preExisting.join('; ')}` }
   }
+  if (result.fresh === false) return { verdict: 'fail', summary: result.reason }
   if (result.timedOut) return { verdict: 'fail', summary: `${result.error}: the developer raises --timeout, fixes the hang or rules` }
   if (result.cannotRun) return { verdict: 'fail', summary: `the suite cannot run in this workspace (exit ${result.exit ?? result.error}): the developer provisions it or rules` }
   const what = result.newFailures.length ? `: ${result.newFailures.join('; ')}` : ''
@@ -402,15 +424,20 @@ export function runSuite(rootArg, { change, baseCheck: withBaseArg = false, reco
     const file = join(dir, `${stamp}.txt`)
     const ran = runOnce(command, root, file, timeoutMinutes)
     const head = { failing: failingIn(ran.text) }
+    // A run whose output lacks the guide's proof line may be a replay: it blocks, and its
+    // failures are not compared with the base.
+    const proof = readProof(root)
+    const fresh = proof === null || ran.text.replace(ANSI, '').includes(proof)
     let base
     let verdict
-    if (ran.exit === 0) verdict = { preExisting: [], newFailures: [], blocking: false, comparison: 'none' }
+    if (!fresh) verdict = { preExisting: [], newFailures: head.failing, blocking: true, comparison: 'none' }
+    else if (ran.exit === 0) verdict = { preExisting: [], newFailures: [], blocking: false, comparison: 'none' }
     else if (ran.cannotRun) verdict = { preExisting: [], newFailures: head.failing, blocking: true, comparison: 'none' }
     else {
       if (withBase) base = baseCheck(root, change, command, join(dir, `${stamp}-base.txt`), timeoutMinutes)
       verdict = compare(head, base)
     }
-    const status = ran.exit === 0 ? 'pass' : verdict.blocking ? 'fail' : 'pre-existing'
+    const status = ran.exit === 0 && fresh ? 'pass' : verdict.blocking ? 'fail' : 'pre-existing'
     result = {
       status,
       command,
@@ -422,6 +449,7 @@ export function runSuite(rootArg, { change, baseCheck: withBaseArg = false, reco
       ...(ran.error ? { error: ran.error } : {}),
       cannotRun: ran.cannotRun,
       ...(ran.timedOut ? { timedOut: true, timeoutMinutes } : {}),
+      ...(proof === null ? {} : { fresh, ...(fresh ? {} : { reason: `the output lacks the fresh-run proof line \`${proof}\` of ${PLANNING_FILE}: the run may be cached` }) }),
       counts: countLines(ran.text),
       quote: ran.text.split(/\r?\n/).map((l) => l.trimEnd()).filter((l, i, all) => i < all.length - 1 || l).slice(-QUOTE_LINES),
       outputFile: rel(root, file),

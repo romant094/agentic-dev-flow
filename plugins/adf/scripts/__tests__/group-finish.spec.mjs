@@ -62,7 +62,9 @@ test('group-finish removes the merged group and pushes through the forge role, n
   assert.throws(() => run(['group-finish', '--change', 'add-x', '--group', '1', '--root', change]), /not merged/)
   mergeGroup(change, { change: 'add-x', group: 1 })
   const out = run(['group-finish', '--change', 'add-x', '--group', '1', '--root', change])
-  assert.deepEqual(out.removed, { removed: join(root, '.claude/worktrees/add-x--group-1'), branch: 'feat/add-x--group-1' })
+  const { teardown, ...removed } = out.removed
+  assert.deepEqual(removed, { removed: join(root, '.claude/worktrees/add-x--group-1'), branch: 'feat/add-x--group-1' })
+  assert.equal(teardown.state, 'none')
   assert.deepEqual(out.push, { state: 'none' })
   assert.equal(existsSync(group.root), false)
   assert.deepEqual(listGroups(change, 'add-x'), [])

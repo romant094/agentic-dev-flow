@@ -23,7 +23,8 @@ export const RESOLUTIONS = ['tech-debt', 'adf-debt', 'follow-up', 'accepted']
 // second shape of the `ruling` kind. It turns that check into an accepted failure; it is kept
 // out of KINDS, which lists the shapes the origin's ledger shares.
 export const CHECK_RULING = { required: ['check', 'reason'], optional: [] }
-const CHECK_ID = /^[a-z][a-z0-9-]*$/
+// A core check's id, or an extension check's `ext:<plugin>:<id>` (lib/verify.mjs extensionChecks).
+const CHECK_ID = /^(?:ext:[a-z][a-z0-9-]*:)?[a-z][a-z0-9-]*$/
 // An approved skill edit verify committed: `skill-edit --sha <commit> [--message <m>]`. Its sha
 // is exempt from the out-of-plan check for its files under `.claude/skills/` on every later
 // verify run. Kept out of KINDS for the same reason as CHECK_RULING.

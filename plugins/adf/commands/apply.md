@@ -39,7 +39,12 @@ conversation; if that is vague or ambiguous, the selection in step 1 asks.
    place means a commit there would bypass the merge request, and a `blocked` state means edit
    no source file. The way forward is `/adf:propose <name>`, which continues the artifacts up to
    the plan; re-running apply will not create them. `planFindings` are corrected in the plan
-   before anything is dispatched.
+   before anything is dispatched. Then provision the change worktree, as the apply instruction
+   states:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" provision --change <name> --root <root>
+   ```
 
 3. **Get the apply instructions.**
 

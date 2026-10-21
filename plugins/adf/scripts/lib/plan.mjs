@@ -168,6 +168,46 @@ export function parsePlan(text) {
 // The test-first tasks: those that carry both a RED and a GREEN step.
 export const testFirst = (tasks) => tasks.filter((t) => t.red && t.green).map((t) => t.number)
 
+// ---------------------------------------------------------------- needs
+
+const NEEDS_LINE = /^\*\*Needs:\*\*(.*)$/
+export const NEED_WORD = /^[a-z][a-z0-9-]*$/
+
+// The plan-level `**Needs:** <words>` lines, before the first task: what the change needs in its
+// worktree besides its files, such as a database, as lowercase words separated by commas or
+// spaces. The core knows no word; it passes them to the `provision` hook. `invalid` holds the
+// tokens that are not a lowercase word, with their line.
+export function parseNeeds(planText) {
+  // A comment keeps its line breaks, so a line number stays the file's.
+  const lines = String(planText ?? '').replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, '')).split('\n')
+  const first = lines.findIndex((l) => /^###\s+Task\s+\d+\b/.test(l))
+  const needs = []
+  const invalid = []
+  let line = null
+  lines.slice(0, first < 0 ? lines.length : first).forEach((raw, i) => {
+    const m = NEEDS_LINE.exec(raw.trim())
+    if (!m) return
+    line ??= i + 1
+    for (const token of m[1].replace(/`/g, '').split(/[\s,]+/).filter(Boolean)) {
+      if (!NEED_WORD.test(token)) invalid.push({ token, line: i + 1 })
+      else if (!needs.includes(token)) needs.push(token)
+    }
+  })
+  return { needs, invalid, line }
+}
+
+// What a worktree of the change is provisioned with (lib/provision.mjs): the paths the plan's
+// `**Files:**` blocks name, as verify reads them, and the plan's needs. Both empty without a plan.
+export function planInputs(root, change) {
+  let text
+  try {
+    text = readFileSync(join(changeDir(root, change), 'plan.md'), 'utf8')
+  } catch {
+    return { files: [], needs: [] }
+  }
+  return { files: plannedPaths(text).paths, needs: parseNeeds(text).needs }
+}
+
 // The packages a planning guide lists under `## Packages`: every backticked directory-like token.
 export function packagesFromGuide(guideText) {
   if (!guideText) return []
@@ -333,12 +373,18 @@ export async function sweepDeletes(tasks, { grep, read }) {
 // ---------------------------------------------------------------- plan lint
 
 // Everything plan-lint checks except the graph and the Delete sweep. Inputs are texts; a missing
-// design or guide is null. Findings: { severity, kind, task?, file, line, message }.
-export function lintPlanText({ planText, tasksText, designText = null, guideText = null, planFile = 'plan.md', tasksFile = 'tasks.md', designFile = 'design.md' }) {
+// design or guide is null. `provisioned` says whether the registry holds a `provision` provider:
+// the core judges no need word, so a word is reported only when nothing would provide it.
+// Findings: { severity, kind, task?, file, line, message }.
+export function lintPlanText({ planText, tasksText, designText = null, guideText = null, planFile = 'plan.md', tasksFile = 'tasks.md', designFile = 'design.md', provisioned = false }) {
   const { tasks, lines } = parsePlan(planText)
   const findings = []
   const at = (file, line) => ({ file, line })
   const say = (severity, kind, where, message, extra = {}) => findings.push({ severity, kind, ...extra, ...where, message })
+  const needs = parseNeeds(planText)
+  for (const { token, line } of needs.invalid) say('warning', 'needs-word', at(planFile, line), `**Needs:** "${token}" is not a lowercase word; it is not passed on`)
+  if (!provisioned)
+    for (const word of needs.needs) say('warning', 'needs-unprovided', at(planFile, needs.line), `the plan needs "${word}", but no provision plugin is in the registry, so nothing provides it`, { need: word })
   if (!tasks.length) {
     say('error', 'no-tasks', at(planFile, null), 'no `### Task N` heading found')
     return { tasks, findings }

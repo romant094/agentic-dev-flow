@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { isProtected, requireBranches } from './branches.mjs'
 import { ARCHIVE, archivedDirs, CHANGES_DIR, isMainCheckout, LEDGER_FILE } from './changes.mjs'
 import { ledgerPath } from './ledger.mjs'
+import { teardownWorktree } from './provision.mjs'
 
 export const WORKTREES_DIR = '.claude/worktrees'
 
@@ -145,9 +146,10 @@ export function worktrees(git) {
 // archive run passes this step. A worktree with uncommitted changes or untracked files is
 // refused with its `git status --porcelain` lines. A worktree whose ledger exists while the
 // archived change holds no copy is refused too: the ledger under `.superpowers/` goes with the
-// worktree.
-// Returns { ok, state: removed|in-place|absent, change, path?, branch?, hint? }.
-export function remove(root, { change }, { git = gitIn(root) } = {}) {
+// worktree. Last, the `teardown` hook runs with the worktree's own registry (lib/provision.mjs):
+// a refused teardown is refused here, and the worktree stays.
+// Returns { ok, state: removed|in-place|absent, change, path?, branch?, hint?, teardown? }.
+export function remove(root, { change }, { git = gitIn(root), core } = {}) {
   if (!change) throw new Error('no change name')
   if (!isMainCheckout(root)) {
     throw new Error(`${root} is not the main checkout; run remove from the main checkout, since a worktree cannot remove the ground it stands on`)
@@ -172,6 +174,8 @@ export function remove(root, { change }, { git = gitIn(root) } = {}) {
   }
   const status = gitIn(path)('status', '--porcelain')
   if (status !== '') throw new Error(`${path} has uncommitted changes; commit or move them, then remove again (never --force):\n${status}`)
+  const teardown = teardownWorktree(path, { worktree: path, kind: 'change', change, branch }, core)
+  if (!teardown.ok) throw new Error(`${teardown.error}\n${teardown.report}`)
   git('worktree', 'remove', path)
-  return { ok: true, state: 'removed', change, path, branch }
+  return { ok: true, state: 'removed', change, path, branch, teardown: { state: teardown.state, report: teardown.report } }
 }

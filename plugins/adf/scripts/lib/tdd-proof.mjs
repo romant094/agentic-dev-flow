@@ -9,6 +9,10 @@
 // 3. the worktree is removed, never forced; a removal git refuses is reported and the worktree
 //    left.
 //
+// The throwaway tree is provisioned (lib/provision.mjs, kind `proof`, no needs) once git made it
+// and again once it moved to the commit, and torn down before it is removed; a refused
+// provisioning ends the proof with its error, and a refused teardown leaves the tree.
+//
 // Both runs happen in the same kind of throwaway tree, so a failure that comes from the tree
 // alone (dependencies that are not committed, a build output) fails the commit run as well and
 // leaves no proof, never a false one. `share` names untracked paths of the source worktree, such
@@ -34,6 +38,8 @@ import { dirname, join, resolve } from 'node:path'
 import { attemptsFile, parseEvents, readLog } from './attempts.mjs'
 import { planDispatch } from './dispatch.mjs'
 import { mainCheckout } from './installed.mjs'
+import { planInputs } from './plan.mjs'
+import { provisionWorktree, teardownWorktree } from './provision.mjs'
 import { PLANNING_FILE, runOnce, sectionBounds } from './suite.mjs'
 import { gitIn, WORKTREES_DIR } from './workspace.mjs'
 
@@ -56,7 +62,7 @@ function pruneDirs(top, file) {
   }
 }
 
-export function tddProof(worktree, { change, commit, test, testFiles = null, share = [], root = worktree, timeoutMinutes = DEFAULT_TIMEOUT_MINUTES }) {
+export function tddProof(worktree, { change, commit, test, testFiles = null, share = [], root = worktree, timeoutMinutes = DEFAULT_TIMEOUT_MINUTES, core }) {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(change ?? '')) throw new Error(`change name "${change}" is not kebab-case`)
   if (!test || !test.trim()) throw new Error('no test command')
   const git = gitIn(worktree)
@@ -100,7 +106,14 @@ export function tddProof(worktree, { change, commit, test, testFiles = null, sha
   }
   const tmp = gitIn(path)
   const links = []
+  const { files } = planInputs(worktree, change)
+  const provision = () => {
+    const p = provisionWorktree(worktree, { worktree: path, kind: 'proof', change, files }, core)
+    result.provision = [...(result.provision ?? []), { state: p.state, report: p.report }]
+    if (!p.ok) throw new Error(p.error)
+  }
   try {
+    provision()
     for (const name of share) {
       const from = join(worktree, name)
       const to = join(path, name)
@@ -132,6 +145,7 @@ export function tddProof(worktree, { change, commit, test, testFiles = null, sha
     } catch (error) {
       throw new Error(`the throwaway worktree did not move to ${sha7} (the parent run left files in the way?): ${gitError(error)}`)
     }
+    provision()
     const after = runOnce(test, path, outputFiles.commit, timeoutMinutes)
     result.commitExit = after.exit
     if (after.error) result.commitError = after.error
@@ -149,12 +163,19 @@ export function tddProof(worktree, { change, commit, test, testFiles = null, sha
         // reported by the removal below
       }
     }
-    try {
-      git('worktree', 'remove', path)
-      result.removed = true
-    } catch (error) {
+    const teardown = teardownWorktree(worktree, { worktree: path, kind: 'proof', change }, core)
+    result.teardown = { state: teardown.state, report: teardown.report }
+    if (!teardown.ok) {
       result.removed = false
-      result.removeError = `git refused to remove ${path}; it is left for the developer: ${gitError(error)}`
+      result.removeError = `${teardown.error}; it is left for the developer`
+    } else {
+      try {
+        git('worktree', 'remove', path)
+        result.removed = true
+      } catch (error) {
+        result.removed = false
+        result.removeError = `git refused to remove ${path}; it is left for the developer: ${gitError(error)}`
+      }
     }
   }
   return result

@@ -1,5 +1,5 @@
 {
-  "version": "1.5",
+  "version": "1.6",
   "points": {
     "forge": {
       "kind": "role",
@@ -23,6 +23,24 @@
       "operations": [
         "check",
         "file"
+      ]
+    },
+    "provision": {
+      "kind": "hook",
+      "operations": [
+        "provision"
+      ]
+    },
+    "teardown": {
+      "kind": "hook",
+      "operations": [
+        "teardown"
+      ]
+    },
+    "verify-check": {
+      "kind": "hook",
+      "operations": [
+        "verify-check"
       ]
     }
   }

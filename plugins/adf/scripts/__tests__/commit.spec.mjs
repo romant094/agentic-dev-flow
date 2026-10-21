@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -140,4 +140,39 @@ test('the CLI prints one JSON object and exits 0, 1 on a refusal, 2 on a usage e
   const usage = call('--root', change)
   assert.equal(usage.code, 2)
   assert.ok(usage.out.usage)
+})
+
+// ---------------------------------------------------------------- the host's git hooks
+
+// A pre-commit hook in the common git directory, which every worktree of the host runs.
+function hook(root, body) {
+  const file = join(root, '.git', 'hooks', 'pre-commit')
+  mkdirSync(join(root, '.git', 'hooks'), { recursive: true })
+  writeFileSync(file, `#!/bin/sh\n${body}\n`)
+  chmodSync(file, 0o755)
+}
+
+test('the host\'s pre-commit hook runs: a staged file it rewrites is committed as rewritten, and the files are the commit\'s', () => {
+  const { root, change } = host()
+  hook(root, "printf 'formatted\\n' > a.txt\ngit add a.txt\nprintf 'by the hook\\n' > hook.log\ngit add hook.log")
+  writeFileSync(join(change, 'a.txt'), 'unformatted\n')
+  const out = commitPaths(change, { only: ['a.txt'], message: 'chore: a' })
+  assert.equal(out.ok, true)
+  assert.equal(git(change, 'show', 'HEAD:a.txt'), 'formatted')
+  assert.deepEqual(out.files.sort(), ['a.txt', 'hook.log'], 'what the hook added is reported, read from the commit')
+  assert.equal(git(change, 'log', '-1', '--format=%B'), 'chore: a')
+})
+
+test('a pre-commit hook that exits 1 refuses the step with its output, and nothing is committed', () => {
+  const { root, change } = host()
+  hook(root, "echo 'check failed: a.txt is not formatted'\nexit 1")
+  writeFileSync(join(change, 'a.txt'), 'b\n')
+  const head = git(change, 'rev-parse', 'HEAD')
+  assert.throws(() => commitPaths(change, { only: ['a.txt'], message: 'm' }), (e) => e instanceof Refusal && /git failed to make the commit \(check failed: a\.txt is not formatted\)/.test(e.message))
+  assert.equal(git(change, 'rev-parse', 'HEAD'), head)
+})
+
+test('the commit disables no hook: no --no-verify, no -n', () => {
+  const source = readFileSync(fileURLToPath(new URL('../lib/commit.mjs', import.meta.url)), 'utf8')
+  assert.doesNotMatch(source, /--no-verify|'-n'/)
 })

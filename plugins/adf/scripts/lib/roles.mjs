@@ -1,11 +1,12 @@
-// Calls a role: the one enabled plugin that provides it, or nothing. The plugin's script gets
-// one JSON object on stdin ({ root, config, input }) and prints one on stdout, whose `state`
-// is `done`, `degraded` or `refused` (contract/README.md). The core reads fields, never prose.
+// Calls a role: the one enabled plugin that provides it, or nothing; and a hook: every enabled
+// plugin that provides it, in registry order. The plugin's script gets one JSON object on stdin
+// ({ root, config, input }) and prints one on stdout, whose `state` is `done`, `degraded` or
+// `refused` (contract/README.md). The core reads fields, never prose.
 import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { registryPlugins } from './registry.mjs'
+import { readRegistry, registryPlugins } from './registry.mjs'
 
 export const STATES = ['done', 'degraded', 'refused']
 
@@ -34,6 +35,12 @@ export function callRole(root, point, operation, input, core) {
     const named = absent.filter((a) => a.points.includes(point)).map(({ id, reason }) => ({ id, reason }))
     return named.length ? { state: 'none', point, absent: named } : { state: 'none', point }
   }
+  return runProvider(root, found, point, operation, input)
+}
+
+// One provider's run: its script with the operation as its argument, in `root`. A script that
+// prints no result is refused.
+function runProvider(root, found, point, operation, input) {
   const script = join(found.dir, found.declaration.provides[point].script)
   const run = spawnSync('node', [script, operation], {
     cwd: root,
@@ -52,6 +59,41 @@ export function callRole(root, point, operation, input, core) {
     return { state: 'refused', plugin: found.declaration.name, error: `${found.declaration.name} ${operation} returned no result: ${said || `exit ${run.status}`}` }
   }
   return { ...result, plugin: found.declaration.name }
+}
+
+// ---------------------------------------------------------------- hooks
+
+// The enabled providers of a hook point, in registry order, and the absent entries that recorded
+// it ({ id, reason }). A host with no registry has neither.
+export function hookProviders(root, point, core) {
+  if (core.points[point]?.kind !== 'hook') throw new Error(`${point} is not a hook point`)
+  if (!readRegistry(root)) return { plugins: [], absent: [] }
+  const { plugins, absent } = registryPlugins(root, core)
+  return {
+    plugins: plugins.filter((p) => Object.hasOwn(p.declaration.provides, point)),
+    absent: absent.filter((a) => a.points.includes(point)).map(({ id, reason }) => ({ id, reason }))
+  }
+}
+
+// Calls every enabled provider of a hook point in registry order, each with its own config. A
+// hook point has one operation, named like the point. The state is `none` with no provider,
+// `done` when every provider is done, `degraded` when one is degraded and none refused, and
+// `refused` at the first provider that refuses: the providers after it are not called, and
+// `skipped` names them. `results` holds each called provider's result with its `plugin`;
+// `absent` names the absent entries that recorded the point, as callRole does.
+export function callHook(root, point, input, core) {
+  const { plugins, absent } = hookProviders(root, point, core)
+  const named = absent.length ? { absent } : {}
+  if (plugins.length === 0) return { state: 'none', point, results: [], ...named }
+  const results = []
+  for (const [i, found] of plugins.entries()) {
+    const result = runProvider(root, found, point, point, input)
+    results.push(result)
+    if (result.state === 'refused') {
+      return { state: 'refused', point, results, ...named, skipped: plugins.slice(i + 1).map((p) => p.declaration.name) }
+    }
+  }
+  return { state: results.some((r) => r.state === 'degraded') ? 'degraded' : 'done', point, results, ...named }
 }
 
 // ---------------------------------------------------------------- forge input from state

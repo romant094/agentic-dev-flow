@@ -3,7 +3,8 @@
 // `runChecks` runs each check against the change worktree, writes its raw output to
 // `<root>/.superpowers/sdd/<change>/verify/<id>.txt` and returns one result per check:
 // { id, title, verdict: pass | warn | fail | not-run, summary, output } with `output` relative
-// to the root. The list is kept in `verify/run.json`. Judgement checks are agent dispatches
+// to the root. The checks the `verify-check` hook's providers return follow the core's, one
+// section each (`extensionChecks`). The list is kept in `verify/run.json`. Judgement checks are agent dispatches
 // whose JSON replies `dispatch.mjs reply` checks and turns into a section of the same shape,
 // `verify/<id>.json` (lib/verify-reply.mjs); `computeVerdict` reads both, applies the developer's
 // rulings from the ledger, and computes the verdict line.
@@ -22,7 +23,7 @@ import { appendRecord, readRecords, SESSION_ENV, skillEditShas } from './ledger.
 import { baseRef, EXTENSIONS } from './plan-symbols.mjs'
 import { readRegistry } from './registry.mjs'
 import { c4Lines, c8Lines, fence as fenceText } from './reply-render.mjs'
-import { CORE, knowledgePaths } from './roles.mjs'
+import { callHook, CORE, hookProviders, knowledgePaths } from './roles.mjs'
 import { checkSpecsBase, extractRequirementsSection, parseDeltaSpec, validateProject } from './specs.mjs'
 import { countsOf, readTestRecord } from './suite.mjs'
 import { claudeHome } from './superpowers.mjs'
@@ -426,6 +427,55 @@ function checkOutOfPlan(root, change, git, base, skillEdits, knowledge) {
   return { verdict: 'pass', summary: 'every file the range touched is named by a task, the change directory, outsidePlan or the knowledge paths', text }
 }
 
+// ---------------------------------------------------------------- extension checks
+
+// The `verify-check` hook's checks, one section each with the id `ext:<plugin>:<id>`, rulable
+// like the core's checks. The hook gets the range: { change, base: { ref, commit }, head, files },
+// `files` the paths base...HEAD changed. What keeps a provider's checks from standing is a
+// section of its own, `ext:<plugin>:verify-check`: `not-run` when it refused, was degraded, was
+// not called after another's refusal, returned a malformed check or got no range; `warn` when
+// its registry entry is absent here, since its checks did not run.
+export const EXT_HOOK = 'verify-check'
+export const extId = (plugin, id) => `ext:${plugin}:${id}`
+const EXT_NAME = /^[a-z][a-z0-9-]*$/
+const extFile = (id) => `${id.replace(/:/g, '.')}.txt`
+
+export function extensionChecks(root, change, git, base, core) {
+  const own = (plugin, verdict, summary) => ({ id: extId(plugin, EXT_HOOK), title: `${EXT_HOOK} of ${plugin}`, verdict, summary, text: summary })
+  let hook
+  try {
+    if (base.error) return hookProviders(root, EXT_HOOK, core).plugins.map((p) => own(p.declaration.name, 'not-run', `no commit range: ${base.error}`))
+    const commit = git('rev-parse', '--verify', '--quiet', `${base.ref}^{commit}`)
+    const files = git('diff', '--name-only', '--no-renames', `${base.ref}...HEAD`).split('\n').filter(Boolean)
+    hook = callHook(root, EXT_HOOK, { change, base: { ref: base.ref, commit }, head: git('rev-parse', 'HEAD'), files }, core)
+  } catch (error) {
+    return [own('registry', 'not-run', `the ${EXT_HOOK} hook could not be called: ${error.message}`)]
+  }
+  const out = []
+  for (const r of hook.results) {
+    if (r.state === 'refused') out.push(own(r.plugin, 'not-run', `${r.plugin} refused: ${r.error ?? 'no reason given'}`))
+    else if (r.state === 'degraded') out.push(own(r.plugin, 'not-run', `${r.plugin} could not run its checks: ${r.hint ?? 'no hint given'}`))
+    else if (!Array.isArray(r.checks)) out.push(own(r.plugin, 'not-run', `${r.plugin} returned no checks list`))
+    else {
+      const seen = new Set()
+      const bad = []
+      for (const c of r.checks) {
+        if (!EXT_NAME.test(c?.id ?? '') || c.id === EXT_HOOK || seen.has(c.id) || !VERDICTS.includes(c.verdict)) {
+          bad.push(JSON.stringify(c?.id ?? null))
+          continue
+        }
+        seen.add(c.id)
+        const title = typeof c.title === 'string' && c.title.trim() ? c.title.trim() : c.id
+        out.push({ id: extId(r.plugin, c.id), title: `${title} (${r.plugin})`, verdict: c.verdict, summary: String(c.summary ?? ''), text: String(c.text ?? c.summary ?? '') })
+      }
+      if (bad.length) out.push(own(r.plugin, 'not-run', `${r.plugin} returned malformed check(s) ${bad.join(', ')}: each needs a kebab-case id of its own, other than ${EXT_HOOK}, and a verdict of ${VERDICTS.join(', ')}`))
+    }
+  }
+  for (const name of hook.skipped ?? []) out.push(own(name, 'not-run', `not called: an earlier ${EXT_HOOK} provider refused`))
+  for (const a of hook.absent ?? []) out.push(own(a.id.split('@')[0], 'warn', `${a.id} is in the registry but ${a.reason === 'disabled' ? 'disabled' : 'not installed'}; its checks did not run`))
+  return out
+}
+
 // ---------------------------------------------------------------- run
 
 // A verify session starts fresh: sections left by an earlier session describe a HEAD that may
@@ -471,6 +521,10 @@ export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md
     writeFileSync(join(outDir, `${id}.txt`), `${text}\n`)
     return { id, title: CHECKS[id], verdict, summary, output: relOutput(change, `${id}.txt`), ...(countWarnings ? { countWarnings } : {}) }
   })
+  for (const { id, title, verdict, summary, text } of extensionChecks(root, change, git, base, { ...CORE, home })) {
+    writeFileSync(join(outDir, extFile(id)), `${text}\n`)
+    checks.push({ id, title, verdict, summary, output: relOutput(change, extFile(id)) })
+  }
   // When this verify session started: the verify replies' retries count from it
   // (lib/verify-reply.mjs), and the verdict reads only the replies accepted since.
   const started = cleared || !previous ? now : previous.started ?? previous.at ?? now

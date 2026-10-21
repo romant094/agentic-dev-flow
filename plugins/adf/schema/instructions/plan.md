@@ -47,6 +47,11 @@ Files, Interfaces and acceptance criteria before its first edit.
 one, add the checkbox to `tasks.md` first. The back-reference is what makes drift visible between
 what the executor runs (`plan.md`) and what progress tracking counts (`tasks.md`).
 
+**Needs.** When the change needs a resource in its worktree beyond its files, such as a
+database, say so once above the first task: `**Needs:** <words>`, lowercase words separated by
+commas or spaces. Apply passes the words to the project's `provision` plugins; `plan-lint` warns
+on a word only when no such plugin is in the registry.
+
 **Level.** Every `### Task N` carries `**Level:** mechanical | integration | architecture`.
 The level is a scope judgement, and scope is known while the plan is written, not while the
 dispatch is issued. A level names a capability, never a model or vendor. How the orchestrator

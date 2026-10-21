@@ -29,14 +29,29 @@ current code. Apply runs it once, at the end. When this section is empty, apply 
 command in the project's own files, proposes it, and writes it here once the developer
 confirms. -->
 
+## Fresh-run proof
+
+<!-- One line, in backticks, that the whole-suite output contains only when nothing was replayed
+from a cache, such as a test runner's or a build tool's cache counter at zero. A run whose
+output lacks it fails, since it may be cached. Delete the section when the command's output
+proves nothing of the kind. -->
+
 ## Test-first shares
 
 <!-- The untracked paths a test-first task's new test needs to run in a fresh checkout, one per
-line, such as node_modules or a local environment file. With this section, the flow proves each
+line, such as a local environment file; what a `provision` plugin gives every worktree is not
+listed here. With this section, the flow proves each
 test-first task itself before its review: the new test runs in a throwaway worktree of the
 commit's parent, where it must fail, then on the commit, where it must pass, with these paths
 linked into it and nothing installed. Leave the section empty when the tests need no untracked
 path. Delete it to leave that proof to the task's reviewer. -->
+
+## Worktree copies
+
+<!-- The untracked files every worktree the flow makes needs from the main checkout, each path in
+backticks, such as a local environment file. Each is copied when the worktree has none, never
+linked; a path git does not ignore is skipped. The project's plugins adjust the copies, for
+example a database address. -->
 
 ## Checks that need the developer
 

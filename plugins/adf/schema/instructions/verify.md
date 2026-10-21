@@ -68,6 +68,11 @@ pass. What resolves each check:
   commit. The resolution is a plan amendment the developer approves, an "Added during apply"
   line as the apply instruction states it, or a ruling; never a rewritten verdict. An unparsed
   `**Files:**` bullet is a warning: its path is not in backticks, so the check could not read it.
+- `ext:<plugin>:<id>`: a check a project plugin returns through the `verify-check` hook, after
+  the core's, one section each. It is resolved as its summary says, or by a ruling like any
+  core check. `ext:<plugin>:verify-check` says why a plugin's checks do not stand: `not-run` when
+  it refused, could not run its tool, returned a malformed check, or was not called after
+  another's refusal; `warn` when its plugin is not installed here.
 
 **The test record is cited while it is current, and re-run once it is not.**
 

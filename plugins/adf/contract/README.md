@@ -26,7 +26,8 @@ runtime) and the `operations` it implements: every operation the point defines.
 Each point arrives with the first plugin that needs it. Version `1.0` defined none; `1.1` adds
 the `forge` role; `1.2` adds its `push` operation; `1.3` adds the `knowledge` role; `1.4` adds
 the `forge` operations' `ci` field and the `upstream` role; `1.5` gives `upstream` its content:
-`check` takes the repository, and `file` takes the findings and the ADF debt themselves.
+`check` takes the repository, and `file` takes the findings and the ADF debt themselves; `1.6`
+adds the first hooks, `provision`, `teardown` and `verify-check`.
 
 ## Calling convention
 
@@ -46,7 +47,11 @@ The script prints one JSON object on stdout. Its `state` is:
   Exit 1.
 
 A script that prints no such object is treated as `refused`. With no provider of a role the
-core gets `{ "state": "none" }` and applies the role's default. Every extension is optional: a
+core gets `{ "state": "none" }` and applies the role's default. A hook point has one operation,
+named like the point. The core calls its providers one after another: the hook's state is
+`done` when every provider is done, `degraded` when one is degraded and none refused, and
+`refused` at the first provider that refuses, after which no provider is called; with no
+provider it is `none`. Every extension is optional: a
 registry entry whose plugin is not installed or is disabled is treated as absent. When it is
 the point's only provider, the result is `none` with `absent` (`[{ id, reason }]`, `reason`
 `not-installed` or `disabled`) naming it, and the report says the step was skipped.
@@ -110,6 +115,50 @@ retrospective's sidecar and the ADF debt stays unfiled. No provider existed unde
 `file` took the sidecar's path and the finding ids; a 1.4 declaration still runs, by the
 minor rule, and gets the 1.5 input.
 
+### `provision` (hook, since 1.6)
+
+Prepares a worktree the core made, before anything runs in it. The core makes four kinds: the
+change's worktree, a task group's, the throwaway worktree of the change's base that tells a
+pre-existing failure from a new one (`base-check`), and the throwaway worktree of a test-first
+proof (`proof`). Before the call, the core copies into the worktree the untracked files the
+planning guide's `## Worktree copies` names, from the main checkout, where the worktree holds
+none and git ignores the path, never through a link.
+
+| Input | Result when `done` |
+|---|---|
+| `worktree`, `main` (absolute paths); `kind`: `change`, `group`, `base-check` or `proof`; `change`; `branch` (null when detached); `base`: `{ ref, commit }`; `files`: the paths the plan names; `needs`: the words of the plan's `**Needs:**` line and the developer's `--need`, for a `change` or `group` worktree, else `[]` | `actions`: `[{ op, path }]`; `notes`: lines the core shows the orchestrator |
+
+A provider whose tool is missing is `degraded`, with `hint`: the step continues and says so.
+`refused` stops the step. A provider writes only paths git ignores in the worktree, never the
+main checkout: the core compares both trees' `git status --porcelain` before and after the call,
+and refuses on any difference. A call is re-runnable: a second call changes nothing a first one
+made. Default with no provider: the copies are made and nothing else.
+
+### `teardown` (hook, since 1.6)
+
+Releases what `provision` made, before the core runs `git worktree remove`, while the worktree
+still exists.
+
+| Input | Result when `done` |
+|---|---|
+| `worktree`, `main`, `kind`, `change`, `branch` (null when detached) | `actions`, `notes`; nothing to do is `done` |
+
+`refused` stops the removal: the worktree stays and the refusal is reported. `degraded`
+continues the removal with its hint. Default with no provider: the worktree is removed.
+
+### `verify-check` (hook, since 1.6)
+
+A check of the project's own that verify runs after the core's checks.
+
+| Input | Result when `done` |
+|---|---|
+| `change`; `base`: `{ ref, commit }`; `head`: the commit verified; `files`: the paths `base...head` changed | `checks`: `[{ id, title, verdict, summary, text }]`, `id` kebab-case, `verdict` `pass`, `warn`, `fail` or `not-run` |
+
+Each check is a section of the verify record, id `ext:<plugin>:<id>`, `text` its output; the
+developer may rule on it like a core check. A provider that refuses, is degraded or returns a
+malformed check gets a `not-run` section `ext:<plugin>:verify-check` saying so. Default with no
+provider: no section.
+
 ## Versioning
 
 The version is `major.minor`.
@@ -139,7 +188,8 @@ plugin and name both versions.
 ```
 
 An entry names an installed plugin by id (`plugin`), or a plugin directory by `path` (a plugin
-in development). An id is resolved from Claude Code's install records for the main checkout,
+in development). A `path` entry carries the contract's points only: Claude Code loads a plugin's
+own hooks, commands and skills only from a plugin installed by id. An id is resolved from Claude Code's install records for the main checkout,
 so it survives a plugin update and works in every worktree. The order of `extensions` is the
 call order for hooks; a role has at most one provider. `points` is written by `/adf:add` from
 the declaration's `provides`: it lets the core name an absent entry for the points it provides

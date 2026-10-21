@@ -6,7 +6,9 @@
 // The commit takes only the given paths (`git commit -- <paths>`), so work the developer staged
 // elsewhere is never swept in; it is refused instead, because a staged file outside the paths is
 // someone's decision the flow must not overrule. The message is passed as it is: nothing is
-// appended to it.
+// appended to it. The host's git hooks run as they do for the developer: no hook is disabled,
+// and the files reported are read from the commit, so what a hook rewrote or added is there; a
+// hook that refuses stops the commit with its output.
 import { realpathSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { isProtected, readBranches } from './branches.mjs'

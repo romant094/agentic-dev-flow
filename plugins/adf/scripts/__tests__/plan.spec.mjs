@@ -13,7 +13,9 @@ import {
   lintPlanText,
   packagesFromGuide,
   parseGraph,
+  parseNeeds,
   parsePlan,
+  planInputs,
   parseRisks,
   reconcileRisks,
   renderGraph,
@@ -24,6 +26,7 @@ import {
   writeGraph
 } from '../lib/plan.mjs'
 import { run } from '../plan.mjs'
+import { initRegistry, readRegistry, writeRegistry } from '../lib/registry.mjs'
 
 // ---------------------------------------------------------------- fixtures
 
@@ -363,6 +366,39 @@ test('plan.mjs lint: exit 0 for a clean plan, exit 1 with file:line findings, ex
   assert.equal((await run(['lint', '--root', root])).result.ok, true)
   assert.equal((await run(['lint', '--root', root, '--bogus', 'x'])).code, 2)
   assert.equal((await run(['lint', '--change', 'nope', '--root', root])).code, 1)
+})
+
+// ---------------------------------------------------------------- needs
+
+test('the plan-level Needs line: comma or space separated lowercase words, before the first task only', () => {
+  const text = `# Plan\n\n<!-- **Needs:** commented -->\n**Needs:** database, cache queue\n**Needs:** \`database\` Big\n\n${task(1, '1.1')}\n**Needs:** inside-a-task\n`
+  assert.deepEqual(parseNeeds(text), { needs: ['database', 'cache', 'queue'], invalid: [{ token: 'Big', line: 5 }], line: 4 })
+  assert.deepEqual(parseNeeds(plan()), { needs: [], invalid: [], line: null })
+})
+
+test('lint warns on a need only when no provision provider is in the registry; a malformed word always', () => {
+  const text = `# Plan\n\n**Needs:** database, Big\n\n${GRAPH}\n${[task(1, '1.1'), task(2, '1.2'), task(3, '2.1')].join('\n')}`
+  const none = lintPlanText({ planText: text, tasksText: TASKS }).findings.filter((f) => f.kind.startsWith('needs'))
+  assert.deepEqual(none.map((f) => [f.severity, f.kind, f.line]), [['warning', 'needs-word', 3], ['warning', 'needs-unprovided', 3]])
+  assert.match(none[1].message, /the plan needs "database", but no provision plugin is in the registry/)
+  const provided = lintPlanText({ planText: text, tasksText: TASKS, provisioned: true }).findings.filter((f) => f.kind.startsWith('needs'))
+  assert.deepEqual(provided.map((f) => f.kind), ['needs-word'], 'with a provider the core judges no word')
+  assert.deepEqual(errors(lintPlanText({ planText: text, tasksText: TASKS }).findings), [])
+})
+
+test('plan.mjs lint reads the registry for a provision provider; planInputs gives the planned paths and needs', async () => {
+  const { root } = repo(`# Plan\n\n**Needs:** database\n\n${GRAPH}\n${[task(1, '1.1'), task(2, '1.2'), task(3, '2.1')].join('\n')}`)
+  const kindsOf = async () => (await run(['lint', '--change', 'c', '--root', root])).result.findings.map((f) => f.kind)
+  assert.deepEqual(await kindsOf(), ['needs-unprovided'])
+  const plugin = realpathSync(mkdtempSync(join(tmpdir(), 'adf-plan-plugin-')))
+  writeFileSync(join(plugin, 'adf-extension.json'), JSON.stringify({ name: 'db', contract: '1.6', provides: { provision: { script: 'p.mjs', operations: ['provision'] } } }))
+  initRegistry(root, '1.6')
+  writeRegistry(root, { ...readRegistry(root), extensions: [{ path: plugin, points: ['provision'] }] })
+  assert.deepEqual(await kindsOf(), [])
+  writeRegistry(root, { ...readRegistry(root), extensions: [{ plugin: 'adf-db@mk', points: ['provision'] }] })
+  assert.deepEqual(await kindsOf(), [], 'an absent provider is still in the registry')
+  assert.deepEqual(planInputs(root, 'c'), { files: ['src/t1.ts', 'src/t2.ts', 'src/t3.ts'], needs: ['database'] })
+  assert.deepEqual(planInputs(root, 'missing'), { files: [], needs: [] })
 })
 
 test('plan.mjs graph --write puts the tables into plan.md; an undecided pair refuses', async () => {

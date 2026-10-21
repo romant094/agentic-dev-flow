@@ -20,9 +20,24 @@ Do NOT invoke `superpowers:using-git-worktrees`, and ignore the line of
 skill would make a second one at a path the host does not ignore, commit a `.gitignore` edit of
 its own, and run a dependency install in it.
 
-Apply installs nothing. The core makes a worktree and does nothing more to it: no dependency
-install, no environment file, no database. A task that turns out to need a package that is not
-installed stops and is reported as separate work: a dependency update is its own change.
+**Provision the change worktree once the preflight passes, before anything is dispatched.**
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" provision --change <change> --root <root>
+```
+
+Every worktree the core makes is provisioned by the `provision` hook of the project's plugins:
+this call for the change worktree, and `group-add`, the base check and the test-first proof for
+theirs. The script first copies the untracked files the planning guide's `## Worktree copies`
+names from the main checkout, then passes the plan's paths and its `**Needs:**` to the hook; it
+refuses when a provider changed a tracked path or wrote into the main checkout. With no
+provider, nothing is installed and nothing else is made. Show its `report`, which holds each
+provider's notes; on `ok: false`, print `error` and stop. It is safe to run again on a resumed
+apply. A task that turns out to need a package that is not installed stops and is reported as
+separate work: a dependency update is its own change.
+
+The core never disables the host's git hooks: a commit runs them as the developer's would, and
+a hook that refuses stops the step with its output.
 
 **One orchestrator: the main session.**
 
@@ -80,9 +95,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" group-add --change <change> -
 ```
 
 The script roots the path at the main checkout itself: a relative path from inside the change
-worktree once nested a group inside it, where removing the change worktree stranded it. Make
-group worktrees only here, never by hand. When `single` is true, a graph naming exactly one
-wave-1 group runs as one sequential pass in the change worktree, with no group worktree.
+worktree once nested a group inside it, where removing the change worktree stranded it, and
+provisions the group worktree as it provisions the change worktree; `ok: false` means the
+worktree is made but its provisioning refused, and `error` names the command that runs it again
+once the cause is fixed. Make group worktrees only here, never by hand. When `single` is true,
+a graph naming exactly one wave-1 group runs as one sequential pass in the change worktree,
+with no group worktree.
 
 **Dispatch in rounds, under the tree guard.**
 
@@ -436,6 +454,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" run --change <change> --root <roo
 
 It runs the `## Whole-suite command` of the project's planning guide, `openspec/planning.md`,
 uncached, with `<root>` as the working directory, its output to a file, never to your context.
+When the guide has a `## Fresh-run proof` line, a run whose output lacks it fails: it may be
+cached.
 It is the whole suite, not the parts this change touched: this is the only point where a
 cross-group regression shows, since two groups green in isolation can merge red. A failure
 blocks unless it also fails on the change's base. `--base-check` checks that in a throwaway

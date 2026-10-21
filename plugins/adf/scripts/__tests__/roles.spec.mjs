@@ -1,12 +1,12 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { initRegistry, writeRegistry, readRegistry } from '../lib/registry.mjs'
-import { callRole, CORE, forgeInput, forgeReport, knowledgePaths, knowledgeReport, upstreamReport } from '../lib/roles.mjs'
+import { addExtension, checkRegistry, initRegistry, validateDeclaration, writeRegistry, readRegistry } from '../lib/registry.mjs'
+import { callHook, callRole, CORE, forgeInput, forgeReport, hookProviders, knowledgePaths, knowledgeReport, upstreamReport } from '../lib/roles.mjs'
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'forge.mjs')
 const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
@@ -84,12 +84,13 @@ function knowledgeHost(declaration, script) {
   return root
 }
 
-test('contract 1.5 defines the forge, knowledge and upstream roles', () => {
-  assert.equal(CORE.coreContract, '1.5')
-  assert.deepEqual(Object.keys(CORE.points), ['forge', 'knowledge', 'upstream'])
+test('contract 1.6 defines the forge, knowledge and upstream roles and the provision, teardown and verify-check hooks', () => {
+  assert.equal(CORE.coreContract, '1.6')
+  assert.deepEqual(Object.keys(CORE.points), ['forge', 'knowledge', 'upstream', 'provision', 'teardown', 'verify-check'])
   assert.deepEqual(CORE.points.forge, { kind: 'role', operations: ['check', 'open', 'push', 'finalize'] })
   assert.deepEqual(CORE.points.knowledge, { kind: 'role', operations: ['context', 'log', 'check'] })
   assert.deepEqual(CORE.points.upstream, { kind: 'role', operations: ['check', 'file'] })
+  for (const hook of ['provision', 'teardown', 'verify-check']) assert.deepEqual(CORE.points[hook], { kind: 'hook', operations: [hook] })
 })
 
 test('forgeInput passes ci false through, and the forge provider gets it', () => {
@@ -199,4 +200,111 @@ test('knowledgePaths drops a glob outside the host root and reports a refused pr
   assert.deepEqual(result.paths, [])
   assert.match(result.error, /k context returned no result: hi/)
   assert.equal(knowledgeReport('log', { state: 'done', entry: '## [2026-10-19 10:00] task | t | A\n- b\n', rotated: ['2026-09'], amended: false }), 'Knowledge log: written ## [2026-10-19 10:00] task | t | A; rotated 2026-09')
+})
+
+// ---------------------------------------------------------------- hooks
+
+// A host whose registry names one path plugin per entry of `plugins`, in that order: each provides
+// `points` with the script `script`, and gets `config`.
+function hookHost(plugins) {
+  const root = mkdtempSync(join(tmpdir(), 'adf-hook-'))
+  initRegistry(root, CORE.coreContract)
+  const extensions = []
+  for (const { name, points = ['provision'], script, config } of plugins) {
+    const dir = join(root, 'plugins', name)
+    mkdirSync(join(dir, 'scripts'), { recursive: true })
+    const provides = Object.fromEntries(points.map((p) => [p, { script: 'scripts/h.mjs', operations: [p] }]))
+    writeFileSync(join(dir, 'adf-extension.json'), JSON.stringify({ name, contract: '1.6', provides }))
+    writeFileSync(join(dir, 'scripts', 'h.mjs'), script)
+    extensions.push({ path: `plugins/${name}`, points, ...(config ? { config } : {}) })
+  }
+  writeRegistry(root, { ...readRegistry(root), extensions })
+  return root
+}
+
+// A provider that records its call in <root>/calls.txt and answers `state` with what it was given.
+const hookScript = (state, extra = {}) => `import { appendFileSync } from 'node:fs'
+let t='';process.stdin.on('data',(d)=>t+=d).on('end',()=>{const j=JSON.parse(t);appendFileSync(j.root+'/calls.txt',(j.config.name ?? '?')+' '+process.argv[2]+'\\n');console.log(JSON.stringify({state:${JSON.stringify(state)},config:j.config,input:j.input,cwd:process.cwd()===j.root,...${JSON.stringify(extra)}}))})`
+const calls = (root) => (existsSync(join(root, 'calls.txt')) ? readFileSync(join(root, 'calls.txt'), 'utf8').trim().split('\n') : [])
+
+test('callHook calls every provider in registry order, each with its own config, the point as the operation', () => {
+  const root = hookHost([
+    { name: 'one', script: hookScript('done', { notes: ['n1'] }), config: { name: 'one' } },
+    { name: 'two', script: hookScript('done'), config: { name: 'two', x: 1 } }
+  ])
+  const out = callHook(root, 'provision', { kind: 'change' }, { ...CORE, home })
+  assert.equal(out.state, 'done')
+  assert.deepEqual(calls(root), ['one provision', 'two provision'])
+  assert.deepEqual(out.results.map((r) => [r.plugin, r.state, r.config, r.input, r.cwd]), [
+    ['one', 'done', { name: 'one' }, { kind: 'change' }, true],
+    ['two', 'done', { name: 'two', x: 1 }, { kind: 'change' }, true]
+  ])
+  assert.deepEqual(out.results[0].notes, ['n1'])
+})
+
+test('callHook: none without a provider or a registry, and absent entries named as callRole names them', () => {
+  const bare = mkdtempSync(join(tmpdir(), 'adf-hook-'))
+  assert.deepEqual(callHook(bare, 'provision', {}, { ...CORE, home }), { state: 'none', point: 'provision', results: [] })
+  const root = hookHost([{ name: 'other', points: ['teardown'], script: hookScript('done'), config: { name: 'other' } }])
+  assert.deepEqual(callHook(root, 'provision', {}, { ...CORE, home }), { state: 'none', point: 'provision', results: [] })
+  writeRegistry(root, { ...readRegistry(root), extensions: [{ plugin: 'adf-db@mk', points: ['provision'] }, ...readRegistry(root).extensions] })
+  assert.deepEqual(callHook(root, 'provision', {}, { ...CORE, home }), { state: 'none', point: 'provision', results: [], absent: [{ id: 'adf-db@mk', reason: 'not-installed' }] })
+  assert.deepEqual(calls(root), [])
+  assert.throws(() => callHook(root, 'forge', {}, { ...CORE, home }), /forge is not a hook point/)
+  assert.deepEqual(hookProviders(root, 'teardown', { ...CORE, home }).plugins.map((p) => p.declaration.name), ['other'])
+})
+
+test('callHook: degraded when one is degraded and none refused; every provider still runs', () => {
+  const root = hookHost([
+    { name: 'one', points: ['teardown'], script: hookScript('degraded', { hint: 'start the server' }), config: { name: 'one' } },
+    { name: 'two', points: ['teardown'], script: hookScript('done'), config: { name: 'two' } }
+  ])
+  const out = callHook(root, 'teardown', {}, { ...CORE, home })
+  assert.equal(out.state, 'degraded')
+  assert.deepEqual(out.results.map((r) => r.state), ['degraded', 'done'])
+  assert.equal(out.results[0].hint, 'start the server')
+  assert.deepEqual(calls(root), ['one teardown', 'two teardown'])
+})
+
+test('callHook: the first refusal stops the providers after it, which are named and never called', () => {
+  const root = hookHost([
+    { name: 'one', script: hookScript('done'), config: { name: 'one' } },
+    { name: 'two', script: hookScript('refused', { error: 'no server' }), config: { name: 'two' } },
+    { name: 'three', script: hookScript('done'), config: { name: 'three' } }
+  ])
+  const out = callHook(root, 'provision', {}, { ...CORE, home })
+  assert.equal(out.state, 'refused')
+  assert.deepEqual(out.results.map((r) => [r.plugin, r.state]), [['one', 'done'], ['two', 'refused']])
+  assert.equal(out.results[1].error, 'no server')
+  assert.deepEqual(out.skipped, ['three'])
+  assert.deepEqual(calls(root), ['one provision', 'two provision'])
+})
+
+test('callHook: a provider with no parseable result is refused, and stops the rest', () => {
+  const root = hookHost([
+    { name: 'broken', points: ['verify-check'], script: 'console.log("hello")' },
+    { name: 'two', points: ['verify-check'], script: hookScript('done'), config: { name: 'two' } }
+  ])
+  const out = callHook(root, 'verify-check', {}, { ...CORE, home })
+  assert.equal(out.state, 'refused')
+  assert.match(out.results[0].error, /broken verify-check returned no result: hello/)
+  assert.deepEqual(out.skipped, ['two'])
+})
+
+test('the registry takes declarations providing hooks, two providers of one hook included', () => {
+  for (const hook of ['provision', 'teardown', 'verify-check']) {
+    assert.deepEqual(validateDeclaration({ name: 'p', contract: '1.6', provides: { [hook]: { script: 's.mjs', operations: [hook] } } }, CORE.points), [])
+    assert.deepEqual(validateDeclaration({ name: 'p', contract: '1.6', provides: { [hook]: { script: 's.mjs', operations: [] } } }, CORE.points), [`${hook}: operations ${hook} are missing`])
+  }
+  const root = mkdtempSync(join(tmpdir(), 'adf-hook-'))
+  initRegistry(root, CORE.coreContract)
+  writeRegistry(root, { ...readRegistry(root), branches: { integration: 'develop', protected: ['develop'] } })
+  for (const name of ['a', 'b']) {
+    mkdirSync(join(root, 'plugins', name), { recursive: true })
+    writeFileSync(join(root, 'plugins', name, 'adf-extension.json'), JSON.stringify({ name, contract: '1.6', provides: { provision: { script: 's.mjs', operations: ['provision'] }, teardown: { script: 's.mjs', operations: ['teardown'] } } }))
+    assert.deepEqual(addExtension(root, `plugins/${name}`, { ...CORE, home }).points, ['provision', 'teardown'])
+  }
+  const check = checkRegistry(root, { ...CORE, home })
+  assert.equal(check.ok, true, check.errors.join('; '))
+  assert.deepEqual(check.plugins.map((p) => p.name), ['a', 'b'])
 })

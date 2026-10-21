@@ -749,7 +749,7 @@ export function mergeLocalStep(ctx, { yes = false, no = false } = {}) {
 
 export function removeStep(ctx) {
   return runStep(ctx, 'remove', () => {
-    const out = removeWorktree(ctx.main, { change: ctx.change })
+    const out = removeWorktree(ctx.main, { change: ctx.change }, { core: { ...CORE, ...(ctx.home ? { home: ctx.home } : {}) } })
     return { state: 'done', detail: out }
   })
 }

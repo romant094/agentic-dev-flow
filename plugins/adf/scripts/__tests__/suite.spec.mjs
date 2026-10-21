@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url'
 import { setBranches } from '../lib/branches.mjs'
 import { baseCheckPath } from '../lib/groups.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
-import { initRegistry } from '../lib/registry.mjs'
-import { commandIn, countLines, countsOf, failingIn, readCommand, readTestRecord, runCovering, runSuite, writeCommand } from '../lib/suite.mjs'
+import { initRegistry, readRegistry } from '../lib/registry.mjs'
+import { commandIn, countLines, countsOf, failingIn, proofIn, readCommand, readTestRecord, runCovering, runSuite, writeCommand } from '../lib/suite.mjs'
 import { computeVerdict, runChecks, verifyDir } from '../lib/verify.mjs'
 import { create } from '../lib/workspace.mjs'
 import { judged } from './verify-replies.mjs'
@@ -248,6 +248,64 @@ test('a base-check worktree git refuses to remove is reported and left', () => {
   assert.equal(existsSync(baseCheckPath(main, CHANGE)), true)
   rmSync(join(baseCheckPath(main, CHANGE), 'junk.txt'))
   git(main, 'worktree', 'remove', baseCheckPath(main, CHANGE))
+})
+
+test('a base-check worktree whose provisioning refused runs nothing, cannot run, and is removed', () => {
+  const { main, root } = host({ baseMode: 'fail:a', headMode: 'fail:a' })
+  const plugin = realpathSync(mkdtempSync(join(tmpdir(), 'adf-suite-plugin-')))
+  writeFileSync(join(plugin, 'adf-extension.json'), JSON.stringify({ name: 'no', contract: '1.6', provides: { provision: { script: 'p.mjs', operations: ['provision'] } } }))
+  writeFileSync(join(plugin, 'p.mjs'), `console.log(JSON.stringify({ state: 'refused', error: 'no tool' }))`)
+  commit(root, { '.claude/adf-extensions.json': `${JSON.stringify({ ...readRegistry(root), extensions: [{ path: plugin, points: ['provision'] }] }, null, 2)}\n` }, 'provider')
+  const r = runSuite(root, { change: CHANGE, baseCheck: true, section: 'test-record' })
+  assert.equal(r.base.cannotRun, true)
+  assert.match(r.base.error, /the base-check worktree is made at .*, but provision refused: no tool/)
+  assert.equal(r.base.exit, undefined, 'nothing ran on the base')
+  assert.equal(r.base.removed, true)
+  assert.equal(existsSync(baseCheckPath(main, CHANGE)), false)
+  assert.equal(r.blocking, true)
+  assert.match(r.section.summary, /the base check could not run/)
+})
+
+// ---------------------------------------------------------------- the fresh-run proof
+
+test('the fresh-run proof reads one line of its section; no section is null', () => {
+  assert.equal(proofIn('## Fresh-run proof\n\n<!-- c -->\n`Cached:    0 cached`\n'), 'Cached:    0 cached')
+  assert.equal(proofIn('## Fresh-run proof\n\n```text\nfresh run\n```\n## Next\n'), 'fresh run')
+  assert.equal(proofIn('# Guide\n'), null)
+  assert.equal(proofIn('## Fresh-run proof\n\n<!-- only a comment -->\n'), null)
+  assert.throws(() => proofIn('## Fresh-run proof\n\na\nb\n'), /the ## Fresh-run proof section holds 2 lines; it must hold one line/)
+})
+
+// The change's guide with a `## Fresh-run proof` section holding `line`, committed.
+function withProof(root, line) {
+  const file = 'openspec/planning.md'
+  commit(root, { [file]: `${readFileSync(join(root, file), 'utf8')}\n## Fresh-run proof\n\n\`${line}\`\n` }, 'proof')
+}
+
+test('a run whose output holds the proof line stands; one that lacks it fails, as maybe cached', () => {
+  const fresh = host()
+  withProof(fresh.root, 'MARKER-RAW-OUTPUT')
+  const ok = runSuite(fresh.root, { change: CHANGE, record: true })
+  assert.deepEqual([ok.status, ok.ok, ok.fresh], ['pass', true, true])
+
+  const { root } = host()
+  withProof(root, 'Cached:    0 cached')
+  const out = cli(['run', '--change', CHANGE, '--root', root, '--record', '--section', 'test-record'])
+  assert.equal(out.code, 1)
+  const r = out.json
+  assert.deepEqual([r.status, r.exit, r.ok, r.fresh, r.blocking], ['fail', 0, false, false, true])
+  assert.equal(r.reason, 'the output lacks the fresh-run proof line `Cached:    0 cached` of openspec/planning.md: the run may be cached')
+  const record = readFileSync(join(root, r.record), 'utf8')
+  assert.doesNotMatch(record, /\*\*Commit:\*\*/, 'a run that may be cached is no record verify cites')
+  assert.match(record, /\*\*Fresh-run proof:\*\* the output lacks the fresh-run proof line/)
+  assert.deepEqual([r.section.verdict, r.section.summary], ['fail', r.reason])
+})
+
+test('a failing run that lacks the proof line is not compared with the base', () => {
+  const { root } = host({ baseMode: 'fail:a', headMode: 'fail:a' })
+  withProof(root, 'Cached:    0 cached')
+  const r = runSuite(root, { change: CHANGE, baseCheck: true })
+  assert.deepEqual([r.status, r.blocking, r.base, r.preExisting], ['fail', true, undefined, []])
 })
 
 test('a suite that cannot run is a failure, not a pass', () => {
