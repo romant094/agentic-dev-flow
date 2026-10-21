@@ -1,0 +1,14 @@
+{
+  "name": "adf-postgres",
+  "contract": "1.6",
+  "provides": {
+    "provision": {
+      "script": "scripts/postgres.mjs",
+      "operations": ["provision"]
+    },
+    "teardown": {
+      "script": "scripts/postgres.mjs",
+      "operations": ["teardown"]
+    }
+  }
+}

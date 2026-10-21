@@ -1,0 +1,8 @@
+{
+  "name": "adf-postgres",
+  "description": "A disposable PostgreSQL database for each change and group worktree of the Agentic Dev Flow: creates it from the branch name, points the worktree's env file at it, and drops it at teardown",
+  "version": "0.1.0",
+  "author": { "name": "Anton Romankov" },
+  "license": "MIT",
+  "keywords": ["postgres", "database", "worktree", "workflow"]
+}
