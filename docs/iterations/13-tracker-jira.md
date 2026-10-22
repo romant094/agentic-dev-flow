@@ -273,3 +273,7 @@ Settled by the developer on 2026-10-22.
   and `glab` faked on `PATH`; it fails on the previous code.
 
 Versions: adf 0.14.2; adf-jira 0.2.0.
+
+Left for later: `tracker-plugins.spec.mjs` writes the scope fixture itself, so `gather`,
+`select`, `check-input` and `check` are not run against the real `adf-jira`; the fake `glab`
+is a POSIX shell script, so the forge leg does not run on Windows.
