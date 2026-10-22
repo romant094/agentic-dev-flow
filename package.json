@@ -5,7 +5,7 @@
 	"description": "Agentic Dev Flow: a spec-driven change workflow core and the plugins that extend it",
 	"license": "MIT",
 	"scripts": {
-		"test": "node --test plugins/*/scripts/__tests__/*.spec.mjs && node scripts/check-lessons.mjs",
+		"test": "node --test plugins/*/scripts/__tests__/*.spec.mjs scripts/parity/__tests__/*.spec.mjs && node scripts/check-lessons.mjs",
 		"parity": "node scripts/parity/run.mjs"
 	},
 	"engines": {
