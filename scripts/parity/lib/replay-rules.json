@@ -1,0 +1,574 @@
+{
+  "about": "Data of scripts/parity/origin-replay.mjs (iteration 14, step 7): how a replay's result is read and how each difference from the origin is classified. No origin content: no change name, commit, branch or merge request body. A rule matches a difference when every field of its `match` holds; the first matching rule classifies it. An `explained` rule cites a lessons row by a phrase of that row, resolved at run time to docs/lessons/<file>:<line> the way scripts/check-lessons.mjs reads the tables; a citation that resolves to no row makes the difference a defect. A difference no rule matches is a defect when it is strong (D7) and recorded only otherwise.",
+  "classes": [
+    "explained",
+    "older-origin",
+    "injected",
+    "defect"
+  ],
+  "strong": [
+    "^phase-stopped:",
+    "^archive-resume$",
+    "^branch$",
+    "^base$",
+    "^ledger-(lost|invented):",
+    "^spec-merge:",
+    "^mr:(state|count|target|source|squash|finalize)$",
+    "^gate:",
+    "^verify-check:",
+    "^verify-ruling:",
+    "^review:verdict$",
+    "^driver:"
+  ],
+  "verifyTitles": {
+    "structural validation": "validation",
+    "task completion": "tasks",
+    "delta spec sync state": "deltas",
+    "design / specs coherence": "c4",
+    "design and specs coherence": "c4",
+    "implementation signal": "tree",
+    "tests for what this change touched": "test-record",
+    "no leftover group worktree": "worktrees",
+    "stale-skill check": "c8",
+    "out-of-plan commits": "out-of-plan",
+    "migration ordering": "ext:adf-prisma:migration-order"
+  },
+  "phases": [
+    {
+      "phase": "propose",
+      "end": "^docs\\(openspec\\): propose "
+    },
+    {
+      "phase": "apply",
+      "end": "record (the )?(apply|whole-suite run)|apply (suite|test) run"
+    },
+    {
+      "phase": "verify",
+      "end": "^docs\\(openspec\\): (verify |record .*\\bverify\\b)"
+    },
+    {
+      "phase": "review",
+      "end": "^docs\\(openspec\\): (review |record ai code review)"
+    },
+    {
+      "phase": "archive",
+      "end": "^docs\\(memory\\): ingest |^chore\\(metrics\\): record "
+    },
+    {
+      "phase": "after-archive",
+      "end": null
+    }
+  ],
+  "commitKinds": [
+    {
+      "kind": "develop-merge",
+      "subject": "^Merge (branch 'develop'|origin/develop|remote-tracking branch 'origin/develop')"
+    },
+    {
+      "kind": "group-merge",
+      "subject": "^Merge branch '[^']+--group-[A-Za-z0-9]+'"
+    },
+    {
+      "kind": "workaround",
+      "subject": "^chore\\(replay\\): |\\(the rest of the origin's fix commit\\)$|^docs\\(openspec\\): name the Execution Graph groups of "
+    },
+    {
+      "kind": "tick",
+      "subject": "^(chore|docs)\\(openspec\\): tick "
+    },
+    {
+      "kind": "archive",
+      "subject": "^docs\\((openspec|specs)\\): archive "
+    },
+    {
+      "kind": "ingest",
+      "subject": "^docs\\(memory\\): ingest "
+    },
+    {
+      "kind": "metrics",
+      "subject": "^chore\\(metrics\\): "
+    },
+    {
+      "kind": "record",
+      "subject": "^(docs|chore|test)\\(openspec\\): "
+    }
+  ],
+  "rules": [
+    {
+      "id": "in-flight-metadata",
+      "match": {
+        "key": "^driver:apply$",
+        "what": "no \\.adf\\.json"
+      },
+      "class": "defect",
+      "fix": "Read the base of a change that has no .adf.json from its .openspec.yaml (or the integration branch) in lib/changes.mjs, so preflight, plan-symbols, dispatch, the sweep, verify's range and forge continue an in-flight origin change.",
+      "decision": "none",
+      "why": "Strong (a stopped phase): the port cannot continue a change the origin's propose made."
+    },
+    {
+      "id": "group-label",
+      "match": {
+        "key": "^driver:apply$",
+        "what": "dispatch\\.mjs parseGraph does not"
+      },
+      "class": "defect",
+      "fix": "Make lib/dispatch.mjs parseGraph read the group letter the way plan.mjs schedule does (a labelled cell such as \"A: contracts\"), one parser for both.",
+      "decision": "none",
+      "why": "Strong (a stopped phase): every dispatch of the labelled groups is refused."
+    },
+    {
+      "id": "commit-none",
+      "match": {
+        "key": "^driver:apply$",
+        "what": "Commit step is \"none\""
+      },
+      "class": "defect",
+      "fix": "Let impl.schema.json and dispatch.mjs reply accept a done impl reply with no commit when the task's Commit step says none (a verification-only task), checked against the plan text.",
+      "decision": "none",
+      "why": "Strong (a stopped phase): the port has no valid reply for a task the plan says commits nothing."
+    },
+    {
+      "id": "unassigned-tasks",
+      "match": {
+        "key": "^driver:propose$",
+        "what": "Tasks [0-9, ]+ are in no group"
+      },
+      "class": "older-origin",
+      "why": "The origin plan's tasks outside every group were added at verify and run on the change branch after every group merged; the port records such work against the owning task's Files block, so plan-lint refusing a fresh plan with unassigned tasks is the port's rule (D8; step 8 confirms it on every regular origin plan)."
+    },
+    {
+      "id": "unassigned-tasks-schedule",
+      "match": {
+        "area": "groups",
+        "key": ":tasks$",
+        "stepNamed": "the plan's unassigned tasks"
+      },
+      "class": "injected",
+      "why": "The driver added the origin's unassigned tasks to a group so the port schedules them."
+    },
+    {
+      "id": "fix-touches-other-files",
+      "match": {
+        "key": "^driver:review$",
+        "what": "review\\.mjs fix refuses the origin's fix"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/review.md",
+        "phrase": "touching the finding's file and otherwise only test files, and no other finding's fix"
+      },
+      "why": "The origin's own rule is one fix commit touching only its finding's file; the port checks it, the origin did not. Whether the check should allow a fix's collateral non-test files is the developer's decision."
+    },
+    {
+      "id": "deviation-placement",
+      "match": {
+        "key": "^driver:archive$",
+        "what": "placements lists items"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/archive.md",
+        "phrase": "every deviation must be cited by a `debt` (forced) or a `ruling` (a judgement), so the read is checked"
+      },
+      "why": "The port checks that every deviation and every recorded or accepted finding is placed; the origin's ledger places deviations and findings nowhere it can check."
+    },
+    {
+      "id": "deviation-placement-ruling",
+      "match": {
+        "key": "^ledger-invented:ruling$",
+        "what": "deviation-\\d+"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/archive.md",
+        "phrase": "every deviation must be cited by a `debt` (forced) or a `ruling` (a judgement), so the read is checked"
+      },
+      "why": "The ruling citing a deviation is the record the port's placements check requires."
+    },
+    {
+      "id": "finding-resolve",
+      "match": {
+        "key": "^ledger-invented:resolve$",
+        "what": "\"finding\":\"F\\d+\""
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/archive.md",
+        "phrase": "a recorded finding closes in the ledger too, `resolve --finding F<n>` (a field of the port's own)"
+      },
+      "why": "A port-only record: the port places a recorded or accepted finding in the ledger."
+    },
+    {
+      "id": "specs-base-mid-flight",
+      "match": {
+        "key": "^(verify-check|verify-ruling):specs-base$"
+      },
+      "class": "defect",
+      "fix": "Make verify's specs-base check warn, as archive does, when the change has no specs-base.json at all (a change made before the snapshot), and fail only on a missing or stale entry of an existing file.",
+      "decision": "none",
+      "why": "Strong (a verify FAIL): verify refuses a change with no specs-base.json while archive falls back to the merge base with a warning (docs/lessons/archive.md, the three-way row: \"A change without the snapshot falls back to the merge base, with a warning\"); an in-flight change made before the snapshot fails verify."
+    },
+    {
+      "id": "out-of-plan-unbackticked",
+      "match": {
+        "key": "^(verify-check|verify-ruling):out-of-plan$"
+      },
+      "class": "older-origin",
+      "why": "The origin plan names the files by a glob or an unbackticked path its own check read; the port reads only backticked full paths (docs/lessons/verify.md, \"Verify reads only a backticked path.\")."
+    },
+    {
+      "id": "c4-below-requirements",
+      "match": {
+        "key": "^(verify-check|verify-ruling):c4$",
+        "what": "at or below ## Requirements"
+      },
+      "class": "older-origin",
+      "why": "The origin edited a main spec at or below `## Requirements` by hand in a task commit, which its flow allowed then; the port's c4 fails such an edit, since only archive writes the requirements."
+    },
+    {
+      "id": "c4-reply-unanswered-edit",
+      "match": {
+        "key": "^driver:verify$",
+        "what": "verify c4 reply",
+        "evidence": "is not answered"
+      },
+      "class": "older-origin",
+      "why": "The port lists the origin's hand edit of a main spec as a prose edit the origin's verify did not count; the origin reply does not answer it."
+    },
+    {
+      "id": "c4-reply-unreplayed-commit",
+      "match": {
+        "key": "^driver:verify$",
+        "what": "verify c4 reply",
+        "evidence": "proseEdits\\[\\d+\\]: the edit of "
+      },
+      "class": "injected",
+      "why": "The origin's c4 reply names a prose-edit commit of the origin's verify phase, which the replay never made (D5)."
+    },
+    {
+      "id": "branch-suggestion",
+      "match": {
+        "key": "^driver:propose$",
+        "what": "workspace\\.mjs suggest proposes"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/propose.md",
+        "phrase": "the core proposes `<type>/<change>`, and `<type>/<KEY>/<change>` when the scope gives a branch key"
+      },
+      "why": "The port proposes a type from the change name's prefix, or asks for one, and takes a tracker key only from the scope; the replay has no scope, so the developer's answer is the origin's branch."
+    },
+    {
+      "id": "mid-flight-propose-session",
+      "match": {
+        "key": "^ledger-lost:session$",
+        "what": "\"phase\":\"propose\"",
+        "mode": "mid-flight"
+      },
+      "class": "injected",
+      "why": "The mid-flight mode starts from the origin's propose commit; the port ran no propose session."
+    },
+    {
+      "id": "plan-lint-unassigned",
+      "match": {
+        "key": "^gate:plan-lint$",
+        "stepNamed": "the plan's unassigned tasks"
+      },
+      "class": "older-origin",
+      "why": "The plan-lint refusal of the origin's tasks outside every group (D8); see rule unassigned-tasks."
+    },
+    {
+      "id": "flow-debt-renamed",
+      "match": {
+        "key": "^ledger-renamed:resolve:as$"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/archive.md",
+        "phrase": "in a host a flow defect is a defect of the plugin; it is a record of kind `adf` in the core's debt store"
+      },
+      "why": "The origin's flow-debt destination is the port's adf-debt."
+    },
+    {
+      "id": "validation-scope",
+      "match": {
+        "key": "^verify-check-passes:validation$"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/verify.md",
+        "phrase": "the blocking part is the change's own strict validation (`validateProject` with the change)"
+      },
+      "why": "The origin's check 1 failed on main specs outside the change; the port validates the change itself."
+    },
+    {
+      "id": "unreplayed-spec-edit",
+      "match": {
+        "area": "specs",
+        "flag": "unreplayed-edit"
+      },
+      "class": "injected",
+      "why": "The origin edited the main spec in a verify-phase commit (a prose edit) that the replay does not make: no reply carries it (D5)."
+    },
+    {
+      "id": "spec-layout",
+      "match": {
+        "key": "^spec-format:"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/archive.md",
+        "phrase": "no agent edits the main specs; the script writes them"
+      },
+      "why": "The port's script writes the merged spec in its own layout (no blank line around `## Requirements`, the `# <capability> Specification` title of a new capability); the origin's main specs were written by an agent. The requirements are the same."
+    },
+    {
+      "id": "verify-template",
+      "match": {
+        "key": "^artifact-headings:verify\\.md$"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/verify.md",
+        "phrase": "the `verify` artifact in `schema.json` gets `instruction` and `template`"
+      },
+      "why": "verify.md is rendered from the port's template, one section per check id."
+    },
+    {
+      "id": "review-template",
+      "match": {
+        "key": "^artifact-headings:review\\.md$"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/review.md",
+        "phrase": "rendered by `assemble`; `review.mjs check` reads it back"
+      },
+      "why": "review.md is rendered by review.mjs assemble: findings numbered F<n>, the suite after the fixes."
+    },
+    {
+      "id": "test-record",
+      "match": {
+        "key": "^artifact-headings:\\.apply-test-record\\.md$"
+      },
+      "class": "injected",
+      "why": "The record holds the output of the sandbox's fake suite command, in the port's record format."
+    },
+    {
+      "id": "scope-record",
+      "match": {
+        "key": "^(artifact-only-port:scope\\.json|artifact-headings:proposal\\.md)$"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/propose.md",
+        "phrase": "a task ID comes from the tracker scope as a suggestion (`scope.mjs select` names the branch key)"
+      },
+      "why": "The port records the tracker scope of a change (scope.json, the proposal's Scope sources); the origin had no scope step."
+    },
+    {
+      "id": "tick-commits",
+      "match": {
+        "key": "^commits:apply:tick$"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/apply.md",
+        "phrase": "a script ticks a task by its id when the task's dispatch returns"
+      },
+      "why": "The port ticks each task by script when its dispatch returns, one commit each."
+    },
+    {
+      "id": "fan-out",
+      "match": {
+        "key": "^(group-merges|commits:apply:group-merge)$"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/apply.md",
+        "phrase": "Fan-out within the cap is mandatory"
+      },
+      "why": "The port runs every group in its own worktree and merges it; the origin ran some groups on the change branch (its deviation records say so)."
+    },
+    {
+      "id": "metrics-commit",
+      "match": {
+        "key": "^commits:archive:metrics$"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/archive.md",
+        "phrase": "committed on its own as `chore(metrics): record <name>`"
+      },
+      "why": "The port commits the metrics record on its own after the ingest."
+    },
+    {
+      "id": "review-record-commit",
+      "match": {
+        "key": "^commits:review:record$"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/review.md",
+        "phrase": "the message is fixed by the script, `docs(openspec): review <change>`"
+      },
+      "why": "The review record commit has the port's subject."
+    },
+    {
+      "id": "review-fix-missing",
+      "match": {
+        "area": "review",
+        "key": "^review:(rounds|dispositions)$",
+        "stepNamed": "^agent: ai-fix F\\d+ r\\d+$"
+      },
+      "class": "injected",
+      "why": "The origin's fix commit is not in git any more (the branch is gone), so no fix reply exists; the finding was accepted by an injected ruling."
+    },
+    {
+      "id": "after-archive-work",
+      "match": {
+        "key": "^commits:after-archive:"
+      },
+      "class": "older-origin",
+      "why": "Work the origin committed on the branch after its archive and ingest (merge request review fixes, a merge of the integration branch), outside every flow phase; the port's review stage runs the same review before archive."
+    },
+    {
+      "id": "apply-work-final-review",
+      "match": {
+        "key": "^commits:apply:lost$",
+        "stepNamed": "^agent: (final-review|sweep)$"
+      },
+      "class": "injected",
+      "why": "Commits the origin made in apply outside any task (the final review's fixes, the sweep's consolidation): the replay replies only task commits, and the final review and the sweep get an injected clean reply."
+    },
+    {
+      "id": "workaround-commits",
+      "match": {
+        "key": "^commits:[a-z-]+:workaround$"
+      },
+      "class": "injected",
+      "why": "Commits the driver made to work around a refusal (a plan relabel, a task that commits nothing, a split fix, the in-flight base)."
+    },
+    {
+      "id": "develop-merge-mid-flight",
+      "match": {
+        "key": "^commits:apply:develop-merge$",
+        "mode": "mid-flight"
+      },
+      "class": "injected",
+      "why": "The driver merges the host setup into the in-flight branch, as the switch brings it to an in-flight change."
+    },
+    {
+      "id": "ingest-injected",
+      "match": {
+        "key": "^(tree-content:\\.claude/memory/|tree-only-(port|origin):\\.claude/memory/|commits:archive:ingest$)",
+        "stepNamed": "^agent: ingest$"
+      },
+      "class": "injected",
+      "why": "The records give no ingest reply for this change (no log bullet or paragraph the reply builder reads), so the replay injected nothingLearned or a partial reply; the origin's memory edits are not made."
+    },
+    {
+      "id": "log-clock",
+      "match": {
+        "key": "^tree-content-normalized:"
+      },
+      "class": "injected",
+      "why": "The knowledge base's log entry carries the replay's time and git identity; the entry is otherwise the origin's."
+    },
+    {
+      "id": "injected-step",
+      "match": {
+        "hint": "injected",
+        "notHint": "blocked"
+      },
+      "class": "injected",
+      "why": "The difference comes from a step the replay synthesized (a reply, a ruling, a placement or a workaround)."
+    },
+    {
+      "id": "base-drift",
+      "match": {
+        "flag": "base-drift"
+      },
+      "class": "injected",
+      "why": "The origin's integration branch moved between the change's base and its merge; the replay starts from the base (D3)."
+    },
+    {
+      "id": "host-setup",
+      "match": {
+        "flag": "host-setup"
+      },
+      "class": "injected",
+      "why": "A file the replay's host setup wrote: the edits the switch makes (iteration 15)."
+    },
+    {
+      "id": "mid-flight-no-land",
+      "match": {
+        "key": "^mr:state$",
+        "mode": "mid-flight"
+      },
+      "class": "injected",
+      "why": "The mid-flight mode ends at archive; the developer's merge (land) is not run."
+    },
+    {
+      "id": "metadata-file",
+      "match": {
+        "key": "^artifact-only-(port:\\.adf\\.json|origin:\\.openspec\\.yaml)$"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/archive.md",
+        "phrase": "the port's `.adf.json` moves with it"
+      },
+      "why": "The port's change metadata is .adf.json, not .openspec.yaml."
+    },
+    {
+      "id": "metadata-file-mid-flight",
+      "match": {
+        "key": "^artifact-only-port:\\.openspec\\.yaml$",
+        "mode": "mid-flight"
+      },
+      "class": "injected",
+      "why": "The in-flight change keeps the origin's .openspec.yaml beside the .adf.json the driver wrote."
+    },
+    {
+      "id": "specs-base-file",
+      "match": {
+        "key": "^artifact-only-port:specs-base\\.json$"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/archive.md",
+        "phrase": "The base is snapshotted at propose into the change's `specs-base.json`"
+      },
+      "why": "The port snapshots the delta specs' base at propose for archive's three-way check."
+    },
+    {
+      "id": "attempts-file",
+      "match": {
+        "key": "^artifact-only-port:attempts\\.jsonl$"
+      },
+      "class": "explained",
+      "cite": {
+        "file": "docs/lessons/metrics.md",
+        "phrase": "\"performed\" is the wave-1 groups a group dispatch name of `attempts.jsonl` carries"
+      },
+      "why": "The port records every dispatch attempt; the metrics read it."
+    }
+  ],
+  "ledgerRenames": [
+    {
+      "kind": "resolve",
+      "field": "as",
+      "origin": "flow-debt",
+      "port": "adf-debt"
+    }
+  ],
+  "contentNormalize": [
+    {
+      "path": "\\.claude/memory/log\\.md$",
+      "pattern": "^## \\[[^\\]]*\\] (.*) \\| [^|]*$",
+      "flags": "gm",
+      "replace": "## [] $1 |"
+    }
+  ]
+}
