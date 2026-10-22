@@ -11,23 +11,33 @@
 //   debt.mjs list [--kind debt|adf]
 //       every block, sub-block and entry, computed from the files.
 //       { ok, root, blocks: [{ id, kind, covers, index, columns, subBlocks, bodyFiles }],
-//         entries: [entry], groups: [{ key, entries: [id] }] }
+//         entries: [entry], resolved: [resolved], groups: [{ key, entries: [id] }] }
+//       entries are the open debt; resolved are the rows of the blocks' resolved.md, never entries
 //       groups: each tracker key with the ids of the debt entries holding it, in tree order
-//       entry (kind debt) { id, kind, block, subBlock, title, anchors, class, source, tracker }
+//       entry (kind debt) { id, kind, block, subBlock, title, anchors, class, source, tracker,
+//                           precedent }
+//       resolved          { id, kind, block, title, anchors, class, tracker, resolvedBy, date }
 //       entry (kind adf)  { id, kind, block, title, plugin, pluginVersion, change, class,
 //                           source, filed, body }
 //       a block `flow` written before the kind was renamed lists as kind adf.
 //   debt.mjs add --block <id> --title <t> --anchors <a1,a2> --class defect|debt|decision
-//                --source <s> [--sub <sub-block>] [--covers <text>]
+//                --source <s> [--sub <sub-block>] [--covers <text>] [--precedent <resolved id>]
 //       the block's next id; anchors split at a comma not followed by a digit, so
 //       `file.ts:187,207` is one. A new block gets its directory and its root-index row
-//       (--covers fills its Covers cell). The same block, title and source again changes
-//       nothing.
+//       (--covers fills its Covers cell). --precedent names a row of some block's resolved.md
+//       in the Precedent column, added to the table when it has none. The same block, title and
+//       source again changes nothing.
 //       { ok, created, newBlock, entry, files }
 //   debt.mjs anchor --id <id> --anchor <site>
 //       one more code site for an existing entry. { ok, added, entry }
+//   debt.mjs resolve --id <id> --by <archived change dir> [--date YYYY-MM-DD]
+//       move a resolved entry from its block index to the block's resolved.md, with the
+//       archived change's directory and the date (default today); the id stays a row of the tree
+//       and is never allocated again. An id already resolved is refused.
+//       { ok, resolved, files }
 //   debt.mjs remove --id <id>
-//       delete a resolved entry; no other id changes. { ok, removed, files }
+//       delete a record that is not work: an ADF record, or an entry written by mistake; no other
+//       id changes. { ok, removed, files }
 //   debt.mjs check
 //       the tree's rules. { ok, errors: [{ file, line, message }] }
 //   debt.mjs adf --change <name> --file <json>
@@ -42,15 +52,16 @@
 //       entries hold is accepted: one tracker issue mirrors a group. { ok, changed, entry, files }
 import { readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
-import { addAnchor, addEntry, addAdfRecord, checkTree, ensureRootIndex, listTree, markFiled, removeEntry, setTracker, trackerGroups } from './lib/debt.mjs'
+import { addAnchor, addEntry, addAdfRecord, checkTree, ensureRootIndex, listTree, markFiled, removeEntry, resolveEntry, setTracker, trackerGroups } from './lib/debt.mjs'
 import { isMain } from './lib/main.mjs'
 import { readDebtRoot, setDebtRoot } from './lib/registry.mjs'
 
 export const USAGE = `usage:
   debt.mjs root [--set <path>] [--root <dir>]
   debt.mjs list [--kind debt|adf] [--root <dir>] [--tree <dir>]
-  debt.mjs add --block <id> --title <t> --anchors <a1,a2> --class defect|debt|decision --source <s> [--sub <sub-block>] [--covers <text>] [--root <dir>] [--tree <dir>]
+  debt.mjs add --block <id> --title <t> --anchors <a1,a2> --class defect|debt|decision --source <s> [--sub <sub-block>] [--covers <text>] [--precedent <resolved id>] [--root <dir>] [--tree <dir>]
   debt.mjs anchor --id <id> --anchor <site> [--root <dir>] [--tree <dir>]
+  debt.mjs resolve --id <id> --by <archived change dir> [--date YYYY-MM-DD] [--root <dir>] [--tree <dir>]
   debt.mjs remove --id <id> [--root <dir>] [--tree <dir>]
   debt.mjs check [--root <dir>] [--tree <dir>]
   debt.mjs adf --change <name> --file <json> [--root <dir>] [--tree <dir>]
@@ -63,8 +74,9 @@ export class UsageError extends Error {}
 const TAKES = {
   root: { required: [], optional: ['set'] },
   list: { required: [], optional: ['kind'] },
-  add: { required: ['block', 'title', 'anchors', 'class', 'source'], optional: ['sub', 'covers'] },
+  add: { required: ['block', 'title', 'anchors', 'class', 'source'], optional: ['sub', 'covers', 'precedent'] },
   anchor: { required: ['id', 'anchor'], optional: [] },
+  resolve: { required: ['id', 'by'], optional: ['date'] },
   remove: { required: ['id'], optional: [] },
   check: { required: [], optional: [] },
   adf: { required: ['change', 'file'], optional: [] },
@@ -141,10 +153,12 @@ export function run(argv, { cwd = process.cwd() } = {}) {
         .split(/,(?!\d)/)
         .map((a) => a.trim())
         .filter(Boolean)
-      return { ok: true, ...addEntry(tree, { block: values.block, title: values.title, anchors, class: values.class, source: values.source, subBlock: values.sub ?? null, covers: values.covers ?? null }) }
+      return { ok: true, ...addEntry(tree, { block: values.block, title: values.title, anchors, class: values.class, source: values.source, subBlock: values.sub ?? null, covers: values.covers ?? null, precedent: values.precedent ?? null }) }
     }
     case 'anchor':
       return { ok: true, ...addAnchor(tree, { id: values.id, anchor: values.anchor }) }
+    case 'resolve':
+      return { ok: true, ...resolveEntry(tree, { id: values.id, by: values.by, ...(values.date !== undefined ? { date: values.date } : {}) }) }
     case 'remove':
       return { ok: true, ...removeEntry(tree, { id: values.id }) }
     case 'check':

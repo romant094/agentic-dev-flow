@@ -70,6 +70,26 @@ describe('sync-debt.mjs state', () => {
     assert.deepEqual(state.keyless[0].related, { groups: [{ key: 'PROJ-7', by: ['block', 'anchor-file'] }], entries: [{ id: 'snmp-04', by: ['block'] }] })
     assert.deepEqual(state.keyless[2].related, { groups: [{ key: 'PROJ-9', by: ['block'] }], entries: [] })
   })
+
+  it('ignores resolved rows: a resolved entry is in no group, and a group whose entries are all resolved gets no edit row', () => {
+    const resolved = (rows) => `# Resolved\n\n| ID | Title | Anchors | Class | Tracker | Resolved by | Date |\n|---|---|---|---|---|---|---|\n${rows.join('\n')}\n`
+    const by = '`openspec/changes/archive/2026-10-20-fix`'
+    const root = host({
+      files: {
+        'debt/snmp/index.md': SNMP.replace('Last id: `snmp-04`', 'Last id: `snmp-05`'),
+        'debt/snmp/resolved.md': resolved([`| \`snmp-05\` | Walk retries forever | \`walk.ts:9\` | defect | PROJ-7 | ${by} | 2026-10-20 |`]),
+        'debt/ui/index.md': UI.replace('Last id: `ui-02`', 'Last id: `ui-04`'),
+        'debt/ui/resolved.md': resolved([`| \`ui-03\` | Grid flickers | \`grid.tsx:1\` | defect | PROJ-11 | ${by} | 2026-10-20 |`, `| \`ui-04\` | Grid jumps | \`grid.tsx:7\` | defect | |  ${by} | 2026-10-20 |`])
+      }
+    })
+    const state = call(root, 'state')
+    assert.deepEqual(state.groups.map((g) => [g.key, g.entries.map((e) => e.id)]), [['PROJ-7', ['snmp-01', 'snmp-02']], ['PROJ-9', ['ui-01']]])
+    assert.deepEqual(state.keyless.map((e) => e.id), ['snmp-03', 'snmp-04', 'ui-02'])
+    assert.deepEqual(state.order, ['snmp-01', 'snmp-02', 'snmp-03', 'snmp-04', 'ui-01', 'ui-02'])
+    const plan = call(root, 'plan', '--file', grouping(root, GROUPING), '--type', 'Sub-task', '--attach', 'parent')
+    assert.deepEqual(plan.rows, { create: 1, edit: 2 })
+    assert.deepEqual(loadPlan(plan.plans.edit).rows.map((r) => [r.key, r.entries]), [['PROJ-7', ['snmp-01', 'snmp-02', 'snmp-03']], ['PROJ-9', ['ui-01']]])
+  })
 })
 
 describe('sync-debt.mjs check-groups', () => {

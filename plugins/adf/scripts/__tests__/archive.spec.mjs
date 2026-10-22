@@ -433,25 +433,37 @@ const DEBT_TREE = {
 const debtItem = (key, state) => ({ source: 'debt', key, title: `Entry ${key}`, kind: 'debt', state, reason: state === 'taken' ? null : 'part of it', block: 'snmp' })
 const DEBT_SCOPE = { version: 1, change: 'add-x', items: [debtItem('snmp-01', 'taken'), debtItem('snmp-02', 'partial'), debtItem('snmp-03', 'taken')] }
 
-test('placements removes the taken debt, keeps the partial, reports a gone entry, and commit-memory commits the removal', () => {
-  const h = archiveHost({ debt: 'docs/debt', extra: DEBT_TREE, scope: DEBT_SCOPE })
+test('placements moves the taken debt to resolved.md by the archived directory, keeps the partial, and commit-memory commits the move', () => {
+  // snmp-04 was resolved by an earlier run: it counts as resolved, and its row is not touched.
+  const OLD = '| `snmp-04` | Entry snmp-04 | `a.ts:1` | debt |  | `openspec/changes/archive/2026-10-18-add-x` | 2026-10-18 |'
+  const extra = { ...DEBT_TREE, 'docs/debt/snmp/resolved.md': ['# Resolved debt of `snmp`', '', '| ID | Title | Anchors | Class | Tracker | Resolved by | Date |', '|---|---|---|---|---|---|---|', OLD, ''].join('\n') }
+  const h = archiveHost({ debt: 'docs/debt', extra, scope: { ...DEBT_SCOPE, items: [...DEBT_SCOPE.items, debtItem('snmp-04', 'taken')] } })
   assert.equal(call(h, ['check']).ok, true)
   const placed = call(h, ['placements'])
   assert.equal(placed.ok, true, placed.refusal)
-  assert.deepEqual([placed.detail.removedDebt, placed.detail.goneDebt, placed.detail.debtFiles], [['snmp-01'], ['snmp-03'], ['docs/debt/snmp/index.md']])
+  const by = 'openspec/changes/archive/2026-10-19-add-x'
+  assert.deepEqual(
+    [placed.detail.resolvedDebt, placed.detail.goneDebt, placed.detail.resolvedBy, placed.detail.resolvedOn, placed.detail.debtFiles],
+    [['snmp-01', 'snmp-04'], ['snmp-03'], by, '2026-10-19', ['docs/debt/snmp/index.md', 'docs/debt/snmp/resolved.md']]
+  )
   const index = readFileSync(join(h.wt, 'docs/debt/snmp/index.md'), 'utf8')
   assert.equal(index.includes(DEBT_ROW('snmp-01')), false)
   assert.equal(index.includes(DEBT_ROW('snmp-02')), true, 'a partial item stays')
-  assert.match(index, /^Last id: `snmp-02`$/m)
+  assert.match(index, /^Last id: `snmp-04`$/m)
+  const resolved = readFileSync(join(h.wt, 'docs/debt/snmp/resolved.md'), 'utf8')
+  assert.ok(resolved.endsWith(`${OLD}\n| \`snmp-01\` | Entry snmp-01 | \`a.ts:1\` | debt |  | \`${by}\` | 2026-10-19 |\n`), resolved)
+  for (const step of ['merge', 'move']) assert.equal(call(h, [step], { ...NONE, now: () => new Date('2026-10-20T01:00:00Z') }).ok, true, step)
+  assert.equal(readState(h).steps.move.detail.target, by, 'the move after midnight lands where the Resolved by cells point')
+  assert.ok(existsSync(join(h.wt, by, 'proposal.md')))
   const steps = drive(h)
   assert.equal(steps.every((r) => r.ok), true, JSON.stringify(steps.find((r) => !r.ok)))
   const state = readState(h)
   assert.equal(state.steps.ingest.state, 'skipped')
-  assert.match(state.steps.ingest.detail.report, /The removed debt snmp-01, snmp-03 is not logged\./)
+  assert.match(state.steps.ingest.detail.report, /The resolved debt snmp-01, snmp-04, snmp-03 is not logged\./)
   assert.equal(state.steps.ingest.detail.debtLogged, false)
-  assert.deepEqual(state.steps['commit-memory'].detail.files, ['docs/debt/snmp/index.md'])
-  assert.equal(git(h.root, 'log', '--format=%B', 'develop').includes('snmp-01'), false, 'no commit message names the removed id')
-  assert.match(call(h, ['report']).report, /placements: done — every debt, recorded finding and deviation placed; resolved debt removed: snmp-01; taken debt already gone from the tree: snmp-03/)
+  assert.deepEqual(state.steps['commit-memory'].detail.files, ['docs/debt/snmp/index.md', 'docs/debt/snmp/resolved.md'])
+  assert.equal(git(h.root, 'log', '--format=%B', 'develop').includes('snmp-01'), false, 'no commit message names the resolved id')
+  assert.match(call(h, ['report']).report, /placements: done — every debt, recorded finding and deviation placed; resolved debt moved to resolved\.md: snmp-01, snmp-04, resolved by openspec\/changes\/archive\/2026-10-19-add-x; taken debt gone from the tree: snmp-03/)
 })
 
 test('placements with no scope.json leaves the debt tree as it is', () => {
@@ -463,7 +475,7 @@ test('placements with no scope.json leaves the debt tree as it is', () => {
   assert.equal(git(h.wt, 'status', '--porcelain'), '')
 })
 
-test('ingest adds the removed debt ids to the knowledge log entry', () => {
+test('ingest adds the resolved debt ids to the knowledge log entry', () => {
   const MEM = '.claude/memory'
   const h = archiveHost({ debt: 'docs/debt', scope: DEBT_SCOPE, extra: { ...DEBT_TREE, [`${MEM}/index.md`]: '# Index\n', [`${MEM}/log.md`]: '# Log\n' } })
   const context = { state: 'done', plugin: 'memory', index: `${MEM}/index.md`, instructions: { ingest: '/p/ingest.md' }, paths: [`${MEM}/**`], log: [`${MEM}/log.md`] }
@@ -484,13 +496,13 @@ test('ingest adds the removed debt ids to the knowledge log entry', () => {
   writeFileSync(reply, JSON.stringify({ nothingLearned: false, pages: [{ path: `${MEM}/entities/widgets.md`, why: 'the dry store' }], stale: [], invariant: 'a widget is stored dry', likelyMistake: 'storing it wet', log: { title: 'Dry widget store', bullets: ['widgets are stored dry'] } }))
   const ingest = call(h, ['ingest', '--reply', reply], deps)
   assert.equal(ingest.ok, true, ingest.refusal)
-  assert.deepEqual(logged, [{ type: 'ingest', title: 'Dry widget store', bullets: ['widgets are stored dry', 'Resolved debt removed from the debt tree: snmp-01, snmp-03.'] }])
-  assert.deepEqual([ingest.detail.removedDebt, ingest.detail.debtLogged], [['snmp-01', 'snmp-03'], true])
+  assert.deepEqual(logged, [{ type: 'ingest', title: 'Dry widget store', bullets: ['widgets are stored dry', "Resolved debt, moved to its block's resolved.md in the debt tree: snmp-01, snmp-03."] }])
+  assert.deepEqual([ingest.detail.resolvedDebt, ingest.detail.debtLogged], [['snmp-01', 'snmp-03'], true])
   const memory = call(h, ['commit-memory'], deps)
-  assert.deepEqual(memory.detail.files, [`${MEM}/entities/widgets.md`, `${MEM}/log.md`, 'docs/debt/snmp/index.md'])
+  assert.deepEqual(memory.detail.files, [`${MEM}/entities/widgets.md`, `${MEM}/log.md`, 'docs/debt/snmp/index.md', 'docs/debt/snmp/resolved.md'])
 })
 
-test('with nothing learned the removed debt ids still get a log entry of their own', () => {
+test('with nothing learned the resolved debt ids still get a log entry of their own', () => {
   const MEM = '.claude/memory'
   const h = archiveHost({ debt: 'docs/debt', scope: DEBT_SCOPE, extra: { ...DEBT_TREE, [`${MEM}/index.md`]: '# Index\n', [`${MEM}/log.md`]: '# Log\n' } })
   const context = { state: 'done', plugin: 'memory', index: `${MEM}/index.md`, instructions: { ingest: '/p/ingest.md' }, paths: [`${MEM}/**`], log: [`${MEM}/log.md`] }
@@ -502,7 +514,7 @@ test('with nothing learned the removed debt ids still get a log entry of their o
   writeFileSync(reply, JSON.stringify({ nothingLearned: true, pages: [], stale: [], invariant: '', likelyMistake: '', log: null }))
   const ingest = call(h, ['ingest', '--reply', reply], deps)
   assert.equal(ingest.ok, true, ingest.refusal)
-  assert.deepEqual(logged, [{ type: 'ingest', title: 'Resolved debt of add-x', bullets: ['Resolved debt removed from the debt tree: snmp-01, snmp-03.'] }])
+  assert.deepEqual(logged, [{ type: 'ingest', title: 'Resolved debt of add-x', bullets: ["Resolved debt, moved to its block's resolved.md in the debt tree: snmp-01, snmp-03."] }])
   assert.equal(ingest.detail.nothingLearned, true)
 })
 

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setBranches } from '../lib/branches.mjs'
-import { addEntry, setTracker } from '../lib/debt.mjs'
+import { addEntry, resolveEntry, setTracker } from '../lib/debt.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { createChange, markDone } from '../lib/propose.mjs'
 import { initRegistry, readRegistry, setDebtRoot, writeRegistry } from '../lib/registry.mjs'
@@ -133,6 +133,41 @@ test('no tracker and no debt match is empty: one report, nothing to select, and 
 test('with neither keys nor a phrase the change name searches the debt store', () => {
   const root = host({ tracker: false })
   assert.deepEqual(scope(root, 'gather', '--change', 'fix-session-pool').items.map((i) => i.key), ['snmp-01', 'snmp-03'])
+})
+
+test('gather returns resolved debt as precedents, never as items; check-input gives each item its own, and render lists them', () => {
+  const root = host({ tracker: false })
+  const tree = join(root, 'docs', 'debt')
+  const fixIndex = 'openspec/changes/archive/2026-10-01-fix-index'
+  const fixPool = 'openspec/changes/archive/2026-10-02-fix-old-pool'
+  addEntry(tree, { block: 'snmp', title: 'Session pool reconnect leaks sockets', anchors: ['pool.ts:5'], class: 'defect', source: 'review' })
+  resolveEntry(tree, { id: 'snmp-02', by: fixIndex, date: '2026-10-01' })
+  resolveEntry(tree, { id: 'snmp-04', by: fixPool, date: '2026-10-02' })
+  addEntry(tree, { block: 'snmp', title: 'Pool reconnect drops the session', anchors: ['pool.ts:90'], class: 'debt', source: 'review', precedent: 'snmp-02' })
+  for (const f of ['proposal.md', 'design.md', 'tasks.md']) {
+    mkdirSync(join(root, fixPool), { recursive: true })
+    writeFileSync(join(root, fixPool, f), `# ${f}\n`)
+  }
+  const out = scope(root, 'gather', '--change', 'fix-pool', '--text', 'session pool reconnect')
+  assert.deepEqual(out.items.map((i) => [i.key, i.state]), [['snmp-01', 'candidate'], ['snmp-03', 'candidate'], ['snmp-05', 'candidate']])
+  assert.deepEqual(out.precedents, [
+    { key: 'snmp-02', title: 'Trailing index parsed twice', resolvedBy: fixIndex, date: '2026-10-01' },
+    { key: 'snmp-04', title: 'Session pool reconnect leaks sockets', resolvedBy: fixPool, date: '2026-10-02' }
+  ])
+  assert.deepEqual(readScope(root, 'fix-pool').precedents.map((p) => [p.key, p.matched]), [['snmp-02', 'precedent'], ['snmp-04', 'text']])
+  assert.match(out.report, /Debt: snmp-01 \(phrase\), snmp-03 \(phrase\), snmp-05 \(phrase\)\.\nPrecedent: snmp-02, Trailing index parsed twice, resolved by `openspec\/changes\/archive\/2026-10-01-fix-index` on 2026-10-01\.\nPrecedent: snmp-04,/)
+
+  scope(root, 'select', '--change', 'fix-pool', '--take', 'snmp-01,snmp-05', '--rest', 'its own change')
+  const input = scope(root, 'check-input', '--change', 'fix-pool')
+  const of = (key) => JSON.parse(readFileSync(input.dispatches.find((d) => d.key === key).inputFile, 'utf8')).precedents
+  assert.deepEqual(of('snmp-01'), [
+    { key: 'snmp-04', title: 'Session pool reconnect leaks sockets', class: 'defect', anchors: ['pool.ts:5'], resolvedBy: join(root, fixPool), date: '2026-10-02', files: ['proposal.md', 'design.md', 'tasks.md'].map((f) => join(root, fixPool, f)) }
+  ])
+  assert.deepEqual(of('snmp-05').map((p) => [p.key, p.files.length]), [['snmp-02', 0], ['snmp-04', 3]], 'its Precedent cell, and the title match')
+  assert.match(readFileSync(input.dispatches[0].promptFile, 'utf8'), /read the design and the tasks of each precedent/)
+
+  const section = renderSection(readScope(root, 'fix-pool'))
+  assert.match(section, /\| snmp-05 \| debt \| Pool reconnect drops the session \| taken \|.*\n\nPrecedent: snmp-02, Trailing index parsed twice, resolved by `openspec\/changes\/archive\/2026-10-01-fix-index` on 2026-10-01\.\nPrecedent: snmp-04, Session pool reconnect leaks sockets, resolved by `openspec\/changes\/archive\/2026-10-02-fix-old-pool` on 2026-10-02\.$/)
 })
 
 test('keys gather the tracker items, the debt holding a key, and a change in flight holding one; a flag is shown once', () => {

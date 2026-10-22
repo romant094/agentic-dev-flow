@@ -32,7 +32,9 @@ flight whose scope already takes a gathered key. The start is the tracker keys t
 named and the description as the phrase. With a tracker enabled (`tracker.state` is `done`) and
 neither a key nor a phrase, ask once for the keys, or none, and gather again with them. With no
 tracker plugin and no debt match the result is `empty`: show its one-line `report`, and the
-proposal goes on to the branch with no scope, as it did before scopes existed.
+proposal goes on to the branch with no scope, as it did before scopes existed. Resolved debt the
+same search finds comes back as `precedents`, never as items: each names the archived change
+that fixed it, which the issue check reads and the proposal's `## Scope sources` lists.
 
 A degraded tracker (its tool missing, not logged in, or not configured) sends nothing: show its
 `hint` and ask whether the developer fixes it and gathers again, or works without the tracker

@@ -56,7 +56,9 @@ function relation(a, b) {
   return by
 }
 
-// `listed` is the core's `debt.mjs list --kind debt` result.
+// `listed` is the core's `debt.mjs list --kind debt` result. Its `resolved` rows are history,
+// never entries: a group whose entries are all resolved is no group here and gets no edit row,
+// since land hands its issue to the tester.
 export function debtState(listed) {
   const { root, blocks, entries } = listed
   const debt = entries.filter((e) => e.kind === 'debt')

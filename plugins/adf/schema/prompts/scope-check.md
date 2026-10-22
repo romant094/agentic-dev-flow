@@ -4,8 +4,15 @@ You are dispatched as `{{name}}`, at the {{level}} capability level, to check th
 
 The input file `{{inputFile}}` lists what to read: the item's own file (its description, its
 comments and its fields), the files of the issues it links, the debt entries and their body
-files, the knowledge base index, the capability specs whose names its text matches, and the base
-commit to check against. Read the item's comments: a later comment often changes a requirement.
+files, the precedents, the knowledge base index, the capability specs whose names its text
+matches, and the base commit to check against. Read the item's comments: a later comment often
+changes a requirement.
+
+A precedent is resolved debt like this item: `resolvedBy` is the archived change that fixed it,
+and `files` are that change's proposal, design and tasks. Before you decide how the item is
+fixed, read the design and the tasks of each precedent, and name the precedent's change as a
+source wherever its fix settles a point. Its anchors are history: check the code at the base
+commit, never the anchors.
 
 1. State the item's requirements as you read them. For a bug, state the reproduction steps, the
    expected behaviour and the actual behaviour.

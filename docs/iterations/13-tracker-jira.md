@@ -277,3 +277,28 @@ Versions: adf 0.14.2; adf-jira 0.2.0.
 Left for later: `tracker-plugins.spec.mjs` writes the scope fixture itself, so `gather`,
 `select`, `check-input` and `check` are not run against the real `adf-jira`; the fake `glab`
 is a POSIX shell script, so the forge leg does not run on Windows.
+
+## Iteration 13c
+
+Settled by the developer on 2026-10-22: resolved debt is kept, not deleted, so a past fix can
+be reused when the same debt appears elsewhere.
+
+- Archive's `placements` step moves each taken debt entry to `resolved.md` in its block
+  (`debt.mjs resolve`), with Resolved by naming the archived change directory, whose
+  proposal, design and tasks say how the debt was fixed, and the date of that directory; the
+  move step uses the same date. A partial entry stays open. Ingest logs the resolved ids.
+- A resolved row is history: its anchors are never checked against the code, and it is not
+  open debt for gather, the tracker groups, land or `sync-debt`. Its id stays in the tree, so
+  it is never allocated again.
+- A new entry may name a resolved one in the optional `Precedent` column
+  (`debt.mjs add --precedent`); `check` refuses a Precedent that is not a resolved row.
+- Gather returns matching resolved rows as `precedents`, never as candidates; each
+  scope-check dispatch gets the precedents of its item with the change's files, and the
+  proposal's Scope sources lists them.
+- `remove` stays for a record that is not work.
+
+Left for later: a placements run cut short and rerun after midnight dates the rows it moved
+first by the earlier day; `resolve --by` does not check that the directory exists, since
+archive passes the directory `move` creates after it.
+
+Versions: adf 0.14.3.

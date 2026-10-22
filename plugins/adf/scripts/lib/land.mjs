@@ -6,9 +6,9 @@
 // The change's taken or partial debt takes part too: one target per distinct Tracker key of its
 // debt items (lib/scope.mjs debtGroups), the issue that mirrors their group, unless the key is
 // a tracker item of the scope, which hands it off once. Its state is decided after the merge,
-// from the debt tree of the checkout holding the merged change, where archive removed the taken
-// entries: `taken` when no entry holds the key any more, else `partial`, which comments and
-// keeps the issue's status.
+// from the debt tree of the checkout holding the merged change, where archive moved the taken
+// entries to their block's resolved.md: `taken` when no open entry holds the key any more, else
+// `partial`, which comments and keeps the issue's status. A resolved row is never an entry.
 //
 // The steps, in this order; each runs once every step before it is done or skipped:
 //   check          the change's scope (lib/scope.mjs findScope: the committed copy, archived
@@ -180,8 +180,8 @@ function landTargets(ctx, land) {
 const debtEntry = (e) => ({ id: e.id, title: e.title, class: e.class, anchors: e.anchors ?? [] })
 
 // Each debt group's target after the merge, from the debt tree of `root`, the checkout holding
-// the merged change: the entries still holding the key remain (`scope` says how the change took
-// one, null when it did not); the scope's entries gone from the tree are resolved.
+// the merged change: the open entries still holding the key remain (`scope` says how the change
+// took one, null when it did not); the scope's entries no longer open are resolved.
 function debtTargets(scope, root) {
   const groups = debtGroups(scope)
   if (groups.length === 0) return []

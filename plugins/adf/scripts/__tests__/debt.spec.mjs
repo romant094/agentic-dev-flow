@@ -15,6 +15,8 @@ import {
   markFiled,
   parsePage,
   removeEntry,
+  resolveEntry,
+  setTracker,
   splitCells,
   trackerGroups
 } from '../lib/debt.mjs'
@@ -179,8 +181,9 @@ test('list reads an origin-shaped tree: columns, sub-blocks, body files, dash ke
   })
   const r = listTree(tree)
   assert.deepEqual(r.blocks, [{ id: 'snmp', kind: 'debt', covers: 'SNMP', index: 'snmp/index.md', columns: ['ID', 'Title', 'Anchors', 'Class', 'Source', 'Tracker'], subBlocks: ['Pool'], bodyFiles: ['snmp/background.md'] }])
-  assert.deepEqual(r.entries[0], { id: 'snmp-01', kind: 'debt', block: 'snmp', subBlock: null, title: 'One', anchors: ['a.ts:187,207', 'b.ts'], class: 'defect', source: 'todos.md', tracker: 'KEY-1' })
+  assert.deepEqual(r.entries[0], { id: 'snmp-01', kind: 'debt', block: 'snmp', subBlock: null, title: 'One', anchors: ['a.ts:187,207', 'b.ts'], class: 'defect', source: 'todos.md', tracker: 'KEY-1', precedent: null })
   assert.equal(r.entries[1].tracker, null)
+  assert.deepEqual(r.resolved, [])
   assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
 })
 
@@ -419,4 +422,95 @@ test('track writes the Tracker cell once, is idempotent, refuses an unknown id a
   addAdfRecord(tree, 'my-change', adfInput())
   assert.throws(() => cli('track', '--id', 'adf-01', '--key', 'PROJ-9'), /ADF record; it has no Tracker cell/)
   assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
+})
+
+// ---------------------------------------------------------------- resolved debt
+
+const BY = 'openspec/changes/archive/2026-10-22-fix-pool'
+
+test('resolve moves the row to resolved.md, keeps its id taken, and list and the groups ignore it', () => {
+  const tree = tmp()
+  addEntry(tree, entry({ title: 'One' }))
+  addEntry(tree, entry({ title: 'Two', subBlock: 'Pool' }))
+  addEntry(tree, entry({ title: 'Three' }))
+  for (const id of ['snmp-02', 'snmp-03']) setTracker(tree, { id, key: 'PROJ-7' })
+  const r = resolveEntry(tree, { id: 'snmp-03', by: BY, date: '2026-10-22' })
+  assert.deepEqual(r, {
+    resolved: { id: 'snmp-03', kind: 'debt', block: 'snmp', title: 'Three', anchors: ['a.ts:1', 'b.ts:2'], class: 'debt', tracker: 'PROJ-7', resolvedBy: BY, date: '2026-10-22' },
+    files: ['snmp/index.md', 'snmp/resolved.md']
+  })
+  const resolved = readFileSync(join(tree, 'snmp/resolved.md'), 'utf8')
+  assert.match(resolved, /^# Resolved debt of `snmp`\n/)
+  assert.ok(resolved.endsWith(`| ID | Title | Anchors | Class | Tracker | Resolved by | Date |\n|---|---|---|---|---|---|---|\n| \`snmp-03\` | Three | \`a.ts:1\`, \`b.ts:2\` | debt | PROJ-7 | \`${BY}\` | 2026-10-22 |\n`))
+  const index = readFileSync(join(tree, 'snmp/index.md'), 'utf8')
+  assert.equal(index.includes('Three'), false)
+  assert.match(index, /^Last id: `snmp-03`$/m)
+  const listed = listTree(tree)
+  assert.deepEqual(listed.entries.map((e) => e.id), ['snmp-01', 'snmp-02'])
+  assert.deepEqual(listed.resolved.map((e) => e.id), ['snmp-03'])
+  assert.deepEqual(listed.blocks[0].bodyFiles, [], 'resolved.md is not a body file')
+  assert.deepEqual(trackerGroups(listed.entries), [{ key: 'PROJ-7', entries: ['snmp-02'] }])
+  assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
+
+  resolveEntry(tree, { id: 'snmp-02', by: BY, date: '2026-10-22' })
+  assert.deepEqual(trackerGroups(listTree(tree).entries), [], 'a group whose entries are all resolved is no group')
+  assert.deepEqual(listTree(tree).resolved.map((e) => e.id), ['snmp-03', 'snmp-02'])
+  assert.equal(addEntry(tree, entry({ title: 'Four' })).entry.id, 'snmp-04', 'a resolved id is never allocated again')
+  writeFileSync(join(tree, 'snmp/index.md'), readFileSync(join(tree, 'snmp/index.md'), 'utf8').replace(/^Last id: .*\n\n/m, ''))
+  assert.equal(addEntry(tree, entry({ title: 'Five' })).entry.id, 'snmp-05', 'without the high-water line the resolved rows still hold their ids')
+  assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
+
+  assert.throws(() => resolveEntry(tree, { id: 'snmp-03', by: BY }), /snmp-03 is already resolved, by openspec\/changes\/archive\/2026-10-22-fix-pool/)
+  assert.throws(() => resolveEntry(tree, { id: 'snmp-09', by: BY }), /no entry snmp-09/)
+  assert.throws(() => resolveEntry(tree, { id: 'snmp-01', by: ' ' }), /resolved by is required/)
+  assert.throws(() => resolveEntry(tree, { id: 'snmp-01', by: BY, date: '22.10.2026' }), /is not YYYY-MM-DD/)
+  addAdfRecord(tree, 'my-change', adfInput())
+  assert.throws(() => resolveEntry(tree, { id: 'adf-01', by: BY }), /ADF record; it is removed with debt\.mjs remove/)
+})
+
+test('the CLI resolves with today\'s date by default and refuses a stray option', () => {
+  const tree = tmp()
+  addEntry(tree, entry())
+  const cli = (...args) => run([...args, '--tree', tree])
+  assert.throws(() => cli('resolve', '--id', 'snmp-01'), /resolve needs --by/)
+  assert.throws(() => cli('resolve', '--id', 'snmp-01', '--by', BY, '--key', 'X'), /--key does not belong to resolve/)
+  const r = cli('resolve', '--id', 'snmp-01', '--by', BY)
+  assert.deepEqual([r.ok, r.resolved.date], [true, new Date().toISOString().slice(0, 10)])
+  assert.deepEqual([cli('list').entries, cli('list').resolved.map((e) => e.id), cli('list').groups], [[], ['snmp-01'], []])
+})
+
+test('check refuses a duplicate id across the index and resolved.md, an empty Resolved by, a bad date and wrong columns', () => {
+  const RESOLVED_HEADER = '| ID | Title | Anchors | Class | Tracker | Resolved by | Date |\n|---|---|---|---|---|---|---|\n'
+  const tree = write(tmp(), {
+    'index.md': ROOT,
+    'snmp/index.md': `# SNMP\n\nLast id: \`snmp-03\`\n\n${HEADER}| \`snmp-01\` | One | \`a.ts\` | debt | s | |\n`,
+    'snmp/resolved.md': `# Resolved debt of \`snmp\`\n\n${RESOLVED_HEADER}| \`snmp-01\` | One again | \`a.ts\` | debt | | \`${BY}\` | 2026-10-22 |\n| \`snmp-02\` | Two | \`b.ts\` | debt | | | 2026-10-22 |\n| \`snmp-03\` | Three | \`c.ts\` | chore | | \`${BY}\` | yesterday |\n| \`snmp-04\` | Four | \`d.ts\` | debt | | \`${BY}\` | 2026-10-22 |\n`
+  })
+  assert.deepEqual(checkTree(tree).errors.map((e) => `${e.file}:${e.line} ${e.message}`), [
+    'snmp/resolved.md:5 id snmp-01 is already used at snmp/index.md:7',
+    'snmp/resolved.md:6 snmp-02 names no change it was resolved by',
+    'snmp/resolved.md:7 snmp-03: class "chore" is not one of defect, debt, decision',
+    'snmp/resolved.md:7 snmp-03: date "yesterday" is not YYYY-MM-DD',
+    'snmp/resolved.md:8 snmp-04 is above the block\'s high-water line snmp-03'
+  ])
+  const columns = write(tmp(), { 'index.md': ROOT, 'snmp/index.md': HEADER, 'snmp/resolved.md': `# Resolved\n\n${HEADER}` })
+  assert.deepEqual(checkTree(columns).errors.map((e) => e.message), ['the columns must be ID | Title | Anchors | Class | Tracker | Resolved by | Date'])
+})
+
+test('add --precedent names a resolved entry, adds the column to an old table, and check refuses a precedent that is not resolved', () => {
+  const tree = tmp()
+  addEntry(tree, entry({ title: 'One' }))
+  addEntry(tree, entry({ title: 'Two' }))
+  addEntry(tree, entry({ block: 'ui', title: 'Form drifts' }))
+  resolveEntry(tree, { id: 'snmp-01', by: BY, date: '2026-10-22' })
+  assert.throws(() => addEntry(tree, entry({ title: 'Three', precedent: 'snmp-02' })), /precedent snmp-02 is not a row of any block's resolved\.md/)
+  assert.throws(() => addEntry(tree, entry({ title: 'Three', precedent: 'snmp-09' })), /precedent snmp-09 is not a row/)
+  const r = run(['add', '--block', 'ui', '--title', 'Table drifts', '--anchors', 'table.tsx:9', '--class', 'debt', '--source', 's', '--precedent', 'snmp-01', '--tree', tree])
+  assert.deepEqual([r.entry.id, r.entry.precedent], ['ui-02', 'snmp-01'])
+  assert.match(readFileSync(join(tree, 'ui/index.md'), 'utf8'), /\| ID \| Title \| Anchors \| Class \| Source \| Tracker \| Precedent \|\n\|---\|---\|---\|---\|---\|---\|---\|\n\| `ui-01` \| Form drifts \| `a\.ts:1`, `b\.ts:2` \| debt \| some-change \|  \|  \|\n\| `ui-02` \| Table drifts \| `table\.tsx:9` \| debt \| s \|  \| `snmp-01` \|\n/)
+  assert.equal(addEntry(tree, entry({ block: 'ui', title: 'Third' })).entry.precedent, null, 'a table with the column takes an entry without a precedent')
+  assert.equal(listTree(tree).entries.find((e) => e.id === 'snmp-02').precedent, null, 'a table without the column stays as it is')
+  assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
+  writeFileSync(join(tree, 'ui/index.md'), readFileSync(join(tree, 'ui/index.md'), 'utf8').replace('`snmp-01` |\n', '`snmp-02` |\n'))
+  assert.deepEqual(checkTree(tree).errors.map((e) => e.message), ["ui-02: precedent snmp-02 is not a row of any block's resolved.md"])
 })

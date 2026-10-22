@@ -380,13 +380,15 @@ test('a tracker that refuses the hand-off records it, and a rerun without --yes 
 
 const debtItem = (key, tracker, state = 'taken') => ({ source: 'debt', key, title: `Entry ${key}`, kind: 'debt', class: 'debt', block: 'snmp', anchors: [`${key}.ts`], tracker, matched: 'key', files: ['debt/snmp/index.md'], state, reason: state === 'partial' ? 'one site only' : null, verdict: 'current', check: CHECK, flags: [] })
 const DEBT_ROOT = '# Technical Debt\n\n## Blocks\n\n| Block | Covers |\n|---|---|\n| [`snmp`](snmp/index.md) | SNMP |\n'
+const debtResolved = (rows) => `# Resolved debt of \`snmp\`\n\n| ID | Title | Anchors | Class | Tracker | Resolved by | Date |\n|---|---|---|---|---|---|---|\n${rows.map(([id, key]) => `| \`${id}\` | Entry ${id} | \`${id}.ts\` | debt | ${key} | \`${ARCHIVED}\` | 2026-10-19 |`).join('\n')}\n`
 const debtIndex = (rows) => `# SNMP\n\nLast id: \`snmp-06\`\n\n| ID | Title | Anchors | Class | Source | Tracker |\n|---|---|---|---|---|---|\n${rows.map(([id, key]) => `| \`${id}\` | Entry ${id} | \`${id}.ts\` | debt | s | ${key ?? ''} |`).join('\n')}\n`
 
-test('a tracked debt group takes part in land: taken when archive removed every entry holding its key, partial while some remain', () => {
-  // PROJ-7 mirrors snmp-01 and snmp-02, both taken and removed at archive; PROJ-8 mirrors
-  // snmp-03 (taken, removed), snmp-04 (partial, kept) and snmp-05 (outside the scope).
+test('a tracked debt group takes part in land: taken when archive resolved every entry holding its key, partial while some remain', () => {
+  // PROJ-7 mirrors snmp-01 and snmp-02, both taken and moved to resolved.md at archive; PROJ-8
+  // mirrors snmp-03 (taken, resolved), snmp-04 (partial, kept) and snmp-05 (outside the scope).
+  // The resolved rows still hold their keys, and are never remaining entries.
   const scope = { ...SCOPE, items: [SCOPE.items[0], debtItem('snmp-01', 'PROJ-7'), debtItem('snmp-02', 'PROJ-7'), debtItem('snmp-03', 'PROJ-8'), debtItem('snmp-04', 'PROJ-8', 'partial'), debtItem('snmp-06', null)] }
-  const tree = { 'index.md': DEBT_ROOT, 'snmp/index.md': debtIndex([['snmp-04', 'PROJ-8'], ['snmp-05', 'PROJ-8'], ['snmp-06', null]]) }
+  const tree = { 'index.md': DEBT_ROOT, 'snmp/index.md': debtIndex([['snmp-04', 'PROJ-8'], ['snmp-05', 'PROJ-8'], ['snmp-06', null]]), 'snmp/resolved.md': debtResolved([['snmp-01', 'PROJ-7'], ['snmp-02', 'PROJ-7'], ['snmp-03', 'PROJ-8']]) }
   const root = landHost({ scope, tree })
   const check = land(root, 'check')
   assert.equal(check.state, 'done')

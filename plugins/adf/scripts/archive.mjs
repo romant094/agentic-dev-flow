@@ -16,14 +16,16 @@
 //       detail.unplaced: every debt with no resolve, every recorded or accepted review finding
 //       with no `resolve --finding`, every deviation cited by no debt and no ruling, each with
 //       the command that places it; anything listed fails the step; on a pass the debt entries
-//       scope.json takes in full removed, detail.removedDebt, an entry already gone in
-//       detail.goneDebt
+//       scope.json takes in full moved to their block's resolved.md, detail.resolvedDebt,
+//       resolved by detail.resolvedBy (the directory move archives the change to) on
+//       detail.resolvedOn, an entry in neither file in detail.goneDebt
 //   archive.mjs merge --change <name> [--resolutions <file> ...] [--purpose <capability>=<file> ...]
 //       the delta specs into the main specs, all or nothing; the resolution files are joined; a
 //       conflict fails the step with detail.conflicts (the spec-merge dispatches and their text
 //       files); a new capability's placeholder Purpose refuses until --purpose gives it
 //   archive.mjs move --change <name>
-//       changes.mjs archive: the ledger copied once, the change moved to archive/<date>-<name>
+//       changes.mjs archive: the ledger copied once, the change moved to archive/<date>-<name>,
+//       the date placements resolved the debt on when it resolved any
 //   archive.mjs commit-specs --change <name>
 //       `docs(specs): archive <name>`: the old and new change directories and the main spec
 //       files of the change's capabilities; any other uncommitted file of the change tree, the
@@ -33,8 +35,8 @@
 //       `ingest` (lib/attempts.mjs), the log written through the knowledge role; a refused
 //       reply fails the step with detail.next `retry` (detail.mode `resume`, or `fresh` with
 //       --resume no) the first time and `stop` the second, after which archive stops; the debt
-//       ids placements removed go into the log entry; with no knowledge provider the step is
-//       skipped and says so, and that the removed ids were not logged
+//       ids placements resolved go into the log entry; with no knowledge provider the step is
+//       skipped and says so, and that the resolved ids were not logged
 //   archive.mjs commit-memory --change <name>
 //       `docs(memory): ingest what <name> taught`: only the paths the ingest and the placement
 //       wrote; nothing to commit is no commit

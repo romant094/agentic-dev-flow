@@ -363,6 +363,12 @@ export function changeDirOf(root, change) {
 
 const posixRel = (root, path) => relative(root, path).split(sep).join('/')
 
+// Where archive moves a change: `<changes>/archive/<YYYY-MM-DD>-<name>`, relative to the root, the
+// date from `now` in UTC. Archive's placements names it before the move, as the change that
+// resolved the debt it takes.
+export const archiveDate = (now) => now.toISOString().slice(0, 10)
+export const archiveTarget = (name, { now = new Date(), date = archiveDate(now) } = {}) => `${CHANGES_DIR}/${ARCHIVE}/${date}-${name}`
+
 // Moves a change into `<changes>/archive/<YYYY-MM-DD>-<name>`, the date from `now` in UTC (as
 // `new` dates a change). The ledger is copied into the change directory first, once: the
 // worktree's `.superpowers/` goes with the worktree, and the archive is the copy that stays. A
@@ -370,8 +376,9 @@ const posixRel = (root, path) => relative(root, path).split(sep).join('/')
 // origin's `cp ... 2>/dev/null || true` hid it). An existing target is refused with the ways
 // out. A change already archived, with no active directory left, is reported, not refused, so a
 // second archive run passes this step.
+// `date` overrides the date of `now`: archive passes the one placements named the target with.
 // Returns { changeName, from, target, ledger: copied|none, already }, paths relative to root.
-export function archiveChange(root, name, { now = new Date() } = {}) {
+export function archiveChange(root, name, { now = new Date(), date = archiveDate(now) } = {}) {
   if (!NAME.test(name ?? '') || name === ARCHIVE) throw new Error(`change name "${name}" is not kebab-case`)
   const dir = changeDir(root, name)
   const from = `${CHANGES_DIR}/${name}`
@@ -380,7 +387,7 @@ export function archiveChange(root, name, { now = new Date() } = {}) {
     if (!done) throw new Error(`no change "${name}" in ${CHANGES_DIR}`)
     return { changeName: name, from, target: posixRel(root, done), ledger: existsSync(join(done, LEDGER_FILE)) ? 'copied' : 'none', already: true }
   }
-  const target = join(root, CHANGES_DIR, ARCHIVE, `${now.toISOString().slice(0, 10)}-${name}`)
+  const target = join(root, archiveTarget(name, { date }))
   if (existsSync(target)) {
     throw new Error(`${posixRel(root, target)} already exists; rename the change, delete the duplicate archive if it is one, or archive it tomorrow`)
   }

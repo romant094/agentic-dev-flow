@@ -17,19 +17,24 @@
 // before scopes existed.
 //
 // The scope record:
-//   { version: 1, change, from: { keys, text }, tracker, items, inFlight, flagsShown, base,
-//     start, retest }
+//   { version: 1, change, from: { keys, text }, tracker, items, precedents, inFlight, flagsShown,
+//     base, start, retest }
 //   tracker  { state: done | none | skipped | degraded, plugin, account?, reason?, tool?,
 //              hint?, notes, absent? }
 //   item     { source: tracker | debt, key, title, kind, state: candidate | taken | partial |
 //              excluded, reason, verdict, check, flags, ... }
 //            tracker: url, status, open, parent, links, branchToken, branchRank, file
-//            debt:    block, class, anchors, tracker, files, matched (key | text)
+//            debt:    block, class, anchors, tracker, files, matched (key | text), precedent?
+//   precedent { key, title, class, block, anchors, tracker, resolvedBy, date, matched (key | text
+//              | precedent) }: resolved debt, a row of a block's resolved.md, never an item; the
+//              past fix its archived change (resolvedBy) holds, for the issue check to read
 //   paths are relative to the main checkout, so the committed record names no machine path.
 //
 // The debt text match is deterministic: the words of the phrase (or, with no key and no phrase,
 // of the change name) of at least four letters, lowercased, minus a fixed list of common words;
 // an entry matches when its title holds at least two of them (one, for a phrase of one word).
+// Resolved debt is matched the same way, and also when a gathered entry names it as its
+// precedent; it is returned as a precedent, never as an item.
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
@@ -195,12 +200,13 @@ function trackerItem(main, change, raw) {
 
 function debtItems(main, { keys, words }) {
   const root = readDebtRoot(main)
-  if (!root) return { store: null, items: [] }
+  if (!root) return { store: null, items: [], precedents: [] }
   const tree = join(main, root)
-  const { blocks, entries } = listTree(tree, { kind: 'debt' })
+  const { blocks, entries, resolved } = listTree(tree, { kind: 'debt' })
+  const match = (e) => (e.tracker && keys.has(e.tracker) ? 'key' : keys.has(e.id) ? 'key' : matchesPhrase(e.title, words) ? 'text' : null)
   const items = []
   for (const e of entries) {
-    const matched = e.tracker && keys.has(e.tracker) ? 'key' : keys.has(e.id) ? 'key' : matchesPhrase(e.title, words) ? 'text' : null
+    const matched = match(e)
     if (!matched) continue
     const block = blocks.find((b) => b.id === e.block)
     items.push({
@@ -214,10 +220,17 @@ function debtItems(main, { keys, words }) {
       tracker: e.tracker,
       matched,
       files: [posix(join(root, block.index)), ...block.bodyFiles.map((f) => posix(join(root, f)))],
+      ...(e.precedent ? { precedent: e.precedent } : {}),
       flags: []
     })
   }
-  return { store: root, items }
+  const named = new Set(items.map((i) => i.precedent).filter(Boolean))
+  const precedents = []
+  for (const r of resolved) {
+    const matched = match(r) ?? (named.has(r.id) ? 'precedent' : null)
+    if (matched) precedents.push({ key: r.id, title: r.title, class: r.class, block: r.block, anchors: r.anchors, tracker: r.tracker, resolvedBy: r.resolvedBy, date: r.date, matched })
+  }
+  return { store: root, items, precedents }
 }
 
 // The other changes in flight, in any checkout, whose committed scope takes a key gathered here.
@@ -263,6 +276,8 @@ function debtLine(store, items) {
   if (items.length === 0) return 'Debt: no entry matches.'
   return `Debt: ${items.map((i) => `${i.key} (${i.matched === 'key' ? `tracker key ${i.tracker ?? i.key}` : 'phrase'})`).join(', ')}.`
 }
+
+const precedentLine = (p) => `Precedent: ${p.key}, ${p.title}, resolved by \`${p.resolvedBy}\` on ${p.date}.`
 
 // keys: tracker keys or debt ids the developer named; text: a phrase; skipTracker: the reason
 // the developer gave for working without the tracker this time, after a degraded check.
@@ -334,6 +349,7 @@ export function gather(root, change, { keys = [], text: phrase = null, skipTrack
     from: { keys, text: phrase },
     tracker: t,
     items,
+    precedents: debt.precedents,
     inFlight: flying,
     flagsShown: [...shown],
     base: previous?.base ?? null,
@@ -346,6 +362,7 @@ export function gather(root, change, { keys = [], text: phrase = null, skipTrack
     trackerLine(t),
     ...t.notes.map((n) => `  note: ${n}`),
     debtLine(debt.store, debt.items),
+    ...debt.precedents.map(precedentLine),
     ...flying.map((f) => `In flight: change ${f.change} already takes ${f.keys.join(', ')}.`),
     ...flags.map((f) => `Flag: ${f.key}: ${f.flag}`)
   ].join('\n')
@@ -355,6 +372,7 @@ export function gather(root, change, { keys = [], text: phrase = null, skipTrack
     step: 'gather',
     tracker: { state: t.state, plugin: t.plugin, ...(t.hint ? { hint: t.hint, tool: t.tool } : {}), ...(t.reason ? { reason: t.reason } : {}) },
     items: items.map(summary),
+    precedents: debt.precedents.map(({ key, title, resolvedBy, date }) => ({ key, title, resolvedBy, date })),
     inFlight: flying,
     flags,
     empty,
@@ -481,6 +499,15 @@ export function renderSkeleton(file, fields) {
     .replace(/\{\{(\w+)\}\}/g, (_, k) => fields[k] ?? '')
 }
 
+// The precedents of an item: the resolved debt its Precedent cell names, that held its key or its
+// tracker key, or whose title matches its title's words.
+function precedentsOf(scope, item) {
+  const words = phraseWords(item.title)
+  return (scope.precedents ?? []).filter((p) => p.key === item.precedent || (p.tracker && (p.tracker === item.key || p.tracker === item.tracker)) || matchesPhrase(p.title, words))
+}
+
+const CHANGE_FILES = ['proposal.md', 'design.md', 'tasks.md']
+
 export function checkInput(root, change, { key = null, core }) {
   const { main, scope } = requireScope(root, change)
   const undecided = scope.items.filter((i) => i.state === 'candidate').map((i) => i.key)
@@ -525,6 +552,15 @@ export function checkInput(root, change, { key = null, core }) {
       issueFile: item.file ? abs(item.file) : null,
       related: related.map((r) => ({ key: r.key, source: r.source, title: r.title, file: r.file ? abs(r.file) : null, files: (r.files ?? []).map(abs) })),
       debt: debt.map((d) => ({ key: d.key, title: d.title, class: d.class, anchors: d.anchors, files: d.files.map(abs) })),
+      precedents: precedentsOf(scope, item).map((p) => ({
+        key: p.key,
+        title: p.title,
+        class: p.class,
+        anchors: p.anchors,
+        resolvedBy: abs(p.resolvedBy),
+        date: p.date,
+        files: CHANGE_FILES.map((f) => join(abs(p.resolvedBy), f)).filter((f) => existsSync(f))
+      })),
       knowledgeIndex: index,
       knowledge: knowledgeReport('context', knowledge),
       specs: { dir: join(main, 'openspec', 'specs'), matched: matchedSpecs(main, item, names) },
@@ -695,6 +731,7 @@ export function renderSection(scope) {
     '| Key | Source | Title | State | Reason | Verdict | Corrected or asked |',
     '|---|---|---|---|---|---|---|',
     ...rows,
+    ...(scope.precedents?.length ? ['', ...scope.precedents.map(precedentLine)] : []),
     ...(scope.inFlight?.length ? ['', ...scope.inFlight.map((f) => `In flight: change ${f.change} also takes ${f.keys.join(', ')}.`)] : [])
   ].join('\n')
 }

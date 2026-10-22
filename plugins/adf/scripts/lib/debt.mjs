@@ -8,7 +8,9 @@
 // Nothing here keeps a roll-up, a count or a status: `listTree` computes every entry on demand
 // and writes nothing. An id is allocated once and never renumbered: each block index carries a
 // high-water line, `Last id: `<block>-NN``, the highest id the block ever allocated, so an id
-// whose row was removed is not allocated again.
+// whose row was removed is not allocated again. Resolved debt is history, not an entry: archive
+// moves its row to the block's `resolved.md` (`resolveEntry`), where a later entry's Precedent
+// cell may name it and propose's gather finds it.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
@@ -19,6 +21,13 @@ export const ADF_BLOCK = 'adf'
 export const LEGACY_ADF_BLOCK = 'flow'
 const isAdfBlock = (block) => block === ADF_BLOCK || block === LEGACY_ADF_BLOCK
 export const DEBT_COLUMNS = ['ID', 'Title', 'Anchors', 'Class', 'Source', 'Tracker']
+// The optional last column of a block's table: the resolved entry whose fix this one may reuse.
+export const PRECEDENT = 'Precedent'
+const PRECEDENT_COLUMNS = [...DEBT_COLUMNS, PRECEDENT]
+// A block's resolved debt, beside its index.
+export const RESOLVED_FILE = 'resolved.md'
+export const RESOLVED_COLUMNS = ['ID', 'Title', 'Anchors', 'Class', 'Tracker', 'Resolved by', 'Date']
+const DATE = /^\d{4}-\d{2}-\d{2}$/
 export const ADF_COLUMNS = ['ID', 'Title', 'Plugin', 'Version', 'Change', 'Class', 'Source', 'Filed']
 export const ROOT_COLUMNS = ['Block', 'Covers']
 export const DEBT_CLASSES = ['defect', 'debt', 'decision']
@@ -39,8 +48,9 @@ const padId = (block, n) => `${block}-${String(n).padStart(2, '0')}`
 const ROOT_TEMPLATE = `# Technical Debt
 
 Open technical debt, one entry per unit of work. This tree owns the content of the debt; the
-tracker owns its planning, which is never written here. An entry is deleted when its debt is
-resolved. The format is the ADF core's; \`debt.mjs\` writes it and \`debt.mjs check\` checks it.
+tracker owns its planning, which is never written here. When a change resolves an entry, archive
+moves its row to the block's \`resolved.md\`. The format is the ADF core's; \`debt.mjs\` writes it
+and \`debt.mjs check\` checks it.
 
 ## Blocks
 
@@ -163,7 +173,24 @@ function entryOf(block, columns, cells, subBlock) {
     anchors: anchorsOf(at('Anchors')),
     class: at('Class'),
     source: at('Source'),
-    tracker: key(at('Tracker'))
+    tracker: key(at('Tracker')),
+    precedent: key(uncode(at(PRECEDENT)))
+  }
+}
+
+// A row of a block's resolved.md: history, its anchors as they were when it was resolved.
+function resolvedOf(block, columns, cells) {
+  const at = (name) => cells[columns.indexOf(name)] ?? ''
+  return {
+    id: uncode(at('ID')),
+    kind: 'debt',
+    block,
+    title: at('Title'),
+    anchors: anchorsOf(at('Anchors')),
+    class: at('Class'),
+    tracker: key(at('Tracker')),
+    resolvedBy: uncode(at('Resolved by')),
+    date: at('Date')
   }
 }
 
@@ -186,16 +213,20 @@ function blocksOf(tree) {
     const dir = join(tree, id)
     const index = join(dir, BLOCK_INDEX)
     const page = existsSync(index) ? parsePage(read(index)) : null
-    const others = isDir(dir) ? readdirSync(dir).filter((f) => f.endsWith('.md') && f !== BLOCK_INDEX).sort() : []
-    return { id, dir, index, page, others, row: root.rows.find((r) => r.id === id) ?? null }
+    const others = isDir(dir) ? readdirSync(dir).filter((f) => f.endsWith('.md') && f !== BLOCK_INDEX && f !== RESOLVED_FILE).sort() : []
+    const resolvedFile = join(dir, RESOLVED_FILE)
+    const resolved = !isAdfBlock(id) && existsSync(resolvedFile) ? { file: resolvedFile, page: parsePage(read(resolvedFile)) } : null
+    return { id, dir, index, page, others, resolved, row: root.rows.find((r) => r.id === id) ?? null }
   })
 }
 
 // Every block, sub-block and entry, computed from the files; nothing is written. `kind` keeps
-// only `debt` (product) or `adf` entries.
+// only `debt` (product) or `adf` entries. `resolved` holds the rows of the blocks' resolved.md,
+// never an entry: open debt is `entries` alone.
 export function listTree(tree, { kind } = {}) {
   const blocks = []
   const entries = []
+  const resolved = []
   for (const block of blocksOf(tree)) {
     const blockKind = isAdfBlock(block.id) ? 'adf' : 'debt'
     if (kind && kind !== blockKind) continue
@@ -216,8 +247,11 @@ export function listTree(tree, { kind } = {}) {
         entries.push(entry)
       }
     }
+    for (const table of block.resolved?.page.tables ?? []) {
+      for (const row of table.rows) resolved.push(resolvedOf(block.id, table.columns, row.cells))
+    }
   }
-  return { blocks, entries }
+  return { blocks, entries, resolved }
 }
 
 // The tracker groups of product debt entries: each key with the ids of the entries holding it,
@@ -257,6 +291,8 @@ export function checkTree(tree) {
   const blocks = blocksOf(tree)
   const ids = new Map()
   const filed = new Map()
+  const resolvedIds = new Set()
+  const precedents = []
   for (const block of blocks) {
     const adf = isAdfBlock(block.id)
     if (!BLOCK_ID.test(block.id)) err(rootFile, block.row?.line ?? null, `block "${block.id}" is not a kebab-case name`)
@@ -276,26 +312,35 @@ export function checkTree(tree) {
       if (!m || m[1] !== block.id) err(block.index, lastLines[0].line, `the high-water line must read "Last id: \`${block.id}-NN\`"`)
       else last = Number(m[2])
     }
+    // The rules every row shares, in the index and in resolved.md: an id of the block, at or
+    // below its high-water line, used once across both, a title and a class. False when the id is
+    // not one of the block's.
+    const checkRow = (file, row, entry) => {
+      if (!new RegExp(`^${block.id.replace(/-/g, '\\-')}-\\d+$`).test(entry.id)) {
+        err(file, row.line, `"${entry.id}" is not an id of block ${block.id}; a sub-block is a heading, never a row`)
+        return false
+      }
+      if (last !== null && idNumber(entry.id, block.id) > last) err(file, row.line, `${entry.id} is above the block's high-water line ${padId(block.id, last)}`)
+      if (ids.has(entry.id)) err(file, row.line, `id ${entry.id} is already used at ${ids.get(entry.id)}`)
+      else ids.set(entry.id, `${relative(tree, file)}:${row.line + 1}`)
+      if (!entry.title) err(file, row.line, `${entry.id} has no title`)
+      if (!classes.includes(entry.class)) err(file, row.line, `${entry.id}: class "${entry.class}" is not one of ${classes.join(', ')}`)
+      return true
+    }
     for (const table of block.page.tables) {
       const planning = table.columns.filter((c) => PLANNING.test(c))
       if (planning.length) err(block.index, table.header, `columns ${planning.join(', ')} hold planning or a count, which the tracker owns`)
-      if (table.columns.join('|') !== expected.join('|')) {
-        err(block.index, table.header, `the columns must be ${expected.join(' | ')}`)
+      const columns = table.columns.join('|')
+      if (columns !== expected.join('|') && (adf || columns !== PRECEDENT_COLUMNS.join('|'))) {
+        err(block.index, table.header, `the columns must be ${expected.join(' | ')}${adf ? '' : `, optionally followed by ${PRECEDENT}`}`)
         continue
       }
       for (const row of table.rows) {
         const entry = entryOf(block.id, table.columns, row.cells, table.subBlock)
-        if (row.cells.length !== expected.length) err(block.index, row.line, `the row has ${row.cells.length} cells, not ${expected.length}`)
-        if (!new RegExp(`^${block.id.replace(/-/g, '\\-')}-\\d+$`).test(entry.id)) {
-          err(block.index, row.line, `"${entry.id}" is not an id of block ${block.id}; a sub-block is a heading, never a row`)
-          continue
-        }
-        if (last !== null && idNumber(entry.id, block.id) > last) err(block.index, row.line, `${entry.id} is above the block's high-water line ${padId(block.id, last)}`)
-        if (ids.has(entry.id)) err(block.index, row.line, `id ${entry.id} is already used at ${ids.get(entry.id)}`)
-        else ids.set(entry.id, `${relative(tree, block.index)}:${row.line + 1}`)
-        if (!entry.title) err(block.index, row.line, `${entry.id} has no title`)
-        if (!classes.includes(entry.class)) err(block.index, row.line, `${entry.id}: class "${entry.class}" is not one of ${classes.join(', ')}`)
+        if (row.cells.length !== table.columns.length) err(block.index, row.line, `the row has ${row.cells.length} cells, not ${table.columns.length}`)
+        if (!checkRow(block.index, row, entry)) continue
         if (!entry.source) err(block.index, row.line, `${entry.id} has no source`)
+        if (entry.precedent) precedents.push({ line: row.line, file: block.index, entry })
         // A filed URL is one record's; a tracker key may mirror a group of debt entries.
         if (adf && entry.filed) {
           if (filed.has(entry.filed)) err(block.index, row.line, `${entry.id} shares the filed issue ${entry.filed} with ${filed.get(entry.filed)}`)
@@ -311,6 +356,29 @@ export function checkTree(tree) {
     for (const line of [...block.page.prose, ...block.page.headings]) {
       if (COUNT.test(line.text)) err(block.index, line.line, 'a count of entries; the tree carries no counts')
     }
+    if (!block.resolved) continue
+    const { file, page } = block.resolved
+    if (page.tables.length === 0) err(file, null, `${RESOLVED_FILE} has no "${RESOLVED_COLUMNS.join(' | ')}" table`)
+    for (const table of page.tables) {
+      if (table.columns.join('|') !== RESOLVED_COLUMNS.join('|')) {
+        err(file, table.header, `the columns must be ${RESOLVED_COLUMNS.join(' | ')}`)
+        continue
+      }
+      for (const row of table.rows) {
+        const entry = resolvedOf(block.id, table.columns, row.cells)
+        if (row.cells.length !== RESOLVED_COLUMNS.length) err(file, row.line, `the row has ${row.cells.length} cells, not ${RESOLVED_COLUMNS.length}`)
+        if (!checkRow(file, row, entry)) continue
+        resolvedIds.add(entry.id)
+        if (!entry.resolvedBy) err(file, row.line, `${entry.id} names no change it was resolved by`)
+        if (!DATE.test(entry.date)) err(file, row.line, `${entry.id}: date "${entry.date}" is not YYYY-MM-DD`)
+      }
+    }
+    for (const line of [...page.prose, ...page.headings]) {
+      if (COUNT.test(line.text)) err(file, line.line, 'a count of entries; the tree carries no counts')
+    }
+  }
+  for (const { file, line, entry } of precedents) {
+    if (!resolvedIds.has(entry.precedent)) err(file, line, `${entry.id}: precedent ${entry.precedent} is not a row of any block's ${RESOLVED_FILE}`)
   }
   if (root.page) {
     for (const line of [...root.page.prose, ...root.page.headings]) {
@@ -318,9 +386,9 @@ export function checkTree(tree) {
     }
   }
 
-  // An id named anywhere in the tree that no row carries: a pointer to a closed or renumbered
-  // entry, which would silently redirect if the id were allocated again. The high-water line
-  // names a removed id on purpose.
+  // An id named anywhere in the tree that no row carries, in an index or in a resolved.md: a
+  // pointer to a removed or renumbered entry, which would silently redirect if the id were
+  // allocated again. The high-water line names a removed id on purpose.
   const pattern = idPattern(blocks.map((b) => b.id))
   if (pattern) {
     for (const file of mdFiles(tree)) {
@@ -416,6 +484,26 @@ function insertRow(file, columns, row, subBlock) {
   save(file, list)
 }
 
+// The columns of the block's table for `subBlock`, or null when the file or the table is missing.
+function tableColumns(file, subBlock) {
+  if (!existsSync(file)) return null
+  return parsePage(read(file)).tables.find((t) => t.subBlock === subBlock)?.columns ?? null
+}
+
+// Give the block's table for `subBlock` the Precedent column when it has none: its header, its
+// separator and every row get the cell, empty. A table written before the column stays valid.
+function addPrecedentColumn(file, subBlock) {
+  if (!existsSync(file)) return
+  const page = parsePage(read(file))
+  const table = page.tables.find((t) => t.subBlock === subBlock)
+  if (!table || table.columns.includes(PRECEDENT)) return
+  const list = page.lines
+  list[table.header] = formatRow([...table.columns, PRECEDENT])
+  list[table.header + 1] = separator([...table.columns, PRECEDENT])
+  for (const row of table.rows) list[row.line] = formatRow([...row.cells, ''])
+  save(file, list)
+}
+
 const oneLine = (name, value) => {
   if (typeof value !== 'string' || value.trim() === '') throw new Error(`${name} is required`)
   if (/\n/.test(value)) throw new Error(`${name} must be one line`)
@@ -423,8 +511,9 @@ const oneLine = (name, value) => {
 }
 
 // A product debt entry. Adding an entry already present (same block, title and source) changes
-// nothing and returns it, so a re-run of archive does not file it twice.
-export function addEntry(tree, { block, title, anchors, class: cls, source, subBlock = null, covers = null }) {
+// nothing and returns it, so a re-run of archive does not file it twice. `precedent` names a
+// resolved entry, a row of some block's resolved.md, whose fix this one may reuse.
+export function addEntry(tree, { block, title, anchors, class: cls, source, subBlock = null, covers = null, precedent = null }) {
   if (!BLOCK_ID.test(block ?? '')) throw new Error(`block "${block}" is not a kebab-case name`)
   if (isAdfBlock(block)) throw new Error(`the block ${block} holds ADF records; write them with debt.mjs adf`)
   title = oneLine('title', title)
@@ -433,15 +522,24 @@ export function addEntry(tree, { block, title, anchors, class: cls, source, subB
   if (!Array.isArray(anchors) || anchors.length === 0) throw new Error('at least one anchor is required')
   for (const a of anchors) if (a.includes('`') || a.includes('\n')) throw new Error(`anchor "${a}" must be one line without backticks`)
   if (subBlock !== null) subBlock = oneLine('sub-block', subBlock)
-  const existing = listTree(tree).entries.find((e) => e.block === block && e.title === title && e.source === source)
+  const listed = listTree(tree)
+  if (precedent !== null) {
+    precedent = oneLine('precedent', precedent)
+    if (!listed.resolved.some((r) => r.id === precedent)) throw new Error(`precedent ${precedent} is not a row of any block's ${RESOLVED_FILE}; a precedent is a resolved entry`)
+  }
+  const existing = listed.entries.find((e) => e.block === block && e.title === title && e.source === source)
   if (existing) return { created: false, newBlock: false, entry: existing, files: [] }
   const blockRow = addRootRow(tree, block, covers)
   const dir = join(tree, block)
   const newBlock = !existsSync(join(dir, BLOCK_INDEX))
   mkdirSync(dir, { recursive: true })
   const id = nextId(tree, block)
-  insertRow(join(dir, BLOCK_INDEX), DEBT_COLUMNS, formatRow([code(id), title, anchors.map(code).join(', '), cls, source, '']), subBlock)
-  setLastId(join(dir, BLOCK_INDEX), id)
+  const file = join(dir, BLOCK_INDEX)
+  if (precedent !== null) addPrecedentColumn(file, subBlock)
+  const columns = tableColumns(file, subBlock) ?? (precedent !== null ? PRECEDENT_COLUMNS : DEBT_COLUMNS)
+  const cells = [code(id), title, anchors.map(code).join(', '), cls, source, '', ...(columns.includes(PRECEDENT) ? [precedent !== null ? code(precedent) : ''] : [])]
+  insertRow(file, columns, formatRow(cells), subBlock)
+  setLastId(file, id)
   const entry = listTree(tree).entries.find((e) => e.id === id)
   return { created: true, newBlock, entry, files: [...(blockRow ? [ROOT_INDEX] : []), `${block}/${BLOCK_INDEX}`] }
 }
@@ -481,15 +579,21 @@ export function addAnchor(tree, { id, anchor }) {
   return { added: true, entry: entryOf(at.block, at.table.columns, cells, at.table.subBlock) }
 }
 
-// Delete an entry whose debt is resolved. No other id changes; the high-water line keeps the
-// highest id, written when absent, so the removed id is not allocated again.
-export function removeEntry(tree, { id }) {
-  const at = locate(tree, id)
-  const removed = entryOf(at.block, at.table.columns, at.row.cells, at.table.subBlock)
+// Take a row out of its block index. No other id changes; the high-water line keeps the highest
+// id, written when absent, so the id is not allocated again.
+function dropRow(tree, at) {
   const last = padId(at.block, highest(tree, at.block))
   at.page.lines.splice(at.row.line, 1)
   save(at.file, at.page.lines)
   setLastId(at.file, last)
+}
+
+// Delete a record that is not work: an ADF record, or an entry written by mistake. Debt a change
+// resolved is moved to resolved.md instead (`resolveEntry`).
+export function removeEntry(tree, { id }) {
+  const at = locate(tree, id)
+  const removed = entryOf(at.block, at.table.columns, at.row.cells, at.table.subBlock)
+  dropRow(tree, at)
   const files = [`${at.block}/${BLOCK_INDEX}`]
   if (isAdfBlock(at.block) && existsSync(adfBodyPath(tree, at.block, id))) {
     removed.body = adfBody(tree, at.block, id)
@@ -497,6 +601,37 @@ export function removeEntry(tree, { id }) {
     files.push(`${at.block}/${id}.md`)
   }
   return { removed, files }
+}
+
+const RESOLVED_TEMPLATE = (block) => `# Resolved debt of \`${block}\`
+
+The entries of this block that a change resolved, moved here from \`index.md\` by archive. A
+row is history: its anchors are as they were and are never checked against the code. Resolved by
+is the archived change, whose proposal, design and tasks say how the debt was fixed.
+
+${formatRow(RESOLVED_COLUMNS)}
+${separator(RESOLVED_COLUMNS)}
+`
+
+// Move a product debt entry a change resolved from its block index to the block's resolved.md:
+// its id, title, anchors, class and tracker key as they were, the archived change's directory
+// (`by`) and the date. The high-water line keeps the id, which stays a row of the tree, so it is
+// never allocated again. An id already resolved, an unknown id and an ADF record are refused.
+export function resolveEntry(tree, { id, by, date = new Date().toISOString().slice(0, 10) }) {
+  by = oneLine('resolved by', by)
+  if (/[`|]/.test(by)) throw new Error(`resolved by "${by}" holds a backtick or a pipe; it is the archived change's directory`)
+  if (!DATE.test(date ?? '')) throw new Error(`date "${date}" is not YYYY-MM-DD`)
+  const done = listTree(tree, { kind: 'debt' }).resolved.find((r) => r.id === id)
+  if (done) throw new Error(`${id} is already resolved, by ${done.resolvedBy}`)
+  const at = locate(tree, id)
+  if (isAdfBlock(at.block)) throw new Error(`${id} is an ADF record; it is removed with debt.mjs remove, never resolved`)
+  const entry = entryOf(at.block, at.table.columns, at.row.cells, at.table.subBlock)
+  dropRow(tree, at)
+  const file = join(tree, at.block, RESOLVED_FILE)
+  if (!existsSync(file)) writeFileSync(file, RESOLVED_TEMPLATE(at.block))
+  insertRow(file, RESOLVED_COLUMNS, formatRow([code(id), entry.title, entry.anchors.map(code).join(', '), entry.class, entry.tracker ?? '', code(by), date]), null)
+  const resolved = listTree(tree, { kind: 'debt' }).resolved.find((r) => r.id === id)
+  return { resolved, files: [`${at.block}/${BLOCK_INDEX}`, `${at.block}/${RESOLVED_FILE}`] }
 }
 
 // A record of kind `adf`: a defect of a flow plugin, kept on this machine, always written to the

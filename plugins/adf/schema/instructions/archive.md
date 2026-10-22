@@ -113,11 +113,12 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
 
    The debt store is the one list of open product debt: a knowledge page that explains a
    mechanism may state its limitation, and the entry links to that page. Then run `placements`
-   again. On a pass, the script removes from the debt store each entry the change's
-   `scope.json` takes in full (a debt item in state `taken`; a `partial` one stays),
-   `detail.removedDebt`, and reports an entry already gone as `detail.goneDebt`, no failure.
-   The debt store's uncommitted files are then recorded as the placement's, and
-   `commit-memory` commits them; no commit message names the removed ids.
+   again. On a pass, the script moves each entry the change's `scope.json` takes in full (a
+   debt item in state `taken`; a `partial` one stays) to its block's `resolved.md`, resolved by
+   the directory `move` archives the change to, `detail.resolvedDebt`; an entry already
+   resolved counts as resolved, and one in neither file is reported as `detail.goneDebt`, no
+   failure. The debt store's uncommitted files are then recorded as the placement's, and
+   `commit-memory` commits them; no commit message names the resolved ids.
 
 4. **`merge`: the delta specs into the main specs.** First show the developer the preview:
 
