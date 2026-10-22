@@ -96,7 +96,7 @@ The registry entry, `.claude/adf-extensions.json`:
 
 ```json
 {
-  "id": "adf-jira@agentic-dev-flow",
+  "plugin": "adf-jira@agentic-dev-flow",
   "config": {
     "baseUrl": "https://jira.promwad.com",
     "allowlist": ["DESTELENG"],
