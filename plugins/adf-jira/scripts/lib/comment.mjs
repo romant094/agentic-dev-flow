@@ -29,10 +29,12 @@ export const DEFAULT_CORRECTION_TEMPLATE = join('templates', 'corrections.md')
 const HANDOFF = { states: STATES, lists: LISTS, scalars: SCALARS }
 const CORRECTION = { states: ['corrected'], lists: ['corrections', 'answers'], scalars: [] }
 
-// The fields each state takes, required first.
+// The fields each state takes, required first. The required ones are the core's (contract 1.7,
+// `tracker`): the core decides which fields a state needs, and every text field arrives as a
+// list of one-line texts.
 export const FIELDS = {
   taken: { required: ['done', 'test'], optional: ['commit'] },
-  partial: { required: ['remains'], optional: ['done', 'commit'] },
+  partial: { required: ['done', 'test', 'remains'], optional: ['commit'] },
   'not-reproduced': { required: ['tried', 'commit'], optional: ['test'] }
 }
 

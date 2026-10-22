@@ -11,7 +11,9 @@
 // The shape of a rendered description (debtShape) is what lets sync-debt rewrite only a
 // description it built: a regular expression over the description's non-blank lines
 // (lib/apply.mjs bodyLines), the head and the tail literal, the entries block repeated once or
-// more with any value in each placeholder.
+// more with any value in each placeholder. A description of the previous, one-entry template
+// (PREVIOUS_SHAPE) is sync-debt's own too: rewritableShape accepts both, so the first sync
+// renders such a description again as the group's list.
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { escapeWiki, parseTemplate } from './comment.mjs'
@@ -90,4 +92,14 @@ const patterns = (lines, root) => lines.map((l) => l.trim()).filter(Boolean).map
 // The shape every description this template renders has, for any non-empty list of entries.
 export function debtShape(template, { root }) {
   return `^${patterns(template.head, root)}(?:${patterns(template.entry, root)})+${patterns(template.tail, root)}$`
+}
+
+// The shape of the description sync-debt wrote before the group template, one issue per entry:
+// the entry's full title, its Anchors and Class lines, and the footer naming the tree's block
+// index. Issues filed then are mirrors still, and an entry joining one must not wait forever.
+export const PREVIOUS_SHAPE = '^[^\\n]*\\nAnchors: [^\\n]*\\nClass: [^\\n]*\\nMirrored from the technical debt tree: [^\\n]*\\n$'
+
+// The shapes sync-debt may rewrite: the template's (debtShape), or the previous template's.
+export function rewritableShape(template, { root }) {
+  return `${debtShape(template, { root })}|${PREVIOUS_SHAPE}`
 }

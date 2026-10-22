@@ -16,9 +16,10 @@ Write these fields, `{{fields}}`, for the issue's tester:
   `verify.md` records.
 - `remains` (a partial issue only): what this change left undone, which keeps the issue open.
 
-Each field is plain text within its word limit, which the input file states. Write no link, no
-URL and no markup: the tracker plugin renders the comment from the fields and adds the merge
-request link itself.
+Write each field as a list of short plain-text lines, one sentence or one test step per line:
+the tracker plugin renders each line as an item of a numbered list. A field's word limit, which
+the input file states, counts all its lines. Write no link, no URL and no markup: the tracker
+plugin renders the comment from the fields and adds the merge request link itself.
 
 This dispatch is read-only: change no file, make no commit, and start no agent. Write one JSON
 object, carrying the role `land-comment`, the key `{{key}}` and the state `{{state}}`, to

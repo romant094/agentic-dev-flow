@@ -106,7 +106,10 @@ a new group. The script writes up to two plans under `plans.dir`:
 - **edit**: one row per existing group, its description rendered again from its entries and its
   joins. A row is sent only while the issue is in `statuses.initial` and its description still
   has the template's shape, and only when the description differs. An issue that left the
-  initial status is never edited, and a description a person rewrote is never overwritten.
+  initial status is never edited, and a description a person rewrote is never overwritten. A
+  description of the previous one-entry template (the entry's title, its `Anchors:` and
+  `Class:` lines, and the `Mirrored from the technical debt tree:` footer) is sync-debt's own
+  too: the first sync renders it again as its group's list.
 
 The description template is `templates/debt.md`; `config.debtTemplate` names a host file that
 replaces it. It lists each entry with its id, title, anchors and class: since ids are never

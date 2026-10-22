@@ -426,7 +426,7 @@ describe('tracker handoff', () => {
     'PROJ-3': issue('PROJ-3', { status: 'In Progress', type: 'Bug' })
   })
   const taken = { key: 'PROJ-1', state: 'taken', fields: { done: ['The form validates the port.'], test: ['Open the port page.', 'Enter 70000 and save.'] } }
-  const partial = { key: 'PROJ-2', state: 'partial', fields: { remains: ['The bulk edit is not covered.'] } }
+  const partial = { key: 'PROJ-2', state: 'partial', fields: { done: ['The single edit validates the port.'], test: ['Edit one port and save 70000.'], remains: ['The bulk edit is not covered.'] } }
   const retest = { key: 'PROJ-3', state: 'not-reproduced', fields: { tried: ['Followed the reproduction steps.'], commit: 'abc1234' } }
   const mr = { url: 'https://git.example.com/group/repo/-/merge_requests/7' }
 
@@ -461,7 +461,7 @@ describe('tracker handoff', () => {
       jira.comments['PROJ-1'][0].body,
       'h3. Done\n# The form validates the port.\n\nh3. How to test\n# Open the port page.\n# Enter 70000 and save.\n\nMerge request: https://git.example.com/group/repo/-/merge_requests/7'
     )
-    assert.match(jira.comments['PROJ-2'][0].body, /h3\. Remains\n# The bulk edit is not covered\./)
+    assert.match(jira.comments['PROJ-2'][0].body, /h3\. How to test\n# Edit one port and save 70000\.\n\nh3\. Remains\n# The bulk edit is not covered\./)
   })
 
   it('resumes a hand-off that failed after the transition: the rerun posts only the comment', async () => {

@@ -27,7 +27,8 @@
 //   comment        per issue, the agent's fields checked (lib/tracker.mjs checkFields) and
 //                  recorded; done once every issue has them.
 //   handoff        the tracker's `handoff`, held (lib/tracker.mjs heldWrite): without yes the
-//                  plan and its preview, with it the plan applied. Items { key, state, fields };
+//                  plan and its preview, with it the plan applied. Items { key, state, fields },
+//                  each text field a list of one-line texts (lib/tracker.mjs handoffFields);
 //                  mr { url } from the forge's state (from archive's mr step with a forge that
 //                  does not provide state), null with no forge.
 //
@@ -59,7 +60,7 @@ import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { readDebtRoot, readRegistry } from './registry.mjs'
 import { callRole, CORE, forgeReport, trackerReport } from './roles.mjs'
 import { debtGroups, findScope, renderSkeleton, trackerDir, trackerTargets } from './scope.mjs'
-import { checkFields, FIELD_LIMITS, HANDOFF_FIELDS, heldWrite, trackerCall } from './tracker.mjs'
+import { checkFields, FIELD_LIMITS, HANDOFF_FIELDS, handoffFields, heldWrite, trackerCall } from './tracker.mjs'
 import { worktreePath } from './workspace.mjs'
 
 const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -443,7 +444,7 @@ export function handoffStep(ctx, { yes = false } = {}) {
   const keys = land.steps.comment.detail?.keys ?? {}
   const missing = targets.map((t) => t.key).filter((k) => !keys[k])
   if (missing.length) refuse(`every in-scope tracker issue needs its fields before the hand-off; none recorded for ${missing.join(', ')}: run land.mjs comment --change ${ctx.change} --key <KEY> --file <reply>`)
-  const items = targets.map((t) => ({ key: t.key, state: t.state, fields: keys[t.key].fields }))
+  const items = targets.map((t) => ({ key: t.key, state: t.state, fields: handoffFields(keys[t.key].fields) }))
   const url = land.steps.wait.detail?.url ?? null
   const mr = url ? { url } : null
   const { record, out } = heldWrite({

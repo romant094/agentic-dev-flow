@@ -15,7 +15,7 @@ import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { landFile, mergedByAncestry, readLand } from '../lib/land.mjs'
 import { initRegistry, readRegistry, setDebtRoot, writeRegistry } from '../lib/registry.mjs'
 import { CORE } from '../lib/roles.mjs'
-import { checkFields, FIELD_LIMITS } from '../lib/tracker.mjs'
+import { checkFields, FIELD_LIMITS, handoffFields } from '../lib/tracker.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
@@ -148,6 +148,8 @@ const reply = (root, name, body) => {
 }
 const TAKEN = { done: 'The pool closes the old socket before it opens a new one.', test: 'Reconnect three times, then count the open sockets: one is open.' }
 const PARTIAL = { done: 'The pool counts its open sockets.', test: 'Open the metrics page and read the socket count.', remains: 'The gauge for idle sockets.' }
+// The fields as the tracker gets them: every text field a list of one-line texts.
+const lists = (fields) => Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, [v]]))
 const valid = (key, state, fields) => ({ role: 'land-comment', key, state, fields })
 const comment = (root, key, body) => land(root, 'comment', '--key', key, '--file', reply(root, `${key}-${Math.random()}`, body))
 
@@ -160,17 +162,29 @@ test('checkFields: the required fields per state, the word limits, and no link o
   assert.deepEqual(checkFields('not-reproduced', { tried: ['reconnect 3 times', 'reconnect under load'] }), [])
   assert.deepEqual(checkFields('taken', { ...TAKEN, remains: 'x' }), ['fields.remains is only for a partial item; a taken item has nothing left'])
   assert.deepEqual(checkFields('partial', TAKEN), ['fields.remains is required for a partial item'])
-  assert.deepEqual(checkFields('taken', { done: '  ', test: 3 }), ['fields.done is empty', 'fields.test must be text'])
+  assert.deepEqual(checkFields('taken', { done: '  ', test: 3 }), ['fields.done is empty', 'fields.test must be text or a list of texts'])
+  assert.deepEqual(checkFields('taken', { done: [], test: ['', ' \n '] }), ['fields.done is empty', 'fields.test is empty'])
+  assert.deepEqual(checkFields('taken', { done: ['a', 2], test: 'b' }), ['fields.done must be text or a list of texts'])
+  assert.deepEqual(checkFields('partial', { done: ['The pool counts.'], test: 'Open the page.\nRead the count.', remains: ['The gauge.'] }), [])
   assert.deepEqual(checkFields('taken', { done: 'x' }), ['fields.test is required for a taken item'])
   assert.deepEqual(checkFields('taken', { ...TAKEN, extra: 'x' }), ['fields.extra is not a field of a taken item; its fields: done, test'])
   const words = (n) => Array.from({ length: n }, () => 'word').join(' ')
   assert.deepEqual(checkFields('taken', { done: words(80), test: words(120) }), [])
   assert.deepEqual(checkFields('taken', { done: words(81), test: words(121) }), ['fields.done has 81 words; the limit is 80', 'fields.test has 121 words; the limit is 120'])
   assert.deepEqual(checkFields('not-reproduced', { tried: [words(40), words(41)] }, { prefix: 'bug' }), ['bug.tried has 81 words; the limit is 80'])
+  assert.deepEqual(checkFields('taken', { done: [words(40), words(40)], test: `${words(60)}\n${words(61)}` }), ['fields.test has 121 words; the limit is 120'], 'a limit counts every line')
+  assert.deepEqual(checkFields('taken', { ...TAKEN, test: ['Open the page.', 'see www.example.com'] }), ['fields.test holds a link or URL ("www.example.com"); write plain text: the provider adds the merge request link itself'])
   for (const [text, link] of [['see https://x.example/a', 'https://x.example/a'], ['at http://x', 'http://x'], ['on www.example.com', 'www.example.com'], ['the [merge request](mr)', '[merge request](mr)'], ['ssh://host/repo', 'ssh://host/repo']]) {
     assert.deepEqual(checkFields('taken', { ...TAKEN, done: text }), [`fields.done holds a link or URL ("${link}"); write plain text: the provider adds the merge request link itself`], text)
   }
   assert.deepEqual(checkFields('closed', {}), ['closed is not a hand-off state; one of taken, partial, not-reproduced'])
+})
+
+test('handoffFields: every text field a list of one-line texts, trimmed, with no empty line; the commit as it is', () => {
+  assert.deepEqual(handoffFields({ done: 'One line.', test: '  Open the page.\r\n\n  Read the count.  \n' }), { done: ['One line.'], test: ['Open the page.', 'Read the count.'] })
+  assert.deepEqual(handoffFields({ done: ['First.', 'Second\nThird.', '  '], test: ['Step.'], remains: 'Left.' }), { done: ['First.', 'Second', 'Third.'], test: ['Step.'], remains: ['Left.'] })
+  assert.deepEqual(handoffFields({ tried: ['reconnect 3 times'], commit: 'abc1234' }), { tried: ['reconnect 3 times'], commit: 'abc1234' })
+  assert.deepEqual(handoffFields({ test: '1. Open the page.\n2) Read the count.\n- Close it.\n* Done.\n3.5 is a value.' }), { test: ['Open the page.', 'Read the count.', 'Close it.', 'Done.', '3.5 is a value.'] })
 })
 
 test('the reply schema uses only the keywords the validator implements', async () => {
@@ -253,7 +267,7 @@ test('with no forge, git ancestry decides merged; each step resumes; a partial i
   assert.deepEqual([held.ok, held.state, held.plan, held.preview, held.mr], [true, 'pending', 'handoff-plan', ['PROJ-1: taken', 'PROJ-2: partial'], null])
   assert.equal(held.waiting, "the developer's yes: land.mjs handoff --change fix-pool --yes")
   const sent = calls(root, 'tracker').at(-1)
-  assert.deepEqual([sent.op, sent.input.items, sent.input.mr, sent.input.change, sent.input.apply], ['handoff', [{ key: 'PROJ-1', state: 'taken', fields: TAKEN }, { key: 'PROJ-2', state: 'partial', fields: PARTIAL }], null, CHANGE, undefined])
+  assert.deepEqual([sent.op, sent.input.items, sent.input.mr, sent.input.change, sent.input.apply], ['handoff', [{ key: 'PROJ-1', state: 'taken', fields: lists(TAKEN) }, { key: 'PROJ-2', state: 'partial', fields: lists(PARTIAL) }], null, CHANGE, undefined])
   assert.equal(sent.input.stateDir, join(root, '.superpowers', 'sdd', CHANGE, 'tracker'))
   assert.match(land(root, 'report').report, /Next: the developer's yes: land\.mjs handoff --change fix-pool --yes\./)
   const applied = land(root, 'handoff', '--yes')
@@ -399,7 +413,7 @@ test('a tracked debt group takes part in land: taken when archive removed every 
   assert.deepEqual(comment(root, 'PROJ-8', valid('PROJ-8', 'partial', PARTIAL)).missing, [])
   const held = land(root, 'handoff')
   assert.deepEqual(held.preview, ['PROJ-1: taken', 'PROJ-7: taken', 'PROJ-8: partial'])
-  assert.deepEqual(calls(root, 'tracker').at(-1).input.items, [{ key: 'PROJ-1', state: 'taken', fields: TAKEN }, { key: 'PROJ-7', state: 'taken', fields: TAKEN }, { key: 'PROJ-8', state: 'partial', fields: PARTIAL }])
+  assert.deepEqual(calls(root, 'tracker').at(-1).input.items, [{ key: 'PROJ-1', state: 'taken', fields: lists(TAKEN) }, { key: 'PROJ-7', state: 'taken', fields: lists(TAKEN) }, { key: 'PROJ-8', state: 'partial', fields: lists(PARTIAL) }])
   assert.deepEqual(land(root, 'handoff', '--yes').applied, ['PROJ-1', 'PROJ-7', 'PROJ-8'])
 
   const debtOnly = landHost({ scope: { ...SCOPE, items: [debtItem('snmp-01', 'PROJ-7')] }, tree: { 'index.md': DEBT_ROOT, 'snmp/index.md': debtIndex([['snmp-06', null]]) } })

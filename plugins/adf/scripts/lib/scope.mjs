@@ -43,7 +43,7 @@ import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { readDebtRoot, readRegistry } from './registry.mjs'
 import { checkouts } from './resolve.mjs'
 import { callRole, knowledgeReport, TRACKER_SKIPPED, trackerReport } from './roles.mjs'
-import { checkFields, heldWrite as trackerHold, trackerCall as tracker } from './tracker.mjs'
+import { checkFields, handoffFields, heldWrite as trackerHold, trackerCall as tracker } from './tracker.mjs'
 import { worktreePath } from './workspace.mjs'
 
 const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -802,7 +802,7 @@ export function retest(root, change, { yes = false, core }) {
   const off = trackerOff(scope)
   if (off) return { ok: true, change, step: 'retest', state: 'skipped', report: off }
   if (!scope.base?.commit) refuse('the scope records no base commit; run scope.mjs check-input first')
-  const items = targets.map((i) => ({ key: i.key, state: 'not-reproduced', fields: { tried: i.check.bug.tried, commit: scope.base.commit } }))
+  const items = targets.map((i) => ({ key: i.key, state: 'not-reproduced', fields: handoffFields({ tried: i.check.bug.tried, commit: scope.base.commit }) }))
   return heldWrite(main, change, scope, {
     step: 'retest',
     operation: 'handoff',

@@ -22,6 +22,11 @@ describe('the default hand-off template', () => {
     assert.equal(body, 'h3. Remains\n# The bulk path is open.')
   })
 
+  it('renders a partial item as the core sends it: done, how to test, and what remains', () => {
+    const body = renderComment(template, 'partial', { done: ['The count is shown.'], test: ['Open the page.', 'Read the count.'], remains: ['The gauge.'] }, MR)
+    assert.equal(body, 'h3. Done\n# The count is shown.\n\nh3. How to test\n# Open the page.\n# Read the count.\n\nh3. Remains\n# The gauge.\n\nMerge request: https://git.example.com/g/r/-/merge_requests/7')
+  })
+
   it('renders a not-reproduced item with the commit and what was tried', () => {
     const body = renderComment(template, 'not-reproduced', { tried: ['Followed the steps.'], commit: 'abc1234' }, null)
     assert.equal(body, 'h3. Does not reproduce\nThe issue does not reproduce on commit abc1234.\n\nh3. Tried\n# Followed the steps.')
@@ -60,19 +65,21 @@ describe('parseTemplate', () => {
 describe('checkFields', () => {
   it('accepts the fields each state takes', () => {
     assert.deepEqual(checkFields('P-1', 'taken', { done: ['a'], test: ['b'] }), [])
-    assert.deepEqual(checkFields('P-1', 'partial', { remains: ['a'] }), [])
+    assert.deepEqual(checkFields('P-1', 'partial', { done: ['a'], test: ['b'], remains: ['c'] }), [])
     assert.deepEqual(checkFields('P-1', 'not-reproduced', { tried: ['a'], commit: 'abc1234' }), [])
   })
 
   it('names a missing required field, an unknown field, a link, and a bad commit', () => {
     assert.deepEqual(checkFields('P-1', 'taken', { done: ['a'] }), ['P-1: taken needs test'])
-    assert.deepEqual(checkFields('P-1', 'partial', { remains: ['a'], tried: ['b'] }), ['P-1: partial takes no field tried'])
+    assert.deepEqual(checkFields('P-1', 'partial', { done: ['a'], test: ['b'], remains: ['c'], tried: ['d'] }), ['P-1: partial takes no field tried'])
+    assert.deepEqual(checkFields('P-1', 'partial', { remains: ['a'] }), ['P-1: partial needs done', 'P-1: partial needs test'])
     assert.deepEqual(checkFields('P-1', 'taken', { done: ['see www.example.com'], test: ['b'] }), ['P-1: done holds a link; agent text carries no link'])
     assert.deepEqual(checkFields('P-1', 'not-reproduced', { tried: ['a'], commit: 'HEAD' }), ['P-1: commit is not a commit hash'])
   })
 
   it('refuses a multi-line text and an unknown state', () => {
     assert.deepEqual(checkFields('P-1', 'taken', { done: ['a\nb'], test: ['c'] }), ['P-1: done is not a list of one-line texts'])
+    assert.deepEqual(checkFields('P-1', 'taken', { done: 'a', test: ['c'] }), ['P-1: done is not a list of one-line texts'])
     assert.match(checkFields('P-1', 'closed', {})[0], /not one of/)
   })
 })

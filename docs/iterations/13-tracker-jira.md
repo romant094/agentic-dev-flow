@@ -246,3 +246,30 @@ Settled by the developer on 2026-10-22, after the release.
   the change touched.
 
 Versions: adf 0.14.1; adf-jira 0.1.1.
+
+## Iteration 13b
+
+Settled by the developer on 2026-10-22.
+
+- One tracker issue mirrors a group of related debt entries; several entries may share a
+  Tracker key (`trackerGroups`). `sync-debt` works from the debt tree alone:
+  `sync-debt.mjs state` reports the groups and the keyless entries, the agent decides the
+  grouping (join, create, wait), `check-groups` checks it, `plan` builds a create per new
+  group and a script-rendered entry list per existing group, and `track` writes the keys of
+  the applied rows back.
+- An entry related to an issue that has left the initial status waits for a new group: each
+  edit row expects `config.statuses.initial`, and the apply engine skips a drifted row.
+- A description is rewritten only when it has the group template's shape or the previous
+  one-entry template's shape, so the origin's existing mirrors convert on their first sync.
+- Land hands a debt group's issue to the tester when every entry of the group is resolved,
+  and comments what remains otherwise; a key that is also a scope tracker item is handed off
+  once.
+- Fixed: the core and `adf-jira` disagreed on the hand-off fields (strings against lists,
+  `test` on a partial item), so every real hand-off and retest was refused. The wire format
+  is now a list of one-line texts for every text field; the core normalizes what the agent
+  writes (lines split, list markers dropped) and checks the limits over all lines; a partial
+  item carries `done`, `test` and `remains` on both sides. `tracker-plugins.spec.mjs` runs the
+  real core scripts against the real `adf-jira` and `adf-gitlab` with Jira faked at `fetch`
+  and `glab` faked on `PATH`; it fails on the previous code.
+
+Versions: adf 0.14.2; adf-jira 0.2.0.

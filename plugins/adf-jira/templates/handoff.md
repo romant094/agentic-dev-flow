@@ -31,6 +31,11 @@ h3. Done
 # {{done}}
 
 {{/done}}
+{{#test}}
+h3. How to test
+# {{test}}
+
+{{/test}}
 h3. Remains
 # {{remains}}
 {{#commit}}

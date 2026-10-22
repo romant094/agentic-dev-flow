@@ -120,11 +120,13 @@ do is skipped with its reason. With `apply: <plan id>` the plan runs.
 | State | Fields | The rows |
 |---|---|---|
 | `taken` | `done`, `test` (lists); `commit` | the route to `statuses.handoff`, the tester (`JIRA_QA`) as assignee, the comment |
-| `partial` | `remains`; `done`, `commit` | the comment only; the status stays |
+| `partial` | `done`, `test`, `remains` (lists); `commit` | the comment only; the status stays |
 | `not-reproduced` | `tried`, `commit`; `test` | as `taken`: the comment says the issue does not reproduce on that commit, and the tester retests it |
 
-Each field list holds one-line texts; a text holding a link or a URL is refused, and so is a
-`commit` that is not a commit hash. The core checks the wording; the plugin renders the markup.
+The required fields are the core's, and the core sends every text field as a list of one-line
+texts. The plugin checks them again before anything is sent: a field that is not such a list,
+a text holding a link or a URL, and a `commit` that is not a commit hash are refused. The core
+checks the wording; the plugin renders the markup.
 
 **Held plans and resume.** A plan is `start-<UTC stamp>` or `handoff-<UTC stamp>`, a file in
 `stateDir`. Before it applies, the plugin refuses a plan whose allowlist reaches past the

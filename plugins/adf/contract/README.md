@@ -148,20 +148,24 @@ behaviour. `branchRank` orders the items for the branch name
 branch. `excluded` is the provider's reason an item is out (a suspended or closed issue), else
 null. `flags` are lines the developer is shown once.
 
-`fields` are an agent's plain text, checked by the core (`lib/tracker.mjs`), never markup. The
-provider renders its own comment from them with its own template, and adds the merge request
-line only when `mr` is not null: the core passes the `url` of the forge's `state`, and `null`
-with no forge.
+`fields` are an agent's plain text, checked by the core (`lib/tracker.mjs`), never markup. Each
+text field reaches the provider as a list of one-line texts, never a single string: the agent
+may write a field as one text or as a list, and the core splits each text at its line breaks,
+trims every line and drops the empty ones. The provider renders its own comment from the lists
+with its own template, typically one list line per text, and adds the merge request line only
+when `mr` is not null: the core passes the `url` of the forge's `state`, and `null` with no
+forge.
 
 | `state` | Fields | Word limit |
 |---|---|---|
 | `taken` | `done`: what the change did; `test`: how a tester checks it | `done` 80, `test` 120 |
 | `partial` | `done`, `test`, and `remains`: what the change left undone | `remains` 80 |
-| `not-reproduced` | `tried`: the attempts, a list of lines; and `commit`, the base commit, set by the core | `tried` 80 over all its lines |
+| `not-reproduced` | `tried`: the attempts; and `commit`, the base commit, set by the core and not a list | `tried` 80 |
 
-The core refuses a missing or empty field, a field the state does not take (`remains` on a
-`taken` item), a field over its limit, and a link or URL in any field: a scheme such as
-`https://`, a `www.` host, or Markdown link syntax. `handoff` is called once every in-scope
+A limit counts the words of all the field's lines. The core refuses a missing or empty field, a
+field the state does not take (`remains` on a `taken` item), a field over its limit, and a link
+or URL in any field: a scheme such as `https://`, a `www.` host, or Markdown link syntax. A
+provider may check the fields again, but accepts every item the core sends. `handoff` is called once every in-scope
 issue has its fields. Its items also carry each issue that mirrors a group of the change's
 taken or partial debt entries (their shared `Tracker` key, when it is no tracker item of the
 scope): `taken` once no entry holding the key remains in the debt tree after archive, else

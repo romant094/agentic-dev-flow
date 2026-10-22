@@ -7,8 +7,9 @@
 //   checkGrouping  the agent's grouping decision against the tree
 //   buildPlans     the create plan (one row per new group, a child of config.debtEpic) and the
 //                  edit plan (one row per group, its description rendered again from the
-//                  template, expecting config.statuses.initial and the template's shape, sent
-//                  only when it differs), each row naming the entry ids it carries
+//                  template, expecting config.statuses.initial and the template's shape or the
+//                  previous one-entry template's, sent only when it differs), each row naming
+//                  the entry ids it carries
 //   trackResults   what the applied plans mean for the tree: the keys to write into entries, the
 //                  entries that wait because their group's issue moved on, the rows not applied
 //
@@ -18,7 +19,7 @@
 //     create: [{ summary, entries: [id] }]    a new group, filed as one new issue
 //     wait:   [{ entry, reason }] }           a keyless entry left keyless this run
 // Every keyless entry is decided exactly once.
-import { debtShape, renderDebtDescription } from './debt-description.mjs'
+import { renderDebtDescription, rewritableShape } from './debt-description.mjs'
 import { projectOf } from './plan.mjs'
 
 export const GROUPING_KEYS = ['version', 'join', 'create', 'wait']
@@ -229,7 +230,7 @@ export function buildPlans({ state, grouping, config, facts, template, type, att
       key: group.key,
       summary: `entries ${entries.map((e) => e.id).join(', ')}`,
       from: initial,
-      body: { shape: debtShape(template, { root: state.root }) },
+      body: { shape: rewritableShape(template, { root: state.root }) },
       entries: entries.map((e) => e.id),
       joins: added,
       steps: [{ fields: { description: description(entries) } }],

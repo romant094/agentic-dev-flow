@@ -148,6 +148,9 @@ describe('sync-debt.mjs plan', () => {
     assert.ok(shape.test(bodyLines(description.replace(/\n/g, '\r\n\n'))), 'blank lines and line endings do not count')
     assert.equal(shape.test(bodyLines('Written by hand.\n\nh3. Acceptance\n* it works')), false)
     assert.equal(shape.test(bodyLines(`${description}\n\nh3. Test stand\n* the lab switch`)), false, 'a description a person extended is not the shape')
+    const previous = 'Walk ignores the timeout\n\nAnchors: `walk.ts:5`\nClass: defect\n\nMirrored from the technical debt tree: debt/snmp/index.md — the row carrying this issue key.'
+    assert.ok(shape.test(bodyLines(previous)), 'the previous one-entry template is rewritable')
+    assert.equal(shape.test(bodyLines(`${previous}\n\nh3. Test stand\n* the lab switch`)), false, 'unless a person extended it')
   })
 
   it('attaches by Epic Link, and refuses a missing type, model, epic, initial status or a field a mirror does not fill', () => {
@@ -208,6 +211,29 @@ describe('sync-debt.mjs track', () => {
     assert.match(snmp, /\| `snmp-04` \| Session pool leaks \| `pool\.ts:3` \| defect \| c2 \| PROJ-12 \|/)
     assert.match(snmp, /\| `snmp-03` \| Index parse duplicated again \| `a\.ts:80` \| debt \| c2 \| \|/)
     assert.deepEqual(call(root, 'track', '--plan', out.plans.create).tracked, [{ id: 'snmp-04', key: 'PROJ-12', changed: false }], 'a rerun changes nothing')
+  })
+
+  it('rewrites a description of the previous one-entry template as the group list, so its joining entry is tracked', async () => {
+    const root = host()
+    const out = call(root, 'plan', '--file', grouping(root, GROUPING), '--type', 'Task', '--attach', 'parent')
+    const edit = loadPlan(out.plans.edit)
+    // PROJ-7 was filed by the previous sync-debt, one issue per entry; PROJ-9 was written by hand.
+    const previous = 'Trailing index extracted in three places\n\nAnchors: `a.ts:12`, `b.ts:40`\nClass: debt\n\nMirrored from the technical debt tree: debt/snmp/index.md — the row carrying this issue key.'
+    const jira = fakeJira({
+      issues: {
+        'PROJ-7': issue('PROJ-7', { fields: { description: previous.replace(/\n/g, '\r\n') } }),
+        'PROJ-9': issue('PROJ-9', { fields: { description: `${previous}\n\nh3. Acceptance\n* the index is parsed once` } })
+      }
+    })
+    const client = new JiraClient({ url: 'https://jira.example.com', pat: 'token-value' }, jira.fetch)
+    const outcome = await applyPlan({ plan: edit, client, persist: (p) => writeFileSync(out.plans.edit, JSON.stringify(p)) })
+    assert.deepEqual([outcome.applied, outcome.skippedDrift, outcome.unchanged], [1, 1, 0])
+    assert.equal(jira.store['PROJ-7'].fields.description, edit.rows[0].steps[0].fields.description)
+    assert.match(jira.store['PROJ-7'].fields.description, /^h3\. Technical debt\n\* snmp-01: .*\n[\s\S]*\* snmp-03: Index parse duplicated again\n/)
+    assert.match(jira.store['PROJ-9'].fields.description, /h3\. Acceptance/, 'a description a person extended is left alone')
+
+    const tracked = call(root, 'track', '--plan', out.plans.edit)
+    assert.deepEqual([tracked.tracked, tracked.waiting, tracked.updated], [[{ id: 'snmp-03', key: 'PROJ-7', changed: true }], [], ['PROJ-7']])
   })
 
   it('writes nothing for a row not applied, and refuses a plan of another skill', () => {

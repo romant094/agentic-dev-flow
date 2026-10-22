@@ -11,7 +11,8 @@ slash before the name entries, in double braces, each on its own line) repeat on
 of the group, in tree order. Inside them {{id}}, {{title}}, {{anchors}} (comma-separated),
 {{class}} and {{block}} are that entry's. {{root}}, the debt tree's directory, may stand
 anywhere. sync-debt rewrites a description only while its non-blank lines still have this
-template's shape, so a description a person rewrote is left alone.
+template's shape, or the shape of the one-entry description it wrote before this template, so
+a description a person rewrote is left alone.
 
 <!-- description -->
 h3. Technical debt
