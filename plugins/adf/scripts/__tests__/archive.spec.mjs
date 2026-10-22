@@ -423,6 +423,89 @@ test('unplaced matches a deviation id whole, never as the prefix of another', ()
 
 const NEW_CAP = '## ADDED Requirements\n\n### Requirement: Label\nThe system SHALL label every widget.\n\n#### Scenario: Labelled\n- **WHEN** a widget is built\n- **THEN** it carries a label\n'
 
+// A committed debt tree of three entries, and a scope taking snmp-01 and snmp-03 in full and
+// snmp-02 in part; snmp-03 is no longer in the tree.
+const DEBT_ROW = (id) => `| \`${id}\` | Entry ${id} | \`a.ts:1\` | debt | old-change |  |`
+const DEBT_TREE = {
+  'docs/debt/index.md': '# Technical Debt\n\n## Blocks\n\n| Block | Covers |\n|---|---|\n| [`snmp`](snmp/index.md) | SNMP |\n',
+  'docs/debt/snmp/index.md': ['# SNMP', '', '| ID | Title | Anchors | Class | Source | Tracker |', '|---|---|---|---|---|---|', DEBT_ROW('snmp-01'), DEBT_ROW('snmp-02'), ''].join('\n')
+}
+const debtItem = (key, state) => ({ source: 'debt', key, title: `Entry ${key}`, kind: 'debt', state, reason: state === 'taken' ? null : 'part of it', block: 'snmp' })
+const DEBT_SCOPE = { version: 1, change: 'add-x', items: [debtItem('snmp-01', 'taken'), debtItem('snmp-02', 'partial'), debtItem('snmp-03', 'taken')] }
+
+test('placements removes the taken debt, keeps the partial, reports a gone entry, and commit-memory commits the removal', () => {
+  const h = archiveHost({ debt: 'docs/debt', extra: DEBT_TREE, scope: DEBT_SCOPE })
+  assert.equal(call(h, ['check']).ok, true)
+  const placed = call(h, ['placements'])
+  assert.equal(placed.ok, true, placed.refusal)
+  assert.deepEqual([placed.detail.removedDebt, placed.detail.goneDebt, placed.detail.debtFiles], [['snmp-01'], ['snmp-03'], ['docs/debt/snmp/index.md']])
+  const index = readFileSync(join(h.wt, 'docs/debt/snmp/index.md'), 'utf8')
+  assert.equal(index.includes(DEBT_ROW('snmp-01')), false)
+  assert.equal(index.includes(DEBT_ROW('snmp-02')), true, 'a partial item stays')
+  assert.match(index, /^Last id: `snmp-02`$/m)
+  const steps = drive(h)
+  assert.equal(steps.every((r) => r.ok), true, JSON.stringify(steps.find((r) => !r.ok)))
+  const state = readState(h)
+  assert.equal(state.steps.ingest.state, 'skipped')
+  assert.match(state.steps.ingest.detail.report, /The removed debt snmp-01, snmp-03 is not logged\./)
+  assert.equal(state.steps.ingest.detail.debtLogged, false)
+  assert.deepEqual(state.steps['commit-memory'].detail.files, ['docs/debt/snmp/index.md'])
+  assert.equal(git(h.root, 'log', '--format=%B', 'develop').includes('snmp-01'), false, 'no commit message names the removed id')
+  assert.match(call(h, ['report']).report, /placements: done — every debt, recorded finding and deviation placed; resolved debt removed: snmp-01; taken debt already gone from the tree: snmp-03/)
+})
+
+test('placements with no scope.json leaves the debt tree as it is', () => {
+  const h = archiveHost({ debt: 'docs/debt', extra: DEBT_TREE })
+  call(h, ['check'])
+  const placed = call(h, ['placements'])
+  assert.equal(placed.ok, true, placed.refusal)
+  assert.deepEqual(placed.detail, { unplaced: [], debtFiles: [] })
+  assert.equal(git(h.wt, 'status', '--porcelain'), '')
+})
+
+test('ingest adds the removed debt ids to the knowledge log entry', () => {
+  const MEM = '.claude/memory'
+  const h = archiveHost({ debt: 'docs/debt', scope: DEBT_SCOPE, extra: { ...DEBT_TREE, [`${MEM}/index.md`]: '# Index\n', [`${MEM}/log.md`]: '# Log\n' } })
+  const context = { state: 'done', plugin: 'memory', index: `${MEM}/index.md`, instructions: { ingest: '/p/ingest.md' }, paths: [`${MEM}/**`], log: [`${MEM}/log.md`] }
+  const logged = []
+  const deps = {
+    ...NONE,
+    knowledge: () => context,
+    knowledgeLog: (input) => {
+      logged.push(input)
+      writeFileSync(join(h.wt, MEM, 'log.md'), `# Log\n\n## [2026-10-19 10:00] ingest | ${input.title} | T\n`)
+      return { state: 'done', path: `${MEM}/log.md`, entry: `## [2026-10-19 10:00] ingest | ${input.title} | T\n`, rotated: [] }
+    }
+  }
+  for (const step of ['check', 'placements', 'merge', 'move', 'commit-specs']) assert.equal(call(h, [step], deps).ok, true, step)
+  assert.equal(ingestRun(['stale', '--change', 'add-x', '--root', h.wt], { knowledge: () => context }).state, 'done')
+  put(h.wt, { [`${MEM}/entities/widgets.md`]: '# Widgets\n\nWidgets are stored dry.\n' })
+  const reply = join(h.wt, '..', 'reply.json')
+  writeFileSync(reply, JSON.stringify({ nothingLearned: false, pages: [{ path: `${MEM}/entities/widgets.md`, why: 'the dry store' }], stale: [], invariant: 'a widget is stored dry', likelyMistake: 'storing it wet', log: { title: 'Dry widget store', bullets: ['widgets are stored dry'] } }))
+  const ingest = call(h, ['ingest', '--reply', reply], deps)
+  assert.equal(ingest.ok, true, ingest.refusal)
+  assert.deepEqual(logged, [{ type: 'ingest', title: 'Dry widget store', bullets: ['widgets are stored dry', 'Resolved debt removed from the debt tree: snmp-01, snmp-03.'] }])
+  assert.deepEqual([ingest.detail.removedDebt, ingest.detail.debtLogged], [['snmp-01', 'snmp-03'], true])
+  const memory = call(h, ['commit-memory'], deps)
+  assert.deepEqual(memory.detail.files, [`${MEM}/entities/widgets.md`, `${MEM}/log.md`, 'docs/debt/snmp/index.md'])
+})
+
+test('with nothing learned the removed debt ids still get a log entry of their own', () => {
+  const MEM = '.claude/memory'
+  const h = archiveHost({ debt: 'docs/debt', scope: DEBT_SCOPE, extra: { ...DEBT_TREE, [`${MEM}/index.md`]: '# Index\n', [`${MEM}/log.md`]: '# Log\n' } })
+  const context = { state: 'done', plugin: 'memory', index: `${MEM}/index.md`, instructions: { ingest: '/p/ingest.md' }, paths: [`${MEM}/**`], log: [`${MEM}/log.md`] }
+  const logged = []
+  const deps = { ...NONE, knowledge: () => context, knowledgeLog: (input) => logged.push(input) && { state: 'done', path: `${MEM}/log.md`, entry: '', rotated: [] } }
+  for (const step of ['check', 'placements', 'merge', 'move', 'commit-specs']) assert.equal(call(h, [step], deps).ok, true, step)
+  assert.equal(ingestRun(['stale', '--change', 'add-x', '--root', h.wt], { knowledge: () => context }).state, 'done')
+  const reply = join(h.wt, '..', 'reply.json')
+  writeFileSync(reply, JSON.stringify({ nothingLearned: true, pages: [], stale: [], invariant: '', likelyMistake: '', log: null }))
+  const ingest = call(h, ['ingest', '--reply', reply], deps)
+  assert.equal(ingest.ok, true, ingest.refusal)
+  assert.deepEqual(logged, [{ type: 'ingest', title: 'Resolved debt of add-x', bullets: ['Resolved debt removed from the debt tree: snmp-01, snmp-03.'] }])
+  assert.equal(ingest.detail.nothingLearned, true)
+})
+
 test('merge refuses a new capability\'s placeholder Purpose until --purpose gives it, and writes nothing before', () => {
   const h = archiveHost({ delta: { widgets: DELTA, labels: NEW_CAP } })
   drive(h, NONE, {})

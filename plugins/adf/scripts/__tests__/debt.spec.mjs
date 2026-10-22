@@ -60,7 +60,7 @@ test('add creates the root index, the block and its root row, and allocates the 
   assert.equal(r.entry.id, 'snmp-01')
   assert.deepEqual(r.entry.anchors, ['a.ts:1', 'b.ts:2'])
   assert.match(readFileSync(join(tree, 'index.md'), 'utf8'), /\| \[`snmp`\]\(snmp\/index\.md\) \| SNMP transport \|/)
-  assert.equal(readFileSync(join(tree, 'snmp/index.md'), 'utf8'), `${HEADER}| \`snmp-01\` | Trailing index extracted in three places | \`a.ts:1\`, \`b.ts:2\` | debt | some-change |  |\n`)
+  assert.equal(readFileSync(join(tree, 'snmp/index.md'), 'utf8'), `Last id: \`snmp-01\`\n\n${HEADER}| \`snmp-01\` | Trailing index extracted in three places | \`a.ts:1\`, \`b.ts:2\` | debt | some-change |  |\n`)
   assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
 })
 
@@ -119,6 +119,43 @@ test('an id is never renumbered, and an id the tree still names is not allocated
   removeEntry(tree, { id: 'snmp-03' })
   write(tree, { 'snmp/notes.md': 'Background for snmp-03.\n' })
   assert.equal(addEntry(tree, entry({ title: 'Four' })).entry.id, 'snmp-04')
+})
+
+test('removing the last entry keeps its id: the next add takes the number after it', () => {
+  const tree = tmp()
+  addEntry(tree, entry({ title: 'One' }))
+  addEntry(tree, entry({ title: 'Two' }))
+  removeEntry(tree, { id: 'snmp-02' })
+  assert.match(readFileSync(join(tree, 'snmp/index.md'), 'utf8'), /^Last id: `snmp-02`$/m)
+  assert.deepEqual(checkTree(tree), { ok: true, errors: [] }, 'the high-water line names a removed id on purpose')
+  assert.equal(addEntry(tree, entry({ title: 'Three' })).entry.id, 'snmp-03')
+  assert.match(readFileSync(join(tree, 'snmp/index.md'), 'utf8'), /^Last id: `snmp-03`$/m)
+  addAdfRecord(tree, 'my-change', adfInput())
+  removeEntry(tree, { id: 'adf-01' })
+  assert.equal(addAdfRecord(tree, 'my-change', adfInput({ title: 'Another' })).record.id, 'adf-02')
+})
+
+test('check refuses a row above the high-water line and a malformed or second line', () => {
+  const row = (id) => `| \`${id}\` | T | \`a.ts:1\` | debt | c |  |\n`
+  const above = write(tmp(), { 'index.md': ROOT, 'snmp/index.md': `# SNMP\n\nLast id: \`snmp-02\`\n\n${HEADER}${row('snmp-01')}${row('snmp-03')}` })
+  assert.deepEqual(checkTree(above).errors.map((e) => [e.file, e.line, e.message]), [['snmp/index.md', 8, 'snmp-03 is above the block\'s high-water line snmp-02']])
+  const malformed = write(tmp(), { 'index.md': ROOT, 'snmp/index.md': `# SNMP\n\nLast id: snmp-2\n\n${HEADER}${row('snmp-01')}` })
+  assert.match(checkTree(malformed).errors.map((e) => e.message).join('\n'), /the high-water line must read "Last id: `snmp-NN`"/)
+  const foreign = write(tmp(), { 'index.md': ROOT, 'snmp/index.md': `Last id: \`data-04\`\nLast id: \`snmp-04\`\n\n${HEADER}${row('snmp-01')}` })
+  assert.deepEqual(checkTree(foreign).errors.map((e) => e.line), [2, 1])
+})
+
+test('a tree written before the high-water line is valid and gets the line on its first add or remove', () => {
+  const old = () => write(tmp(), { 'index.md': ROOT, 'snmp/index.md': `# SNMP\n\n${HEADER}| \`snmp-01\` | T | \`a.ts:1\` | debt | c |  |\n| \`snmp-02\` | U | \`a.ts:2\` | debt | c |  |\n` })
+  const added = old()
+  assert.deepEqual(checkTree(added), { ok: true, errors: [] })
+  assert.equal(addEntry(added, entry({ title: 'V' })).entry.id, 'snmp-03')
+  assert.match(readFileSync(join(added, 'snmp/index.md'), 'utf8'), /^# SNMP\n\nLast id: `snmp-03`\n\n\| ID/)
+  const removed = old()
+  removeEntry(removed, { id: 'snmp-02' })
+  assert.match(readFileSync(join(removed, 'snmp/index.md'), 'utf8'), /^# SNMP\n\nLast id: `snmp-02`\n\n\| ID/)
+  assert.deepEqual(checkTree(removed), { ok: true, errors: [] })
+  assert.equal(addEntry(removed, entry({ title: 'V' })).entry.id, 'snmp-03')
 })
 
 test('anchor adds a site once and refuses an unknown id', () => {

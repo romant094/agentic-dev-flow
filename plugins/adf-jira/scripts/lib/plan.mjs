@@ -17,10 +17,11 @@ export function plansDir(projectDir, skill) {
 }
 
 // A plan is personal and local: refused while git does not ignore where it would be written.
-export function assertPlanIgnored(projectDir, path, ignored = isIgnored) {
+// `what` names the file for another local write, a read's output.
+export function assertPlanIgnored(projectDir, path, ignored = isIgnored, what = 'the plan') {
   if (!ignored(projectDir, path)) {
     throw new Error(
-      `Refusing to write the plan: git does not ignore ${path}. Plans are local and never committed; run /adf:init, which ignores .adf/, or add .adf/jira/ to .gitignore, check with git check-ignore -v, and re-run.`
+      `Refusing to write ${what}: git does not ignore ${path}. ${what === 'the plan' ? 'Plans are' : 'It is'} local and never committed; run /adf:init, which ignores .adf/, or add .adf/jira/ to .gitignore, check with git check-ignore -v, and re-run.`
     )
   }
 }

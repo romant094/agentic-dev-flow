@@ -185,6 +185,34 @@ describe('read-issues.mjs and read-comments.mjs', () => {
     assert.deepEqual(lines.err, [`1 comment(s) written to ${file}`])
   })
 
+  it('writes the comments only to a file git ignores, refusing before the read otherwise', async () => {
+    const root = host()
+    const file = join(root, 'comments.json')
+    const jira = fakeJira({ issues: { 'PROJ-1': issue('PROJ-1') } })
+    await assert.rejects(
+      readComments(['PROJ-1', file], deps(root, { fetch: jira.fetch, ignored: () => false }).deps),
+      /Refusing to write the comments: git does not ignore .*comments\.json/
+    )
+    assert.equal(jira.calls.length, 0)
+    assert.equal(existsSync(file), false)
+  })
+
+  it('writes the issues only to a file git ignores, refusing before the read otherwise', async () => {
+    const root = host()
+    const file = join(root, 'issues.json')
+    const jira = fakeJira()
+    await assert.rejects(
+      readIssues(['project = PROJ', file], deps(root, { fetch: jira.fetch, ignored: () => false }).deps),
+      /Refusing to write the issues: git does not ignore .*issues\.json\. It is local and never committed; run \/adf:init, which ignores \.adf\/, or add \.adf\/jira\/ to \.gitignore/
+    )
+    assert.equal(jira.calls.length, 0)
+    assert.equal(existsSync(file), false)
+    const { lines, deps: d } = deps(root, { fetch: searchFetch(['PROJ-1']) })
+    assert.equal(await readIssues(['project = PROJ', file], d), 0)
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')).count, 1)
+    assert.deepEqual(lines.err, [`1 issue(s) written to ${file}`])
+  })
+
   it('refuses a key outside the allowlist before the request', async () => {
     const jira = fakeJira()
     await assert.rejects(readComments(['OTHER-1'], deps(host(), { fetch: jira.fetch }).deps), /outside the allowlist/)

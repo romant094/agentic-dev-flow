@@ -7,9 +7,10 @@
 // read-issues.mjs.
 import { writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import { JiraClient } from './lib/client.mjs'
 import { loadContext } from './lib/context.mjs'
-import { projectOf } from './lib/plan.mjs'
+import { assertPlanIgnored, projectOf } from './lib/plan.mjs'
 import { describeSources } from './lib/profile.mjs'
 import { commentRow, readAllComments } from './lib/readers.mjs'
 import { isMain } from './lib/main.mjs'
@@ -28,13 +29,15 @@ export async function main(argv, deps = {}) {
     return 1
   }
 
-  const { env, sources } = loadContext({ cwd: deps.cwd, home: deps.home ?? homedir(), processEnv, run: deps.run })
+  const { projectDir, env, sources } = loadContext({ cwd: deps.cwd, home: deps.home ?? homedir(), processEnv, run: deps.run })
 
   // The gate runs before the request, not after it: a key outside the allowlist is a mistake
   // to refuse, not an issue to fetch and then discard.
   if (!env.allowedProjects.includes(projectOf(key))) {
     throw new Error(`${key} is outside the allowlist (${env.allowedProjects.join(', ')})`)
   }
+
+  if (file) assertPlanIgnored(projectDir, resolve(deps.cwd ?? process.cwd(), file), deps.ignored, 'the comments')
 
   if (processEnv.JIRA_READ_VERBOSE === '1') err(describeSources(sources))
 

@@ -113,8 +113,11 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
 
    The debt store is the one list of open product debt: a knowledge page that explains a
    mechanism may state its limitation, and the entry links to that page. Then run `placements`
-   again. On a pass, the debt store's uncommitted files are recorded as the placement's, and
-   `commit-memory` commits them.
+   again. On a pass, the script removes from the debt store each entry the change's
+   `scope.json` takes in full (a debt item in state `taken`; a `partial` one stays),
+   `detail.removedDebt`, and reports an entry already gone as `detail.goneDebt`, no failure.
+   The debt store's uncommitted files are then recorded as the placement's, and
+   `commit-memory` commits them; no commit message names the removed ids.
 
 4. **`merge`: the delta specs into the main specs.** First show the developer the preview:
 
@@ -210,7 +213,9 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    same agent, resumed, with the step's `errors` (`detail.mode` `resume`); where the harness
    cannot resume it, pass `--resume no` and dispatch the prompt afresh with the errors as its
    question (`fresh`). `stop` stops archive. `nothingLearned` writes no page, no log entry and
-   no commit; an empty ingest is worse than none.
+   no commit; an empty ingest is worse than none. The debt ids `placements` removed go into the
+   log entry as one more bullet, or, with nothing learned, into an entry of their own; with no
+   knowledge plugin the skipped step's report says they were not logged.
 
 8. **`commit-memory`.** `archive.mjs commit-memory`: one commit, `docs(memory): ingest what
    <change> taught`, of only the paths the ingest and the placement wrote. Nothing to commit is

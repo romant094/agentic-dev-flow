@@ -3,20 +3,23 @@
 //
 //   read-issues.mjs "<JQL>" [output.json]
 //
-// With an output path it saves the result and prints a count to stderr; without one it prints
+// With an output path it saves the result and prints a count to stderr, refused before the read
+// while git does not ignore the path, as a plan is; without one it prints
 // JSON on stdout and nothing else, so it can be piped. JIRA_READ_VERBOSE=1 prints the env
 // diagnostics (name, layer, length) to stderr. A result outside the allowlist fails the read.
 import { writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import { JiraClient } from './lib/client.mjs'
 import { loadContext } from './lib/context.mjs'
+import { assertPlanIgnored } from './lib/plan.mjs'
 import { describeSources } from './lib/profile.mjs'
 import { DEFAULT_FIELDS, issueRow } from './lib/readers.mjs'
 import { isMain } from './lib/main.mjs'
 
 export { issueRow as toRow }
 
-// Returns the exit code. deps: { cwd, home, processEnv, fetch, now, run, out, err }.
+// Returns the exit code. deps: { cwd, home, processEnv, fetch, now, run, out, err, ignored }.
 export async function main(argv, deps = {}) {
   const { out = console.log, err = console.error, fetch = globalThis.fetch, now = () => new Date() } = deps
   const processEnv = deps.processEnv ?? process.env
@@ -28,7 +31,8 @@ export async function main(argv, deps = {}) {
     return 1
   }
 
-  const { env, sources } = loadContext({ cwd: deps.cwd, home: deps.home ?? homedir(), processEnv, run: deps.run })
+  const { projectDir, env, sources } = loadContext({ cwd: deps.cwd, home: deps.home ?? homedir(), processEnv, run: deps.run })
+  if (file) assertPlanIgnored(projectDir, resolve(deps.cwd ?? process.cwd(), file), deps.ignored, 'the issues')
 
   // Diagnostics are opt-in: without an output path stdout is JSON meant to be piped, and
   // anything else printed alongside it corrupts the consumer's parse.

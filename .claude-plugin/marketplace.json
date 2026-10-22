@@ -11,7 +11,7 @@
     {
       "name": "adf",
       "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
-      "version": "0.14.0",
+      "version": "0.14.1",
       "source": "./plugins/adf"
     },
     {
@@ -59,7 +59,7 @@
     {
       "name": "adf-jira",
       "description": "ADF tracker for Jira: gathers issues at propose, starts them and hands them to the tester after the merge, plus guarded two-phase Jira skills",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "source": "./plugins/adf-jira"
     }
   ]

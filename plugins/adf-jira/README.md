@@ -174,7 +174,7 @@ The skills run the plugin's scripts:
 |---|---|
 | `scripts/profile.mjs [--skill <name>]` | Prints the profile's paths, whether git ignores the personal files, the profile's age, the non-secret config, `gitAuthor` (`JIRA_GIT_AUTHOR`, null when unset) and, with `--skill`, that skill's plan directory. Reads the env file for that one value, prints no other, and calls nothing. |
 | `scripts/discover.mjs [<KEY>]` | Writes `discovered.json`. |
-| `scripts/read-issues.mjs "<JQL>" [out]` | Reads issues; a result outside the allowlist fails the read. |
+| `scripts/read-issues.mjs "<JQL>" [out]` | Reads issues; a result outside the allowlist fails the read, and an output path git does not ignore is refused before it. |
 | `scripts/read-comments.mjs "<KEY>" [out]` | Reads every comment of an issue, with its id; the allowlist is checked before the request. |
 | `scripts/apply-plan.mjs <plan> [--confirm]` | Prints the plan's summary, or applies it with `--confirm`. Refuses a plan git does not ignore. |
 | `scripts/core-debt.mjs <args>` | Runs the core's `scripts/debt.mjs` with the same arguments: the core beside this plugin in a checkout, else the `adf` plugin of this plugin's marketplace from Claude Code's install records. |

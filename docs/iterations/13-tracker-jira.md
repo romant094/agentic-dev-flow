@@ -227,3 +227,22 @@ Left for later:
 Versions: adf 0.14.0, contract 1.7; adf-gitlab 0.5.0; adf-jira 0.1.0 (new);
 adf-english-check 0.6.0, adf-memory 0.2.0, adf-maintainer 0.1.0, adf-npm-workspaces 0.1.0,
 adf-postgres 0.1.0 and adf-prisma 0.1.0 unchanged.
+
+## Iteration 13a
+
+Settled by the developer on 2026-10-22, after the release.
+
+- A debt id is never reused. Each block's `index.md` carries ``Last id: `<block>-NN` ``;
+  `add` allocates above it, `remove` keeps it, `check` refuses a row above it. Before, `nextId`
+  took the highest id in the files, so removing the last entry gave its id to the next one,
+  against the rule already stated in `lib/debt.mjs`.
+- Archive's `placements` step removes the scope's `taken` debt entries from the tree; a
+  `partial` entry stays. The removal is committed with the memory ingest. The resolved ids go
+  to the knowledge log at ingest, not into a commit message; an entry already gone is logged
+  too. With no knowledge provider the report names the ids that are not logged.
+- `read-issues.mjs` and `read-comments.mjs` refuse to write an output file git does not
+  ignore, before any request.
+- Roadmap row 17 takes the developer's input: verify and review choose their checks by what
+  the change touched.
+
+Versions: adf 0.14.1; adf-jira 0.1.1.

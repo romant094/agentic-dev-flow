@@ -30,6 +30,10 @@ A block index holds tables with exactly these columns:
 - **ID** is `<block>-<number>`, at least two digits, allocated by `debt.mjs add` as one more
   than the highest number the tree names for that block, in a row or in prose. Nothing
   renumbers an id, and an id still named anywhere in the tree is never allocated again.
+- **The high-water line** ``Last id: `<block>-NN` `` in the block index names the highest id
+  the block ever allocated: `add` and `adf` set it, `remove` keeps it (writing it when absent),
+  so a removed id is never allocated again; a block index without it, written before it
+  existed, is valid and gets it on its first add or remove.
 - **Anchors** are the code sites of the one action the entry is: the same edit at twelve
   places is one entry with twelve anchors (`debt.mjs anchor`).
 - **Class** is `defect` (the code is wrong), `debt` (a compromise taken knowingly) or
@@ -78,9 +82,11 @@ by the same rules; `mark-filed` and `remove` work on its ids; no record is writt
 - a table whose columns are not exactly the block's columns, naming any planning or count
   column;
 - a row whose ID is not an id of its block (a sub-block written as a row);
+- a high-water line not of the form ``Last id: `<block>-NN` ``, a second one, or a row whose
+  id is above it;
 - a duplicate id, a duplicate tracker key or filed URL;
 - an empty title or source, a class outside the block's vocabulary;
 - an ADF record without plugin, version, change or body file, or with a filed value that is
   not a URL;
 - a count of entries in an index's prose or headings;
-- an id of a block named anywhere in the tree that no row carries.
+- an id of a block named anywhere in the tree that no row carries, the high-water line aside.

@@ -28,7 +28,10 @@
 //                 with no `resolve --finding`, and every `deviation` cited by no `debt` (its
 //                 `what` or `reason` names the deviation id, as in "forced deviation-1") and no
 //                 `ruling` (its `finding` is the deviation id). Anything listed refuses. On a
-//                 pass the debt tree's uncommitted files are recorded: they are the placement's.
+//                 pass the entries of the debt items the change's scope.json takes in full
+//                 (state `taken`) are removed from the debt tree (lib/debt.mjs removeEntry), an
+//                 entry already gone reported as gone, and the debt tree's uncommitted files are
+//                 recorded: they are the placement's.
 //   merge         lib/specs.mjs writeMerge, after the preview: a conflict writes its texts for the
 //                 `spec-merge <capability>` dispatch and fails the step; a new capability's
 //                 placeholder Purpose refuses until `--purpose <capability>=<file>` gives it.
@@ -36,7 +39,9 @@
 //   commit-specs  `docs(specs): archive <name>`: the old and the new change directory and the
 //                 main spec files of the change's capabilities, only those paths.
 //   ingest        the ingest reply (lib/ingest.mjs checkIngestFile), the log written through the
-//                 knowledge role's `log`; with no knowledge provider the step is `skipped`.
+//                 knowledge role's `log`, with a bullet naming the debt ids placements removed
+//                 (an entry of its own when nothing was learned); with no knowledge provider the
+//                 step is `skipped` and its report says the removed ids were not logged.
 //   commit-memory `docs(memory): ingest what <name> taught`: only the paths the ingest and the
 //                 placement wrote.
 //   metrics       lib/metrics.mjs buildRecord after the ingest is committed, so the ingest is
@@ -71,6 +76,7 @@ import { attemptsFile, recordReply } from './attempts.mjs'
 import { readBranches } from './branches.mjs'
 import { commitPaths } from './commit.mjs'
 import { dispatchName } from './dispatch.mjs'
+import { listTree, removeEntry } from './debt.mjs'
 import { checkIngestFile, findChangeDir, workingChanges } from './ingest.mjs'
 import { mainCheckout } from './installed.mjs'
 import { readRecords, unresolvedDebt } from './ledger.mjs'
@@ -427,10 +433,31 @@ export function placementsStep(ctx) {
       }
     }
     const debt = readDebtRoot(root)
+    const taken = removeTakenDebt(ctx, debt)
     const prefix = debt === null ? null : `${debt.replace(/\/$/, '')}/`
     const debtFiles = prefix === null ? [] : workingChanges(root).filter((f) => f.startsWith(prefix))
-    return { state: 'done', detail: { unplaced: [], debtFiles } }
+    return { state: 'done', detail: { unplaced: [], debtFiles, ...taken } }
   })
+}
+
+// The change's scope.json, or null when it has none.
+function changeScope(ctx) {
+  const file = join(findChangeDir(ctx.root, ctx.change), SCOPE_FILE)
+  return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null
+}
+
+// The debt entries the change resolved: the scope's debt items taken in full. A partial item
+// stays; an entry no longer in the tree, or a tree the registry does not name, is reported as
+// gone and is no failure, so a re-run after a removal settles.
+function removeTakenDebt(ctx, debt) {
+  const ids = (changeScope(ctx)?.items ?? []).filter((i) => i.source === 'debt' && i.state === 'taken').map((i) => i.key)
+  if (ids.length === 0) return {}
+  const tree = debt === null ? null : join(ctx.root, debt)
+  const present = new Set(tree === null ? [] : listTree(tree).entries.map((e) => e.id))
+  const removedDebt = ids.filter((id) => present.has(id))
+  const goneDebt = ids.filter((id) => !present.has(id))
+  for (const id of removedDebt) removeEntry(tree, { id })
+  return { removedDebt, goneDebt }
 }
 
 // ---------------------------------------------------------------- merge
@@ -532,7 +559,14 @@ export function ingestStep(ctx, { reply = null, resume = true } = {}) {
   return runStep(ctx, 'ingest', (state) => {
     const { root, change } = ctx
     const context = ctx.knowledge()
-    if (context.state === 'none') return { state: 'skipped', detail: { report: knowledgeReport('log', context) } }
+    // Taken debt already gone at placements is logged too: a placements run cut short after
+    // some removals finds those entries gone on its rerun, and they are still this change's.
+    const placed = settledDetail(state, 'placements')
+    const removed = [...(placed.removedDebt ?? []), ...(placed.goneDebt ?? [])]
+    if (context.state === 'none') {
+      const unlogged = removed.length ? ` The removed debt ${removed.join(', ')} is not logged.` : ''
+      return { state: 'skipped', detail: { report: `${knowledgeReport('log', context)}${unlogged}`, ...(removed.length ? { removedDebt: removed, debtLogged: false } : {}) } }
+    }
     if (context.state !== 'done') refuse(knowledgeReport('context', context))
     if (!reply) refuse(`ingest needs --reply: run ingest.mjs stale --change ${change}, dispatch \`ingest\` at level architecture with its input, and pass the reply file`)
     const checked = checkIngestFile(root, change, reply, { exclude: settledDetail(state, 'placements').debtFiles ?? [] })
@@ -547,8 +581,12 @@ export function ingestStep(ctx, { reply = null, resume = true } = {}) {
         detail: { errors: checked.errors, next: recorded.next, mode: recorded.mode, invalid: recorded.invalid }
       }
     }
-    if (checked.log === null) return { state: 'done', detail: { nothingLearned: true, paths: [], report: 'Knowledge: nothing learned that the code and the history do not carry; no page and no log entry.' } }
-    const result = ctx.knowledgeLog(checked.log)
+    if (checked.log === null && removed.length === 0) return { state: 'done', detail: { nothingLearned: true, paths: [], report: 'Knowledge: nothing learned that the code and the history do not carry; no page and no log entry.' } }
+    const debtBullet = `Resolved debt removed from the debt tree: ${removed.join(', ')}.`
+    const log = checked.log === null
+      ? { type: 'ingest', title: `Resolved debt of ${change}`, bullets: [debtBullet] }
+      : { ...checked.log, bullets: [...checked.log.bullets, ...(removed.length ? [debtBullet] : [])] }
+    const result = ctx.knowledgeLog(log)
     if (result.state !== 'done') refuse(knowledgeReport('log', result))
     const isLog = matcher(checked.input.knowledge.log ?? [])
     const paths = [
@@ -556,7 +594,10 @@ export function ingestStep(ctx, { reply = null, resume = true } = {}) {
       ...checked.reply.stale.filter((s) => s.outcome === 'removed').map((s) => s.path),
       ...workingChanges(root).filter(isLog)
     ]
-    return { state: 'done', detail: { nothingLearned: false, paths: [...new Set(paths)].sort(), report: knowledgeReport('log', result) } }
+    return {
+      state: 'done',
+      detail: { nothingLearned: checked.log === null, paths: [...new Set(paths)].sort(), report: knowledgeReport('log', result), ...(removed.length ? { removedDebt: removed, debtLogged: true } : {}) }
+    }
   })
 }
 
@@ -732,9 +773,7 @@ export function mrStep(ctx, { body = null, title, summary } = {}) {
 // The keys of the change's scope.json that a merge request body does not name as a whole word.
 // No scope.json, or one that takes nothing, has none.
 function unnamedKeys(ctx, text) {
-  const file = join(findChangeDir(ctx.root, ctx.change), SCOPE_FILE)
-  if (!existsSync(file)) return []
-  return scopeKeys(JSON.parse(readFileSync(file, 'utf8'))).filter((key) => !namesKey(text, key))
+  return scopeKeys(changeScope(ctx)).filter((key) => !namesKey(text, key))
 }
 
 // ---------------------------------------------------------------- the local merge
@@ -769,7 +808,8 @@ export function removeStep(ctx) {
 
 const summary = {
   check: (d) => `review ${d.verdict} at ${String(d.commit).slice(0, 7)}${d.warnings?.length ? `; warnings: ${d.warnings.join('; ')}` : ''}`,
-  placements: (d) => `every debt, recorded finding and deviation placed${d.debtFiles?.length ? `; debt files ${d.debtFiles.join(', ')}` : ''}`,
+  placements: (d) =>
+    `every debt, recorded finding and deviation placed${d.removedDebt?.length ? `; resolved debt removed: ${d.removedDebt.join(', ')}` : ''}${d.goneDebt?.length ? `; taken debt already gone from the tree: ${d.goneDebt.join(', ')}` : ''}${d.debtFiles?.length ? `; debt files ${d.debtFiles.join(', ')}` : ''}`,
   merge: (d) =>
     d.noChanges
       ? 'no delta specs'

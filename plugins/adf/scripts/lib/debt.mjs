@@ -6,7 +6,9 @@
 // files them. A tree written before the rename keeps them in the block `flow`, read the same way.
 //
 // Nothing here keeps a roll-up, a count or a status: `listTree` computes every entry on demand
-// and writes nothing. An id is allocated once and never renumbered.
+// and writes nothing. An id is allocated once and never renumbered: each block index carries a
+// high-water line, `Last id: `<block>-NN``, the highest id the block ever allocated, so an id
+// whose row was removed is not allocated again.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
@@ -28,6 +30,11 @@ const PLANNING = /^(status|state|assignee|owner|priority|estimate|effort|due|dea
 // A number of entries stated in prose or a heading.
 const COUNT = /\b\d+\s+(?:open\s+)?(?:entries|entry|items|rows|records)\b/i
 const BLOCK_ID = /^[a-z][a-z0-9-]*$/
+// The high-water line of a block index; any line starting so is one, and must be well formed.
+const LAST_ID_LINE = /^last id\b/i
+const LAST_ID = /^Last id: `([a-z][a-z0-9-]*)-(\d+)`$/
+const idNumber = (id, block) => Number(id.slice(block.length + 1))
+const padId = (block, n) => `${block}-${String(n).padStart(2, '0')}`
 
 const ROOT_TEMPLATE = `# Technical Debt
 
@@ -253,6 +260,14 @@ export function checkTree(tree) {
     }
     const expected = adf ? ADF_COLUMNS : DEBT_COLUMNS
     const classes = adf ? ADF_CLASSES : DEBT_CLASSES
+    const lastLines = block.page.prose.filter((p) => LAST_ID_LINE.test(p.text))
+    let last = null
+    if (lastLines.length > 1) err(block.index, lastLines[1].line, `a second high-water line; a block index carries one "Last id: \`${block.id}-NN\`"`)
+    if (lastLines.length) {
+      const m = LAST_ID.exec(lastLines[0].text.trim())
+      if (!m || m[1] !== block.id) err(block.index, lastLines[0].line, `the high-water line must read "Last id: \`${block.id}-NN\`"`)
+      else last = Number(m[2])
+    }
     for (const table of block.page.tables) {
       const planning = table.columns.filter((c) => PLANNING.test(c))
       if (planning.length) err(block.index, table.header, `columns ${planning.join(', ')} hold planning or a count, which the tracker owns`)
@@ -267,6 +282,7 @@ export function checkTree(tree) {
           err(block.index, row.line, `"${entry.id}" is not an id of block ${block.id}; a sub-block is a heading, never a row`)
           continue
         }
+        if (last !== null && idNumber(entry.id, block.id) > last) err(block.index, row.line, `${entry.id} is above the block's high-water line ${padId(block.id, last)}`)
         if (ids.has(entry.id)) err(block.index, row.line, `id ${entry.id} is already used at ${ids.get(entry.id)}`)
         else ids.set(entry.id, `${relative(tree, block.index)}:${row.line + 1}`)
         if (!entry.title) err(block.index, row.line, `${entry.id} has no title`)
@@ -295,13 +311,15 @@ export function checkTree(tree) {
   }
 
   // An id named anywhere in the tree that no row carries: a pointer to a closed or renumbered
-  // entry, which would silently redirect if the id were allocated again.
+  // entry, which would silently redirect if the id were allocated again. The high-water line
+  // names a removed id on purpose.
   const pattern = idPattern(blocks.map((b) => b.id))
   if (pattern) {
     for (const file of mdFiles(tree)) {
       read(file)
         .split('\n')
         .forEach((text, line) => {
+          if (LAST_ID_LINE.test(text)) return
           for (const match of text.matchAll(pattern)) if (!ids.has(match[0])) err(file, line, `${match[0]} is named but no row carries it`)
         })
     }
@@ -338,15 +356,33 @@ function addRootRow(tree, block, covers) {
   return true
 }
 
-// The ids of a block in use: its rows, and every id the tree names, so an id still pointed at
-// is never allocated again.
-function nextId(tree, block) {
+// The highest number of a block ever allocated: its rows, every id the tree names, so an id
+// still pointed at is never allocated again, and the block's high-water line, which names it.
+function highest(tree, block) {
   const pattern = idPattern([block])
   let max = 0
   for (const file of mdFiles(tree)) {
-    for (const match of read(file).matchAll(pattern)) max = Math.max(max, Number(match[0].slice(block.length + 1)))
+    for (const match of read(file).matchAll(pattern)) max = Math.max(max, idNumber(match[0], block))
   }
-  return `${block}-${String(max + 1).padStart(2, '0')}`
+  return max
+}
+
+const nextId = (tree, block) => padId(block, highest(tree, block) + 1)
+
+// Write the block index's high-water line: replaced where it stands, else under the title, else
+// on top.
+function setLastId(file, id) {
+  const page = parsePage(read(file))
+  const list = page.lines
+  const line = `Last id: ${code(id)}`
+  const at = list.findIndex((l) => LAST_ID_LINE.test(l))
+  if (at >= 0) list[at] = line
+  else {
+    const title = page.headings.find((h) => h.level === 1)
+    if (title) list.splice(title.line + 1, 0, '', line)
+    else list.splice(0, 0, line, '')
+  }
+  save(file, list)
 }
 
 // Insert a row into the block's table for `subBlock` (null: the table above every sub-block),
@@ -397,6 +433,7 @@ export function addEntry(tree, { block, title, anchors, class: cls, source, subB
   mkdirSync(dir, { recursive: true })
   const id = nextId(tree, block)
   insertRow(join(dir, BLOCK_INDEX), DEBT_COLUMNS, formatRow([code(id), title, anchors.map(code).join(', '), cls, source, '']), subBlock)
+  setLastId(join(dir, BLOCK_INDEX), id)
   const entry = listTree(tree).entries.find((e) => e.id === id)
   return { created: true, newBlock, entry, files: [...(blockRow ? [ROOT_INDEX] : []), `${block}/${BLOCK_INDEX}`] }
 }
@@ -436,12 +473,15 @@ export function addAnchor(tree, { id, anchor }) {
   return { added: true, entry: entryOf(at.block, at.table.columns, cells, at.table.subBlock) }
 }
 
-// Delete an entry whose debt is resolved. No other id changes.
+// Delete an entry whose debt is resolved. No other id changes; the high-water line keeps the
+// highest id, written when absent, so the removed id is not allocated again.
 export function removeEntry(tree, { id }) {
   const at = locate(tree, id)
   const removed = entryOf(at.block, at.table.columns, at.row.cells, at.table.subBlock)
+  const last = padId(at.block, highest(tree, at.block))
   at.page.lines.splice(at.row.line, 1)
   save(at.file, at.page.lines)
+  setLastId(at.file, last)
   const files = [`${at.block}/${BLOCK_INDEX}`]
   if (isAdfBlock(at.block) && existsSync(adfBodyPath(tree, at.block, id))) {
     removed.body = adfBody(tree, at.block, id)
@@ -477,6 +517,7 @@ export function addAdfRecord(tree, change, input) {
   const id = nextId(tree, ADF_BLOCK)
   writeFileSync(adfBodyPath(tree, ADF_BLOCK, id), `# ${code(id)} ${title}\n\n${input.body.trim()}\n`)
   insertRow(join(tree, ADF_BLOCK, BLOCK_INDEX), ADF_COLUMNS, formatRow([code(id), title, code(plugin), code(pluginVersion), code(change), input.class, source, '']), null)
+  setLastId(join(tree, ADF_BLOCK, BLOCK_INDEX), id)
   const record = listTree(tree, { kind: 'adf' }).entries.find((e) => e.id === id)
   return { created: true, record, files: [...(blockRow ? [ROOT_INDEX] : []), `${ADF_BLOCK}/${BLOCK_INDEX}`, `${ADF_BLOCK}/${id}.md`] }
 }
