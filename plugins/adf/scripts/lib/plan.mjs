@@ -40,6 +40,11 @@ export function parseTaskItems(text) {
   return items
 }
 
+// Backticked wording that has a path's shape but names no source file: an abbreviation such as
+// `N/A`, a bare directory name such as `archived/`, a change artifact such as `verify.md`.
+const ARTIFACTS = new Set(['brainstorm.md', 'proposal.md', 'design.md', 'tasks.md', 'plan.md', 'verify.md', 'review.md'])
+const notAPath = (t) => /^[A-Z]{1,3}(?:\/[A-Z]{1,3})+$/.test(t) || /^[^/]+\/$/.test(t) || ARTIFACTS.has(t)
+
 const COMMAND = /^(?:npm|npx|node|yarn|pnpm|git|cd|bash|sh|make|jest|vitest|pytest|go|cargo|docker|curl|python3?)\s/
 
 // The grammar the apply phase parses, and the two kinds of "how" that belong in plan.md.
@@ -84,7 +89,7 @@ export function lintTasks(text) {
     }
     for (const [, token] of visible.matchAll(/`([^`]+)`/g)) {
       if (COMMAND.test(token)) say('warning', 'command', line, `\`${token}\` looks like a command; test commands belong in plan.md`)
-      else if (isPathLike(token.replace(/:\d+(?:-\d+)?$/, ''))) say('warning', 'path', line, `\`${token}\` looks like a source path; paths belong in plan.md`)
+      else if (!notAPath(token) && isPathLike(token.replace(/:\d+(?:-\d+)?$/, ''))) say('warning', 'path', line, `\`${token}\` looks like a source path; paths belong in plan.md`)
     }
   })
   if (seen.size === 0) say('error', 'no-items', null, 'no "- [ ] X.Y" item found')
@@ -216,14 +221,11 @@ export function packagesFromGuide(guideText) {
   return [...new Set([...m[1].matchAll(/`([^`]+)`/g)].map((t) => t[1].replace(/\/\*\*$|\/\*$|\/$/, '')).filter((t) => /^[\w.@-][\w./@-]*$/.test(t)))]
 }
 
-// The package a path is in: the longest listed package it is under, or with no list its
-// top-level directory. A path at the root, or under no listed package, is in none.
+// The package a path is in: the longest listed package it is under. With no list there is no
+// package boundary, so a path is in none: top-level directories are not packages (they joined
+// `apps/server` and `apps/client` and split `apps` from `tests`).
 export function packageOf(path, packages) {
-  if (packages.length) {
-    const hit = packages.filter((p) => path === p || path.startsWith(`${p}/`)).sort((a, b) => b.length - a.length)[0]
-    return hit ?? null
-  }
-  return path.includes('/') ? path.slice(0, path.indexOf('/')) : null
+  return packages.filter((p) => path === p || path.startsWith(`${p}/`)).sort((a, b) => b.length - a.length)[0] ?? null
 }
 
 // ---------------------------------------------------------------- risks

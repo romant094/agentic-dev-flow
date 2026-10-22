@@ -69,6 +69,28 @@ test('lint: the grammar apply parses, numbers against their group, duplicates, p
   assert.deepEqual(lintTasks('# nothing\n').map((f) => f.kind), ['no-items'])
 })
 
+test('lint: origin wording with a path shape that names no source file is not a path warning', () => {
+  const text = [
+    '## 1. Wording',
+    '',
+    '- [ ] 1.1 reports an endpoint declared for a form `N/A` where the model does not serve it',
+    '- [ ] 1.2 walks each model directory (`.imgs` at the root, `archived/`, `unreleased/`)',
+    '- [ ] 1.3 records the pass in `verify.md`',
+    '- [ ] 1.4 writes `infra/scripts/generate-firmware-manifest.ts` and `storage/downloads/tftp-files/`',
+    '- [ ] 1.5 updates `system.md` and `entities/shared-library.md`',
+    ''
+  ].join('\n')
+  assert.deepEqual(
+    lintTasks(text).map((f) => [f.kind, f.line, f.message.split(' ')[0]]),
+    [
+      ['path', 6, '`infra/scripts/generate-firmware-manifest.ts`'],
+      ['path', 6, '`storage/downloads/tftp-files/`'],
+      ['path', 7, '`system.md`'],
+      ['path', 7, '`entities/shared-library.md`']
+    ]
+  )
+})
+
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
 const PLAN = '## Execution Graph\n\nsingle group\n\n### Task 1: a\n\n> Implements `tasks.md` 1.2.\n\n### Task 2: b\n\n'
 

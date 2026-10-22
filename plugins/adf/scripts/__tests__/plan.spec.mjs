@@ -94,15 +94,21 @@ test('every field, the level enum, a commit step, RED with GREEN, no REFACTOR', 
   assert.deepEqual(kinds(errors(lintPlanText({ planText: `${t1}`, tasksText: '## 1. A\n- [ ] 1.1 a\n' }).findings)), ['graph-missing', 'red-green'])
 })
 
-test('a task spanning two packages is a warning, from the guide or from top-level directories', () => {
+test('a task spanning two packages is a warning, from the guide only', () => {
   const files = ['- Modify: `apps/server/a.ts`', '- Modify: `apps/client/b.ts`']
   const text = plan([task(1, '1.1', { files }), task(2, '1.2'), task(3, '2.1')], GRAPH.replace('`src/t1.ts`', '`apps/server/a.ts`, `apps/client/b.ts`'))
   const guide = '# Guide\n\n## Packages\n\n- `apps/server` first\n- `apps/client/` then\n\n## Other\n\n`not/a/package`\n'
   assert.deepEqual(packagesFromGuide(guide), ['apps/server', 'apps/client'])
   const withGuide = lintPlanText({ planText: text, tasksText: TASKS, guideText: guide }).findings
   assert.deepEqual(withGuide.filter((f) => f.kind === 'cross-package').map((f) => [f.severity, f.task, f.packages]), [['warning', 1, ['apps/server', 'apps/client']]])
-  // Without a package map both live under the one top-level directory `apps`.
-  assert.deepEqual(lintPlanText({ planText: text, tasksText: TASKS }).findings.filter((f) => f.kind === 'cross-package'), [])
+  // Without a package map there is no package boundary: no guide, a guide without the section,
+  // or the template's section with only its comment.
+  const template = '## Packages\n\n<!-- The project\'s packages or top-level source directories. -->\n\n## Other\n'
+  for (const guideText of [null, '# Guide\n\n## Where to look\n\n`apps/server`\n', template])
+    assert.deepEqual(lintPlanText({ planText: text, tasksText: TASKS, guideText }).findings.filter((f) => f.kind === 'cross-package'), [])
+  // The origin's spans by top-level directory ("spans apps, tests", "spans packages, apps") are silent too.
+  const origin = plan([task(1, '1.1', { files: ['- Modify: `apps/server/src/a.ts`', '- Test: `tests/e2e/a.spec.ts`', '- Modify: `packages/shared/src/b.ts`'] }), task(2, '1.2'), task(3, '2.1')])
+  assert.deepEqual(lintPlanText({ planText: origin, tasksText: TASKS }).findings.filter((f) => f.kind === 'cross-package'), [])
 })
 
 test('every design risk needs a plan line naming a Task or a deferral', () => {
@@ -244,6 +250,12 @@ test('the graph check: same wave, criticality, a lowered floor, a dependency on 
     ['graph-depends-on-wave-2']
   )
   assert.deepEqual(check(g('| A | 1, 2 | x | 1 |', '')), ['graph-task-unassigned'])
+  // D8: no regular origin plan of the final flow leaves a task outside every group; the one older
+  // plan that did stated it in prose, which schedules nothing, so the finding stays an error.
+  assert.deepEqual(
+    check(g('| A | 1, 2 | x | 1 |', '', 'Task 3 was added at verify and run in sequence on the change branch, after all groups merged.')),
+    ['graph-task-unassigned']
+  )
   assert.deepEqual(kinds(graphFindings('# P\n\n### Task 1: x\n')), ['graph-missing'])
   assert.deepEqual(kinds(graphFindings('## Execution Graph\n\nThis is a single group: all write `a.ts`.\n\n### Task 1: x\n')), [])
 })
