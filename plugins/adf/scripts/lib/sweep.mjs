@@ -2,7 +2,7 @@
 // does the branch add what the tree already has — is the dispatched agent's; everything around
 // it is computed here:
 //
-// - the range: the change's base from its .adf.json, `origin/<base>` when that remote-tracking
+// - the range: the change's base from its metadata, `origin/<base>` when that remote-tracking
 //   ref exists, else `<base>`, through `git merge-base` with HEAD (as plan-symbols resolves it);
 // - the second question's input: every REMOVED or RENAMED requirement of the change's delta
 //   specs, with its `**Code Disposition:**` text, or null when it has none (itself a finding);
@@ -12,7 +12,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { changeDir, META_FILE } from './changes.mjs'
+import { changeDir, readChangeMeta } from './changes.mjs'
 import { coveringMarker, findMarkers } from './dup.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { baseRef } from './plan-symbols.mjs'
@@ -81,13 +81,8 @@ export function sweepInputs(root, change) {
   const dir = changeDir(root, change)
   if (!existsSync(dir)) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
-  let meta = null
-  try {
-    meta = JSON.parse(readFileSync(join(dir, META_FILE), 'utf8'))
-  } catch {
-    // baseRef names the missing base
-  }
-  const ref = baseRef(meta, (name) => {
+  // No metadata: baseRef names the missing base.
+  const ref = baseRef(readChangeMeta(root, dir), (name) => {
     try {
       git('rev-parse', '--verify', '--quiet', name)
       return true

@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { byPhase, citeLessons, classify, compareLedgers, headings, loadRules, main, originVerify, planGraph, reviewRecord, RULES_FILE } from '../origin-replay.mjs'
+import { byPhase, citeLessons, classify, compareLedgers, editLines, headings, movedRefs, loadRules, main, originVerify, planGraph, reviewRecord, RULES_FILE } from '../origin-replay.mjs'
 import { createSandbox } from '../lib/sandbox.mjs'
 import { findCandidates } from '../lib/replay-candidates.mjs'
 import { buildReplies } from '../lib/replay-replies.mjs'
@@ -84,6 +84,36 @@ test('the rules data: known classes, every explained rule resolves to a lessons 
   assert.equal(new Set(RULES.rules.map((r) => r.id)).size, RULES.rules.length)
 })
 
+test('a memory file the port edited as the origin did is base drift, not the injected ingest', () => {
+  const origin = '--- a/log.md\n+++ b/log.md\n@@ -1,2 +1,4 @@\n+## [2026-01-02 10:00] ingest | x | Dev One\n+- learned\n # Log\n'
+  const port = '--- a/log.md\n+++ b/log.md\n@@ -3,2 +3,5 @@\n+## [2026-01-03 15:09] ingest | x | ADF Replay\n+- learned\n+\n # Log\n'
+  const rewrite = (t) => t.replace(/^## \[[^\]]*\] (.*) \| [^|]*$/gm, '## [] $1 |')
+  assert.deepEqual(editLines(origin, rewrite), editLines(port, rewrite))
+  assert.notDeepEqual(editLines(origin), editLines(port), 'without the content rules the header differs')
+  const record = { mode: 'fresh', steps: [{ n: 9, step: 'agent: ingest', classification: [{ kind: 'injected', why: 'partial reply' }] }] }
+  const drifted = classify({ area: 'tree', key: 'tree-content:.claude/memory/log.md', flags: ['base-drift', 'drift-only'] }, record, RULES)
+  assert.equal(drifted.rule, 'ingest-base-drift')
+  assert.equal(classify({ area: 'tree', key: 'tree-content:.claude/memory/log.md', flags: ['base-drift'] }, record, RULES).rule, 'ingest-injected')
+})
+
+test('movedRefs: a ref moved to a commit only the origin holds is foreign work in flight; one the sandbox holds is the replay\'s', () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'adf-replay-refs-')))
+  const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim()
+  const origin = join(dir, 'origin')
+  execFileSync('git', ['init', '-q', '-b', 'develop', origin])
+  git(origin, '-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'init')
+  const sandbox = join(dir, 'sandbox')
+  execFileSync('git', ['clone', '-q', origin, sandbox])
+  git(sandbox, '-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'replay')
+  const replayed = git(sandbox, 'rev-parse', 'HEAD')
+  git(origin, '-c', 'user.name=T', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'someone else')
+  const theirs = git(origin, 'rev-parse', 'HEAD')
+  const init = git(origin, 'rev-parse', 'HEAD^')
+  const moved = movedRefs({ 'refs/heads/develop': init, 'refs/heads/gone': init }, { 'refs/heads/develop': theirs, 'refs/heads/pushed': replayed }, [sandbox])
+  assert.deepEqual(moved.map((m) => [m.ref, m.by]), [['refs/heads/develop', 'foreign'], ['refs/heads/gone', 'replay'], ['refs/heads/pushed', 'replay']])
+  rmSync(dir, { recursive: true, force: true })
+})
+
 test('parsers: verify, review, plan graph, phases, ledger and headings', () => {
   const verify = ['# Verification Report', '', '## 1. Structural Validation (`x`)', '', '**Result**: FAIL on two old specs', '', '## 4. Design / Specs Coherence', '', 'Result: `C4: PASS WITH WARNINGS`.', '', '## 7. No Leftover Group Worktree', '', '- [x] none left', '', '## Overall Decision', '', '- [x] ⚠️ PASS WITH WARNINGS — proceed'].join('\n')
   assert.deepEqual(originVerify(verify, RULES.verifyTitles), { checks: { validation: 'fail', c4: 'warn', worktrees: 'pass' }, verdict: 'PASS WITH WARNINGS' })
@@ -140,7 +170,7 @@ const snapshot = (dir) => {
   return { refs: git('for-each-ref'), status: git('status', '--porcelain'), stash: git('stash', 'list') }
 }
 
-test('the fixture: both modes compared with the origin; every difference classified, the in-flight base, the specs-base check and the fixture\'s own spec merge the defects; the origin unchanged', { timeout: 600_000 }, async () => {
+test('the fixture: both modes compared with the origin; every difference classified, no defect; the origin unchanged', { timeout: 600_000 }, async () => {
   const F = fixtureOrigin()
   const before = snapshot(F.dir)
   const [candidate] = findCandidates(F.dir, { author: DEV.name, since: F.base })
@@ -161,26 +191,25 @@ test('the fixture: both modes compared with the origin; every difference classif
       for (const area of ['phases', 'branch', 'base', 'artifacts', 'gates', 'ledger', 'review', 'main specs', 'openspec/ and memory tree', 'merge request', 'commits by phase']) assert.ok(r.compared.includes(area), `${r.mode}: ${area} compared`)
       for (const d of r.differences) assert.ok(d.class !== null || !d.strong, JSON.stringify(d))
     }
-    // The fresh run: one defect, the main spec after the merge. The fixture origin's archive
-    // commit kept a scenario line its delta changed, so the port's merge of the delta differs:
-    // a strong difference (D7) no rule explains.
-    const specDefect = fresh.differences.filter((d) => d.class === 'defect')
-    assert.deepEqual(specDefect.map((d) => d.key), ['spec-merge:cap'])
-    assert.deepEqual(specDefect[0].evidence.port, ['- **THEN** the thing is done twice'])
+    // The fresh run: no defect; the main spec after the merge is the origin's.
+    assert.deepEqual(fresh.differences.filter((d) => d.class === 'defect').map((d) => d.key), [])
+    assert.ok(!fresh.differences.some((d) => d.key === 'spec-merge:cap'), 'the merge gives the origin\'s main spec')
     // The branch suggestion is explained by its lessons row.
     const suggest = fresh.differences.find((d) => d.key === 'driver:propose')
     assert.equal(suggest.class, 'explained')
     assert.match(`${suggest.cite.file}:${suggest.cite.line}`, /^docs\/lessons\/propose\.md:\d+$/)
     assert.equal(fresh.differences.find((d) => d.key === 'artifact-only-origin:.openspec.yaml')?.class, 'explained')
     assert.ok(!fresh.differences.some((d) => d.key.startsWith('ledger-')), 'the ledgers agree')
-    // The mid-flight run: the port refuses the origin's in-flight change (no .adf.json), and its
-    // verify fails the change for having no specs-base.json, which archive only warns about.
-    assert.deepEqual(mid.differences.filter((d) => d.class === 'defect').map((d) => d.rule ?? d.key), ['in-flight-metadata', 'specs-base-mid-flight', 'spec-merge:cap'])
+    // The mid-flight run: the port continues the origin's in-flight change (.openspec.yaml, no
+    // .adf.json) from the integration branch, and verify only warns that it has no
+    // specs-base.json, as archive does: no defect.
+    assert.deepEqual(mid.differences.filter((d) => d.class === 'defect').map((d) => d.rule ?? d.key), [])
+    assert.ok(!mid.differences.some((d) => d.key === 'driver:apply'), 'apply runs without a workaround')
     assert.equal(mid.differences.find((d) => d.key === 'mr:state')?.class, 'injected', 'the mid-flight mode runs no land')
-    assert.equal(exit, 1)
+    assert.equal(exit, 0)
     const md = readFileSync(join(out, 'compare.md'), 'utf8')
     assert.match(md, /^# Replay comparison/)
-    assert.match(md, /## Defects\n\n- add-thing \(fresh\) spec-merge:cap: [^\n]*\n- add-thing \(mid-flight\) driver:apply/)
+    assert.doesNotMatch(md, /## Defects/)
   } finally {
     console.log = log
     sandbox.destroy()

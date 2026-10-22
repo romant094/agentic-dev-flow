@@ -70,7 +70,7 @@
     },
     {
       "kind": "workaround",
-      "subject": "^chore\\(replay\\): |\\(the rest of the origin's fix commit\\)$|^docs\\(openspec\\): name the Execution Graph groups of "
+      "subject": "^chore\\(replay\\): |\\(the rest of the origin's fix commit\\)$"
     },
     {
       "kind": "tick",
@@ -94,39 +94,6 @@
     }
   ],
   "rules": [
-    {
-      "id": "in-flight-metadata",
-      "match": {
-        "key": "^driver:apply$",
-        "what": "no \\.adf\\.json"
-      },
-      "class": "defect",
-      "fix": "Read the base of a change that has no .adf.json from its .openspec.yaml (or the integration branch) in lib/changes.mjs, so preflight, plan-symbols, dispatch, the sweep, verify's range and forge continue an in-flight origin change.",
-      "decision": "none",
-      "why": "Strong (a stopped phase): the port cannot continue a change the origin's propose made."
-    },
-    {
-      "id": "group-label",
-      "match": {
-        "key": "^driver:apply$",
-        "what": "dispatch\\.mjs parseGraph does not"
-      },
-      "class": "defect",
-      "fix": "Make lib/dispatch.mjs parseGraph read the group letter the way plan.mjs schedule does (a labelled cell such as \"A: contracts\"), one parser for both.",
-      "decision": "none",
-      "why": "Strong (a stopped phase): every dispatch of the labelled groups is refused."
-    },
-    {
-      "id": "commit-none",
-      "match": {
-        "key": "^driver:apply$",
-        "what": "Commit step is \"none\""
-      },
-      "class": "defect",
-      "fix": "Let impl.schema.json and dispatch.mjs reply accept a done impl reply with no commit when the task's Commit step says none (a verification-only task), checked against the plan text.",
-      "decision": "none",
-      "why": "Strong (a stopped phase): the port has no valid reply for a task the plan says commits nothing."
-    },
     {
       "id": "unassigned-tasks",
       "match": {
@@ -197,16 +164,6 @@
         "phrase": "a recorded finding closes in the ledger too, `resolve --finding F<n>` (a field of the port's own)"
       },
       "why": "A port-only record: the port places a recorded or accepted finding in the ledger."
-    },
-    {
-      "id": "specs-base-mid-flight",
-      "match": {
-        "key": "^(verify-check|verify-ruling):specs-base$"
-      },
-      "class": "defect",
-      "fix": "Make verify's specs-base check warn, as archive does, when the change has no specs-base.json at all (a change made before the snapshot), and fail only on a missing or stale entry of an existing file.",
-      "decision": "none",
-      "why": "Strong (a verify FAIL): verify refuses a change with no specs-base.json while archive falls back to the merge base with a warning (docs/lessons/archive.md, the three-way row: \"A change without the snapshot falls back to the merge base, with a warning\"); an in-flight change made before the snapshot fails verify."
     },
     {
       "id": "out-of-plan-unbackticked",
@@ -447,7 +404,7 @@
         "key": "^commits:[a-z-]+:workaround$"
       },
       "class": "injected",
-      "why": "Commits the driver made to work around a refusal (a plan relabel, a task that commits nothing, a split fix, the in-flight base)."
+      "why": "Commits the driver made to work around a refusal (a split fix)."
     },
     {
       "id": "develop-merge-mid-flight",
@@ -457,6 +414,15 @@
       },
       "class": "injected",
       "why": "The driver merges the host setup into the in-flight branch, as the switch brings it to an in-flight change."
+    },
+    {
+      "id": "ingest-base-drift",
+      "match": {
+        "area": "tree",
+        "flag": "drift-only"
+      },
+      "class": "injected",
+      "why": "The origin's integration branch changed the file between the change's base and its merge, outside the change; the port made the same edit as the origin's change, so the difference is that drift alone: the replay starts from the base (D3)."
     },
     {
       "id": "ingest-injected",
@@ -520,15 +486,6 @@
         "phrase": "the port's `.adf.json` moves with it"
       },
       "why": "The port's change metadata is .adf.json, not .openspec.yaml."
-    },
-    {
-      "id": "metadata-file-mid-flight",
-      "match": {
-        "key": "^artifact-only-port:\\.openspec\\.yaml$",
-        "mode": "mid-flight"
-      },
-      "class": "injected",
-      "why": "The in-flight change keeps the origin's .openspec.yaml beside the .adf.json the driver wrote."
     },
     {
       "id": "specs-base-file",

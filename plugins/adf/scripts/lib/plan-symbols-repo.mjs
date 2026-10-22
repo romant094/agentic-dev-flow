@@ -7,7 +7,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { META_FILE } from './changes.mjs'
+import { readChangeMeta } from './changes.mjs'
 import { baseRef, checkPlanSymbols, parseArgs, parseNameStatus } from './plan-symbols.mjs'
 
 export const USAGE = 'usage: plan-symbols.mjs <change-name> [--root <dir>] [--phase propose|apply]  (outside a git repository, --root is required)'
@@ -26,12 +26,8 @@ export async function runPlanSymbols(argv) {
   const inRoot = (args) => git(['-C', root, ...args])
   let ref
   if (phase === 'apply') {
-    let meta = null
-    try {
-      meta = JSON.parse(readFileSync(resolve(root, dir, META_FILE), 'utf8'))
-    } catch {
-      // no or unreadable metadata: baseRef reports the missing base
-    }
+    // No or unreadable metadata: baseRef reports the missing base.
+    const meta = readChangeMeta(root, resolve(root, dir))
     try {
       ref = baseRef(meta, (name) => {
         try {

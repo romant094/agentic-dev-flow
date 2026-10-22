@@ -33,6 +33,10 @@
 //                   lists the dispatch as `missing` with the reason
 //   classify-*      a description the two classifiers read differently, by the rules of
 //                   CLASSIFY below: `classify-investigate-topic`, `classify-v1-name`
+//   classify-outlier  the outliers differ only through such a dispatch: its role in the port's
+//                   reading adds a peer to, or takes one from, a role's median; the port's
+//                   outliers recomputed with the origin's role for each such dispatch equal the
+//                   origin's
 //   rounding        active minutes: the origin sums minutes rounded per phase, the port rounds
 //                   the total; within 0.05 per phase
 //   progress-sessions a session only the origin's legacy `progress.md` `## Sessions` names; the
@@ -46,7 +50,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseName } from '../../plugins/adf/scripts/lib/dispatch.mjs'
 import { readLedger } from '../../plugins/adf/scripts/lib/ledger.mjs'
-import { computeFacts, maxTurnsFromAgents, TOKEN_FIELDS } from '../../plugins/adf/scripts/lib/metrics-facts.mjs'
+import { computeFacts, maxTurnsFromAgents, outliers, TOKEN_FIELDS } from '../../plugins/adf/scripts/lib/metrics-facts.mjs'
 import { PLUGIN_ROOT } from '../../plugins/adf/scripts/lib/metrics.mjs'
 import { defaultProjectsDir, readTranscripts } from '../../plugins/adf/scripts/lib/transcripts.mjs'
 import { archivedEntries, readHistory } from '../../plugins/adf/scripts/lib/window.mjs'
@@ -208,6 +212,7 @@ try {
 
     // Dispatches.
     const ours = new Map(facts.dispatches.map((d) => [d.agentId, d]))
+    const reread = new Map()
     const missing = facts.dispatches.filter((d) => d.missing)
     if (missing.length > 0) cls('dispatches', 'missing-agent')
     compared('dispatches')
@@ -223,8 +228,10 @@ try {
       const ourClass = { role: p.role, task: p.task, round: p.round, exact: p.exact }
       if (JSON.stringify(theirClass) !== JSON.stringify(ourClass)) {
         const rule = CLASSIFY.find((r) => r.match(d.description ?? '', theirClass, ourClass))
-        if (rule) cls(`dispatch ${d.agentId}`, rule.class)
-        else fail(entry.change, 'classify', { description: d.description, origin: theirClass, port: ourClass })
+        if (rule) {
+          cls(`dispatch ${d.agentId}`, rule.class)
+          reread.set(d.agentId, d.role)
+        } else fail(entry.change, 'classify', { description: d.description, origin: theirClass, port: ourClass })
       }
       const facts1 = { actor: d.actor, agentType: d.agentType === '(unknown)' ? null : d.agentType, model: d.model, turns: d.turns, tokens: { ...bucketOf(d), turns: d.turns, placeholderTurns: d.outputPlaceholderTurns } }
       const facts2 = { actor: p.actor, agentType: p.agentType, model: p.model, turns: p.turns, tokens: p.tokens }
@@ -263,7 +270,11 @@ try {
     compared('outliers')
     const outlierKey = (x) => `${x.agentId}:${x.reasons.join('+')}`
     const [ox, px] = [theirs.facts.outliers.map(outlierKey).sort(), facts.outliers.map(outlierKey).sort()]
-    if (ox.join() !== px.join()) fail(entry.change, 'outliers', { origin: ox, port: px })
+    if (ox.join() !== px.join()) {
+      const theirRoles = outliers(facts.dispatches.map((d) => (reread.has(d.agentId) ? { ...d, role: reread.get(d.agentId) } : d)), maxTurns)
+      if (reread.size > 0 && theirRoles.map(outlierKey).sort().join() === ox.join()) cls('outliers', 'classify-outlier')
+      else fail(entry.change, 'outliers', { origin: ox, port: px, detail: facts.outliers })
+    }
   }
 } finally {
   scripts.remove()

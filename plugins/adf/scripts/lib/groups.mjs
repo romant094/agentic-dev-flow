@@ -6,10 +6,10 @@
 // Each worktree made here is provisioned once git made it, and torn down before git removes it
 // (lib/provision.mjs); a refused teardown leaves the worktree. A refused provisioning leaves the
 // worktree made, and the result says so with `ok: false`.
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { requireBranches } from './branches.mjs'
-import { changeDir, META_FILE } from './changes.mjs'
+import { changeDir, META_FILE, readChangeMeta } from './changes.mjs'
 import { mainCheckout } from './installed.mjs'
 import { planInputs } from './plan.mjs'
 import { baseRef } from './plan-symbols.mjs'
@@ -179,7 +179,7 @@ export function listGroups(changeRoot, change) {
 }
 
 // The whole-suite run checks whether a failure is pre-existing in a throwaway, detached
-// worktree of the change's base, never by stashing. The base is the change's `.adf.json` base,
+// worktree of the change's base, never by stashing. The base is the change's metadata base,
 // resolved as plan-symbols resolves it: the remote-tracking ref when it exists.
 export function baseCheckPath(changeRoot, change) {
   return join(mainCheckout(changeRoot), WORKTREES_DIR, `${change}--base-check`)
@@ -193,10 +193,8 @@ function gitError(error) {
 export function addBaseCheck(changeRoot, { change }, { core } = {}) {
   if (!change) throw new Error('no change name')
   const git = gitIn(changeRoot)
-  let meta
-  try {
-    meta = JSON.parse(readFileSync(join(changeDir(changeRoot, change), META_FILE), 'utf8'))
-  } catch {
+  const meta = readChangeMeta(changeRoot, changeDir(changeRoot, change))
+  if (!meta) {
     throw new Error(`cannot read openspec/changes/${change}/${META_FILE} in ${changeRoot}; run this from the change worktree`)
   }
   const ref = baseRef(meta, (name) => attempt(git, 'rev-parse', '--verify', '--quiet', name) !== null)

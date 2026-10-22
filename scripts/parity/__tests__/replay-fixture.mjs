@@ -13,7 +13,9 @@ export const CHANGE = 'add-thing'
 export const BRANCH = 'feat/K-1/add-thing'
 export const ARCHIVED = '2026-10-05-add-thing'
 
-const MAIN_SPEC = (verb = 'do the thing.') => `# cap Specification
+// `then` is the scenario's outcome: the archive writes the delta's, so the merge result is the
+// one the delta asks for.
+const MAIN_SPEC = (verb = 'do the thing.', then = 'the thing is done') => `# cap Specification
 
 ## Purpose
 
@@ -28,7 +30,7 @@ The system SHALL ${verb}
 #### Scenario: thing
 
 - **WHEN** a thing happens
-- **THEN** the thing is done
+- **THEN** ${then}
 `
 
 const DELTA = `## MODIFIED Requirements
@@ -228,7 +230,7 @@ export function fixtureOrigin() {
     mkdirSync(dirname(join(dir, `openspec/changes/archive/${ARCHIVED}/${f}`)), { recursive: true })
     execFileSync('git', ['-C', dir, 'mv', `openspec/changes/${CHANGE}/${f}`, `openspec/changes/archive/${ARCHIVED}/${f}`])
   }
-  const archive = commit({ [`openspec/changes/archive/${ARCHIVED}/ledger.jsonl`]: LEDGER, 'openspec/specs/cap/spec.md': MAIN_SPEC('do the thing twice.') }, `docs(openspec): archive ${CHANGE}`)
+  const archive = commit({ [`openspec/changes/archive/${ARCHIVED}/ledger.jsonl`]: LEDGER, 'openspec/specs/cap/spec.md': MAIN_SPEC('do the thing twice.', 'the thing is done twice') }, `docs(openspec): archive ${CHANGE}`)
   const ingest = commit({ '.claude/memory/concepts/a.md': PAGE_AFTER, '.claude/memory/log.md': LOG_AFTER, '.claude/memory/index.md': '# Index\n\n- [a](concepts/a.md) — the thing\n' }, `docs(memory): ingest what ${CHANGE} taught`)
 
   // GitLab's squash merge of the branch onto develop.

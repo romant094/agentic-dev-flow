@@ -119,7 +119,7 @@ export function titleFrom(branch, summary) {
 const FROM_STATE = { open: ['change', 'branch', 'base', 'protected'], push: ['change', 'branch', 'protected'], finalize: ['change', 'branch', 'base', 'protected'] }
 
 // The input of a forge operation with every value that already lives somewhere read from there:
-// the branch from git in `root`, the base from the change's .adf.json, the protected branches
+// the branch from git in `root`, the base from the change's metadata, the protected branches
 // from the registry. A value the caller also passed must agree, or the call is refused: the
 // orchestrator once copied these between scripts by hand. `state` is { change, branch, base,
 // protected } as read; null or empty where it could not be read.
@@ -130,7 +130,7 @@ export function forgeInput(operation, state, { input = {}, title, summary, draft
   for (const key of keys) {
     const value = state[key]
     if (value === null || value === undefined || value === '') {
-      throw new Error({ branch: 'HEAD is detached or unreadable; run in the change worktree', base: 'the change records no base in its .adf.json', protected: 'the registry sets no branch policy; run /adf:init', change: 'no change' }[key])
+      throw new Error({ branch: 'HEAD is detached or unreadable; run in the change worktree', base: 'the change records no base in its metadata (lib/changes.mjs readChangeMeta)', protected: 'the registry sets no branch policy; run /adf:init', change: 'no change' }[key])
     }
     if (input[key] !== undefined && JSON.stringify(input[key]) !== JSON.stringify(value)) {
       throw new Error(`input.${key} is ${JSON.stringify(input[key])}, but the core reads ${JSON.stringify(value)}; leave it out`)

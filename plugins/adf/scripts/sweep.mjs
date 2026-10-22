@@ -6,7 +6,7 @@
 //       { ok, change, base, mergeBase, head, range, secondQuestion,
 //         removedOrRenamed: [{ op, requirement, from?, codeDisposition, spec }],
 //         missingDisposition, dupMarkers: [{ file, line, existing, reason, wholeFile }] }
-//       base is `origin/<base>` when that ref exists, else `<base>`, from the change's .adf.json;
+//       base is `origin/<base>` when that ref exists, else `<base>`, from the change's metadata;
 //       range is merge-base..HEAD, the diff the sweep reads. secondQuestion is true when a delta
 //       spec carries REMOVED or RENAMED; codeDisposition null is itself a finding.
 //   sweep.mjs filter <reply file> [--root <change worktree>] [--record --change <name>]

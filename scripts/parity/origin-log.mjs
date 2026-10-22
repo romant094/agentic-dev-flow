@@ -33,7 +33,11 @@
 // fails the tool:
 //   merge-interleaving  an entry out of order: branches each prepended entries and a merge
 //                       interleaved them, or copied one entry twice (the port's `sort` repairs the
-//                       order; `docs/lessons/memory.md` names two in log.md)
+//                       order; `docs/lessons/memory.md` names two in log.md). The known ones are
+//                       listed below; an unlisted one in log.md is this one by rule when the commit
+//                       that brought the entry above it (`git blame` at HEAD) was committed at or
+//                       after the time the out-of-order entry names: its writer could not have
+//                       seen the entry above, so another branch's merge or rebase put it there
 //   pipe-in-title       a title holding `|`, which the header's field separator forbids
 // Headers an archive holds twice are listed as `duplicates`; the port's rotation refuses to write
 // such an archive, the origin's does not see a zone-suffixed one (counted, never failing).
@@ -163,6 +167,17 @@ try {
   if (result.fileLayer.explained) result.explained['missing-directory'] = 1
   else result.unexplained.push({ fileLayer: result.fileLayer })
 
+  // The merge-interleaving rule for an unlisted out-of-order entry of log.md: the commit that
+  // brought the entry above it, and its commit time in its own zone, when that time is at or
+  // after the out-of-order entry's own time; null otherwise.
+  const landedLater = (above, at) => {
+    const n = logText.split('\n').indexOf(above) + 1
+    if (n === 0 || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(at ?? '')) return null
+    const sha = git('blame', '-L', `${n},${n}`, '--porcelain', 'HEAD', '--', `${memory}/log.md`).split(' ')[0]
+    const landed = git('log', '-1', '--format=%cd', '--date=format:%Y-%m-%d %H:%M', sha).trim()
+    return landed >= at ? `the entry above came with ${sha.slice(0, 8)}, committed ${landed}, at or after this entry's ${at}` : null
+  }
+
   // The check over each file of the origin's log, in the place of the log.
   const findings = []
   const files = { 'log.md': logText, ...Object.fromEntries(Object.entries(archives).map(([m, t]) => [`log-archive/${m}.md`, t])) }
@@ -175,7 +190,8 @@ try {
       if (f.kind !== 'malformed-header' && f.kind !== 'out-of-order') continue
       const at = /^## \[([^\]]+)\]/.exec(f.header ?? f.text)?.[1] ?? null
       const expected = EXPECTED_FINDINGS.find((e) => e.file === file && e.kind === f.kind && e.at === at)
-      findings.push({ file, kind: f.kind, line: f.line, header: f.header ?? f.text, ...(f.above ? { above: f.above } : {}), explained: expected?.explained ?? null })
+      const ruled = !expected && file === 'log.md' && f.kind === 'out-of-order' ? landedLater(f.above, at) : null
+      findings.push({ file, kind: f.kind, line: f.line, header: f.header ?? f.text, ...(f.above ? { above: f.above } : {}), explained: expected?.explained ?? (ruled ? 'merge-interleaving' : null), ...(ruled ? { rule: ruled } : {}) })
     }
   }
   const byKind = {}

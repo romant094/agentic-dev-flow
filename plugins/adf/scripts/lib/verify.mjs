@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { attemptsFile, parseEvents, readLog } from './attempts.mjs'
-import { changeDir, globToRegExp, META_FILE, parseTasks } from './changes.mjs'
+import { changeDir, globToRegExp, META_FILE, parseTasks, readChangeMeta } from './changes.mjs'
 import { parseName } from './dispatch.mjs'
 import { baseCheckPath, listGroups } from './groups.mjs'
 import { commitPaths } from './commit.mjs'
@@ -86,7 +86,7 @@ function commitsIn(git, range) {
 }
 
 function readMeta(root, change) {
-  return attempt(() => JSON.parse(readFileSync(join(changeDir(root, change), META_FILE), 'utf8')))
+  return readChangeMeta(root, changeDir(root, change))
 }
 
 export function resolveBase(root, change, git) {
@@ -218,7 +218,8 @@ function checkDeltas(root, change) {
 }
 
 // specs-base.json against the delta specs (`specs.mjs base --check`): archive's three-way check
-// reads each touched requirement's base from it, so a missing or stale entry fails.
+// reads each touched requirement's base from it, so a missing or stale entry fails; with no file
+// at all the merge falls back to the merge base, and the check warns as archive.mjs check does.
 function checkSpecsBaseSnapshot(root, change) {
   const result = checkSpecsBase(root, change)
   const named = (list) => list.map((m) => `${m.capability}: ${m.requirement}`)
@@ -227,6 +228,7 @@ function checkSpecsBaseSnapshot(root, change) {
     ...named(result.missing).map((m) => `missing: ${m}`),
     ...named(result.stale).map((m) => `stale: ${m}`)
   ].join('\n')
+  if (result.warning) return { verdict: 'warn', summary: result.warning, text }
   if (!result.ok) return { verdict: 'fail', summary: result.refusal, text }
   if (result.touched === 0) return { verdict: 'pass', summary: 'N/A: no MODIFIED, REMOVED or RENAMED requirement', text }
   return { verdict: 'pass', summary: `every base current for ${result.touched} requirement(s)`, text }

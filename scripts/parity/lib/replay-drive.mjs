@@ -513,14 +513,12 @@ function implWork(ctx, task, worktree, planText) {
   const body = taskBody(planText, task) ?? ''
   const message = /\*\*Step\s+\d+:\s*Commit\*\*\s*[—–-]+\s*`([^`]+)`/.exec(body)?.[1] ?? `chore(replay): Task ${task}`
   const files = (parsePlanTasks(planText).find((t) => t.number === task)?.files ?? []).flatMap((f) => [f.path, f.to].filter(Boolean))
-  const commitsNothing = /Commit step is "none/.test(why)
-  const written = commitsNothing ? [] : writeFrom(ctx.git, worktree, ctx.candidate.merge, files.filter((f) => !f.includes('*')), atMerge(ctx))
+  const written = writeFrom(ctx.git, worktree, ctx.candidate.merge, files.filter((f) => !f.includes('*')), atMerge(ctx))
   if (written.length) ctx.git(worktree, 'add', '-A', '--', ...written)
-  ctx.git(worktree, 'commit', '-q', '--allow-empty', '-m', commitsNothing ? `chore(replay): Task ${task} commits nothing` : message)
+  ctx.git(worktree, 'commit', '-q', '--allow-empty', '-m', message)
   shas.push(ctx.git(worktree, 'rev-parse', 'HEAD'))
   actions.push(`wrote ${written.length} file(s) of Task ${task}'s Files block as ${ctx.candidate.merge.slice(0, 8)} holds them`, `git commit --allow-empty`)
   classification.push({ kind: 'injected', why: `no impl reply (${why}); the driver made the commit` })
-  if (commitsNothing) ctx.difference('apply', `Task ${task}'s Commit step is "none": a done impl reply needs a commit (impl.schema.json), so the port has no valid reply for a task that commits nothing`, why)
   return { item, shas, actions, classification }
 }
 
@@ -563,7 +561,9 @@ function implAndReview(ctx, tasks, planText) {
       }
       const worktree = prompt.json.worktree
       const work = implWork(ctx, task, worktree, planText)
-      const cover = ctx.run('apply', 'suite.mjs', ['covering', '--change', ctx.name, '--name', `T${task} impl`, '--command', `${SUITE} ${work.shas.at(-1)}`, '--worktree', worktree, '--root', ctx.root])
+      // A task that commits nothing (its Commit step says none) is covered at the worktree's HEAD.
+      const at = work.shas.at(-1) ?? ctx.git(worktree, 'rev-parse', 'HEAD')
+      const cover = ctx.run('apply', 'suite.mjs', ['covering', '--change', ctx.name, '--name', `T${task} impl`, '--command', `${SUITE} ${at}`, '--worktree', worktree, '--root', ctx.root])
       ctx.rec.hint(cover, 'injected', `the covering command is the sandbox's fake ${SUITE}, passing at the task's commit only`)
       const testRuns = cover.ok ? [cover.json.file] : []
       const reply = work.item && !work.item.missing ? { ...completeImpl(work.item, testRuns), commits: work.shas } : { role: 'impl', outcome: 'done', commits: work.shas, testRuns, concerns: [], summary: `replay: Task ${task}` }
@@ -623,23 +623,8 @@ function apply(ctx) {
   ctx.run('apply', 'apply-status.mjs', ['--change', name, '--root', ctx.root])
   const sched = ctx.run('apply', 'plan.mjs', ['schedule', '--change', name, '--root', ctx.root])
   if (!sched.ok) throw new Stop(sched.n, `plan schedule refused: ${sched.refusal}`)
-  let planText = readFileSync(join(changeDir(ctx), 'plan.md'), 'utf8')
-  // The groups as the schedule reads them; dispatch.mjs reads the group table with its own parser.
+  const planText = readFileSync(join(changeDir(ctx), 'plan.md'), 'utf8')
   const groups = sched.json.groups ?? []
-  const dispatchGroups = parseGraph(planText)
-  const unread = groups.filter((g) => !dispatchGroups.some((d) => d.letter === g.letter))
-  if (unread.length) {
-    // A workaround: dispatch.mjs (and the guard, through it) refuses every task of such a group,
-    // so the group cells are cut to their letter in the plan, committed, before Task 1.
-    const probe = dispatchPrompt(ctx, 'apply', ['--role', 'impl', '--task', String(unread[0].tasks[0])])
-    ctx.rec.hint(probe, 'blocked', 'dispatch.mjs reads no group of this plan')
-    ctx.difference('apply', `plan.mjs schedule reads groups ${unread.map((g) => g.letter).join(', ')} that dispatch.mjs parseGraph does not: a labelled group cell such as "A: contracts" is no group to it, so every dispatch of those tasks is refused`, probe.refusal)
-    planText = relabel(planText)
-    writeFileSync(join(changeDir(ctx), 'plan.md'), planText)
-    ctx.git(ctx.root, 'add', '--', `openspec/changes/${name}/plan.md`)
-    ctx.git(ctx.root, 'commit', '-q', '-m', `docs(openspec): name the Execution Graph groups of ${name} by their letter`)
-    ctx.rec.hint(ctx.rec.agent('apply', 'the plan\'s group cells', ['cut each group cell of the Execution Graph to its letter', 'git commit plan.md']), 'injected', 'a workaround so dispatch.mjs reads the groups plan.mjs schedules')
-  }
 
   if (sched.json.single) {
     const tasks = groups.flatMap((g) => g.tasks)
@@ -697,16 +682,6 @@ function apply(ctx) {
   ctx.rec.hint(suite, 'injected', `the whole-suite command is the sandbox's fake ${SUITE}`)
   const report = ctx.run('apply', 'apply-status.mjs', ['--change', name, '--root', ctx.root, '--report'])
   if (report.json.complete !== true) ctx.rec.hint(report, 'blocked', 'apply-status reports the apply not complete')
-}
-
-// The group table's cells cut to their letter: `| A: contracts, core | 1, 2 |` -> `| A | 1, 2 |`.
-function relabel(planText) {
-  const lines = planText.split('\n')
-  const at = lines.findIndex((l) => /^##\s+Execution Graph\s*$/.test(l))
-  for (let i = at + 1; at !== -1 && i < lines.length && !/^##\s/.test(lines[i]); i++) {
-    lines[i] = lines[i].replace(/^(\s*\|\s*)(?:group\s+)?`?\*{0,2}([A-Z])\*{0,2}`?\s*[:—–-]\s*[^|]*\|/i, '$1$2 |')
-  }
-  return lines.join('\n')
 }
 
 function mergeGroup(ctx, g) {
@@ -1188,21 +1163,8 @@ export function driveMidFlight(sandbox, candidate, replies, { as = `m-${candidat
   ctx.rec.hint(ctx.rec.agent('host', 'the in-flight change', [`git worktree add -b ${candidate.branch} .claude/worktrees/${candidate.name} origin/${candidate.branch} (the origin's propose commit ${propose.slice(0, 8)})`, 'git merge --no-ff origin/develop (the host setup reaches the branch as the switch brings it to an in-flight change)', `git push --set-upstream origin ${candidate.branch}`]), 'injected', 'the in-flight state the switch meets, made by the driver')
   const meta = join(changeDir(ctx, path), '.openspec.yaml')
   ctx.record.pin = existsSync(meta) ? readFileSync(meta, 'utf8').trim() : null
-  // The port reads a change's base from .adf.json alone; an origin change holds .openspec.yaml.
-  // The refusal is recorded as it is, then the base alone is written, the pin left as it is.
-  const adfMeta = join(changeDir(ctx, path), '.adf.json')
-  if (!existsSync(adfMeta)) {
-    const probe = ctx.run('apply', 'preflight.mjs', ['--phase', 'apply', '--change', ctx.name, '--root', path])
-    if (!probe.ok) {
-      ctx.rec.hint(probe, 'blocked', 'the port refuses an in-flight origin change: it has .openspec.yaml and no .adf.json, so no base')
-      ctx.difference('apply', 'an in-flight origin change (.openspec.yaml, no .adf.json) is refused: the port reads the change base only from .adf.json (preflight, plan-symbols, dispatch.mjs reply, the sweep, verify\'s range, forge open and finalize)', probe.refusal)
-    }
-    writeFileSync(adfMeta, `${JSON.stringify({ base: 'develop' }, null, 2)}\n`)
-    ctx.git(path, 'add', '--', `openspec/changes/${ctx.name}/.adf.json`)
-    ctx.git(path, 'commit', '-q', '-m', `chore(replay): record the base of ${ctx.name} for the port`)
-    ctx.git(path, 'push', '-q', 'origin', candidate.branch)
-    ctx.rec.hint(ctx.rec.agent('host', 'the base of the in-flight change', [`wrote openspec/changes/${ctx.name}/.adf.json { "base": "develop" }, the pin in .openspec.yaml left as it is`, 'git commit', `git push origin ${candidate.branch}`]), 'injected', 'a workaround: the port cannot continue an origin change without .adf.json; only the base is written, as the switch would')
-  }
+  // The in-flight change keeps the origin's .openspec.yaml and has no .adf.json: the port reads
+  // its base from there, else from the integration branch (lib/changes.mjs readChangeMeta).
   // The Draft as the origin's mr.mjs opened it: the bare placeholder sentence, outside any marker.
   const { subject, summary } = originTitle(ctx.git, main, candidate)
   ctx.summary = summary

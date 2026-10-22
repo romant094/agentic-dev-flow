@@ -51,7 +51,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameS
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readArchiveState } from './archive.mjs'
-import { META_FILE } from './changes.mjs'
+import { META_FILE, readChangeMeta } from './changes.mjs'
 import { LAND_ROLES, landCommentName, sddDir } from './dispatch.mjs'
 import { listTree } from './debt.mjs'
 import { findChangeDir } from './ingest.mjs'
@@ -204,19 +204,14 @@ function debtTargets(scope, root) {
 }
 
 // The branch and the base of the merge: what archive recorded (its mr, merge-local and remove
-// steps), else the worktree's branch while it exists, and the base from the change's .adf.json.
+// steps), else the worktree's branch while it exists, and the base from the change's metadata.
 function mergeRefs(ctx) {
   const steps = readArchiveState(ctx.main, ctx.change).steps
   const recorded = (key) => ['mr', 'merge-local', 'remove'].map((s) => steps[s].detail?.[key]).find((v) => typeof v === 'string' && v !== '') ?? null
   const wt = worktreePath(ctx.main, ctx.change)
   const branch = recorded('branch') ?? (existsSync(wt) ? gitText(wt, 'branch', '--show-current') || null : null)
   const dir = changeDirOf(ctx)
-  let base = null
-  if (dir && existsSync(join(dir, META_FILE))) {
-    try {
-      base = JSON.parse(readFileSync(join(dir, META_FILE), 'utf8')).base ?? null
-    } catch {}
-  }
+  let base = (dir && readChangeMeta(ctx.main, dir)?.base) || null
   base ??= recorded('base')
   if (!branch) refuse(`land reads the change's branch from archive's state or its worktree, and found neither; run /adf:archive ${ctx.change} first`)
   if (!base) refuse(`land reads the change's base from its ${META_FILE} or archive's state, and found neither`)

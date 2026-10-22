@@ -5,7 +5,7 @@
 //   forge.mjs open|push|finalize --change <name> [--summary "<scope>: <description>" | --title <t>]
 //                                [--draft true|false] [--input ...] [--root <change worktree>]
 //       With --change, the core reads what it already holds: the branch from git in --root, the
-//       base from the change's .adf.json, the protected branches from the registry, and the
+//       base from the change's metadata (lib/changes.mjs readChangeMeta), the protected branches from the registry, and the
 //       title's type from the branch prefix (feat/... gives feat). --input then carries only
 //       what no state holds (finalize's body); a value it repeats must agree. The main checkout
 //       is refused. Without --change the input is passed as given, as before.
@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { callRole, forgeInput, forgeReport } from './lib/roles.mjs'
-import { changeDir, inferChange, META_FILE, refuseMainCheckout } from './lib/changes.mjs'
+import { changeDir, inferChange, readChangeMeta, refuseMainCheckout } from './lib/changes.mjs'
 import { readBranches } from './lib/branches.mjs'
 import { loadSchema } from './lib/schema.mjs'
 import { execFileSync } from 'node:child_process'
@@ -43,12 +43,7 @@ function readState(root, change) {
   } catch {
     branch = null
   }
-  let base = null
-  try {
-    base = JSON.parse(readFileSync(join(changeDir(root, change), META_FILE), 'utf8')).base ?? null
-  } catch {
-    base = null
-  }
+  const base = readChangeMeta(root, changeDir(root, change))?.base ?? null
   return { change, branch, base, protected: readBranches(root)?.protected ?? null }
 }
 

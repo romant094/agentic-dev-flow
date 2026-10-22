@@ -10,12 +10,15 @@
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
+import { readBranches } from './branches.mjs'
 import { ledgerPath } from './ledger.mjs'
 import { buildOrder, readSchemaFile } from './schema.mjs'
 
 export const CHANGES_DIR = 'openspec/changes'
 export const ARCHIVE = 'archive'
 export const META_FILE = '.adf.json'
+// The metadata file of a change an earlier flow created (the openspec CLI's), still in flight.
+export const ORIGIN_META_FILE = '.openspec.yaml'
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
 function walk(dir) {
@@ -307,8 +310,21 @@ export function skipArtifact(root, name, artifactId, schema) {
   return { changeName: name, skipped }
 }
 
+// A change's metadata, the one reader of its base for every script: its .adf.json as written.
+// A change an earlier flow created has an .openspec.yaml and no .adf.json; its base is a
+// `base:` line there, else the host's integration branch, and `from` names the file. Null when
+// the change has neither file or its .adf.json does not parse. `dir` is the change directory,
+// active or archived; `root` is the checkout whose registry names the integration branch.
+export function readChangeMeta(root, dir) {
+  if (existsSync(join(dir, META_FILE))) return readMeta(dir)
+  const file = join(dir, ORIGIN_META_FILE)
+  if (!existsSync(file)) return null
+  const base = /^base:[ \t]*["']?([^\s"'#]+)/m.exec(readFileSync(file, 'utf8'))?.[1] ?? readBranches(root)?.integration ?? null
+  return { ...(base ? { base } : {}), from: ORIGIN_META_FILE }
+}
+
 export function changeMeta(root, name) {
-  return readMeta(requireChange(root, name)) ?? {}
+  return readChangeMeta(root, requireChange(root, name)) ?? {}
 }
 
 // The resolve step's list, ready to show: one choice per active change and per worktree whose

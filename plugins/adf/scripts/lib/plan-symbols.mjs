@@ -326,7 +326,7 @@ export function parseNameStatus(text) {
 export function baseRef(meta, hasRef) {
   const base = meta?.base
   if (typeof base !== 'string' || !base.trim()) {
-    throw new Error('the change metadata (.adf.json) has no "base" branch; --phase apply needs it')
+    throw new Error('the change metadata (lib/changes.mjs readChangeMeta) has no "base" branch; --phase apply needs it')
   }
   return hasRef(`refs/remotes/origin/${base}`) ? `origin/${base}` : base
 }

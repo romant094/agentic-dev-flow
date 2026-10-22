@@ -13,6 +13,15 @@ import { initRegistry } from '../lib/registry.mjs'
 import { findChanges } from '../lib/resolve.mjs'
 import { loadSchema } from '../lib/schema.mjs'
 import { create } from '../lib/workspace.mjs'
+import { run as forge } from '../forge.mjs'
+import { mergeBaseOf } from '../lib/ingest.mjs'
+import { rangeCommits } from '../lib/plan.mjs'
+import { runPlanSymbols } from '../lib/plan-symbols-repo.mjs'
+import { changeBase } from '../lib/provision.mjs'
+import { resolveRange } from '../lib/review.mjs'
+import { changeBaseRef } from '../lib/specs.mjs'
+import { sweepInputs } from '../lib/sweep.mjs'
+import { resolveBase } from '../lib/verify.mjs'
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
 const schema = loadSchema()
@@ -170,6 +179,30 @@ test('a base check prefers the remote-tracking base and refuses an unreadable ch
   removeBaseCheck(change, { change: 'add-x' })
   writeFileSync(join(change, 'openspec/changes/add-x/.adf.json'), '{}\n')
   assert.throws(() => addBaseCheck(change, { change: 'add-x' }), /no "base" branch/)
+})
+
+test('a change an earlier flow created, with .openspec.yaml and no .adf.json, has the integration branch as its base everywhere', () => {
+  const { root, change } = host()
+  const dir = join(change, 'openspec/changes/add-x')
+  writeFileSync(join(dir, '.openspec.yaml'), 'schema: sdd\ncreated: 2026-10-20\n')
+  writeFileSync(join(dir, 'plan.md'), '# Plan\n')
+  git(change, 'add', '.')
+  git(change, 'commit', '-q', '-m', 'in flight')
+  const base = git(root, 'rev-parse', 'develop')
+  const gitAt = (...args) => git(change, ...args)
+  assert.equal(addBaseCheck(change, { change: 'add-x' }).commit, base)
+  removeBaseCheck(change, { change: 'add-x' })
+  assert.equal(sweepInputs(change, 'add-x').base, 'develop')
+  assert.deepEqual(changeBase(change, 'add-x'), { ref: 'develop', commit: base })
+  assert.equal(rangeCommits(change, 'add-x').commits.length, 2)
+  assert.deepEqual(resolveBase(change, 'add-x', gitAt), { ref: 'develop' })
+  assert.equal(changeBaseRef(change, 'add-x'), 'develop')
+  assert.equal(mergeBaseOf(change, dir), base)
+  assert.equal(resolveRange(change, { change: 'add-x' }).base, base)
+  return runPlanSymbols(['add-x', '--root', change, '--phase', 'apply']).then((r) => {
+    assert.equal(r.result.error, undefined, JSON.stringify(r.result))
+    assert.equal(forge(['open', '--change', 'add-x', '--title', 't', '--root', change]).state, 'none')
+  })
 })
 
 test('a dirty base check is never force-removed', () => {

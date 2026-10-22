@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFil
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { schedule } from '../lib/plan.mjs'
 import { dispatchName, MAX_ROUNDS, normalize, parseGraph, parseName, planDispatch, renderPrompt, roundOf, verbatimBlocks } from '../lib/dispatch.mjs'
 import { PLUGIN_ROOT, PROMPTS_DIR, run } from '../dispatch.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
@@ -125,6 +126,25 @@ test('the graph numbers groups by row and reads their tasks and wave', () => {
     { letter: 'C', number: 3, tasks: [4], wave: 2 }
   ])
   assert.deepEqual(parseGraph(plan([['A', '1-3', 1]], [])).at(0).tasks, [1, 2, 3])
+})
+
+test('a labelled group cell is a group to dispatch as it is to plan.mjs schedule: one parser', () => {
+  const labelled = plan(
+    [
+      ['A: contracts, storage, core', '1, 2', 1],
+      ['**Group B** — the client', '3', 1],
+      ['C', '4', 2]
+    ],
+    [task(1, 'mechanical'), task(2, 'integration'), task(3, 'architecture'), task(4, 'mechanical')]
+  )
+  assert.deepEqual(parseGraph(labelled), parseGraph(PLAN))
+  assert.deepEqual(
+    schedule(labelled, { state: () => ({}) }).groups.map((g) => [g.n, g.letter, g.tasks, g.wave]),
+    parseGraph(labelled).map((g) => [g.number, g.letter, g.tasks, g.wave])
+  )
+  const root = host(labelled)
+  assert.equal(planDispatch({ change: CHANGE, role: 'impl', task: 1 }, tree(root, labelled)).group, 'A')
+  assert.equal(planDispatch({ change: CHANGE, role: 'merge-review', group: 'B' }, tree(root, labelled)).name, 'merge-review B')
 })
 
 test('the level follows the task, the review floor and the round-2 step up', () => {

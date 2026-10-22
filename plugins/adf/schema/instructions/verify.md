@@ -58,7 +58,9 @@ pass. What resolves each check:
   propose, because a rebase moves `git merge-base` past the edit another change made. A
   requirement with no entry, or whose entry was taken for another delta text, fails: after
   editing a delta block, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/specs.mjs" base --change
-  <change> --root <root>`, commit the file with the edit, and re-run.
+  <change> --root <root>`, commit the file with the edit, and re-run. A change with no
+  `specs-base.json` at all was made before the snapshot (an in-flight change from an earlier
+  flow): the check warns, as archive does, and the merge falls back to the merge base.
 - `tree`: an uncommitted path, untracked files included, is outside every range a later phase
   reads: commit it, or remove it, and re-run.
 - `test-record`: whether apply's test record still describes HEAD. Its rules are below.

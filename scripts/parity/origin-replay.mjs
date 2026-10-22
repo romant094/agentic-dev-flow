@@ -70,6 +70,33 @@ function gitAt(dir) {
   return run
 }
 
+// The origin's refs as { ref: sha }.
+const refsOf = (dir) => Object.fromEntries(gitAt(dir).lines('for-each-ref', '--format=%(refname) %(objectname)').map((l) => l.split(' ')))
+
+// The refs that moved on the origin during a run, each `replay` when its new commit is one a
+// sandbox repository holds (only the replay's own pushes could put it there: the sandbox is
+// cloned from the origin before the run), else `foreign`: work in flight on the origin by
+// someone else, reported and not failed. A deleted ref cannot be traced and counts as the
+// replay's. `repos` are the sandbox repositories to look in.
+export function movedRefs(before, after, repos) {
+  const holds = (sha) => repos.some((dir) => gitAt(dir).orNull('cat-file', '-e', `${sha}^{commit}`) !== null)
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+    .filter((ref) => before[ref] !== after[ref])
+    .sort()
+    .map((ref) => ({ ref, before: before[ref] ?? null, after: after[ref] ?? null, by: after[ref] && !holds(after[ref]) ? 'foreign' : 'replay' }))
+}
+
+// The added and removed lines of a unified diff, each through `rewrite` (the content rules) and
+// sorted, blank lines left out: two edits of one file compare equal when they add and remove
+// the same lines, wherever the hunks fall.
+export function editLines(diff, rewrite = (t) => t) {
+  return (diff ?? '')
+    .split('\n')
+    .filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---)( |$)/.test(l) && l.slice(1).trim() !== '')
+    .map((l) => `${l[0]}${rewrite(l.slice(1))}`)
+    .sort()
+}
+
 // The origin's state a run must leave as it is: refs, status and stash, hashed.
 export function originState(dir) {
   const git = gitAt(dir)
@@ -496,7 +523,10 @@ export function compareRun({ cache, main, record, candidate, forge = [], glabCal
       if (O.orNull('rev-parse', `${m}:${f}`) === P.orNull('rev-parse', `${portTip}:${f}`)) continue
       const rewrite = (t) => (rules.contentNormalize ?? []).filter((n) => new RegExp(n.path).test(f)).reduce((x, n) => x.replace(new RegExp(n.pattern, n.flags ?? 'gm'), n.replace), t ?? '')
       const same = rewrite(O.orNull('show', `${m}:${f}`)) === rewrite(P.orNull('show', `${portTip}:${f}`))
-      add('tree', `${same ? 'tree-content-normalized' : 'tree-content'}:${f}`, `${f}, which the origin's merge changed, differs in the port${same ? ' only where the rules normalize (time, author)' : ''}`, { flags: flagsOf(f) })
+      // A file the origin's integration branch changed between the base and the merge (D3) that
+      // the port edited exactly as the origin's change did: the difference is that drift alone.
+      const driftOnly = drift.has(f) && !same && editLines(O.orNull('diff', '--no-renames', m1, m, '--', f), rewrite).join('\n') === editLines(P.orNull('diff', '--no-renames', base, portTip, '--', f), rewrite).join('\n')
+      add('tree', `${same ? 'tree-content-normalized' : 'tree-content'}:${f}`, `${f}, which the origin's merge changed, differs in the port${same ? ' only where the rules normalize (time, author)' : driftOnly ? ' only by the origin\'s base drift: the port made the same edit' : ''}`, { flags: [...flagsOf(f), ...(driftOnly ? ['drift-only'] : [])] })
     }
   }
 
@@ -610,6 +640,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   const rules = loadRules()
   const before = originState(a.origin)
+  const beforeRefs = refsOf(a.origin)
   const O = gitAt(a.origin)
   const { findCandidates } = await import('./lib/replay-candidates.mjs')
   const since = a.since ?? O('log', '--first-parent', 'origin/develop', '-1', '--format=%H', '--', 'openspec/schemas', '.claude/commands/opsx', '.claude/scripts')
@@ -630,6 +661,8 @@ export async function main(argv = process.argv.slice(2)) {
     S = sandbox
   }
   const runs = []
+  let after
+  let moved = []
   try {
     const { buildReplies } = await import('./lib/replay-replies.mjs')
     const { drive, driveMidFlight, writeRunRecord } = await import('./lib/replay-drive.mjs')
@@ -647,13 +680,18 @@ export async function main(argv = process.argv.slice(2)) {
       const differences = result.differences.map((d) => classify({ ...d, candidate: candidate.name, mode: record.mode }, record, rules))
       runs.push({ candidate: candidate.name, mode: record.mode, as, ...result, differences })
     }
+    // Read while the sandbox still exists: a moved ref is traced to its repositories.
+    after = originState(a.origin)
+    const repos = [S.cache, ...jobs.flatMap(([mode, c]) => ['main', 'remote.git'].map((r) => join(S.root, asOf(mode, c.name), r)))].filter((d) => existsSync(d))
+    moved = movedRefs(beforeRefs, refsOf(a.origin), repos)
   } finally {
     if (sandbox && !a.keep) sandbox.destroy()
   }
-  const after = originState(a.origin)
-  const unchanged = JSON.stringify(before) === JSON.stringify(after)
-  const out = { origin: { unchanged, before, after }, sandbox: sandbox && !a.keep ? null : S.root, runs }
-  const md = `${report(runs)}\nOrigin unchanged: ${unchanged} (refs ${after.refs}, status ${after.status}, stash ${after.stash}).\n`
+  // Unchanged: status, stash and HEAD as before, and every moved ref someone else's.
+  const foreign = moved.filter((m) => m.by === 'foreign')
+  const unchanged = ['status', 'stash', 'head'].every((k) => before[k] === after[k]) && foreign.length === moved.length
+  const out = { origin: { unchanged, before, after, moved }, sandbox: sandbox && !a.keep ? null : S.root, runs }
+  const md = `${report(runs)}\nOrigin unchanged: ${unchanged} (refs ${after.refs}, status ${after.status}, stash ${after.stash}).${foreign.length ? ` Moved during the run by work in flight on the origin, not by the replay: ${foreign.map((m) => m.ref).join(', ')}.` : ''}\n`
   if (a.out) {
     mkdirSync(a.out, { recursive: true })
     writeFileSync(join(a.out, 'compare.json'), `${JSON.stringify(out, null, 2)}\n`)

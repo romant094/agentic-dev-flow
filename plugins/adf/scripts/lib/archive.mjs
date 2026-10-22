@@ -75,7 +75,7 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
-import { archiveChange, archiveDate, archiveTarget, CHANGES_DIR, changeStatus, globToRegExp, META_FILE, parseTasks } from './changes.mjs'
+import { archiveChange, archiveDate, archiveTarget, CHANGES_DIR, changeStatus, globToRegExp, META_FILE, parseTasks, readChangeMeta } from './changes.mjs'
 import { attemptsFile, recordReply } from './attempts.mjs'
 import { readBranches } from './branches.mjs'
 import { commitPaths } from './commit.mjs'
@@ -259,16 +259,12 @@ export function runStep(ctx, step, fn) {
 
 const recordPath = (change) => `${CHANGES_DIR}/${change}/review.md`
 
-function readMeta(dir) {
-  try {
-    return JSON.parse(readFileSync(join(dir, META_FILE), 'utf8'))
-  } catch (error) {
-    return refuse(`cannot read ${join(dir, META_FILE)} (${error.message}); the change records its base there`)
-  }
+function readMeta(root, dir) {
+  return readChangeMeta(root, dir) ?? refuse(`cannot read ${join(dir, META_FILE)}; the change records its base there`)
 }
 
 function baseOf(ctx) {
-  const base = readMeta(findChangeDir(ctx.root, ctx.change)).base
+  const base = readMeta(ctx.root, findChangeDir(ctx.root, ctx.change)).base
   if (typeof base !== 'string' || !base.trim()) refuse(`the change's ${META_FILE} records no base branch`)
   return base
 }
@@ -370,13 +366,13 @@ export function checkStep(ctx) {
     }
     const base = checkSpecsBase(root, change)
     const warnings = []
-    if (!base.exists && base.touched > 0) {
-      warnings.push(`no ${base.file}: the change was made before the spec base snapshot, so the merge's three-way check falls back to the merge base, which a rebase moves`)
+    if (base.warning) {
+      warnings.push(base.warning)
     } else if (!base.ok) {
       refuse(`${base.refusal}; the merge must not use a base the delta was not written against`, { roots, specsBase: { missing: base.missing, stale: base.stale } })
     }
     const dir = join(root, CHANGES_DIR, change)
-    const skipped = new Set(readMeta(dir).skipped ?? [])
+    const skipped = new Set(readMeta(root, dir).skipped ?? [])
     for (const a of changeStatus(root, change, loadSchema()).artifacts) {
       if (a.status !== 'done' && !skipped.has(a.id)) warnings.push(`artifact ${a.id} is ${a.status}`)
     }

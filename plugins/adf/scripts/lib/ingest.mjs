@@ -30,7 +30,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, posix, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { ARCHIVE, CHANGES_DIR, globToRegExp, META_FILE } from './changes.mjs'
+import { ARCHIVE, CHANGES_DIR, globToRegExp, META_FILE, readChangeMeta } from './changes.mjs'
 import { sddDir } from './dispatch.mjs'
 import { baseRef } from './plan-symbols.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
@@ -76,14 +76,10 @@ export function changeArtifacts(dir) {
   return out
 }
 
-// The change's merge base: its .adf.json base (the remote-tracking ref when it exists) with HEAD.
+// The change's merge base: its metadata's base (the remote-tracking ref when it exists) with HEAD.
 export function mergeBaseOf(root, dir) {
-  let meta
-  try {
-    meta = JSON.parse(readFileSync(join(dir, META_FILE), 'utf8'))
-  } catch (error) {
-    throw new Error(`cannot read ${join(dir, META_FILE)}: ${error.message}; pass --base`)
-  }
+  const meta = readChangeMeta(root, dir)
+  if (!meta) throw new Error(`cannot read ${join(dir, META_FILE)}; pass --base`)
   const ref = baseRef(meta, (name) => {
     try {
       git(root, 'rev-parse', '--verify', '--quiet', name)

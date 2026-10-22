@@ -1008,7 +1008,7 @@ function gitText(root, ...args) {
 // The change's base branch as a ref: `origin/<base>` when the remote has it.
 export function changeBaseRef(root, change) {
   const meta = changeMeta(root, change)
-  if (typeof meta.base !== 'string' || !meta.base.trim()) throw new Error(`openspec/changes/${change}/.adf.json has no "base" branch; the three-way check needs it`)
+  if (typeof meta.base !== 'string' || !meta.base.trim()) throw new Error(`the metadata of openspec/changes/${change}/ has no "base" branch; the three-way check needs it`)
   return baseRef(meta, (name) => {
     try {
       gitText(root, 'rev-parse', '--verify', '--quiet', name)
@@ -1136,7 +1136,7 @@ export function writeSpecsBase(root, change) {
 // `specs.mjs base --check`, read-only: every requirement a delta modifies, removes or renames
 // has an entry (`missing` otherwise), taken for its delta block as it is now (`stale`
 // otherwise). { ok, file, exists, touched (how many requirements need a base), missing, stale,
-// refusal? }.
+// warning? (no file at all), refusal? }.
 export function checkSpecsBase(root, change) {
   const touched = touchedInChange(root, change)
   const stored = readSpecsBase(root, change)
@@ -1154,7 +1154,11 @@ export function checkSpecsBase(root, change) {
     ...(missing.length ? [`no base for ${named(missing)}`] : []),
     ...(stale.length ? [`a base taken for another delta text for ${named(stale)}`] : [])
   ]
-  return { ...out, refusal: `${out.file} has ${problems.join(' and ')}: run specs.mjs base --change ${change} after editing a delta block, and commit the file with the edit` }
+  // No snapshot at all: a change made before it (an in-flight one from an earlier flow). The
+  // merge falls back to the merge base; verify and archive warn on it, and only `base --check`,
+  // propose's gate, refuses.
+  const warning = out.exists ? {} : { warning: `no ${out.file}: the change was made before the spec base snapshot, so the merge's three-way check falls back to the merge base, which a rebase moves` }
+  return { ...out, ...warning, refusal: `${out.file} has ${problems.join(' and ')}: run specs.mjs base --change ${change} after editing a delta block, and commit the file with the edit` }
 }
 
 // The merge of every delta spec of `change` into the main specs under `root`, nothing written:

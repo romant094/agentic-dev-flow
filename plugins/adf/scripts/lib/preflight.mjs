@@ -22,7 +22,7 @@
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { archiveStarted, nextStep, readArchiveState } from './archive.mjs'
-import { applyInstructions, ARCHIVE, archivedDirs, artifactInstructions, changeDir, changeStatus, CHANGES_DIR, META_FILE } from './changes.mjs'
+import { applyInstructions, ARCHIVE, archivedDirs, artifactInstructions, changeDir, changeStatus, CHANGES_DIR, readChangeMeta } from './changes.mjs'
 import { checkCommitPlace, Refusal } from './commit.mjs'
 import { mainCheckout } from './installed.mjs'
 import { appendRecord } from './ledger.mjs'
@@ -36,12 +36,8 @@ export const PHASES = ['propose', 'apply', 'verify', 'review', 'archive']
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
 function readBase(root, change, dir = changeDir(root, change)) {
-  try {
-    const base = JSON.parse(readFileSync(join(dir, META_FILE), 'utf8')).base
-    return typeof base === 'string' && base.trim() ? base : null
-  } catch {
-    return null
-  }
+  const base = readChangeMeta(root, dir)?.base
+  return typeof base === 'string' && base.trim() ? base : null
 }
 
 // Review reads the code verify verified: the verify record's `Verdict:` line is not FAIL, the

@@ -275,14 +275,14 @@ function applyPhase(git, h, archived, ledger, candidate) {
     const name = dispatchName({ role: 'impl', task: task.number })
     if (!ticked) out.push(missing('apply', 'reply', name, `tasks.md does not tick every item Task ${task.number} implements (${implemented.join(', ') || 'none named'})`))
     else if (!h.tip) out.push(missing('apply', 'reply', name, 'no per-commit history: the change was squash-merged and no local branch survives, so one squash commit holds every task', { outcome: 'done', source: tickSource }))
-    else if (commitsNothing) out.push(missing('apply', 'reply', name, `Task ${task.number}'s Commit step is "${step}": a done impl reply needs at least one commit (impl.schema.json), so a task that commits nothing has no valid reply`, { outcome: 'done', commits: [], source: tickSource }))
     else {
-      const matched = message ? h.all.filter((c) => c.subject.trim() === message) : []
-      if (matched.length === 0) out.push(missing('apply', 'reply', name, message ? `no branch commit has the subject of Task ${task.number}'s Commit step ("${message}")` : `Task ${task.number} has no Commit step naming its message`))
+      // A task whose Commit step says none commits nothing: its done reply names no commit.
+      const matched = commitsNothing ? [] : message ? h.all.filter((c) => c.subject.trim() === message) : []
+      if (matched.length === 0 && !commitsNothing) out.push(missing('apply', 'reply', name, message ? `no branch commit has the subject of Task ${task.number}'s Commit step ("${message}")` : `Task ${task.number} has no Commit step naming its message`))
       else {
-        taskCommit.set(task.number, matched.at(-1).sha)
+        if (matched.length) taskCommit.set(task.number, matched.at(-1).sha)
         if (matched.some((c) => !commits.some((f) => f.sha === c.sha))) matched.forEach((c) => (c.group = true))
-        const reply = { role: 'impl', outcome: 'done', commits: matched.map((c) => c.sha), concerns: [], summary: matched.map((c) => c.subject).join('; ') }
+        const reply = { role: 'impl', outcome: 'done', commits: matched.map((c) => c.sha), concerns: [], summary: commitsNothing ? `Task ${task.number}: ${step}` : matched.map((c) => c.subject).join('; ') }
         const slot = `.superpowers/sdd/${candidate.name}/${TESTS_DIR}/${recordName(name)}-replay.json`
         out.push(replyItem('apply', name, reply, [...matched.map((c) => src(c.sha, null, null, { subject: c.subject })), src(h.merge, `${h.archive}/plan.md`, task.line), ...tickSource], (text) => {
           const errors = validateJson(schemaOf('impl'), { ...JSON.parse(text), testRuns: [slot] })

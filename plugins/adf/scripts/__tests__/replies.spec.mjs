@@ -84,10 +84,10 @@ test('impl.schema.json requires a blocker when the outcome is not done', () => {
   }
 })
 
-test('impl.schema.json requires a commit and a test-run record when the outcome is done', () => {
+test('impl.schema.json requires a test-run record when the outcome is done; the commit rule is the plan\'s (reply.spec)', () => {
   const schema = schemaOf('impl')
   const done = { role: 'impl', outcome: 'done', commits: [], testRuns: [], concerns: [], summary: 'Done.' }
-  assert.deepEqual(validateJson(schema, done), ['$.commits: must hold at least 1 item', '$.testRuns: must hold at least 1 item'])
+  assert.deepEqual(validateJson(schema, done), ['$.testRuns: must hold at least 1 item'])
   assert.deepEqual(validateJson(schema, { ...done, outcome: 'blocked', blocker: 'No access.' }), [])
 })
 

@@ -124,12 +124,11 @@ test('mid-flight: the origin\'s propose commit and Draft continued by the port; 
     git('merge-base', '--is-ancestor', F.propose, BRANCH)
     assert.match(git('show', `${BRANCH}:openspec/changes/archive/${git('ls-tree', '--name-only', `${BRANCH}:openspec/changes/archive/`).split('\n').find((d) => d.endsWith(CHANGE))}/.openspec.yaml`), /sdd-plus-superpowers/)
 
-    // The port refuses an origin change with no .adf.json: recorded, then worked around.
-    const probe = r.steps.find((s) => s.phase === 'apply' && s.command?.startsWith('node preflight.mjs'))
-    assert.match(probe.refusal, /\.adf\.json/)
-    assert.ok(probe.classification.some((c) => c.kind === 'blocked'))
-    assert.ok(r.differences.some((d) => /no \.adf\.json/.test(d.what)))
-    assert.ok(injected(r, /cannot continue an origin change without \.adf\.json/).length === 1)
+    // The port continues an origin change with no .adf.json: its base is the integration branch.
+    const pre = r.steps.find((s) => s.phase === 'apply' && s.command?.startsWith('node preflight.mjs'))
+    assert.equal(pre.refusal ?? null, null, JSON.stringify(pre))
+    assert.ok(!r.differences.some((d) => /\.adf\.json/.test(d.what)))
+    assert.equal(git('ls-tree', '--name-only', `${BRANCH}:openspec/changes/archive/${git('ls-tree', '--name-only', `${BRANCH}:openspec/changes/archive/`).split('\n').find((d) => d.endsWith(CHANGE))}/`).split('\n').includes('.adf.json'), false)
 
     // The Draft as the origin opened it, finalized by the port.
     assert.deepEqual({ ...r.draft, description: undefined }, { iid: 1, draft: false, adfBlocks: 1, opsxBlocks: 0, placeholder: false, ok: true, description: undefined })

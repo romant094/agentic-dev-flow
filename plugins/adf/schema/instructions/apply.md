@@ -267,7 +267,9 @@ load beside `subagent-driven-development`:
   lists it among the open findings. The last ruling of an id wins.
 - **Per task, the covering tests; once, the whole suite.** The whole suite runs once, at the end.
 - **One task, one commit,** also when the skill batches small same-shape tasks into one
-  dispatch.
+  dispatch. A verification-only task, whose Commit step in `plan.md` says none, commits
+  nothing: its done `impl` reply names no commit, its `result.range` is null, and its review
+  reads the covering run with no review package.
 - **Stop at `finishing-a-development-branch`.** When the skill reaches its finish step, control
   returns to apply. Do not invoke `superpowers:finishing-a-development-branch`: its suite run,
   merge menu and branch options are covered by apply's whole-suite run and by archive, which

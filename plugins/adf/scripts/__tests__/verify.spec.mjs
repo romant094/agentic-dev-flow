@@ -520,15 +520,21 @@ test('verdict: a ruling accepts a failing check; silence and a ruling on tree do
   assert.equal(result.checks.find((c) => c.id === 'test-record').title, 'Agent test-record')
 })
 
-test('specs-base passes with no touched requirement, fails a missing or stale snapshot, and passes a current one', () => {
+test('specs-base passes with no touched requirement, warns with no snapshot, fails a missing or stale entry, and passes a current one', () => {
   const { root } = host()
   assert.equal(runIn(root)['specs-base'].summary, 'N/A: no MODIFIED, REMOVED or RENAMED requirement')
   const modified = `## MODIFIED Requirements\n\n${REQUIREMENT.replace('greet the user.', 'greet the user by name.')}\n`
   commit(root, { [changeFile('specs/greeting/spec.md')]: modified }, 'modify')
+  // No specs-base.json at all: a change from before the snapshot; the merge falls back to the
+  // merge base, as archive.mjs check warns.
   let check = runIn(root)['specs-base']
+  assert.equal(check.verdict, 'warn')
+  assert.match(check.summary, /no openspec\/changes\/add-x\/specs-base\.json: .*falls back to the merge base/)
+  assert.match(readFileSync(join(root, check.output), 'utf8'), /specs-base\.json: absent; 1 requirement\(s\)[^\n]*\nmissing: greeting: Greeting/)
+  commit(root, { [changeFile('specs-base.json')]: '{ "capabilities": {} }\n' }, 'an empty snapshot')
+  check = runIn(root)['specs-base']
   assert.equal(check.verdict, 'fail')
   assert.match(check.summary, /no base for greeting "Greeting": run specs\.mjs base --change add-x/)
-  assert.match(readFileSync(join(root, check.output), 'utf8'), /specs-base\.json: absent; 1 requirement\(s\)[^\n]*\nmissing: greeting: Greeting/)
   assert.equal(writeSpecsBase(root, CHANGE).ok, true)
   commit(root, { [changeFile('specs-base.json')]: readFileSync(join(root, changeFile('specs-base.json')), 'utf8') }, 'snapshot')
   check = runIn(root)['specs-base']

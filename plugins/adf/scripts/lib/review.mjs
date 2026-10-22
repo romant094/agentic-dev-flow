@@ -105,7 +105,7 @@ export function parseRange(text) {
 }
 
 // The range the review reads: { base, head, spec, from }. `range` (`A..B`) names it outright;
-// otherwise the change's base branch (its .adf.json, `origin/<base>` when the remote has it)
+// otherwise the change's base branch (its metadata, `origin/<base>` when the remote has it)
 // merge base to HEAD. `since`, from round 2 on, replaces the base with the sha recorded before
 // the round's fixes, so the reviewer reads the fix range only.
 export function resolveRange(root, { change = null, range = null, since = null } = {}) {

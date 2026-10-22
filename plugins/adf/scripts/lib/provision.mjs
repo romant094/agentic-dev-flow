@@ -18,7 +18,7 @@
 import { execFileSync } from 'node:child_process'
 import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, unlinkSync } from 'node:fs'
 import { dirname, isAbsolute, join, normalize, resolve } from 'node:path'
-import { changeDir, META_FILE } from './changes.mjs'
+import { changeDir, readChangeMeta } from './changes.mjs'
 import { mainCheckout } from './installed.mjs'
 import { baseRef } from './plan-symbols.mjs'
 import { callHook, CORE } from './roles.mjs'
@@ -57,10 +57,10 @@ export function readCopies(root) {
   return existsSync(file) ? copiesIn(readFileSync(file, 'utf8')) : []
 }
 
-// The change's base as `{ ref, commit }`, read from its `.adf.json` in `root` and resolved as
+// The change's base as `{ ref, commit }`, read from its metadata in `root` (readChangeMeta) and resolved as
 // plan-symbols resolves it; both null when it cannot be read.
 export function changeBase(root, change) {
-  const meta = attempt(() => JSON.parse(readFileSync(join(changeDir(root, change), META_FILE), 'utf8')))
+  const meta = readChangeMeta(root, changeDir(root, change))
   const ref = attempt(() => baseRef(meta, (name) => attempt(() => git(root, 'rev-parse', '--verify', '--quiet', name)) !== null))
   const commit = ref ? attempt(() => git(root, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`)) : null
   return { ref: ref ?? null, commit: commit || null }

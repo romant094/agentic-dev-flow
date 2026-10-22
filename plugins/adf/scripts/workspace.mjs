@@ -46,7 +46,7 @@
 //       `teardown` hook runs last, and a refused teardown is refused here
 //   workspace.mjs base-check-add|base-check-remove --change <name>
 //       from the change worktree: make a detached worktree of the change's base (the
-//       .adf.json base, the remote-tracking ref when it exists) to check whether a whole-suite
+//       metadata's base, the remote-tracking ref when it exists) to check whether a whole-suite
 //       failure is pre-existing, and provision it with no needs; remove it again after its
 //       teardown, never forced
 //

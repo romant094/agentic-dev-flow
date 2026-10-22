@@ -19,7 +19,7 @@ import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readBranches } from './branches.mjs'
-import { ARCHIVE, CHANGES_DIR, changeDirOf, META_FILE, parseTasks } from './changes.mjs'
+import { ARCHIVE, CHANGES_DIR, changeDirOf, parseTasks, readChangeMeta } from './changes.mjs'
 import { parseName } from './dispatch.mjs'
 import { readSchema, validateJson } from './json-schema.mjs'
 import { readRecords } from './ledger.mjs'
@@ -170,13 +170,9 @@ function maxTurnsOf(pluginRoot) {
 
 // ---------------------------------------------------------------- build
 
-function metaBase(dir) {
-  try {
-    const base = JSON.parse(readFileSync(join(dir, META_FILE), 'utf8')).base
-    return typeof base === 'string' && base.trim() ? base : null
-  } catch {
-    return null
-  }
+function metaBase(root, dir) {
+  const base = readChangeMeta(root, dir)?.base
+  return typeof base === 'string' && base.trim() ? base : null
 }
 
 // Machine paths out of a reason: the root, the transcript directory and the home directory.
@@ -209,7 +205,7 @@ export function buildRecord({ root, change, branch, base, now = new Date(), proj
   const at = (now instanceof Date ? now : new Date(now)).toISOString()
   const dir = changeDirOf(root, change)
   branch ??= git('branch', '--show-current') || null
-  base ??= (dir && metaBase(dir)) ?? readBranches(root)?.integration ?? null
+  base ??= (dir && metaBase(root, dir)) ?? readBranches(root)?.integration ?? null
   const coverage = {}
   const warnings = []
 

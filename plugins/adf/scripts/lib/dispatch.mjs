@@ -145,43 +145,96 @@ export function levelOf(body) {
   return m && LEVELS.includes(m[1]) ? m[1] : null
 }
 
-const taskList = (cell) =>
-  cell
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .flatMap((part) => {
-      const m = /^(\d+)\s*[-–]\s*(\d+)$/.exec(part)
-      if (!m) return /^\d+$/.test(part) ? [Number(part)] : []
-      const out = []
-      for (let i = Number(m[1]); i <= Number(m[2]); i++) out.push(i)
-      return out
-    })
+// ---------------------------------------------------------------- the Execution Graph
+
+export const stripComments = (s) => s.replace(/<!--[\s\S]*?-->/g, '')
+
+const cells = (row) =>
+  stripComments(row)
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((c) => c.trim())
+
+export function parseTaskList(cell) {
+  const out = []
+  for (const m of cell.matchAll(/(\d+)\s*(?:-|–|to)\s*(\d+)|(\d+)/g)) {
+    if (m[3]) out.push(Number(m[3]))
+    else for (let n = Number(m[1]); n <= Number(m[2]); n++) out.push(n)
+  }
+  return out
+}
+
+// "A", "Group A" or "A — shared contract": the letter is the first word.
+const letterOf = (cell) => /^(\w+)/.exec(cell.replace(/[`*]/g, '').replace(/^Group\s+/i, '').trim())?.[1] ?? ''
+
+// The `## Execution Graph` section: { line, end, groups, pairs, depends, single } or null. The
+// one parser of the plan's graph: plan.mjs lints and schedules from it, and dispatch names and
+// places a task's or a group's dispatch from the same groups.
+export function parseExecutionGraph(planText) {
+  const lines = planText.split('\n')
+  const start = lines.findIndex((l) => /^##\s+Execution Graph\b/.test(l))
+  if (start < 0) return null
+  let end = lines.length
+  for (let i = start + 1; i < lines.length; i++)
+    if (/^##\s|^###\s+Task\s+\d/.test(lines[i])) {
+      end = i
+      break
+    }
+  const groups = []
+  const pairs = []
+  const depends = {}
+  let table = null
+  // The Files and Wave columns by their header, else the third and the fourth.
+  let at = { files: 2, wave: 3 }
+  const column = (header, name, fallback) => {
+    const i = header.findIndex((x) => new RegExp(`^${name}\\b`, 'i').test(x))
+    return i > 1 ? i : fallback
+  }
+  for (let i = start + 1; i < end; i++) {
+    const raw = lines[i]
+    if (!/^\s*\|/.test(raw)) {
+      table = null
+      // One line may carry several: "Group B (wave 2) depends on: Group A. Group C (wave 2) …".
+      for (const dep of stripComments(raw).matchAll(/Group\s+`?(\w+)`?\s*\(wave\s*2\)\s*depends\s+on:\s*(.*?)(?=Group\s+`?\w+`?\s*\(wave|$)/gi))
+        depends[dep[1]] = [...dep[2].matchAll(/Group\s+`?(\w+)`?/gi)].map((m) => m[1])
+      continue
+    }
+    const c = cells(raw)
+    if (c.every((x) => /^:?-+:?$/.test(x) || x === '')) continue
+    if (!table) {
+      if (/^group$/i.test(c[0]) && /^tasks$/i.test(c[1] ?? '')) {
+        table = 'groups'
+        at = { files: column(c, 'files', 2), wave: column(c, 'wave', 3) }
+      } else if (/^group a$/i.test(c[0]) && /^group b$/i.test(c[1] ?? '')) table = 'pairs'
+      else table = 'other'
+      continue
+    }
+    if (table === 'groups') {
+      const letter = letterOf(c[0] ?? '')
+      if (!letter) continue
+      groups.push({
+        letter,
+        tasks: parseTaskList(c[1] ?? ''),
+        files: [...(c[at.files] ?? '').matchAll(/`([^`]+)`/g)].map((m) => m[1]),
+        wave: Number(/\d+/.exec(c[at.wave] ?? '')?.[0] ?? NaN),
+        line: i + 1
+      })
+    } else if (table === 'pairs') {
+      const a = letterOf(c[0] ?? '')
+      const b = letterOf(c[1] ?? '')
+      if (!a || !b) continue
+      pairs.push({ a, b, coupling: (/^[a-z-]+/i.exec(c[2] ?? '')?.[0] ?? '').toLowerCase(), reason: c.slice(3).join(' | '), line: i + 1 })
+    }
+  }
+  const prose = stripComments(lines.slice(start + 1, end).filter((l) => !/^\s*\|/.test(l)).join('\n'))
+  return { line: start + 1, end, groups, pairs, depends, single: /\bsingle group\b/i.test(prose) }
+}
 
 // The group table of `## Execution Graph`: [{ letter, number, tasks, wave }], numbered by row.
 export function parseGraph(planText) {
-  const lines = planText.split('\n')
-  const at = lines.findIndex((l) => /^##\s+Execution Graph\s*$/.test(l))
-  if (at === -1) return []
-  const groups = []
-  let inTable = false
-  for (const line of lines.slice(at + 1)) {
-    if (/^#{1,3}\s/.test(line)) break
-    const cells = line.trim().startsWith('|') ? line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim()) : null
-    if (!cells) {
-      if (inTable) break
-      continue
-    }
-    if (!inTable) {
-      inTable = /^group$/i.test(cells[0]) && /^tasks$/i.test(cells[1] ?? '')
-      continue
-    }
-    if (/^-+$/.test(cells[0])) continue
-    const letter = cells[0].replace(/^(?:group\s+)?/i, '').replace(/[`*]/g, '').trim()
-    if (!GROUP.test(letter)) continue
-    groups.push({ letter, number: groups.length + 1, tasks: taskList(cells[1] ?? ''), wave: Number(/\d+/.exec(cells.at(-1))?.[0] ?? 0) })
-  }
-  return groups
+  return (parseExecutionGraph(planText)?.groups ?? []).map((g, i) => ({ letter: g.letter, number: i + 1, tasks: g.tasks, wave: g.wave }))
 }
 
 // ---------------------------------------------------------------- names

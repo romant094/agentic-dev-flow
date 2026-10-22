@@ -13,8 +13,11 @@ import {
   listChanges,
   newChange,
   parseTasks,
+  readChangeMeta,
   resolveOutputs
 } from '../lib/changes.mjs'
+import { setBranches } from '../lib/branches.mjs'
+import { initRegistry } from '../lib/registry.mjs'
 import { loadSchema } from '../lib/schema.mjs'
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'changes.mjs')
@@ -35,6 +38,26 @@ test('new writes the change directory and its metadata, once', () => {
   assert.throws(() => newChange(root, 'add-thing', schema), /already exists/)
   assert.throws(() => newChange(root, 'Add_Thing', schema), /kebab-case/)
   assert.throws(() => newChange(root, 'archive', schema), /kebab-case/)
+})
+
+test('a change an earlier flow created takes its base from .openspec.yaml, else the integration branch', () => {
+  const root = host()
+  initRegistry(root, '1.2')
+  setBranches(root, { integration: 'develop', protected: [] })
+  const dir = join(root, 'openspec/changes/add-thing')
+  mkdirSync(dir, { recursive: true })
+  assert.equal(readChangeMeta(root, dir), null)
+  write(root, 'openspec/changes/add-thing/.openspec.yaml', 'schema: sdd\ncreated: 2026-10-20\n')
+  assert.deepEqual(readChangeMeta(root, dir), { base: 'develop', from: '.openspec.yaml' })
+  write(root, 'openspec/changes/add-thing/.openspec.yaml', 'schema: sdd\nbase: release\n')
+  assert.deepEqual(readChangeMeta(root, dir), { base: 'release', from: '.openspec.yaml' })
+  // The port's own metadata wins, even without a base: it is never completed from elsewhere.
+  write(root, 'openspec/changes/add-thing/.adf.json', '{"schema":"adf"}\n')
+  assert.deepEqual(readChangeMeta(root, dir), { schema: 'adf' })
+  write(root, 'openspec/changes/add-thing/.adf.json', '{"base":"main"}\n')
+  assert.deepEqual(readChangeMeta(root, dir), { base: 'main' })
+  write(root, 'openspec/changes/add-thing/.adf.json', '{')
+  assert.equal(readChangeMeta(root, dir), null)
 })
 
 test('a glob output matches nested files only under its pattern', () => {

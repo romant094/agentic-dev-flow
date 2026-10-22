@@ -39,6 +39,8 @@ const PLAN = `# Plan
 
 **Level:** mechanical
 
+- [ ] **Step 3: Commit** — \`feat: the parser\`
+
 ---
 
 ### Task 2: printer
@@ -49,6 +51,8 @@ const PLAN = `# Plan
 - Create: \`src/b.mjs\` — the printer
 
 **Level:** integration
+
+- [ ] **Step 2: Commit** — none; this task only checks the printer.
 `
 
 // The covering runner: `pass`, `fail` (TAP names the failure), `none` (no count line), `zero`
@@ -158,6 +162,18 @@ test('a sha outside the change range, or no commit at all, is refused', () => {
     `$.commits[1]: ${init} lies outside develop..HEAD, the change's commits in ${root}`,
     `$.commits[2]: deadbee is no commit in ${root}`,
     `$.commits[3]: ${sha} is named twice`
+  ])
+})
+
+test('a done impl with no commit is valid only for a task whose Commit step says none', () => {
+  const { root } = host()
+  const run = covering(root, 'T2 impl', 'pass')
+  const out = check(root, 'T2 impl', implReply({ testRuns: [run] }))
+  assert.deepEqual(out.errors, [])
+  assert.deepEqual([out.result.status, out.result.next, out.result.commits, out.result.range], ['DONE', 'review', [], null])
+  const other = covering(root, 'T1 impl', 'pass')
+  assert.deepEqual(check(root, 'T1 impl', implReply({ testRuns: [other] })).errors, [
+    "$.commits: a done reply names at least one commit; Task 1's Commit step does not say none"
   ])
 })
 

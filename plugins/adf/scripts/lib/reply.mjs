@@ -37,7 +37,7 @@
 //                failing, timedOut? }] }     the last run by its stamp gives result and counts,
 //       concerns: [{ text, file?, source: agent | script }], outOfScope: [file], blocker? }
 //     Each commit must lie in the change's commits of the dispatch worktree (the merge-base of
-//     the .adf.json base with HEAD, to HEAD). A done reply needs a last run that passed (exit 0,
+//     the metadata's base with HEAD, to HEAD). A done reply needs a last run that passed (exit 0,
 //     not timed out, no failed count) and ran a test (a total of 0 is refused). A last run with
 //     no count line, and a file outside the scope's **Files:** (the task's; a group's tasks for
 //     `fix <G>`; every task for the final `fix`), are script concerns: DONE_WITH_CONCERNS.
@@ -232,6 +232,12 @@ function implFacts(reply, ctx) {
   const last = runs.at(-1)
 
   const concerns = reply.concerns.map((c) => ({ ...c, source: 'agent' }))
+  if (reply.outcome === 'done' && reply.commits.length === 0) {
+    const task = ctx.parts.role === 'impl' ? parsePlan(ctx.planText).tasks.find((t) => t.number === ctx.parts.task) : null
+    if (!task?.commitsNothing) {
+      errors.push(`$.commits: a done reply names at least one commit${task ? `; Task ${task.number}'s Commit step does not say none` : ''}`)
+    }
+  }
   if (reply.outcome === 'done' && last) {
     if (!passed(last)) {
       const how = last.timedOut ? 'timed out' : `exit ${last.exit}${last.failing.length ? `, failing ${last.failing.join(', ')}` : ''}`
