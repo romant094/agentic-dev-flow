@@ -13,8 +13,8 @@ export const DEFAULT_START_STATUS = 'In Progress'
 
 const PROJECT_KEY = /^[A-Z][A-Z0-9]*$/
 const ISSUE_KEY = /^[A-Z][A-Z0-9]*-\d+$/
-const KEYS = ['baseUrl', 'allowlist', 'profileDir', 'debtEpic', 'fields', 'commentTemplate', 'correctionTemplate', 'envFile', 'statuses']
-const STATUS_KEYS = ['start', 'handoff', 'excluded']
+const KEYS = ['baseUrl', 'allowlist', 'profileDir', 'debtEpic', 'fields', 'commentTemplate', 'correctionTemplate', 'debtTemplate', 'envFile', 'statuses']
+const STATUS_KEYS = ['initial', 'start', 'handoff', 'excluded']
 
 const inside = (path) => typeof path === 'string' && path !== '' && !isAbsolute(path) && !normalize(path).startsWith('..')
 const nonEmpty = (s) => typeof s === 'string' && s.trim() !== ''
@@ -35,6 +35,7 @@ export function normalizeConfig(raw = {}) {
   if (raw.fields !== undefined && !(Array.isArray(raw.fields) && raw.fields.every(nonEmpty))) errors.push('config.fields is not a list of field names')
   if (raw.commentTemplate !== undefined && !inside(raw.commentTemplate)) errors.push('config.commentTemplate is not a path inside the project')
   if (raw.correctionTemplate !== undefined && !inside(raw.correctionTemplate)) errors.push('config.correctionTemplate is not a path inside the project')
+  if (raw.debtTemplate !== undefined && !inside(raw.debtTemplate)) errors.push('config.debtTemplate is not a path inside the project')
   if (raw.envFile !== undefined && !nonEmpty(raw.envFile)) errors.push('config.envFile is not a path')
 
   const statuses = raw.statuses ?? {}
@@ -42,6 +43,7 @@ export function normalizeConfig(raw = {}) {
     errors.push('config.statuses is not an object')
   } else {
     for (const key of Object.keys(statuses)) if (!STATUS_KEYS.includes(key)) errors.push(`config.statuses.${key} is not a key of ${PLUGIN_NAME}`)
+    if (statuses.initial !== undefined && !nonEmpty(statuses.initial)) errors.push('config.statuses.initial is not a status name')
     if (statuses.start !== undefined && !nonEmpty(statuses.start)) errors.push('config.statuses.start is not a status name')
     if (statuses.handoff !== undefined && !nonEmpty(statuses.handoff)) errors.push('config.statuses.handoff is not a status name')
     if (statuses.excluded !== undefined && !(Array.isArray(statuses.excluded) && statuses.excluded.every(nonEmpty))) {
@@ -53,7 +55,10 @@ export function normalizeConfig(raw = {}) {
     ...raw,
     profileDir: raw.profileDir ?? DEFAULT_PROFILE_DIR,
     fields: raw.fields ?? [],
+    // `initial` has no default: the status a new issue starts in is the workflow's own, and a
+    // wrong guess would skip every debt group edit as drifted.
     statuses: {
+      initial: statuses?.initial ?? null,
       start: statuses?.start ?? DEFAULT_START_STATUS,
       handoff: statuses?.handoff ?? null,
       excluded: statuses?.excluded ?? []

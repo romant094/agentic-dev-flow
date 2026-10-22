@@ -162,7 +162,10 @@ with no forge.
 The core refuses a missing or empty field, a field the state does not take (`remains` on a
 `taken` item), a field over its limit, and a link or URL in any field: a scheme such as
 `https://`, a `www.` host, or Markdown link syntax. `handoff` is called once every in-scope
-issue has its fields.
+issue has its fields. Its items also carry each issue that mirrors a group of the change's
+taken or partial debt entries (their shared `Tracker` key, when it is no tracker item of the
+scope): `taken` once no entry holding the key remains in the debt tree after archive, else
+`partial`.
 
 Every write holds for the developer's yes: the core calls `start` and `handoff` without `apply`,
 shows the preview, and calls again with `apply` only on the yes. A call again with the same

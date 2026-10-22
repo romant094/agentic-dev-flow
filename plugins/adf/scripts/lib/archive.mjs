@@ -87,7 +87,7 @@ import { addEntry, pricesUrl } from './prices.mjs'
 import { readDebtRoot } from './registry.mjs'
 import { checkRecord, ROUND_CAP } from './review-state.mjs'
 import { callRole, CORE, forgeInput, forgeReport, knowledgeReport } from './roles.mjs'
-import { findScope, namesKey, SCOPE_FILE, scopeKeys, trackerTargets } from './scope.mjs'
+import { debtGroups, findScope, namesKey, SCOPE_FILE, scopeKeys, trackerTargets } from './scope.mjs'
 import { checkResolutions, checkSpecsBase, mergePreview, writeMerge } from './specs.mjs'
 import { writeConflictTexts } from './spec-merge.mjs'
 import { loadSchema } from './schema.mjs'
@@ -949,7 +949,8 @@ export function report(ctx) {
     ...hurt.lines
   ]
   const mr = state.steps.mr
-  const land = trackerTargets(findScope(ctx.main, ctx.change)?.scope).length ? `/adf:land ${ctx.change}` : null
+  const scoped = findScope(ctx.main, ctx.change)?.scope
+  const land = trackerTargets(scoped).length || debtGroups(scoped).length ? `/adf:land ${ctx.change}` : null
   const heading = complete ? `## Archive complete: ${ctx.change}` : `## Archive not complete: ${ctx.change}`
   const tail = complete
     ? land

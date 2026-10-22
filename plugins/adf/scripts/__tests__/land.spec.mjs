@@ -13,7 +13,7 @@ import { run } from '../land.mjs'
 import { setBranches } from '../lib/branches.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { landFile, mergedByAncestry, readLand } from '../lib/land.mjs'
-import { initRegistry, readRegistry, writeRegistry } from '../lib/registry.mjs'
+import { initRegistry, readRegistry, setDebtRoot, writeRegistry } from '../lib/registry.mjs'
 import { CORE } from '../lib/roles.mjs'
 import { checkFields, FIELD_LIMITS } from '../lib/tracker.mjs'
 
@@ -82,7 +82,9 @@ function plugin(root, name, file, declaration) {
 // A host whose change fix-pool was archived on its branch: the archived directory holds the
 // scope; archive's state records the merge request (`forge`) or the local merge. `merged` merges
 // the branch into develop; `forge` is 1.7 (state provided), 1.6 (not provided) or null.
-function landHost({ tracker = true, forge = null, merged = true, scope = SCOPE, forgeState = null } = {}) {
+// `tree` is the debt tree the branch carries after archive, files under debt/; with it the
+// registry's debt.root is debt.
+function landHost({ tracker = true, forge = null, merged = true, scope = SCOPE, forgeState = null, tree = null } = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'adf-land-')))
   git(root, 'init', '-q', '-b', 'develop')
   git(root, 'config', 'user.email', 't@example.com')
@@ -100,6 +102,7 @@ function landHost({ tracker = true, forge = null, merged = true, scope = SCOPE, 
     extensions.push({ path: 'plugins/f', points: ['forge'], config: forgeState ? { state: forgeState } : {} })
   }
   writeRegistry(root, { ...readRegistry(root), extensions })
+  if (tree) setDebtRoot(root, 'debt')
   ignoreLocalDirs(root)
   writeFileSync(join(root, '.gitignore'), `${readFileSync(join(root, '.gitignore'), 'utf8')}plugins/\ncalls.jsonl\n`)
   writeFileSync(join(root, 'a.txt'), 'a\n')
@@ -115,6 +118,10 @@ function landHost({ tracker = true, forge = null, merged = true, scope = SCOPE, 
   writeFileSync(join(dir, 'specs', 'session-pool', 'spec.md'), '## MODIFIED Requirements\n')
   if (scope) writeFileSync(join(dir, 'scope.json'), `${JSON.stringify(scope, null, 2)}\n`)
   writeFileSync(join(root, 'pool.ts'), 'close()\n')
+  for (const [path, text] of Object.entries(tree ?? {})) {
+    mkdirSync(dirname(join(root, 'debt', path)), { recursive: true })
+    writeFileSync(join(root, 'debt', path), text)
+  }
   git(root, 'add', '.')
   git(root, 'commit', '-q', '-m', 'fix(pool): close the old socket')
   git(root, 'checkout', '-q', 'develop')
@@ -190,7 +197,7 @@ test('land is skipped with no tracker plugin, a skipped tracker, no tracker issu
   const skippedTracker = landHost({ scope: { ...SCOPE, tracker: { state: 'skipped', reason: 'Jira is down', notes: [] }, items: SCOPE.items.filter((i) => i.source === 'debt') } })
   assert.equal(land(skippedTracker, 'check').report, 'Land: the tracker was skipped for this change (Jira is down); nothing is handed off.')
   const debtOnly = landHost({ scope: { ...SCOPE, items: SCOPE.items.filter((i) => i.source === 'debt' || i.state === 'excluded') } })
-  assert.equal(land(debtOnly, 'check').report, 'Land: no tracker issue is taken or partial; nothing is handed off.')
+  assert.equal(land(debtOnly, 'check').report, 'Land: no tracker issue is taken or partial, and no debt the change took is tracked; nothing is handed off.')
   const noScope = landHost({ scope: null })
   assert.equal(land(noScope, 'check').report, 'Land: fix-pool has no scope; there is no tracker issue to hand off.')
   assert.equal(calls(debtOnly).length + calls(noScope).length + calls(skippedTracker).length, 0)
@@ -353,6 +360,61 @@ test('a tracker that refuses the hand-off records it, and a rerun without --yes 
   assert.deepEqual([out.ok, out.state, out.error, out.next], [false, 'refused', 'PROJ-2 is outside the allowlist', 'run land.mjs handoff --change fix-pool without --yes to build a new plan'])
   setConfig(root, 'plugins/t', {})
   assert.equal(land(root, 'handoff').state, 'pending')
+})
+
+// ---------------------------------------------------------------- debt groups
+
+const debtItem = (key, tracker, state = 'taken') => ({ source: 'debt', key, title: `Entry ${key}`, kind: 'debt', class: 'debt', block: 'snmp', anchors: [`${key}.ts`], tracker, matched: 'key', files: ['debt/snmp/index.md'], state, reason: state === 'partial' ? 'one site only' : null, verdict: 'current', check: CHECK, flags: [] })
+const DEBT_ROOT = '# Technical Debt\n\n## Blocks\n\n| Block | Covers |\n|---|---|\n| [`snmp`](snmp/index.md) | SNMP |\n'
+const debtIndex = (rows) => `# SNMP\n\nLast id: \`snmp-06\`\n\n| ID | Title | Anchors | Class | Source | Tracker |\n|---|---|---|---|---|---|\n${rows.map(([id, key]) => `| \`${id}\` | Entry ${id} | \`${id}.ts\` | debt | s | ${key ?? ''} |`).join('\n')}\n`
+
+test('a tracked debt group takes part in land: taken when archive removed every entry holding its key, partial while some remain', () => {
+  // PROJ-7 mirrors snmp-01 and snmp-02, both taken and removed at archive; PROJ-8 mirrors
+  // snmp-03 (taken, removed), snmp-04 (partial, kept) and snmp-05 (outside the scope).
+  const scope = { ...SCOPE, items: [SCOPE.items[0], debtItem('snmp-01', 'PROJ-7'), debtItem('snmp-02', 'PROJ-7'), debtItem('snmp-03', 'PROJ-8'), debtItem('snmp-04', 'PROJ-8', 'partial'), debtItem('snmp-06', null)] }
+  const tree = { 'index.md': DEBT_ROOT, 'snmp/index.md': debtIndex([['snmp-04', 'PROJ-8'], ['snmp-05', 'PROJ-8'], ['snmp-06', null]]) }
+  const root = landHost({ scope, tree })
+  const check = land(root, 'check')
+  assert.equal(check.state, 'done')
+  assert.deepEqual(check.detail.items.map((i) => [i.key, i.state, i.entries ?? null]), [['PROJ-1', 'taken', null], ['PROJ-7', null, ['snmp-01', 'snmp-02']], ['PROJ-8', null, ['snmp-03', 'snmp-04']]])
+  assert.match(land(root, 'report').report, /PROJ-7 \(debt snmp-01, snmp-02\), PROJ-8 \(debt snmp-03, snmp-04\)/)
+  land(root, 'wait')
+  const input = land(root, 'comment-input')
+  assert.deepEqual(input.dispatches.map((d) => [d.name, d.state]), [['land-comment PROJ-1', 'taken'], ['land-comment PROJ-7', 'taken'], ['land-comment PROJ-8', 'partial']])
+  const taken = JSON.parse(readFileSync(input.dispatches[1].inputFile, 'utf8'))
+  assert.deepEqual([taken.kind, taken.issueFile, taken.check, taken.fields], ['debt', null, null, ['done', 'test']])
+  assert.deepEqual(taken.debt, {
+    resolved: [{ id: 'snmp-01', title: 'Entry snmp-01', class: 'debt', anchors: ['snmp-01.ts'] }, { id: 'snmp-02', title: 'Entry snmp-02', class: 'debt', anchors: ['snmp-02.ts'] }],
+    remaining: []
+  })
+  const partial = JSON.parse(readFileSync(input.dispatches[2].inputFile, 'utf8'))
+  assert.deepEqual(partial.fields, ['done', 'test', 'remains'])
+  assert.deepEqual(partial.debt.resolved.map((e) => e.id), ['snmp-03'])
+  assert.deepEqual(partial.debt.remaining.map((e) => [e.id, e.scope]), [['snmp-04', 'partial'], ['snmp-05', null]])
+  assert.match(land(root, 'report').report, /3 land-comment input\(s\); debt groups PROJ-7 \(taken\), PROJ-8 \(partial\)/)
+
+  assert.deepEqual(comment(root, 'PROJ-8', valid('PROJ-8', 'taken', TAKEN)).errors, ['state is taken, but PROJ-8 is partial in the scope', 'fields.remains is required for a partial item'])
+  comment(root, 'PROJ-1', valid('PROJ-1', 'taken', TAKEN))
+  comment(root, 'PROJ-7', valid('PROJ-7', 'taken', TAKEN))
+  assert.deepEqual(comment(root, 'PROJ-8', valid('PROJ-8', 'partial', PARTIAL)).missing, [])
+  const held = land(root, 'handoff')
+  assert.deepEqual(held.preview, ['PROJ-1: taken', 'PROJ-7: taken', 'PROJ-8: partial'])
+  assert.deepEqual(calls(root, 'tracker').at(-1).input.items, [{ key: 'PROJ-1', state: 'taken', fields: TAKEN }, { key: 'PROJ-7', state: 'taken', fields: TAKEN }, { key: 'PROJ-8', state: 'partial', fields: PARTIAL }])
+  assert.deepEqual(land(root, 'handoff', '--yes').applied, ['PROJ-1', 'PROJ-7', 'PROJ-8'])
+
+  const debtOnly = landHost({ scope: { ...SCOPE, items: [debtItem('snmp-01', 'PROJ-7')] }, tree: { 'index.md': DEBT_ROOT, 'snmp/index.md': debtIndex([['snmp-06', null]]) } })
+  assert.equal(land(debtOnly, 'check').state, 'done', 'a tracked debt group alone is handed off')
+})
+
+test('a debt key that is also a tracker item of the scope is handed off once, by the tracker item', () => {
+  const scope = { ...SCOPE, items: [SCOPE.items[0], SCOPE.items[2], debtItem('snmp-01', 'PROJ-1'), debtItem('snmp-02', 'PROJ-3')] }
+  const root = landHost({ scope, tree: { 'index.md': DEBT_ROOT, 'snmp/index.md': debtIndex([['snmp-06', null]]) } })
+  assert.deepEqual(land(root, 'check').detail.items.map((i) => i.key), ['PROJ-1'], 'PROJ-3 is an excluded tracker item, and so not a debt group either')
+  land(root, 'wait')
+  assert.deepEqual(land(root, 'comment-input').dispatches.map((d) => d.key), ['PROJ-1'])
+  comment(root, 'PROJ-1', valid('PROJ-1', 'taken', TAKEN))
+  land(root, 'handoff')
+  assert.deepEqual(calls(root, 'tracker').at(-1).input.items.map((i) => i.key), ['PROJ-1'])
 })
 
 // ---------------------------------------------------------------- the CLI

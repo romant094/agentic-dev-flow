@@ -7,7 +7,7 @@
 //   profile.mjs [--skill <name>]
 //
 // { ok, projectDir, config: { baseUrl, allowlist, debtEpic, fields, statuses, commentTemplate,
-//   correctionTemplate, profileDir }, gitAuthor, profile: { dir, discovered, conventions, local,
+//   correctionTemplate, debtTemplate, profileDir }, gitAuthor, profile: { dir, discovered, conventions, local,
 //   exists, ignored, discoveredAt, stale }, plans: { dir, ignored } }
 // `gitAuthor` is JIRA_GIT_AUTHOR, the developer's git author name, or null when unset.
 // `ignored` says whether git ignores the personal files; setup refuses to write them when it
@@ -34,11 +34,11 @@ export function describeProfile({ cwd = process.cwd(), now = new Date(), run, ig
     // no profile yet
   }
   const plans = skill === undefined ? null : plansDir(projectDir, skill)
-  const { baseUrl = null, allowlist = null, debtEpic = null, fields, statuses, commentTemplate = null, correctionTemplate = null, profileDir } = config
+  const { baseUrl = null, allowlist = null, debtEpic = null, fields, statuses, commentTemplate = null, correctionTemplate = null, debtTemplate = null, profileDir } = config
   return {
     ok: true,
     projectDir,
-    config: { baseUrl, allowlist, debtEpic, fields, statuses, commentTemplate, correctionTemplate, profileDir },
+    config: { baseUrl, allowlist, debtEpic, fields, statuses, commentTemplate, correctionTemplate, debtTemplate, profileDir },
     gitAuthor: resolved.JIRA_GIT_AUTHOR ?? null,
     profile: {
       ...paths,

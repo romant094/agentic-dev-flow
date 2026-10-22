@@ -11,7 +11,8 @@
 //   debt.mjs list [--kind debt|adf]
 //       every block, sub-block and entry, computed from the files.
 //       { ok, root, blocks: [{ id, kind, covers, index, columns, subBlocks, bodyFiles }],
-//         entries: [entry] }
+//         entries: [entry], groups: [{ key, entries: [id] }] }
+//       groups: each tracker key with the ids of the debt entries holding it, in tree order
 //       entry (kind debt) { id, kind, block, subBlock, title, anchors, class, source, tracker }
 //       entry (kind adf)  { id, kind, block, title, plugin, pluginVersion, change, class,
 //                           source, filed, body }
@@ -37,11 +38,11 @@
 //       the issue the maintainer filed the record as. { ok, changed, record }
 //   debt.mjs track --id <debt id> --key <tracker key>
 //       the tracker key a product entry is mirrored as, in its Tracker cell. The same key again
-//       changes nothing; another key, a key another entry holds, an ADF record and an unknown
-//       id are refused. { ok, changed, entry, files }
+//       changes nothing; another key, an ADF record and an unknown id are refused. A key other
+//       entries hold is accepted: one tracker issue mirrors a group. { ok, changed, entry, files }
 import { readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
-import { addAnchor, addEntry, addAdfRecord, checkTree, ensureRootIndex, listTree, markFiled, removeEntry, setTracker } from './lib/debt.mjs'
+import { addAnchor, addEntry, addAdfRecord, checkTree, ensureRootIndex, listTree, markFiled, removeEntry, setTracker, trackerGroups } from './lib/debt.mjs'
 import { isMain } from './lib/main.mjs'
 import { readDebtRoot, setDebtRoot } from './lib/registry.mjs'
 
@@ -131,7 +132,8 @@ export function run(argv, { cwd = process.cwd() } = {}) {
   switch (command) {
     case 'list': {
       if (values.kind !== undefined && !['debt', 'adf'].includes(values.kind)) throw new UsageError('--kind is debt or adf')
-      return { ok: true, root: where, ...listTree(tree, { kind: values.kind }) }
+      const listed = listTree(tree, { kind: values.kind })
+      return { ok: true, root: where, ...listed, groups: trackerGroups(listed.entries) }
     }
     case 'add': {
       // A comma before a digit stays: `file.ts:187,207` is one anchor with two lines.

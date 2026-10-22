@@ -767,7 +767,7 @@ test('a scope that takes no key, or a change with no scope.json, is no body chec
   assert.equal(call(h, ['mr', '--body', body, '--title', 'feat: x'], deps).state, 'done')
 })
 
-test('the report names /adf:land when the scope holds a tracker issue, and not for debt alone', () => {
+test('the report names /adf:land when the scope holds a tracker issue or tracked debt, and not for untracked debt alone', () => {
   const h = archiveHost({ scope: SCOPE })
   drive(h)
   const report = call(h, ['report'])
@@ -779,6 +779,9 @@ test('the report names /adf:land when the scope holds a tracker issue, and not f
   const plain = call(debt, ['report'])
   assert.deepEqual([plain.complete, plain.land], [true, null])
   assert.doesNotMatch(plain.report, /adf:land/)
+  const tracked = archiveHost({ scope: { ...SCOPE, items: SCOPE.items.filter((i) => i.source === 'debt').map((i) => ({ ...i, tracker: 'PROJ-9' })) } })
+  drive(tracked)
+  assert.equal(call(tracked, ['report']).land, '/adf:land add-x')
 })
 
 test('merge-local waits for the yes, refuses a main checkout off its base or dirty with the commands, and --no records the choice', () => {

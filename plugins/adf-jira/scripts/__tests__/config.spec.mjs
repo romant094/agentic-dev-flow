@@ -12,7 +12,7 @@ describe('normalizeConfig', () => {
     const { config, errors } = normalizeConfig({ baseUrl: 'https://jira.example.com', allowlist: ['PROJ'] })
     assert.deepEqual(errors, [])
     assert.equal(config.profileDir, join('.claude', 'jira', 'profile'))
-    assert.deepEqual(config.statuses, { start: 'In Progress', handoff: null, excluded: [] })
+    assert.deepEqual(config.statuses, { initial: null, start: 'In Progress', handoff: null, excluded: [] })
     assert.deepEqual(config.fields, [])
   })
 
@@ -24,7 +24,8 @@ describe('normalizeConfig', () => {
       debtEpic: 'PROJ',
       commentTemplate: '/abs.md',
       correctionTemplate: '../c.md',
-      statuses: { handoff: '', done: 'x' },
+      debtTemplate: '/d.md',
+      statuses: { initial: ' ', handoff: '', done: 'x' },
       token: 'x'
     })
     assert.deepEqual(errors, [
@@ -35,7 +36,9 @@ describe('normalizeConfig', () => {
       'config.debtEpic is not an issue key',
       'config.commentTemplate is not a path inside the project',
       'config.correctionTemplate is not a path inside the project',
+      'config.debtTemplate is not a path inside the project',
       'config.statuses.done is not a key of adf-jira',
+      'config.statuses.initial is not a status name',
       'config.statuses.handoff is not a status name'
     ])
   })

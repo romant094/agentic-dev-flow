@@ -5,7 +5,9 @@ hand-off comment of the tracker issue `{{key}}`, which the change `{{change}}` t
 
 The input file `{{inputFile}}` lists what to read: the issue's own file (its description, its
 comments and its fields), the change's proposal, delta specs, tasks and `verify.md`, the scope
-check recorded for the issue, and the merge commit.
+check recorded for the issue, and the merge commit. An issue that mirrors a group of debt
+entries has no issue file and no scope check: its `debt` names the entries the change resolved
+and the entries that remain, so `done` covers the resolved ones and `remains` the others.
 
 Write these fields, `{{fields}}`, for the issue's tester:
 

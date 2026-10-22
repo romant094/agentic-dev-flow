@@ -128,6 +128,20 @@ export const scopeKeys = (scope) => (scope?.items ?? []).filter((i) => IN_SCOPE.
 // not reproduce, which retest sends back instead.
 export const trackerTargets = (scope) => (scope?.items ?? []).filter((i) => i.source === 'tracker' && IN_SCOPE.includes(i.state) && i.verdict !== 'not-reproduced')
 
+// The tracker issues that mirror the change's taken or partial debt: one per distinct Tracker
+// key of its debt items, with the ids of the scope's entries holding it. A key that is also a
+// tracker item of the scope is not one: that item's own path hands it off, once.
+export function debtGroups(scope) {
+  const items = scope?.items ?? []
+  const tracked = new Set(items.filter((i) => i.source === 'tracker').map((i) => i.key))
+  const groups = new Map()
+  for (const i of items) {
+    if (i.source !== 'debt' || !IN_SCOPE.includes(i.state) || !i.tracker || tracked.has(i.tracker)) continue
+    groups.set(i.tracker, [...(groups.get(i.tracker) ?? []), i])
+  }
+  return [...groups].map(([key, entries]) => ({ key, entries }))
+}
+
 // Whether a text names a key as a whole word: no letter, digit, underscore or hyphen on either
 // side, so PROJ-1 is not named by PROJ-12.
 export function namesKey(text, key) {

@@ -5,28 +5,23 @@ description: Use when the ADF technical debt tree and its Jira epic need to be b
 
 # Sync the technical debt tree to Jira
 
-The ADF core's debt tree (the registry's `debt.root`) is the source of truth. Jira mirrors it.
-Nothing in this skill ever writes an entry's content from Jira — the only thing that travels
-back is the issue key, into the entry's `Tracker` cell.
+The ADF core's debt tree (the registry's `debt.root`) is the source of truth. Jira mirrors it,
+one way. **One Jira issue mirrors a group of related debt entries**, and every entry of the
+group holds the issue's key in its `Tracker` cell. Nothing in this skill ever writes an entry's
+content from Jira — the only thing that travels back is the issue key, into the entry's
+`Tracker` cell.
 
-The tree is read and written only through the core's debt CLI, which this plugin runs for
-you:
+Every deterministic step is `scripts/sync-debt.mjs`, one JSON result each; the tree is read and
+written only through the core's debt CLI, which that script runs for you. To look at the tree
+yourself, read it the same way, never by hand:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/core-debt.mjs" list --kind debt
-node "${CLAUDE_PLUGIN_ROOT}/scripts/core-debt.mjs" track --id <entry id> --key <ISSUE-KEY>
 ```
 
-Never edit a block index by hand: the core owns the tree's format and its check.
-
-Read `conventions.md` in the profile directory first: the issue type, the resolution
-vocabulary and the update rule are team decisions recorded there, not here.
-
-## The epic
-
-The registry config's `debtEpic` names it; `profile.mjs` prints it. With no `debtEpic`, stop
-and ask the developer for the epic's key, and set it in the config. How children attach to
-it is the model `conventions.md` records (see `/adf-jira:epic`, Step 1).
+Your one decision is
+the grouping: which keyless entry joins which group, which entries form a new group, and which
+wait. The run works from the tree alone: it does not read the epic's children.
 
 ## Step 0 — preflight
 
@@ -34,122 +29,131 @@ it is the model `conventions.md` records (see `/adf-jira:epic`, Step 1).
 node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs" --skill sync-debt
 ```
 
-`discovered.json` must exist and be under 7 days old. Missing or stale → `/adf-jira:setup`.
-Do not proceed on a stale profile: the field map is what the create payload is built from.
+- `discovered.json` must exist and be under 7 days old. Missing or stale: `/adf-jira:setup`.
+- `config.debtEpic` names the epic. Without it, a new group cannot be filed: ask the developer
+  for the epic's key and set it in the config.
+- `config.statuses.initial` names the status a new issue starts in. Without it, no group is
+  edited: ask the developer, take the name from `conventions.md`, and set it in the config.
+- `plans.ignored` false: stop and ask the developer to run `/adf:init`, or to add `.adf/jira/`
+  to `.gitignore`.
 
-## Step 1 — read both sides
+Read `conventions.md` in the profile directory: it records the issue type of a child of the
+debt epic and how a child attaches to its epic (`parent`, or the `Epic Link` field; see
+`/adf-jira:epic`, Step 1). When it records neither, ask, and record the answer there.
 
-The tree: `core-debt.mjs list --kind debt`. Each entry carries `id`, `block`, `title`,
-`anchors`, `class`, `source` and `tracker` (the key, or empty).
-
-Jira, read-only:
-
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/read-issues.mjs" "parent = <debtEpic> ORDER BY key" <plans.dir>/epic.json
-```
-
-That script writes nothing to Jira and refuses any result outside the allowlist. Use the
-JQL of the epic model `conventions.md` records (`parent = ...` for sub-tasks,
-`"Epic Link" = ...` for linked issues).
-
-## Step 2 — the decision table
-
-Decide each entry on its own, then each epic child that no entry claims. "The initial status"
-is the status a new issue starts in; `conventions.md` names it, and when it does not, ask.
-
-| State | Action |
-|---|---|
-| Entry has no key | Create a child of the epic; write the returned key into the entry with `track` |
-| Entry has a key, issue is in the initial status | Update summary and description from the entry, but only if they actually differ — see Step 3 |
-| Entry has a key, issue has moved past the initial status | Do not edit it. Create a successor, link it `Relates` to the original, and replace the key in the entry with `track` |
-| Entry has a key, issue is not a child of the epic | Nothing. An entry may legitimately mirror a standalone issue outside the epic. A reconciliation scoped to the epic's children is structurally blind to those entries, so read them from the tree, never from the epic |
-| Entry has a key, issue does not exist | Stop and report it. Do not silently re-create: a key that resolves to nothing means someone deleted an issue, and that is a fact the developer needs |
-| Epic child with no entry, already done | Nothing. It predates the tree or was closed by a consolidation pass |
-| Epic child with no entry, still open | Nothing, and report it. It is someone's in-flight work or another branch's entry that has not merged yet. **Never close it and never backfill it into the tree** — that is the reverse direction, and this skill does not run it |
-
-**An empty `Tracker` cell always means "not mirrored yet".** It never means "do not mirror".
-Every entry in the tree is work that can be filed; an entry too vague to word as a task is
-still filed, as a task to find out what it is, with a `What to find out:` line saying what
-the investigation must establish. A record that is *not* work — an accepted decision, a
-firmware fact — is not a debt entry at all and belongs in the project's knowledge base. If
-you find one in the tree, say so; do not file it and do not invent a marker for it.
-
-**Class does not gate mirroring.** `defect`, `debt` and `decision` are all mirrored. Do not
-infer a rule from which entries happen to carry keys today.
-
-## Step 3 — what "differs" means, and what it does not
-
-A mirror's Jira `summary` is deliberately **not** the entry title. It is a trimmed,
-backtick-free paraphrase; the full title lives in the `description`. Comparing the entry
-title against the Jira summary therefore reports drift on nearly every entry, and every one
-of those reports is false.
-
-Compare the **description body** instead. An entry needs an edit when its title, anchors or
-class no longer match what the description carries. If nothing but the summary differs,
-there is nothing to do.
-
-The footer names no entry id, deliberately. A collapse pass that renumbers a block would
-leave every description naming the id its neighbour had just taken, and the last naming an
-id that no longer exists. Nothing would catch it, because titles, anchors and classes all
-still match. Two failures hide in there and they behave differently — a dangling id
-announces itself to the first person who looks, a redirected one resolves to a real entry
-describing different work and cannot be noticed from the issue at all. **Do not introduce an
-id here.** The mapping is already stored, in the stable direction, in the entry's `Tracker`
-cell: to get from an issue to its entry, search the tree for the issue key and exactly one
-entry carries it — the core's check refuses a duplicate key.
-
-The description template, used for every mirror:
-
-```
-<full entry title>
-
-Anchors: <anchors, verbatim from the entry>
-Class: <defect|debt|decision>
-
-Mirrored from the technical debt tree: <debt.root>/<block>/index.md — the row carrying this issue key.
-```
-
-**Never overwrite a description that was not built from this template.** Some issues an
-entry points at were written by hand long before the tree existed and carry acceptance
-criteria, a test stand and verification steps that no entry can reproduce. Decide this on
-the **shape of the body**, not on the presence of a footer: an entry's key is what makes an
-issue a mirror, and an issue can be a mirror and still have been authored by a person. If the
-body is not the template's shape, report it and leave it alone.
-
-Set no `assignee`, no `priority` and no estimate. Those are planning fields, set by a human
-in the tracker. The mirror does not own them and must never overwrite them.
-
-## Step 4 — plan, show, apply
-
-Build one plan file per operation under `plans.dir` — creates in one, edits in another, links
-in a third. `plans.dir` is `.adf/jira/sync-debt/` in the main checkout. When `plans.ignored` is
-false, stop and ask the developer to run `/adf:init`, or to add `.adf/jira/` to `.gitignore`:
-`apply-plan.mjs` refuses a plan git does not ignore. Render each without `--confirm` and show
-the developer what it would do. Apply only what they approve:
+## Step 1 — the state of the tree
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/apply-plan.mjs" <plan>.json           # render
-node "${CLAUDE_PLUGIN_ROOT}/scripts/apply-plan.mjs" <plan>.json --confirm # apply
+node "${CLAUDE_PLUGIN_ROOT}/scripts/sync-debt.mjs" state
 ```
+
+`groups` lists each key with its entries; `keyless` lists the entries not mirrored yet, each
+with `related`: the groups and the other keyless entries it shares a block, a sub-block or an
+anchor file with. An empty `keyless` list means the run only refreshes the groups' descriptions
+(Step 3).
+
+## Step 2 — decide the grouping
+
+Decide each keyless entry once. Write the decision to a file under `plans.dir`:
+
+```json
+{
+  "version": 1,
+  "join": [{ "key": "PROJ-12", "entries": ["snmp-03"] }],
+  "create": [{ "summary": "Session pool leaks connections on reconnect", "entries": ["snmp-04", "snmp-05"] }],
+  "wait": [{ "entry": "ui-02", "reason": "the cause may be the grid library; its owner decides first" }]
+}
+```
+
+- **Related** means one unit of work a tester checks once: the same block or sub-block, shared
+  anchors or files, the same subject. `related` is a hint, never the decision: a shared block
+  alone does not make two entries one piece of work.
+- **Prefer joining a group over a new issue**, and a new group of several entries over one issue
+  per entry.
+- **Never avoid a group because its issue may have moved on.** The plan cannot see the issue's
+  status; the apply run checks it. A join to an issue that left the initial status is skipped,
+  and its entries wait for a new group (Step 5).
+- A `summary` is a trimmed, backtick-free paraphrase of what the group fixes, at most 255
+  characters. The description is not yours: the script renders it from the template.
+- `wait` keeps an entry keyless this run, with the reason. An empty `Tracker` cell still means
+  "not mirrored yet", never "do not mirror": use `wait` for a decision the developer must make,
+  not as a way to skip filing. An entry too vague to word as a task is still filed, as a task
+  to find out what it is. A record that is not work, an accepted decision or a firmware fact,
+  is not a debt entry: say so, and do not file it.
+- Class does not gate mirroring: `defect`, `debt` and `decision` are all filed.
+
+Check it:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/sync-debt.mjs" check-groups --file <grouping.json>
+```
+
+`ok` false: fix each line of `errors` and check again. It refuses an unknown or already tracked
+id, an entry decided twice or not at all, a join to a key no entry holds, and a malformed item.
+
+## Step 3 — build the plans
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/sync-debt.mjs" plan --file <grouping.json> --type <issue type> --attach parent|epic-link
+```
+
+`--type` and `--attach` come from `conventions.md`, and are needed only when the grouping files
+a new group. The script writes up to two plans under `plans.dir`:
+
+- **create**: one row per new group, a child of `debtEpic`, its description rendered from the
+  template; no assignee, priority or estimate. Those are planning fields, set by a human in the
+  tracker; the mirror never sets or overwrites them.
+- **edit**: one row per existing group, its description rendered again from its entries and its
+  joins. A row is sent only while the issue is in `statuses.initial` and its description still
+  has the template's shape, and only when the description differs. An issue that left the
+  initial status is never edited, and a description a person rewrote is never overwritten.
+
+The description template is `templates/debt.md`; `config.debtTemplate` names a host file that
+replaces it. It lists each entry with its id, title, anchors and class: since ids are never
+reallocated, an id in the body can go stale but never point at other work.
+
+## Step 4 — show, then apply on the developer's yes
+
+Show `preview` and render each plan:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/apply-plan.mjs" <plan>.json            # render
+node "${CLAUDE_PLUGIN_ROOT}/scripts/apply-plan.mjs" <plan>.json --confirm  # apply
+```
+
+Apply only what the developer approves. The developer may change the grouping here, for
+example file an entry as a new group now rather than join it to a group whose issue may have
+moved on: then go back to Step 2.
 
 ## Step 5 — write the keys back, in the same run
 
-A create is not finished until its key is in the entry. The apply run records `createdKey`
-on each row of the plan file; read them from there and write each one with
-`core-debt.mjs track --id <entry id> --key <createdKey>`. Then run
-`core-debt.mjs check`.
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/sync-debt.mjs" track --plan <create plan> --plan <edit plan>
+```
 
-**Skipping this is the one failure that compounds.** A sync that files four children and
-does not stamp their keys leaves four entries still keyless, and the next run files them
+It writes the key of every applied row into its entries through the core's `track`, and runs
+the core's `check`. Only applied rows count: a create writes its new key into its entries, a
+join writes the group's key into the joining entries. `waiting` lists the joining entries of a
+group whose row was skipped: the issue left the initial status, or its description is not the
+template's. They stay keyless and wait for a new group, the next run's decision. `notApplied`
+lists the rows the apply did not finish: run `apply-plan.mjs --confirm` again, then `track`
 again.
 
-Commit the tree edit. Then report: created, updated, superseded, and everything Step 2 told
-you to report rather than act on.
+**Skipping this step is the one failure that compounds**: a run that files issues and does not
+write their keys files them again next time.
+
+Commit the tree edit. Then report: created, updated, unchanged, the entries that wait and why,
+and the groups left untouched and why.
 
 ## What this skill does not do
 
+- It does not read the epic's children. To report an epic child no entry claims, read them
+  as a diagnostic only, on the developer's request:
+  `read-issues.mjs "parent = <debtEpic> ORDER BY key" <plans.dir>/epic.json`; never close such
+  a child and never backfill it into the tree.
 - It does not write entry content from Jira, in any direction, for any reason.
-- It does not edit the tree except through the core's `track`.
-- It does not close epic children. Closure is a developer decision and goes through
-  `/adf-jira:bulk` with the resolution `conventions.md` names for that case.
-- It does not renumber entry ids. Ids change only in the core's own operations.
+- It does not edit the tree except through the core's `track`, and never moves an entry from
+  one key to another.
+- It does not close issues. Closure is a developer decision and goes through `/adf-jira:bulk`
+  with the resolution `conventions.md` names; the change workflow's `/adf:land` hands a group's
+  issue to the tester once no entry of the group remains.

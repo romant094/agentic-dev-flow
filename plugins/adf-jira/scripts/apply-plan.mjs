@@ -73,6 +73,7 @@ export async function main(argv, deps = {}) {
       `applied:       ${outcome.applied}`,
       `skipped (done): ${outcome.skippedDone}`,
       `skipped (drift): ${outcome.skippedDrift}`,
+      ...(outcome.unchanged > 0 ? [`unchanged:     ${outcome.unchanged}`] : []),
       `failed:        ${outcome.failed}`
     ].join('\n')
   )

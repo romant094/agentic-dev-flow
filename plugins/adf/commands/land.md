@@ -6,7 +6,9 @@ effort: medium
 
 Land a change after its merge: each tracker issue the change took gets one comment, rendered by
 the tracker plugin from fields an agent writes and the script checks, and goes to its tester. A
-partial issue gets a comment of what remains and keeps its status. Land runs after
+partial issue gets a comment of what remains and keeps its status. The issue that mirrors a
+group of debt entries the change took is handed off too, once no entry of its group remains in
+the debt tree; while some remain it is partial. Land runs after
 `/adf:archive`, once the merge request is merged, or with no forge once the branch is merged into
 its base. Land merges nothing and pushes nothing.
 
@@ -34,7 +36,7 @@ refusals.
    ```
 
    `skipped`: show `report`, which says why (no tracker plugin, the tracker skipped for this
-   change, or no tracker issue taken), and stop. `degraded`: show `report` and `hint`, ask the
+   change, or no tracker issue taken and no tracked debt), and stop. `degraded`: show `report` and `hint`, ask the
    developer to fix the tracker, and run it again.
 
 3. **Wait for the merge.**

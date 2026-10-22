@@ -3,6 +3,10 @@
 // persisted after every row, so an interrupted run resumes; three failures in a row stop it.
 // A comment step marked `once` is posted only when the issue holds no comment with the same
 // body, so a rerun after a lost response posts no second copy.
+// A row with `body: { shape }` guards a description edit: the description is read with the
+// status, and the row is skipped as drifted when it does not match `shape`, a regular expression
+// tested against its lines (bodyLines); when it already equals the description the row's
+// `fields` step would write, nothing is sent and the row is done, counted as unchanged.
 import { resolvePlaceholders } from './placeholders.mjs'
 import { readAllComments } from './readers.mjs'
 
@@ -18,6 +22,7 @@ export async function applyPlan({ plan, client, persist, maxConsecutiveFailures 
     applied: 0,
     skippedDone: 0,
     skippedDrift: 0,
+    unchanged: 0,
     failed: 0,
     abortedAfterConsecutiveFailures: false
   }
@@ -30,14 +35,35 @@ export async function applyPlan({ plan, client, persist, maxConsecutiveFailures 
     }
 
     try {
-      if (row.from !== undefined) {
-        const current = await currentStatus(client, row.key)
-        if (current !== row.from) {
+      if (row.from !== undefined || row.body !== undefined) {
+        const issue = await currentIssue(client, row.key, row.body !== undefined)
+        const current = issue.fields.status?.name
+        const drift = (error) => {
           row.state = 'skipped-drift'
-          row.error = `Expected status "${row.from}" but found "${current ?? 'unknown'}"; left untouched.`
+          row.error = error
           outcome.skippedDrift += 1
           persist(plan)
+        }
+        if (row.from !== undefined && current !== row.from) {
+          drift(`Expected status "${row.from}" but found "${current ?? 'unknown'}"; left untouched.`)
           continue
+        }
+        if (row.body !== undefined) {
+          const description = issue.fields.description ?? ''
+          if (!new RegExp(row.body.shape).test(bodyLines(description))) {
+            drift('The description was not built from the template; left untouched.')
+            continue
+          }
+          const next = row.steps.find((s) => s.fields?.description !== undefined)?.fields.description
+          if (next !== undefined && bodyLines(next) === bodyLines(description)) {
+            row.state = 'done'
+            row.error = undefined
+            row.note = 'the description is already up to date; nothing was sent'
+            outcome.unchanged += 1
+            consecutiveFailures = 0
+            persist(plan)
+            continue
+          }
         }
       }
 
@@ -66,10 +92,19 @@ export async function applyPlan({ plan, client, persist, maxConsecutiveFailures 
   return outcome
 }
 
-async function currentStatus(client, key) {
-  const issue = await client.get(`/rest/api/2/issue/${key}?fields=status`)
-  return issue.fields.status?.name
+async function currentIssue(client, key, description) {
+  return client.get(`/rest/api/2/issue/${key}?fields=status${description ? ',description' : ''}`)
 }
+
+// A description as a shape is tested: its non-blank lines, each trimmed and ending in a newline.
+export const bodyLines = (text) =>
+  String(text ?? '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => `${l}\n`)
+    .join('')
 
 const sameBody = (text) => String(text ?? '').replace(/\r\n/g, '\n').trim()
 

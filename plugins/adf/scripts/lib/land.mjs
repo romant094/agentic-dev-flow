@@ -3,11 +3,18 @@
 // per taken or partial tracker issue and hands each to the tester through the tracker's
 // `handoff`, held for the developer's yes. Land never merges and never pushes.
 //
+// The change's taken or partial debt takes part too: one target per distinct Tracker key of its
+// debt items (lib/scope.mjs debtGroups), the issue that mirrors their group, unless the key is
+// a tracker item of the scope, which hands it off once. Its state is decided after the merge,
+// from the debt tree of the checkout holding the merged change, where archive removed the taken
+// entries: `taken` when no entry holds the key any more, else `partial`, which comments and
+// keeps the issue's status.
+//
 // The steps, in this order; each runs once every step before it is done or skipped:
 //   check          the change's scope (lib/scope.mjs findScope: the committed copy, archived
 //                  too), then the tracker's `check`. No scope, a tracker skipped for the change,
-//                  no taken or partial tracker issue, or no tracker plugin: the whole land is
-//                  skipped, and each later step says so.
+//                  no taken or partial tracker issue and no tracked debt group, or no tracker
+//                  plugin: the whole land is skipped, and each later step says so.
 //   wait           the forge's `state` of the merge request archive finalized: `merged` is done,
 //                  with mergedAt and mergeCommit; `open` or `draft` is `waiting`, for the
 //                  command to run again later (no polling here); `closed` stops land. With no
@@ -15,7 +22,8 @@
 //                  ancestry (D19): the branch tip is an ancestor of the local base, else of
 //                  origin/<base>; nothing is fetched.
 //   comment-input  per issue, the input of one read-only `land-comment <KEY>` agent and its
-//                  prompt: the issue, the change's artifacts, the scope check, the merge.
+//                  prompt: the issue, the change's artifacts, the scope check, the merge; for a
+//                  debt group the resolved and the remaining entries, and its state, recorded.
 //   comment        per issue, the agent's fields checked (lib/tracker.mjs checkFields) and
 //                  recorded; done once every issue has them.
 //   handoff        the tracker's `handoff`, held (lib/tracker.mjs heldWrite): without yes the
@@ -29,7 +37,8 @@
 //   check          done | skipped | degraded | failed; detail { scopeFile, tracker, items, report }
 //   wait           done | waiting | closed | degraded | failed; detail { via: forge | ancestry,
 //                  forge, branch, base, url, number?, status, ref?, mergedAt, mergeCommit, report }
-//   comment-input  done; detail { changeDir, dispatches }
+//   comment-input  done; detail { changeDir, dispatches, debtTargets: [{ source: debt, key,
+//                  state, kind, title, resolved, remaining }] }
 //   comment        pending | done; detail { keys: { <KEY>: { state, fields, reply, at } }, missing }
 //   handoff        held | done | failed | refused | skipped; detail { plan, preview, applied,
 //                  skipped, failed, report, mr }
@@ -43,12 +52,13 @@ import { fileURLToPath } from 'node:url'
 import { readArchiveState } from './archive.mjs'
 import { META_FILE } from './changes.mjs'
 import { LAND_ROLES, landCommentName, sddDir } from './dispatch.mjs'
+import { listTree } from './debt.mjs'
 import { findChangeDir } from './ingest.mjs'
 import { mainCheckout } from './installed.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
-import { readRegistry } from './registry.mjs'
+import { readDebtRoot, readRegistry } from './registry.mjs'
 import { callRole, CORE, forgeReport, trackerReport } from './roles.mjs'
-import { findScope, renderSkeleton, trackerDir, trackerTargets } from './scope.mjs'
+import { debtGroups, findScope, renderSkeleton, trackerDir, trackerTargets } from './scope.mjs'
 import { checkFields, FIELD_LIMITS, HANDOFF_FIELDS, heldWrite, trackerCall } from './tracker.mjs'
 import { worktreePath } from './workspace.mjs'
 
@@ -146,15 +156,50 @@ function gitText(root, ...args) {
   }
 }
 
-// The change's directory, active or archived: in the main checkout, else in its worktree while
-// it exists. Null when neither holds it, as before the merge is pulled.
-function changeDirOf(ctx) {
+// The change's directory, active or archived, and the checkout holding it: the main checkout,
+// else the change's worktree while it exists. Null when neither holds it, as before the merge is
+// pulled.
+function changeAt(ctx) {
   for (const root of [ctx.main, worktreePath(ctx.main, ctx.change)]) {
     try {
-      return findChangeDir(root, ctx.change)
+      return { root, dir: findChangeDir(root, ctx.change) }
     } catch {}
   }
   return null
+}
+
+const changeDirOf = (ctx) => changeAt(ctx)?.dir ?? null
+
+// The issues land hands off: the scope's tracker targets, then the debt groups comment-input
+// recorded with their state.
+function landTargets(ctx, land) {
+  return [...trackerTargets(requireScope(ctx).scope), ...(land.steps['comment-input'].detail?.debtTargets ?? [])]
+}
+
+const debtEntry = (e) => ({ id: e.id, title: e.title, class: e.class, anchors: e.anchors ?? [] })
+
+// Each debt group's target after the merge, from the debt tree of `root`, the checkout holding
+// the merged change: the entries still holding the key remain (`scope` says how the change took
+// one, null when it did not); the scope's entries gone from the tree are resolved.
+function debtTargets(scope, root) {
+  const groups = debtGroups(scope)
+  if (groups.length === 0) return []
+  const path = readDebtRoot(root)
+  if (!path) refuse(`the registry of ${root} names no debt.root; land cannot tell which entries of ${groups.map((g) => g.key).join(', ')} remain`)
+  const tree = listTree(join(root, path), { kind: 'debt' }).entries
+  return groups.map(({ key, entries }) => {
+    const remaining = tree.filter((e) => e.tracker === key)
+    const left = new Set(remaining.map((e) => e.id))
+    return {
+      source: 'debt',
+      key,
+      state: remaining.length ? 'partial' : 'taken',
+      kind: 'debt',
+      title: entries.map((i) => i.title).join('; '),
+      resolved: entries.filter((i) => !left.has(i.key)).map((i) => debtEntry({ ...i, id: i.key })),
+      remaining: remaining.map((e) => ({ ...debtEntry(e), scope: entries.find((i) => i.key === e.id)?.state ?? null }))
+    }
+  })
 }
 
 // The branch and the base of the merge: what archive recorded (its mr, merge-local and remove
@@ -187,13 +232,17 @@ export function checkStep(ctx) {
     const { file, scope } = found
     if (scope.tracker?.state === 'skipped') return skipped(`Land: the tracker was skipped for this change (${scope.tracker.reason}); nothing is handed off.`)
     const targets = trackerTargets(scope)
-    if (targets.length === 0) return skipped('Land: no tracker issue is taken or partial; nothing is handed off.')
+    const groups = debtGroups(scope)
+    if (targets.length === 0 && groups.length === 0) return skipped('Land: no tracker issue is taken or partial, and no debt the change took is tracked; nothing is handed off.')
     const check = trackerCall(ctx.main, 'check', {}, ctx.core)
     const report = trackerReport('check', check)
     if (check.state === 'none') return skipped(report)
     if (check.state === 'refused') return { state: 'failed', detail: { report, error: check.error ?? report }, out: { report, refusal: report } }
     if (check.state === 'degraded') return { state: 'degraded', detail: { report, tool: check.tool ?? null, hint: check.hint ?? null }, out: { report, hint: check.hint ?? null } }
-    const items = targets.map(({ key, state, title }) => ({ key, state, title }))
+    const items = [
+      ...targets.map(({ key, state, title }) => ({ key, state, title })),
+      ...groups.map(({ key, entries }) => ({ key, state: null, title: entries.map((i) => i.title).join('; '), source: 'debt', entries: entries.map((i) => i.key) }))
+    ]
     return { state: 'done', detail: { scopeFile: posix(relative(ctx.main, file)), tracker: { plugin: check.plugin ?? null, account: check.account ?? null }, items, report }, out: { report } }
   })
 }
@@ -272,8 +321,10 @@ function specDeltas(dir) {
 export function commentInputStep(ctx) {
   return runStep(ctx, 'comment-input', (land) => {
     const { scope } = requireScope(ctx)
-    const dir = changeDirOf(ctx)
-    if (!dir) refuse(`the change ${ctx.change} is in neither the main checkout nor its worktree; pull its base into the main checkout, then run comment-input again`)
+    const at = changeAt(ctx)
+    if (!at) refuse(`the change ${ctx.change} is in neither the main checkout nor its worktree; pull its base into the main checkout, then run comment-input again`)
+    const { dir } = at
+    const debt = debtTargets(scope, at.root)
     const artifact = (name) => (existsSync(join(dir, name)) ? join(dir, name) : null)
     const artifacts = { dir, proposal: artifact('proposal.md'), specs: specDeltas(dir), tasks: artifact('tasks.md'), verify: artifact('verify.md') }
     const merge = land.steps.wait.detail ?? {}
@@ -282,7 +333,7 @@ export function commentInputStep(ctx) {
     mkdirSync(join(out, 'replies'), { recursive: true })
     const abs = (rel) => (isAbsolute(rel) ? rel : join(ctx.main, rel))
     const level = LAND_ROLES['land-comment'].level
-    const dispatches = trackerTargets(scope).map((item) => {
+    const dispatches = [...trackerTargets(scope), ...debt].map((item) => {
       const name = landCommentName(item.key)
       const inputFile = join(out, 'comment', `${fileKey(item.key)}.json`)
       const promptFile = join(out, 'comment', `${fileKey(item.key)}.prompt.md`)
@@ -300,6 +351,7 @@ export function commentInputStep(ctx) {
         issueFile: item.file ? abs(item.file) : null,
         artifacts,
         check: item.check ?? null,
+        ...(item.source === 'debt' ? { debt: { resolved: item.resolved, remaining: item.remaining } } : {}),
         merge: { mergeCommit: merge.mergeCommit ?? null, mergedAt: merge.mergedAt ?? null },
         fields,
         limits: Object.fromEntries(fields.map((f) => [f, FIELD_LIMITS[f]])),
@@ -312,7 +364,7 @@ export function commentInputStep(ctx) {
     })
     return {
       state: 'done',
-      detail: { changeDir: dir, dispatches },
+      detail: { changeDir: dir, dispatches, debtTargets: debt },
       out: { dispatches, waiting: `dispatch each, read-only and in parallel, with its promptFile; then land.mjs comment --change ${ctx.change} --key <KEY> --file <replyFile>` }
     }
   })
@@ -336,9 +388,9 @@ export function commentStep(ctx, { key, file }) {
   if (land.steps.check.state === 'skipped') return runStep(ctx, 'comment', () => ({}))
   const waiting = ['check', 'wait', 'comment-input'].filter((s) => !FINAL.has(land.steps[s].state))
   if (waiting.length) refuse(`comment waits for ${waiting.join(', ')}; run land.mjs report --change ${ctx.change} for the next step`)
-  const targets = trackerTargets(requireScope(ctx).scope)
+  const targets = landTargets(ctx, land)
   const item = targets.find((t) => t.key === key)
-  if (!item) refuse(`${key} is not a taken or partial tracker issue of ${ctx.change}; its issues: ${targets.map((t) => t.key).join(', ')}`)
+  if (!item) refuse(`${key} is not a taken or partial tracker issue or a tracked debt group of ${ctx.change}; its issues: ${targets.map((t) => t.key).join(', ')}`)
   if (!existsSync(file)) return { ok: false, valid: false, change: ctx.change, step: 'comment', key, errors: [`no reply file at ${file}`], next: 'retry' }
   const parsed = parseReply(readFileSync(file, 'utf8'))
   const errors = [...parsed.errors]
@@ -387,7 +439,7 @@ export function handoffStep(ctx, { yes = false } = {}) {
   if (land.steps.check.state === 'skipped') return runStep(ctx, 'handoff', () => ({}))
   const waiting = ['check', 'wait', 'comment-input'].filter((s) => !FINAL.has(land.steps[s].state))
   if (waiting.length) refuse(`handoff waits for ${waiting.join(', ')}; run land.mjs report --change ${ctx.change} for the next step`)
-  const targets = trackerTargets(requireScope(ctx).scope)
+  const targets = landTargets(ctx, land)
   const keys = land.steps.comment.detail?.keys ?? {}
   const missing = targets.map((t) => t.key).filter((k) => !keys[k])
   if (missing.length) refuse(`every in-scope tracker issue needs its fields before the hand-off; none recorded for ${missing.join(', ')}: run land.mjs comment --change ${ctx.change} --key <KEY> --file <reply>`)
@@ -426,9 +478,9 @@ const COMMAND = {
 }
 
 const LINE = {
-  check: (d) => `${d.report ?? ''}${d.items?.length ? `; ${d.items.map((i) => `${i.key} (${i.state})`).join(', ')}` : ''}`,
+  check: (d) => `${d.report ?? ''}${d.items?.length ? `; ${d.items.map((i) => `${i.key} (${i.source === 'debt' ? `debt ${i.entries.join(', ')}` : i.state})`).join(', ')}` : ''}`,
   wait: (d) => String(d.report ?? '').split('\n').join(' '),
-  'comment-input': (d) => `${d.dispatches?.length ?? 0} land-comment input(s)`,
+  'comment-input': (d) => `${d.dispatches?.length ?? 0} land-comment input(s)${d.debtTargets?.length ? `; debt groups ${d.debtTargets.map((t) => `${t.key} (${t.state})`).join(', ')}` : ''}`,
   comment: (d) => `fields recorded for ${Object.keys(d.keys ?? {}).join(', ') || 'none'}${d.missing?.length ? `; missing ${d.missing.join(', ')}` : ''}`,
   handoff: (d) => String(d.report ?? '').split('\n').join(' ')
 }

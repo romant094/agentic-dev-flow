@@ -27,11 +27,12 @@ holds nothing secret.
 | `baseUrl` | `JIRA_URL` from the env file | The Jira base URL, `https://jira.example.com`. |
 | `allowlist` | `JIRA_ALLOWED_PROJECTS` from the env file | The project keys the plugin may read and write. A plan touching any other project is refused whole, never filtered. An empty list is refused. |
 | `profileDir` | `.claude/jira/profile` | Where the profile lives: `discovered.json` and `local.md` (personal, gitignored) and `conventions.md` (the team's, committed). |
-| `debtEpic` | none | The epic the debt tree is mirrored into (`/adf-jira:sync-debt`). |
+| `debtEpic` | none | The epic the debt tree is mirrored into (`/adf-jira:sync-debt`): one child per group of related entries. |
 | `fields` | `[]` | Field names, as the profile's field map spells them, that `gather` reads for each issue, for example `["Reproduce steps", "Expected result"]`. |
-| `statuses` | `{ "start": "In Progress", "handoff": null, "excluded": [] }` | `start`: the status `start` moves an issue to. `handoff`: the status `handoff` moves a taken issue to; required for a hand-off. `excluded`: statuses that keep an issue out of a change's scope besides the closed ones (for example a suspended status). |
+| `statuses` | `{ "initial": null, "start": "In Progress", "handoff": null, "excluded": [] }` | `initial`: the status a new issue starts in; `/adf-jira:sync-debt` edits a group's issue only while it is in it, and refuses to plan an edit without it. `start`: the status `start` moves an issue to. `handoff`: the status `handoff` moves a taken issue to; required for a hand-off. `excluded`: statuses that keep an issue out of a change's scope besides the closed ones (for example a suspended status). |
 | `commentTemplate` | the plugin's `templates/handoff.md` | A host file that replaces the hand-off comment template. |
 | `correctionTemplate` | the plugin's `templates/corrections.md` | A host file that replaces the correction comment template of `start`. |
+| `debtTemplate` | the plugin's `templates/debt.md` | A host file that replaces the description template of a debt group's issue (`/adf-jira:sync-debt`). |
 | `envFile` | `.claude/.env` | The project's env file, relative to the main checkout. |
 
 An unknown key is refused, so a typo is not silently ignored. The status names are the team's;
@@ -166,7 +167,7 @@ with an unclosed block is refused. Every comment then has the host template's sh
 | `/adf-jira:epic` | An epic with its children and estimates, and the rollup read from Jira's Σ fields. |
 | `/adf-jira:task` | One issue with the fields its type requires, drafted or created. |
 | `/adf-jira:worklog` | Fills worklogs by the developer's own practice, kept in `local.md`. |
-| `/adf-jira:sync-debt` | Mirrors the core's debt tree into `config.debtEpic`, one way, and writes each key back with the core's `debt.mjs track`. |
+| `/adf-jira:sync-debt` | Mirrors the core's debt tree into `config.debtEpic`, one way: one issue per group of related entries, the agent deciding only the grouping; writes each key back with the core's `debt.mjs track`. |
 
 The skills run the plugin's scripts:
 
@@ -177,6 +178,7 @@ The skills run the plugin's scripts:
 | `scripts/read-issues.mjs "<JQL>" [out]` | Reads issues; a result outside the allowlist fails the read, and an output path git does not ignore is refused before it. |
 | `scripts/read-comments.mjs "<KEY>" [out]` | Reads every comment of an issue, with its id; the allowlist is checked before the request. |
 | `scripts/apply-plan.mjs <plan> [--confirm]` | Prints the plan's summary, or applies it with `--confirm`. Refuses a plan git does not ignore. |
+| `scripts/sync-debt.mjs state\|check-groups\|plan\|track` | The steps of `/adf-jira:sync-debt`: the tree's groups and keyless entries, the grouping checked, the create and edit plans, and the keys of the applied rows written back. Calls no Jira. |
 | `scripts/core-debt.mjs <args>` | Runs the core's `scripts/debt.mjs` with the same arguments: the core beside this plugin in a checkout, else the `adf` plugin of this plugin's marketplace from Claude Code's install records. |
 
 `read-issues.mjs` and `read-comments.mjs` print JSON on stdout when no output path is given;

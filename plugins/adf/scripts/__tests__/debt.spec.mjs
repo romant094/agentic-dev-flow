@@ -15,7 +15,8 @@ import {
   markFiled,
   parsePage,
   removeEntry,
-  splitCells
+  splitCells,
+  trackerGroups
 } from '../lib/debt.mjs'
 import { run } from '../debt.mjs'
 import { initRegistry, readRegistry } from '../lib/registry.mjs'
@@ -183,6 +184,15 @@ test('list reads an origin-shaped tree: columns, sub-blocks, body files, dash ke
   assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
 })
 
+test('check accepts a tracker key shared by debt entries: one issue mirrors their group', () => {
+  const tree = write(tmp(), {
+    'index.md': ROOT,
+    'snmp/index.md': `${HEADER}| \`snmp-01\` | One | \`a.ts\` | defect | s | KEY-1 |\n| \`snmp-02\` | Two | \`b.ts\` | debt | s | KEY-1 |\n| \`snmp-03\` | Three | \`c.ts\` | debt | s | |\n`
+  })
+  assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
+  assert.deepEqual(trackerGroups(listTree(tree).entries), [{ key: 'KEY-1', entries: ['snmp-01', 'snmp-02'] }])
+})
+
 test('check names every rule a tree breaks', () => {
   const tree = write(tmp(), {
     'index.md': `${ROOT}\nThere are 12 open entries.\n`,
@@ -204,7 +214,6 @@ test('check names every rule a tree breaks', () => {
     /^index\.md:\d+ a count of entries/,
     /^snmp\/index\.md:3 snmp-01: class "chore"/,
     /^snmp\/index\.md:4 id snmp-01 is already used at snmp\/index\.md:3/,
-    /^snmp\/index\.md:4 snmp-01 shares the tracker key K-1 with snmp-01/,
     /^snmp\/index\.md:5 "\*\*Pool\*\*" is not an id of block snmp; a sub-block is a heading/,
     /^snmp\/index\.md:6 snmp-02 has no source/,
     /^snmp\/index\.md:6 snmp-09 is named but no row carries it/,
@@ -388,7 +397,7 @@ test('the CLI exits 2 on a usage error, 1 on a refusal and a failing check, 0 ot
   assert.equal(failing.out.ok, false)
 })
 
-test('track writes the Tracker cell once, is idempotent, and refuses an unknown id, another key and a taken key', () => {
+test('track writes the Tracker cell once, is idempotent, refuses an unknown id and another key, and lets a group share a key', () => {
   const tree = tmp()
   addEntry(tree, entry())
   addEntry(tree, entry({ title: 'Second' }))
@@ -401,8 +410,11 @@ test('track writes the Tracker cell once, is idempotent, and refuses an unknown 
   assert.equal(readFileSync(join(tree, 'snmp/index.md'), 'utf8'), before)
   assert.throws(() => cli('track', '--id', 'snmp-09', '--key', 'PROJ-8'), /no entry snmp-09/)
   assert.throws(() => cli('track', '--id', 'snmp-01', '--key', 'PROJ-8'), /already tracked as PROJ-7/)
-  assert.throws(() => cli('track', '--id', 'snmp-02', '--key', 'PROJ-7'), /already the tracker key of snmp-01/)
+  const shared = cli('track', '--id', 'snmp-02', '--key', 'PROJ-7')
+  assert.deepEqual([shared.changed, shared.entry.tracker], [true, 'PROJ-7'], 'a second entry joins the group of PROJ-7')
+  assert.deepEqual(cli('list').groups, [{ key: 'PROJ-7', entries: ['snmp-01', 'snmp-02'] }])
   assert.throws(() => cli('track', '--id', 'snmp-02', '--key', 'PROJ 8'), /is not a tracker key/)
+  assert.throws(() => cli('track', '--id', 'snmp-02', '--key', 'PROJ-8'), /already tracked as PROJ-7/)
   assert.throws(() => cli('track', '--id', 'snmp-02'), /track needs --key/)
   addAdfRecord(tree, 'my-change', adfInput())
   assert.throws(() => cli('track', '--id', 'adf-01', '--key', 'PROJ-9'), /ADF record; it has no Tracker cell/)

@@ -220,6 +220,14 @@ export function listTree(tree, { kind } = {}) {
   return { blocks, entries }
 }
 
+// The tracker groups of product debt entries: each key with the ids of the entries holding it,
+// in tree order. An entry without a key is in no group.
+export function trackerGroups(entries) {
+  const groups = new Map()
+  for (const e of entries) if (e.kind === 'debt' && e.tracker) groups.set(e.tracker, [...(groups.get(e.tracker) ?? []), e.id])
+  return [...groups].map(([key, ids]) => ({ key, entries: ids }))
+}
+
 // ---------------------------------------------------------------- the check
 
 function idPattern(blockIds) {
@@ -248,7 +256,7 @@ export function checkTree(tree) {
 
   const blocks = blocksOf(tree)
   const ids = new Map()
-  const keys = new Map()
+  const filed = new Map()
   for (const block of blocks) {
     const adf = isAdfBlock(block.id)
     if (!BLOCK_ID.test(block.id)) err(rootFile, block.row?.line ?? null, `block "${block.id}" is not a kebab-case name`)
@@ -288,10 +296,10 @@ export function checkTree(tree) {
         if (!entry.title) err(block.index, row.line, `${entry.id} has no title`)
         if (!classes.includes(entry.class)) err(block.index, row.line, `${entry.id}: class "${entry.class}" is not one of ${classes.join(', ')}`)
         if (!entry.source) err(block.index, row.line, `${entry.id} has no source`)
-        const identity = adf ? entry.filed : entry.tracker
-        if (identity) {
-          if (keys.has(identity)) err(block.index, row.line, `${entry.id} shares ${adf ? 'the filed issue' : 'the tracker key'} ${identity} with ${keys.get(identity)}`)
-          else keys.set(identity, entry.id)
+        // A filed URL is one record's; a tracker key may mirror a group of debt entries.
+        if (adf && entry.filed) {
+          if (filed.has(entry.filed)) err(block.index, row.line, `${entry.id} shares the filed issue ${entry.filed} with ${filed.get(entry.filed)}`)
+          else filed.set(entry.filed, entry.id)
         }
         if (adf) {
           for (const field of ['plugin', 'pluginVersion', 'change']) if (!entry[field]) err(block.index, row.line, `${entry.id} has no ${field}`)
@@ -540,8 +548,8 @@ export function markFiled(tree, { id, url }) {
 }
 
 // The tracker key a product debt entry is mirrored as, written into its Tracker cell. The same
-// key again changes nothing; another key is refused, since the key is the entry's identity, and
-// so is a key another entry already holds.
+// key again changes nothing; another key is refused, since an entry is mirrored once. A key
+// another entry holds is accepted: one tracker issue mirrors a group of related entries.
 export function setTracker(tree, { id, key: trackerKey }) {
   trackerKey = oneLine('key', trackerKey)
   if (/[\s|`]/.test(trackerKey)) throw new Error(`"${trackerKey}" is not a tracker key: it holds a space, a pipe or a backtick`)
@@ -553,8 +561,6 @@ export function setTracker(tree, { id, key: trackerKey }) {
   const entry = () => entryOf(at.block, at.table.columns, at.row.cells, at.table.subBlock)
   if (current === trackerKey) return { changed: false, entry: entry(), files: [] }
   if (current) throw new Error(`${id} is already tracked as ${current}`)
-  const holder = listTree(tree, { kind: 'debt' }).entries.find((e) => e.tracker === trackerKey)
-  if (holder) throw new Error(`${trackerKey} is already the tracker key of ${holder.id}`)
   while (at.row.cells.length < at.table.columns.length) at.row.cells.push('')
   at.row.cells[column] = trackerKey
   rewriteRow(at, at.row.cells)

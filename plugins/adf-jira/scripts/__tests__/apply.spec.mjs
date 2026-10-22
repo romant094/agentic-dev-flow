@@ -460,3 +460,30 @@ describe('applyPlan with login placeholders', () => {
     assert.equal(plan.rows[0].steps[0].fields.assignee.name, '<JIRA_QA>')
   })
 })
+
+describe('applyPlan with a description guard', () => {
+  it('sends a description of the expected shape that differs, skips one of another shape, and sends nothing when it is equal', async () => {
+    const descriptions = { 'PROJ-1': 'h3. Debt\n* old', 'PROJ-2': 'Written by hand.', 'PROJ-3': 'h3. Debt\r\n\r\n* same' }
+    const puts = []
+    const gets = []
+    const client = {
+      get: async (path) => {
+        gets.push(path)
+        return { fields: { status: { name: 'Opened' }, description: descriptions[keyFrom(path)] } }
+      },
+      put: async (path, body) => {
+        puts.push({ path, body })
+      }
+    }
+    const row = (key, description) => ({ key, summary: 's', from: 'Opened', body: { shape: '^h3\\. Debt\\n(?:\\* [^\\n]*\\n)+$' }, steps: [{ fields: { description } }], state: 'pending' })
+    const plan = { ...planWith([row('PROJ-1', 'h3. Debt\n* new'), row('PROJ-2', 'h3. Debt\n* new'), row('PROJ-3', 'h3. Debt\n* same')]), operation: 'edit' }
+    const outcome = await applyPlan({ plan, client, persist: noop })
+
+    assert.deepEqual([outcome.applied, outcome.skippedDrift, outcome.unchanged], [1, 1, 1])
+    assert.deepEqual(gets, ['/rest/api/2/issue/PROJ-1?fields=status,description', '/rest/api/2/issue/PROJ-2?fields=status,description', '/rest/api/2/issue/PROJ-3?fields=status,description'])
+    assert.deepEqual(puts, [{ path: '/rest/api/2/issue/PROJ-1', body: { fields: { description: 'h3. Debt\n* new' } } }])
+    assert.deepEqual(plan.rows.map((r) => r.state), ['done', 'skipped-drift', 'done'])
+    assert.equal(plan.rows[1].error, 'The description was not built from the template; left untouched.')
+    assert.equal(plan.rows[2].note, 'the description is already up to date; nothing was sent')
+  })
+})

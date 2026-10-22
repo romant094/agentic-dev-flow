@@ -39,8 +39,9 @@ A block index holds tables with exactly these columns:
 - **Class** is `defect` (the code is wrong), `debt` (a compromise taken knowingly) or
   `decision` (a decision still to be made). An accepted item is not work and gets no row.
 - **Source** is the change or the store the entry came from.
-- **Tracker** is the tracker's key once a tracker plugin has mirrored the entry, its identity:
-  empty (or a dash) until then, and one key per row. The plugin writes it with
+- **Tracker** is the tracker's key once a tracker plugin has mirrored the entry: empty (or a
+  dash) until then, and one key per row. One tracker issue mirrors a group of related entries,
+  so several entries may hold the same key. The plugin writes it with
   `debt.mjs track --id <id> --key <key>`, once.
 
 A **sub-block** is a heading (level two or deeper) above a table in the block index; the
@@ -84,7 +85,7 @@ by the same rules; `mark-filed` and `remove` work on its ids; no record is writt
 - a row whose ID is not an id of its block (a sub-block written as a row);
 - a high-water line not of the form ``Last id: `<block>-NN` ``, a second one, or a row whose
   id is above it;
-- a duplicate id, a duplicate tracker key or filed URL;
+- a duplicate id or filed URL;
 - an empty title or source, a class outside the block's vocabulary;
 - an ADF record without plugin, version, change or body file, or with a filed value that is
   not a URL;

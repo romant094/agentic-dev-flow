@@ -48,6 +48,19 @@ export function findCore({ pluginRoot = PLUGIN_ROOT, home = process.env.CLAUDE_C
   return (here ?? installs.find((r) => r.scope === 'user') ?? installs[0])?.installPath ?? null
 }
 
+// The core's debt CLI run with `argv` from `cwd`, its one JSON result parsed: what a script of
+// this plugin reads the tree through. Throws when no core is found or its output is not JSON;
+// a refusal is returned as the core printed it, `ok` false.
+export function callCore(argv, { cwd = process.cwd(), core = findCore({ projectDir: mainCheckout(cwd) }) } = {}) {
+  if (!core) throw new Error('the adf core plugin is not installed for this project; install it, then rerun')
+  const run = spawnSync(process.execPath, [join(core, DEBT), ...argv], { cwd, encoding: 'utf8' })
+  try {
+    return JSON.parse(run.stdout)
+  } catch {
+    throw new Error(`the core's debt.mjs ${argv[0]} printed no JSON${run.stderr ? `: ${run.stderr.trim()}` : ''}`)
+  }
+}
+
 if (isMain(import.meta.url)) {
   const core = findCore({ projectDir: mainCheckout(process.cwd()) })
   if (!core) {
