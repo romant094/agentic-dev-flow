@@ -344,6 +344,55 @@ test('finalize replaces the placeholder and keeps the other blocks and prose', (
   assert.equal(update.includes('Draft for change'), false)
 })
 
+// The origin's merge request script, as a Draft it opened and then finalized looks: a bare
+// placeholder sentence, then the change's block between `opsx:` markers.
+const originPlaceholder = (change) => `Draft opened by /opsx:propose for change ${change}. Description is written at archive.`
+const originBlock = (change, text) => `<!-- opsx:${change} -->\n${text}\n<!-- /opsx:${change} -->`
+const finalizeOver = (description) => {
+  const { calls } = op('finalize', finalInput, [...ready, existing, viewOf(description), ['glab mr update', yes()], ['git -C', yes()]])
+  const update = calls.find((c) => c.startsWith('glab mr update'))
+  return update.slice(update.indexOf('--description ') + '--description '.length)
+}
+const count = (text, needle) => text.split(needle).length - 1
+
+test("finalize takes over a Draft the origin's script opened: its placeholder becomes one adf block", () => {
+  const out = finalizeOver(originPlaceholder('my-change'))
+  assert.equal(count(out, '<!-- adf:my-change -->'), 1)
+  assert.equal(out.includes('Draft opened by'), false)
+  assert.match(out, /^<!-- adf:my-change -->\n## What/)
+})
+
+test("finalize replaces the origin's opsx block of the same change in place, once", () => {
+  const out = finalizeOver(`Prose.\n\n${originPlaceholder('my-change')}\n\n${originBlock('my-change', 'OLD')}\n\nTail.\n`)
+  assert.equal(count(out, '<!-- adf:my-change -->'), 1)
+  assert.equal(/opsx:my-change|Draft opened by|OLD/.test(out), false)
+  assert.ok(out.startsWith('Prose.\n\n<!-- adf:my-change -->\n## What'))
+  assert.ok(out.endsWith('<!-- /adf:my-change -->\n\nTail.\n'))
+})
+
+test("finalize keeps another change's opsx block and prose byte for byte", () => {
+  const other = `${originPlaceholder('other')}\n\n${originBlock('other', 'OTHER')}`
+  const out = finalizeOver(`Prose.\n\n${other}\n\n${placeholder('my-change')}`)
+  assert.ok(out.startsWith(`Prose.\n\n${other}\n\n<!-- adf:my-change -->\n## What`))
+  assert.equal(count(out, '<!-- adf:my-change -->'), 1)
+})
+
+test('finalize keeps the adf block of the change and cuts a leftover opsx block of it', () => {
+  const out = finalizeOver(`${originBlock('my-change', 'STALE')}\n\n${placeholder('my-change')}\n`)
+  assert.equal(count(out, '<!-- adf:my-change -->'), 1)
+  assert.equal(/opsx:my-change|STALE|Draft for change/.test(out), false)
+  assert.equal(out, `\n\n${mergeDescription('', 'my-change', good)}\n`)
+})
+
+test("a second finalize over the migrated description changes nothing", () => {
+  const first = finalizeOver(`Prose.\n\n${originPlaceholder('my-change')}\n\n${originBlock('my-change', 'OLD')}\n`)
+  assert.equal(finalizeOver(first), first)
+})
+
+test('mergeDescription refuses an unclosed opsx marker of the change rather than guessing', () => {
+  assert.throws(() => mergeDescription('<!-- opsx:a -->\nA', 'a', 'A2'), /unclosed/i)
+})
+
 test('finalize reports the half-applied state when the push fails after undraft succeeds', () => {
   const { code, result, calls } = op('finalize', finalInput, [...ready, existing, viewOf(''), ['glab mr update', yes()], ['git -C', no()]])
   assert.equal(code, 1)

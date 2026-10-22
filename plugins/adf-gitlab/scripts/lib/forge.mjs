@@ -109,15 +109,54 @@ export function markerFor(change) {
   return { open: `<!-- adf:${change} -->`, close: `<!-- /adf:${change} -->` }
 }
 
-export function mergeDescription(existing, change, block) {
-  const { open, close } = markerFor(change)
-  const wrapped = `${open}\n${block.trim()}\n${close}`
-  const start = existing.indexOf(open)
-  if (start === -1) return existing.trim() === '' ? `${wrapped}\n` : `${existing.trimEnd()}\n\n${wrapped}\n`
-  const end = existing.indexOf(close, start)
+// The origin's merge request script opened a Draft with this bare sentence, outside any
+// marker, and its finalize appended an `opsx:` block after it. A change continued here takes
+// both over (see mergeDescription).
+export function originMarkerFor(change) {
+  return { open: `<!-- opsx:${change} -->`, close: `<!-- /opsx:${change} -->` }
+}
+
+export function originPlaceholder(change) {
+  return `Draft opened by /opsx:propose for change ${change}. Description is written at archive.`
+}
+
+// Where the block between the given markers starts and ends, or null without the open marker.
+function blockSpan(text, { open, close }, change) {
+  const start = text.indexOf(open)
+  if (start === -1) return null
+  const end = text.indexOf(close, start)
   // Guessing where someone else's block ends is how the other change's text gets eaten.
   if (end === -1) throw new Error(`unclosed marker for change "${change}"`)
-  return existing.slice(0, start) + wrapped + existing.slice(end + close.length)
+  return { start, end: end + close.length }
+}
+
+// The change's block goes where its own `adf:` block is, else where the origin's `opsx:` block
+// of the same change is, else where the origin's placeholder sentence is, else at the end. The
+// origin's placeholder and an `opsx:` block beside an `adf:` block are cut. Other changes'
+// blocks of either form and all other text stay as they are.
+export function mergeDescription(existing, change, block) {
+  const own = markerFor(change)
+  const wrapped = `${own.open}\n${block.trim()}\n${own.close}`
+  let text = existing
+  let slot = null
+  const legacy = originPlaceholder(change)
+  const at = text.indexOf(legacy)
+  if (at !== -1) {
+    // The origin's finalize put a blank line between the sentence and its block.
+    const end = at + legacy.length + (text.startsWith('\n\n', at + legacy.length) ? 2 : 0)
+    text = text.slice(0, at) + text.slice(end)
+    slot = at
+  }
+  const origin = blockSpan(text, originMarkerFor(change), change)
+  if (origin) {
+    if (!text.includes(own.open)) return text.slice(0, origin.start) + wrapped + text.slice(origin.end)
+    text = text.slice(0, origin.start) + text.slice(origin.end)
+  }
+  const mine = blockSpan(text, own, change)
+  if (mine) return text.slice(0, mine.start) + wrapped + text.slice(mine.end)
+  if (text.trim() === '') return `${wrapped}\n`
+  if (slot !== null) return text.slice(0, slot) + wrapped + text.slice(slot)
+  return `${text.trimEnd()}\n\n${wrapped}\n`
 }
 
 // Written inside the change's marker, so `finalize` replaces it rather than leaving it above
