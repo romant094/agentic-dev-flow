@@ -24,7 +24,7 @@ text and the agents' replies. Strong differences are fixed before the switch (it
 | 7 | Comparison and report in `scripts/parity/origin-replay.mjs`: branch, worktree, artifacts and their headings, gate verdicts, groups and waves, the commit sequence by phase, the ledger, the review verdict and counts, the main specs after merge, the final `openspec/` and memory tree, the merge request call log against `glab mr view`; each difference `explained` (it cites a lessons row), `older-origin`, `injected` or `defect`; only `defect` fails, and a strong difference (D7) is always `defect` until explained | the tool runs in `npm run parity` on every candidate |
 | 8 | The plan graph gap (D8): run the graph check offline on every regular origin plan; tasks the origin ran on the change branch after the groups are either allowed by the port or a plan defect, decided on that evidence; `tasks-lint` stops warning on origin wording that is not a path (`N/A`, a directory name) | `plan.spec.mjs` / `tasks-lint` tests with the origin wordings |
 | 9 | Fix every `defect` the replay finds; a difference the developer accepts becomes a `changed` lessons row | `origin-replay.mjs` has no `defect` |
-| 10 | One pass with real agents: the small candidate through `/adf:propose` … `/adf:archive` in a sandbox (D1), the developer answering the brainstorm and the holds; nothing leaves the sandbox | the transcript and the result are recorded in `## Result`; every difference from the script-level replay is classified |
+| 10 | One pass with real agents: a small candidate through `/adf:propose` … `/adf:archive` in a sandbox (D1). An executor agent follows the commands' text and returns every question for the developer; an answerer agent answers from the developer's recorded answers in that change's session transcripts and its artifacts, naming the source of each answer; a question no record answers goes to the developer; nothing leaves the sandbox | the transcript and the result are recorded in `## Result`; every difference from the script-level replay is classified |
 | 11 | Inputs for iteration 15 (host edits from step 3, the in-flight Drafts, the mid-flight rule); lessons; version; roadmap row 14; `## Result` | `check-lessons.mjs`, `npm test`, `npm run parity -- <origin>`, `claude plugin validate .` |
 
 ## Decisions
@@ -36,7 +36,8 @@ analysis of 2026-10-22.
   small candidate. A full pass with real agents on every candidate is not done (about $200 per
   pass); row 18 repeats the agent pass on real systems after the switch.
 - D2 Candidates: a small change, a database change, a flow-only change and a large change, by
-  rule; a second database change as a fallback.
+  rule, taken only from the changes the developer made: the developer can answer for them, and
+  their session transcripts exist.
 - D3 A squash-merged change replays from the merge's first parent; a gate difference that comes
   only from that base is `injected`.
 - D4 No real database: `docker`, `psql` and `npx` are logging fakes; the real create, drop and
@@ -50,6 +51,8 @@ analysis of 2026-10-22.
   recorded only.
 - D8 Tasks outside every group are decided on the evidence of every regular origin plan.
 - D9 One clone of the origin per run, as a cache inside the sandbox.
+- D11 The agent pass answers from the developer's own transcripts, not from the developer in
+  person; an answer matched by meaning rather than found verbatim is `injected`.
 - D10 A change without its local branch is replayed and compared on its final tree only. The
   developer keeps the two branches the mid-flight mode needs until iteration 15.
 - No origin content is committed to this repository: candidates are found at run time, and no
