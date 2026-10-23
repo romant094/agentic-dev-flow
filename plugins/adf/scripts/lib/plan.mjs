@@ -331,8 +331,10 @@ export function exportedNames(source) {
 // For each `Delete:` path, every file that still names it (its path, its file name, an import
 // of its stem) or one of its exported names, outside the task's own Files block. `grep` is
 // injected: grep({ fixed: [..], word }) → the tracked files matching any pattern, the change
-// records excluded. `read(path)` returns the file's text or throws.
-export async function sweepDeletes(tasks, { grep, read }) {
+// records excluded. `read(path)` returns the file's text or throws. `exclude(file)` names the
+// files no finding is raised for: the knowledge base and the debt tree, which archive's ingest
+// updates after the change lands.
+export async function sweepDeletes(tasks, { grep, read, exclude = () => false }) {
   const findings = []
   for (const task of tasks) {
     const own = task.files.flatMap((f) => [f.path, ...(f.to ? [f.to] : [])]).map(pathMatcher)
@@ -353,7 +355,7 @@ export async function sweepDeletes(tasks, { grep, read }) {
         })
       const byPath = new Set()
       for (const file of await grep({ fixed: patterns, word: false })) {
-        if (file === f.path || ownsFile(file)) continue
+        if (file === f.path || ownsFile(file) || exclude(file)) continue
         byPath.add(file)
         report(file, 'the file', 'error')
       }
@@ -365,7 +367,7 @@ export async function sweepDeletes(tasks, { grep, read }) {
       }
       for (const name of exportedNames(source)) {
         for (const file of await grep({ fixed: [name], word: true })) {
-          if (file === f.path || ownsFile(file) || byPath.has(file)) continue
+          if (file === f.path || ownsFile(file) || byPath.has(file) || exclude(file)) continue
           report(file, `its export \`${name}\``, 'warning')
         }
       }

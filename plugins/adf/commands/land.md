@@ -18,6 +18,10 @@ its result in the main checkout, so a rerun of `/adf:land` resumes: a finished s
 it recorded. The inputs and the replies stay in their files: read the script's results and
 refusals.
 
+Run every script call below as one plain command per Bash call, and read its JSON from the
+output: the rules for tools are stated in full under `## Tools` in
+`${CLAUDE_PLUGIN_ROOT}/schema/prompts/frame.md`, and they bind this session too.
+
 **Input:** `$ARGUMENTS` is the change name. Without it, ask which archived change to land.
 
 1. **Resume.** From the main checkout:

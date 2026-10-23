@@ -8,6 +8,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { assertIsolated, createSandbox, FAKE_TOOLS } from '../lib/sandbox.mjs'
 
 const git = (cwd, ...args) => execFileSync('git', ['--no-optional-locks', '-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -73,7 +74,10 @@ test('a full create, addCandidate and destroy cycle builds the layout and leaves
     assert.deepEqual([sandbox.env.HOME, sandbox.env.CLAUDE_CONFIG_DIR, sandbox.env.TMPDIR], [join(S, 'home'), join(S, 'home', '.claude'), join(S, 'tmp')])
     assert.ok(sandbox.env.PATH.startsWith(`${join(S, 'bin')}${delimiter}`))
     assert.equal(sandbox.env.ADF_FAKE_JIRA, join(S, 'jira.json'))
-    assert.match(sandbox.env.NODE_OPTIONS, /^--import=file:.*fake-jira-preload\.mjs$/)
+    // The fake Jira preload is the sandbox's own copy from the start, so a copy of the port in the
+    // sandbox and the repository pass the same isolation check.
+    assert.equal(sandbox.env.NODE_OPTIONS, `--import=${pathToFileURL(join(S, 'fakes', 'fake-jira-preload.mjs')).href}`)
+    assert.equal(existsSync(join(S, 'fakes', 'fake-jira.mjs')), true)
 
     const c = sandbox.addCandidate('c1', { base: ORIGIN.first, refs: { 'feat/x': ORIGIN.feature } })
     assert.deepEqual([c.main, c.remote, c.base], [join(S, 'c1', 'main'), join(S, 'c1', 'remote.git'), ORIGIN.first])
@@ -103,7 +107,7 @@ test('a full create, addCandidate and destroy cycle builds the layout and leaves
   assert.deepEqual(snapshot(ORIGIN.dir), before)
 })
 
-test('the fakes log argv and cwd; glab keeps merge requests per candidate across calls; docker, psql and npx answer nothing', () => {
+test('the fakes log argv and cwd; glab keeps merge requests per candidate across calls; docker, psql and npx prisma answer nothing', () => {
   withCandidate((sandbox, c) => {
     const run = (tool, ...args) => spawnSync(tool, args, { cwd: c.main, env: sandbox.env, encoding: 'utf8' })
     assert.equal(run('glab', '--version').stdout, 'glab version 1.50.0 (fake)\n')
@@ -119,14 +123,74 @@ test('the fakes log argv and cwd; glab keeps merge requests per candidate across
     const unexpected = run('glab', 'api', 'projects')
     assert.deepEqual([unexpected.status, unexpected.stderr], [1, 'fake glab: unexpected api projects\n'])
     assert.equal(run('glab', 'mr', 'view', '9', '--output', 'json').status, 1)
-    for (const tool of ['docker', 'psql', 'npx']) {
-      const out = run(tool, 'any', '--thing')
+    for (const [tool, args] of [['docker', ['any', '--thing']], ['psql', ['any', '--thing']], ['npx', ['--yes', 'prisma@5.0.0', 'generate']]]) {
+      const out = run(tool, ...args)
       assert.deepEqual([out.status, out.stdout, out.stderr], [0, '', ''], tool)
-      assert.deepEqual(sandbox.calls(tool), [{ argv: ['any', '--thing'], cwd: c.main }], tool)
+      assert.deepEqual(sandbox.calls(tool), [{ argv: args, cwd: c.main }], tool)
     }
     assert.equal(sandbox.calls('glab').length, 9)
     assert.deepEqual(sandbox.calls('glab')[0], { argv: ['--version'], cwd: c.main })
   })
+})
+
+// A stand-in for the real npx, outside the sandbox: prints its arguments and exits 7.
+function realNpxStandIn() {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'adf-real-npx-')))
+  writeFileSync(join(dir, 'npx'), '#!/bin/sh\necho "real npx $*"\nexit 7\n')
+  chmodSync(join(dir, 'npx'), 0o755)
+  return { dir, path: join(dir, 'npx') }
+}
+
+test('the fake npx logs every call and hands everything but prisma to the real npx outside bin/', () => {
+  const real = realNpxStandIn()
+  const sandbox = createSandbox({ origin: ORIGIN.dir, realNpx: real.path })
+  try {
+    const c = sandbox.addCandidate('c1', { base: ORIGIN.first })
+    const run = (...args) => spawnSync('npx', args, { cwd: c.main, env: sandbox.env, encoding: 'utf8' })
+    const jest = run('jest', '--runInBand', 'a b')
+    assert.deepEqual([jest.status, jest.stdout], [7, 'real npx jest --runInBand a b\n'])
+    const prisma = run('prisma', 'migrate', 'deploy')
+    assert.deepEqual([prisma.status, prisma.stdout], [0, ''])
+    assert.deepEqual(sandbox.calls('npx').map((x) => x.argv), [['jest', '--runInBand', 'a b'], ['prisma', 'migrate', 'deploy']])
+    assert.equal(sandbox.realNpx, real.path)
+    assert.equal(assertIsolated(sandbox, c), true)
+    // A real npx that resolves into the sandbox bin/ would call the fake again: refused.
+    writeFileSync(join(sandbox.root, 'fakes', 'npx.json'), `${JSON.stringify({ real: join(sandbox.bin, 'npx') })}\n`)
+    assert.throws(() => assertIsolated(sandbox, c), /the real npx .* is inside the sandbox bin/)
+  } finally {
+    sandbox.destroy()
+    rmSync(real.dir, { recursive: true, force: true })
+  }
+})
+
+test('with no real npx, a call other than prisma fails and says so', () => {
+  const sandbox = createSandbox({ origin: ORIGIN.dir, realNpx: null })
+  try {
+    const out = spawnSync('npx', ['jest'], { cwd: sandbox.root, env: sandbox.env, encoding: 'utf8' })
+    assert.deepEqual([out.status, out.stderr], [127, 'fake npx: no real npx outside the sandbox for: jest\n'])
+    assert.deepEqual(sandbox.calls('npx').map((x) => x.argv), [['jest']])
+  } finally {
+    sandbox.destroy()
+  }
+})
+
+test('caller secrets and agent-session variables never reach the sandbox environment', () => {
+  const names = ['HOMEBREW_GITHUB_API_TOKEN', 'RENDER_API_KEY', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDECODE', 'ANTHROPIC_API_KEY', 'SSH_AUTH_SOCK', 'ADF_TEST_SECRET', 'ADF_TEST_PASSWORD', 'ADF_TEST_PAT', 'adf_test_token', 'ADF_TEST_API_KEY']
+  const saved = Object.fromEntries(names.map((k) => [k, process.env[k]]))
+  for (const k of names) process.env[k] = 'not-a-real-value'
+  let sandbox
+  try {
+    sandbox = createSandbox({ origin: ORIGIN.dir })
+  } finally {
+    for (const [k, v] of Object.entries(saved)) v === undefined ? delete process.env[k] : (process.env[k] = v)
+  }
+  try {
+    assert.deepEqual(names.filter((k) => Object.hasOwn(sandbox.env, k)), [])
+    // The sandbox's own Claude Code directory is set after the drop.
+    assert.equal(sandbox.env.CLAUDE_CONFIG_DIR, join(sandbox.root, 'home', '.claude'))
+  } finally {
+    sandbox.destroy()
+  }
 })
 
 test('a fetch or push URL of origin outside the sandbox is refused', () => {

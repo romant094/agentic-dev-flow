@@ -14,6 +14,10 @@ What a dispatched agent is told is stated in full in the prompt skeletons under
 `${CLAUDE_PLUGIN_ROOT}/schema/prompts/`, filled by `dispatch.mjs prompt`. Change selection is
 stated in full in `${CLAUDE_PLUGIN_ROOT}/schema/instructions/resolve.md`.
 
+Run every script call below as one plain command per Bash call, and read its JSON from the
+output: the rules for tools are stated in full under `## Tools` in
+`${CLAUDE_PLUGIN_ROOT}/schema/prompts/frame.md`, and they bind this session too.
+
 A question that needs more than one file opened goes to a read-only agent that returns a
 verdict, `dispatch.mjs prompt --role investigate --topic <word>`. Read one named file directly.
 Keep raw suite and script output out of your context where a pass or fail line answers.

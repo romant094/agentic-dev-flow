@@ -13,6 +13,10 @@ retrospective assesses the flow only: it writes no debt and commits nothing outs
 The rules this command follows are stated in full in the retro instruction,
 `${CLAUDE_PLUGIN_ROOT}/schema/instructions/retro.md`: read it before step 1.
 
+Run every script call below as one plain command per Bash call, and read its JSON from the
+output: the rules for tools are stated in full under `## Tools` in
+`${CLAUDE_PLUGIN_ROOT}/schema/prompts/frame.md`, and they bind this session too.
+
 Each step below is one `retro.mjs` call, or the dispatch whose prompt `window` writes; what is
 yours is the judgement on its result and the talk with the developer. The input, the prompt and
 the replies stay in their files: read the scripts' results, counts and refusals.

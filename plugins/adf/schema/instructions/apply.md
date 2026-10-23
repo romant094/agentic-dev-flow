@@ -132,6 +132,18 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" attempt --change <change> --na
 node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role <role> [--task <N>] [--group <G>] [--round <k>] [--topic <word>] [--question-file <file>] [--base <sha> --head <sha>] --root <root>
 ```
 
+The flags per role, as single lines:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role impl --task <N> --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role review --task <N> --question-file <file> --base <sha> --head <sha> --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role fix --task <N> --round <k> --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role merge-review --group <G> --question-file <file> --root <root>
+```
+
+`impl` and `review` take `--task` and never `--group`: the task names its group, and the script
+places the dispatch in that group's worktree.
+
 `prompt` returns the dispatch's `name`, `agent`, `worktree`, `replyFile` and `prompt`. Dispatch
 `agent` with `name` as its short description and `prompt` as its text, both unchanged. The
 script reads the task's `**Level:**`, so name the level in the dispatch by passing the agent it

@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   addDuringApply,
   computeGraph,
@@ -172,6 +173,16 @@ test('the Delete sweep reports each file outside the task that still names the p
   assert.deepEqual(findings.map((f) => [f.severity, f.task, f.file]), [['error', 1, 'src/other.ts'], ['warning', 1, 'src/third.ts']])
 })
 
+test('the Delete sweep skips the files its exclusion names: the knowledge base and the debt tree', async () => {
+  const files = ['- Delete: `src/old/thing.ts` — gone']
+  const { tasks } = parsePlan(plan([task(1, '1.1', { files }), task(2, '1.2'), task(3, '2.1')]))
+  const grep = async ({ word }) => (word ? [] : ['src/other.ts', 'kb/entities/thing.md', 'debt/index.md'])
+  const read = async () => ''
+  const exclude = (file) => file.startsWith('kb/') || file.startsWith('debt/')
+  const findings = await sweepDeletes(tasks, { grep, read, exclude })
+  assert.deepEqual(findings.map((f) => f.file), ['src/other.ts'])
+})
+
 // ---------------------------------------------------------------- graph
 
 const graphTasks = () =>
@@ -220,6 +231,11 @@ test('the rendered graph is the format the parser and the graph check read back'
   assert.match(table, /^\| Group \| Tasks \| Files \| Wave \|\n\|---\|---\|---\|---\|\n\| A \| 1 \| `src\/a\.ts`, `src\/shared\.ts` \| 1 \|/)
   assert.match(table, /\| A \| B \| strong \| Both write `src\/shared\.ts`\. \|/)
   assert.match(table, /Group B \(wave 2\) depends on: Group A$/)
+  // A pair whose files do not overlap and that no decision raises is none: it gets no row.
+  assert.doesNotMatch(table, /^\| B \| C \|/m)
+  const apart = renderGraph(computeGraph(t, [{ letter: 'S', tasks: [1, 2] }, { letter: 'C', tasks: [3] }], { depends: { C: ['S'] }, coupling: { 'C/S': { coupling: 'weak' } } }))
+  assert.match(apart, /\| S \| C \| weak \|/)
+  assert.match(apart, /Group C \(wave 2\) depends on: Group S$/)
   const written = writeGraph(plan([task(1, '1.1', { files: ['- Modify: `src/shared.ts`', '- Modify: `src/a.ts`'] }), task(2, '1.2', { files: ['- Modify: `src/shared.ts`'] }), task(3, '2.1', { files: ['- Modify: `src/c.ts`'], consumes: '`thing` from `src/a.ts`' })]), table)
   const parsed = parseGraph(written)
   assert.deepEqual(parsed.groups.map((x) => [x.letter, x.tasks, x.wave]), [['A', [1], 1], ['B', [2], 2], ['C', [3], 1]])
@@ -364,6 +380,25 @@ function repo(planText = plan(), tasksText = TASKS) {
   git(root, 'commit', '-q', '-m', 'propose')
   return { root, planFile: join(dir, 'plan.md') }
 }
+
+test('plan.mjs lint: a deleted file still named by the knowledge base or the debt tree is no delete-reference', async () => {
+  const del = repo(plan([task(1, '1.1', { files: ['- Delete: `src/old.ts`', '- Modify: `src/caller.ts`'] }), task(2, '1.2'), task(3, '2.1')]))
+  const pages = { '.claude/memory/entities/old.md': 'See `src/old.ts`.\n', 'records/debt/index.md': '| D1 | `src/old.ts` |\n', 'specs/old.md': 'Reads `src/old.ts`.\n' }
+  for (const [path, text] of Object.entries(pages)) {
+    mkdirSync(dirname(join(del.root, path)), { recursive: true })
+    writeFileSync(join(del.root, path), text)
+  }
+  git(del.root, 'add', '.')
+  git(del.root, 'commit', '-q', '-m', 'pages')
+  const files = async () => (await run(['lint', '--change', 'c', '--root', del.root])).result.findings.filter((f) => f.kind === 'delete-reference').map((f) => f.message.split(' still names')[0].split(', and ')[1])
+  // Without a registry every tracked file counts.
+  assert.deepEqual((await files()).sort(), ['.claude/memory/entities/old.md', 'records/debt/index.md', 'specs/old.md'])
+  // The knowledge provider's paths and the registry's debt root are archive's to update.
+  initRegistry(del.root, '1.2')
+  const memory = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'adf-memory')
+  writeRegistry(del.root, { ...readRegistry(del.root), extensions: [{ path: memory }], debt: { root: 'records/debt' } })
+  assert.deepEqual(await files(), ['specs/old.md'])
+})
 
 test('plan.mjs lint: exit 0 for a clean plan, exit 1 with file:line findings, exit 2 on usage', async () => {
   const { root } = repo()

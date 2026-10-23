@@ -9,6 +9,18 @@ You are dispatched as `{{name}}`, at the {{level}} capability level, for {{subje
 <!-- The question slot: the variable part the orchestrator writes, inserted verbatim from --question-file. -->
 {{question}}
 
+## Tools
+
+<!-- Stated in full here; every command points here for its own script calls. -->
+- Read files with Read, Grep and Glob, and write them with Write and Edit, never through the
+  shell.
+- Run each command as one plain command per Bash call: no `;`, `|`, `&&` or `||` chain, no
+  shell variable, no redirect and no here-document. Read a script's JSON from its output.
+- Write no file outside the worktree and the change root this prompt names, except the reply
+  file it names.
+- One denied call is not a lost tool: continue with the named scripts, one plain command per
+  call. Report `blocked`, naming the script, only when a named script itself is refused.
+
 ## Rules
 
 {{rules}}

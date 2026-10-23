@@ -3,7 +3,8 @@
 //
 //   plan.mjs lint --change <name> [--root <dir>]
 //       { ok, testFirst, tasks, findings }: plan.md against tasks.md, the task fields, the
-//       design risks, the Execution Graph and the Delete sweep. Exit 1 on an error finding;
+//       design risks, the Execution Graph and the Delete sweep (the knowledge provider's paths
+//       and the registry's debt tree excluded: archive's ingest updates them). Exit 1 on an error finding;
 //       warnings (cross-package span, an export named elsewhere, a `**Needs:**` word with no
 //       provision plugin in the registry) do not fail.
 //   plan.mjs graph --change <name> --groups "A=1,2;B=3" [--depends "C=A,B"]
@@ -30,7 +31,7 @@
 // Exit 2 on a usage error.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { changeDir, inferChange } from './lib/changes.mjs'
+import { changeDir, globToRegExp, inferChange } from './lib/changes.mjs'
 import { commitPaths } from './lib/commit.mjs'
 import { PLANNING_GUIDE } from './lib/host-files.mjs'
 import { groupState } from './lib/groups.mjs'
@@ -52,7 +53,8 @@ import {
   unplannedIn,
   writeGraph
 } from './lib/plan.mjs'
-import { CORE, hookProviders } from './lib/roles.mjs'
+import { CORE, hookProviders, knowledgePaths } from './lib/roles.mjs'
+import { readDebtRoot } from './lib/registry.mjs'
 import { loadSchema } from './lib/schema.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
 import { gitIn } from './lib/workspace.mjs'
@@ -119,6 +121,19 @@ function provisioned(root) {
   }
 }
 
+// The files archive's ingest updates after the change lands, so a Delete sweep does not ask a
+// task to list them: the knowledge provider's paths and the registry's debt tree.
+function archiveOwned(root) {
+  const globs = knowledgePaths(root, { ...CORE, home: claudeHome() }).paths.map((g) => globToRegExp(g))
+  let debt = null
+  try {
+    debt = readDebtRoot(root)?.replace(/\/$/, '') ?? null
+  } catch {
+    // an unreadable registry names no debt tree
+  }
+  return (file) => globs.some((re) => re.test(file)) || (debt !== null && (file === debt || file.startsWith(`${debt}/`)))
+}
+
 async function lint(o) {
   const { planText, tasksText, tracks, dir } = changeFiles(o.root, o.change)
   const { tasks, findings } = lintPlanText({
@@ -132,7 +147,7 @@ async function lint(o) {
     designFile: rel(o.change, 'design.md')
   })
   if (tasksText === null) findings.push({ severity: 'error', kind: 'no-tasks-file', file: rel(o.change, tracks), line: null, message: `${rel(o.change, tracks)} does not exist` })
-  const swept = await sweepDeletes(tasks, { grep: grepIn(o.root), read: (p) => readFileSync(join(o.root, p), 'utf8') })
+  const swept = await sweepDeletes(tasks, { grep: grepIn(o.root), read: (p) => readFileSync(join(o.root, p), 'utf8'), exclude: archiveOwned(o.root) })
   findings.push(...swept.map((f) => ({ ...f, file: rel(o.change, 'plan.md') })))
   const ok = !findings.some((f) => f.severity === 'error')
   return { code: ok ? 0 : 1, result: { ok, testFirst: testFirst(tasks), tasks: tasks.map((t) => ({ number: t.number, implements: t.implements, level: t.level })), findings } }

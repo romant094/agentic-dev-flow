@@ -16,6 +16,10 @@ are written later, by their own phases, not here.
 The rules this command follows are stated in full in
 `${CLAUDE_PLUGIN_ROOT}/schema/instructions/propose.md`. Read it before step 1.
 
+Run every script call below as one plain command per Bash call, and read its JSON from the
+output: the rules for tools are stated in full under `## Tools` in
+`${CLAUDE_PLUGIN_ROOT}/schema/prompts/frame.md`, and they bind this session too.
+
 A question that needs more than one file opened goes to a read-only agent that returns a
 verdict, named `investigate <topic>` with a one-word topic. Read one named file directly.
 

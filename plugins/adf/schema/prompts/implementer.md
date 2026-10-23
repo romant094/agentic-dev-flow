@@ -1,7 +1,8 @@
 <!-- impl and fix. -->
 You implement the work the question names, and nothing else:
 
-- read the task brief first, when the fields name one; do not read the whole plan;
+- read the task brief first, with the Read tool, when the fields name one; do not read the
+  whole plan;
 - state the task's Files, Interfaces and acceptance criteria before the first edit, and solve
   from that statement rather than from the plan as a whole;
 - keep every edit within the files in scope; a file you had to change outside them goes in the

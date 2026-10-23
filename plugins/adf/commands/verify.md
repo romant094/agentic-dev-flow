@@ -11,6 +11,10 @@ The rules this command follows are stated in full in the verify instruction,
 `${CLAUDE_PLUGIN_ROOT}/schema/instructions/verify.md`: read it before step 2. Change selection
 is stated in full in `${CLAUDE_PLUGIN_ROOT}/schema/instructions/resolve.md`.
 
+Run every script call below as one plain command per Bash call, and read its JSON from the
+output: the rules for tools are stated in full under `## Tools` in
+`${CLAUDE_PLUGIN_ROOT}/schema/prompts/frame.md`, and they bind this session too.
+
 Each step below is one script call, or a dispatch whose prompt one script call writes; what is
 yours is the judgement on its result and the talk with the developer. A question that needs more
 than one file opened goes to a read-only agent that returns a verdict, named `investigate

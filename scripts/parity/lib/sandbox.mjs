@@ -9,7 +9,10 @@
 //                        the refs given; both `origin` URLs of main point here
 //     <name>/main        `--shared` clone of the cache, `develop` checked out at the base
 //     bin/               logging fakes of glab, docker, psql and npx, first on PATH
-//     fakes/fake.mjs     their one implementation
+//     fakes/fake.mjs     their one implementation; npx hands every call but prisma to the real
+//                        npx that fakes/npx.json names, resolved outside bin/ (D4)
+//     fakes/fake-jira-preload.mjs, fakes/fake-jira.mjs
+//                        the sandbox's own copy of the fake Jira, the one NODE_OPTIONS preloads
 //     log/<tool>.jsonl   one { argv, cwd } line per fake call
 //     forge.json         the fake glab's merge requests, per candidate
 //     jira.json          the fake Jira (ADF_FAKE_JIRA), preloaded into every node process
@@ -27,11 +30,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 export const REPO = resolve(here, '..', '..', '..')
-export const PRELOAD = join(REPO, 'plugins', 'adf', 'scripts', '__tests__', 'fake-jira-preload.mjs')
+const PRELOAD = join(REPO, 'plugins', 'adf', 'scripts', '__tests__', 'fake-jira-preload.mjs')
+const FAKE_JIRA = join(REPO, 'plugins', 'adf-jira', 'scripts', '__tests__', 'fake-jira.mjs')
 export const FAKE_TOOLS = ['glab', 'docker', 'psql', 'npx']
 const PREFIX = 'adf-replay-'
-// Caller variables that reach a real tracker or forge, or redirect git or Claude Code.
-const DROPPED = /^(JIRA_|GITLAB_|GLAB_|GIT_)|^(NODE_OPTIONS|CLAUDE_PROJECT_DIR|XDG_CONFIG_HOME)$/
+// Caller variables that reach a real tracker or forge, redirect git or Claude Code, carry a
+// secret, or belong to the caller's agent session.
+const DROPPED = /^(JIRA_|GITLAB_|GLAB_|GIT_)|^(NODE_OPTIONS|CLAUDE_PROJECT_DIR|XDG_CONFIG_HOME|SSH_AUTH_SOCK)$|^(CLAUDE|ANTHROPIC)|TOKEN|API_KEY|SECRET|PASSWORD|_PAT$/i
 
 export const IDENTITY = { name: 'ADF Replay', email: 'replay@example.invalid' }
 
@@ -51,11 +56,20 @@ function real(path) {
 // The fake tools' one implementation: logs, then answers what the port's scripts ask. glab keeps
 // its merge requests in forge.json, keyed by the candidate the call runs in (the first directory
 // of the cwd under the sandbox), so `mr list`, `create`, `view` and `update` agree across calls.
-const FAKE = `import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+const FAKE = `import { spawnSync } from 'node:child_process'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 const S = ${JSON.stringify('<S>')}
 const [tool, ...argv] = process.argv.slice(2)
 appendFileSync(join(S, 'log', tool + '.jsonl'), JSON.stringify({ argv, cwd: process.cwd() }) + '\\n')
+if (tool === 'npx') {
+  const first = argv.find((a) => !a.startsWith('-'))
+  if (first === 'prisma' || /^prisma@/.test(first ?? '')) process.exit(0)
+  const { real } = JSON.parse(readFileSync(join(S, 'fakes', 'npx.json'), 'utf8'))
+  if (!real) { process.stderr.write('fake npx: no real npx outside the sandbox for: ' + argv.join(' ') + '\\n'); process.exit(127) }
+  const out = spawnSync(real, argv, { stdio: 'inherit' })
+  process.exit(out.status ?? 1)
+}
 if (tool !== 'glab') process.exit(0)
 
 const fail = (message) => { process.stderr.write('fake glab: ' + message + '\\n'); process.exit(1) }
@@ -104,16 +118,31 @@ else if (cmd === 'mr create') {
 } else fail('unexpected ' + argv.join(' '))
 `
 
-function writeFakes(S) {
+// The real npx: the first on the caller's PATH outside the sandbox, or null.
+function callerNpx(S) {
+  const dirs = String(process.env.PATH ?? '').split(delimiter).filter((d) => d && !inside(S, real(d)))
+  return which('npx', { PATH: dirs.join(delimiter) })
+}
+
+function writeFakes(S, realNpx) {
   mkdirSync(join(S, 'fakes'))
   mkdirSync(join(S, 'bin'))
   const impl = join(S, 'fakes', 'fake.mjs')
   writeFileSync(impl, FAKE.replace(JSON.stringify('<S>'), JSON.stringify(S)))
+  writeFileSync(join(S, 'fakes', 'npx.json'), `${JSON.stringify({ real: realNpx })}\n`)
+  // The fake Jira, copied so the preload resolves inside the sandbox whatever copy of the port runs.
+  writeFileSync(join(S, 'fakes', 'fake-jira.mjs'), readFileSync(FAKE_JIRA, 'utf8'))
+  const preload = readFileSync(PRELOAD, 'utf8')
+  const from = "'../../../adf-jira/scripts/__tests__/fake-jira.mjs'"
+  if (!preload.includes(from)) throw new Error(`createSandbox: ${PRELOAD} no longer imports ${from}`)
+  writeFileSync(join(S, 'fakes', 'fake-jira-preload.mjs'), preload.replace(from, "'./fake-jira.mjs'"))
   const q = (s) => `'${s.replaceAll("'", `'\\''`)}'`
   for (const tool of FAKE_TOOLS) {
     writeFileSync(join(S, 'bin', tool), `#!/bin/sh\nexec ${q(process.execPath)} ${q(impl)} ${tool} "$@"\n`, { mode: 0o755 })
   }
 }
+
+const sandboxPreload = (S) => join(S, 'fakes', 'fake-jira-preload.mjs')
 
 function sandboxEnv(S, jira) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !DROPPED.test(key)))
@@ -123,7 +152,7 @@ function sandboxEnv(S, jira) {
     XDG_CONFIG_HOME: join(S, 'home', '.config'),
     TMPDIR: join(S, 'tmp'),
     PATH: `${join(S, 'bin')}${delimiter}${process.env.PATH ?? ''}`,
-    NODE_OPTIONS: `--import=${pathToFileURL(PRELOAD).href}`,
+    NODE_OPTIONS: `--import=${pathToFileURL(sandboxPreload(S)).href}`,
     ADF_FAKE_JIRA: jira,
     GIT_TERMINAL_PROMPT: '0'
   })
@@ -154,7 +183,9 @@ export function alternatesOf(gitDir) {
     .map((l) => real(resolve(join(gitDir, 'objects'), l)))
 }
 
-export function createSandbox({ origin, id = `${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`, jiraIssues = {}, identity = IDENTITY } = {}) {
+// `realNpx`: the npx the fake hands every call but prisma to; by default the first on the
+// caller's PATH outside the sandbox, and null for none.
+export function createSandbox({ origin, id = `${Date.now().toString(36)}-${randomBytes(3).toString('hex')}`, jiraIssues = {}, identity = IDENTITY, realNpx } = {}) {
   if (typeof origin !== 'string' || origin === '') throw new Error('createSandbox: origin is required')
   if (!/^[A-Za-z0-9._-]+$/.test(id)) throw new Error(`createSandbox: id "${id}" may hold only letters, digits, ".", "_" and "-"`)
   const parent = realpathSync(tmpdir())
@@ -167,7 +198,8 @@ export function createSandbox({ origin, id = `${Date.now().toString(36)}-${rando
   writeFileSync(join(S, 'home', '.gitconfig'), `[user]\n\tname = ${identity.name}\n\temail = ${identity.email}\n[init]\n\tdefaultBranch = develop\n`)
   const jira = join(S, 'jira.json')
   writeFileSync(jira, `${JSON.stringify({ issues: jiraIssues, comments: {}, calls: [] })}\n`)
-  writeFakes(S)
+  const npx = realNpx === undefined ? callerNpx(S) : realNpx
+  writeFakes(S, npx)
   const env = sandboxEnv(S, jira)
   const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28 }).trim()
 
@@ -183,6 +215,7 @@ export function createSandbox({ origin, id = `${Date.now().toString(36)}-${rando
     jira,
     forge: join(S, 'forge.json'),
     env,
+    realNpx: npx,
     candidates: {},
     git,
     // Every call the fake `tool` received, in order.
@@ -246,12 +279,19 @@ export function assertIsolated(sandbox, candidate) {
   for (const key of ['HOME', 'CLAUDE_CONFIG_DIR', 'TMPDIR', 'XDG_CONFIG_HOME', 'ADF_FAKE_JIRA']) {
     if (!env[key] || !inside(S, real(env[key]))) problems.push(`${key} is outside the sandbox (${env[key]})`)
   }
-  if (!String(env.NODE_OPTIONS ?? '').includes(pathToFileURL(PRELOAD).href)) problems.push('NODE_OPTIONS does not preload the fake Jira')
+  if (!String(env.NODE_OPTIONS ?? '').includes(pathToFileURL(sandboxPreload(S)).href)) problems.push("NODE_OPTIONS does not preload the sandbox's fake Jira")
   for (const key of Object.keys(env)) if (/^(JIRA_|GITLAB_|GLAB_)/.test(key)) problems.push(`${key} is set`)
   for (const tool of FAKE_TOOLS) {
     const found = which(tool, env)
     if (found !== join(S, 'bin', tool)) problems.push(`${tool} resolves to ${found ?? 'nothing'}, not into ${join(S, 'bin')}`)
   }
+  let realNpx = null
+  try {
+    realNpx = JSON.parse(readFileSync(join(S, 'fakes', 'npx.json'), 'utf8')).real
+  } catch (error) {
+    problems.push(`fakes/npx.json is unreadable: ${error.message.split('\n')[0]}`)
+  }
+  if (realNpx && inside(join(S, 'bin'), real(realNpx))) problems.push(`the real npx ${realNpx} is inside the sandbox bin/, so the fake would call itself`)
   if (candidate) {
     for (const push of [false, true]) {
       let url

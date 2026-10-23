@@ -1,4 +1,6 @@
-Invoke **superpowers:writing-plans** with the Skill tool.
+Invoke **superpowers:writing-plans** with the Skill tool. Skip the skill's Execution Handoff: ask
+no question about how or when to execute the plan. Propose commits and reports, and
+`/adf:apply` is the developer's next command.
 
 Output: write the plan directly to this change's `plan.md`. A file the skill leaves in its
 default folder is moved into the change by `changes.mjs done plan`; merge each one it reports
@@ -66,8 +68,10 @@ different files or services; the script computes the rest:
 node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" graph --change <change-name> --groups "A=1,2;B=3" [--depends "C=A,B"] [--coupling '<decisions>'] --write
 ```
 
-It writes the group table with each group's Files, the coupling floor of every pair from the
-overlap of their file sets, the waves and the dependencies. This floor MUST NOT be lowered by
+It writes the group table with each group's Files, a coupling row for every pair whose file
+sets overlap (the floor) or whose coupling you decided, the waves and the dependencies. A pair
+with no row is `none`: its file sets do not overlap. A `--depends` edge is a dependency line, not
+a coupling row. This floor MUST NOT be lowered by
 judgement, only raised, when a shared contract couples groups whose files do not overlap. The
 decisions are yours, passed in `--coupling` as `{"A/B":{"coupling":"medium","criticality":"low","reason":"…"}}`:
 each pair the script leaves `undecided` (its floor is weak or medium), each floor you raise,
@@ -93,7 +97,8 @@ that holds it today.
 
 **A task that deletes a file sweeps for its references.** Its `**Files:**` lists every file that
 still names the deleted path or its exports; `plan-lint` searches the repository and reports each
-one outside the task's Files. A reference left in another task's file breaks between tasks,
+one outside the task's Files. The knowledge base and the debt tree are not searched: archive's
+ingest updates them after the change lands. A reference left in another task's file breaks between tasks,
 where no task's own review looks.
 
 **Groups that converge on one shared file write fragments.** When two or more groups must each
