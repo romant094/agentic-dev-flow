@@ -11,6 +11,8 @@ import { schedule } from '../lib/plan.mjs'
 import { dispatchName, MAX_ROUNDS, normalize, parseGraph, parseName, planDispatch, renderPrompt, roundOf, verbatimBlocks } from '../lib/dispatch.mjs'
 import { PLUGIN_ROOT, PROMPTS_DIR, run } from '../dispatch.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
+import { recordReply } from '../lib/attempts.mjs'
+import { readLedger as readMetricsLedger, readReplies } from '../lib/metrics-records.mjs'
 import { ROLES as REPLY_ROLES } from '../lib/reply.mjs'
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'dispatch.mjs')
@@ -312,6 +314,99 @@ test('attempts per name: the first dispatches, the second retries, the third sto
   assert.deepEqual(attempt('T3 fix r1'), { ok: true, name: 'T3 fix r1', attempt: 1, next: 'dispatch', file: join(root, '.superpowers', 'sdd', CHANGE, 'attempts.jsonl') })
   const bad = cli(root, 'attempt', '--change', CHANGE, '--name', 'T3 implement')
   assert.equal(bad.status, 1)
+})
+
+// A dispatch stopped because the environment refused it (a permission denial, a missing tool)
+// gets a way out once the environment is fixed: a developer reset, held for the developer's yes.
+test('a developer reset restarts the count of a stopped dispatch; the preview changes nothing; history and metrics keep every attempt', () => {
+  const root = host()
+  const log = join(root, '.superpowers', 'sdd', CHANGE, 'attempts.jsonl')
+  const ledger = join(root, '.superpowers', 'sdd', CHANGE, 'ledger.jsonl')
+  const attempt = () => call(root, 'attempt', '--name', 'ingest')
+  const reply = (errors) => recordReply(root, CHANGE, { name: 'ingest', file: join(root, 'r.json'), errors })
+  assert.equal(attempt().next, 'dispatch')
+  assert.equal(reply(['knowledge base write denied']).next, 'retry')
+  assert.equal(attempt().next, 'retry')
+  assert.equal(reply(['knowledge base write denied']).next, 'stop')
+  // The limit stops the name, and nothing it replies is recorded.
+  assert.equal(attempt().next, 'stop')
+  assert.throws(() => reply([]), /stopped after 2 invalid replies/)
+
+  const reset = (...extra) => call(root, 'reset', '--name', 'ingest', '--reason', 'the permission is granted now', ...extra)
+  // Only a stopped name is reset, and only with the developer's reason.
+  call(root, 'attempt', '--name', 'T3 impl')
+  assert.throws(() => call(root, 'reset', '--name', 'T3 impl', '--reason', 'x'), /T3 impl has not stopped/)
+  assert.equal(cli(root, 'reset', '--change', CHANGE, '--name', 'ingest').status, 2)
+
+  const before = readFileSync(log, 'utf8')
+  const preview = reset()
+  assert.equal(preview.ok, true)
+  assert.equal(preview.state, 'pending')
+  assert.equal(preview.held, true)
+  assert.match(preview.plan, /^reset-[0-9a-f]{12}$/)
+  assert.deepEqual(preview.covers, { events: 5, dispatches: 3, invalid: 2, valid: 0 })
+  assert.match(preview.preview.join('\n'), /ingest: 3 dispatches and 2 invalid replies stop counting/)
+  assert.match(preview.waiting, new RegExp(`--yes ${preview.plan}`))
+  // The preview writes nothing, and asking again gives the same plan.
+  assert.equal(readFileSync(log, 'utf8'), before)
+  assert.equal(existsSync(ledger), false)
+  assert.equal(reset().plan, preview.plan)
+
+  // A wrong plan id is refused, and so is a plan the log has moved past.
+  const wrong = cli(root, 'reset', '--change', CHANGE, '--name', 'ingest', '--reason', 'the permission is granted now', '--yes', 'reset-000000000000')
+  assert.equal(wrong.status, 1)
+  assert.match(wrong.out.error, /does not match/)
+  assert.equal(existsSync(ledger), false)
+  attempt()
+  assert.throws(() => reset('--yes', preview.plan), /does not match/)
+  assert.equal(existsSync(ledger), false)
+
+  const plan = reset().plan
+  const applied = reset('--yes', plan)
+  assert.equal(applied.ok, true)
+  assert.equal(applied.state, 'done')
+  assert.equal(applied.next, 'dispatch')
+  const records = readFileSync(ledger, 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+  assert.equal(records.length, 1)
+  const { at, sessionId, ...record } = records[0]
+  assert.equal(typeof at, 'string')
+  assert.deepEqual(record, {
+    id: 'attempt-reset-1',
+    kind: 'attempt-reset',
+    by: 'developer',
+    name: 'ingest',
+    reason: 'the permission is granted now',
+    plan,
+    covers: { events: 6, dispatches: 4, invalid: 2, valid: 0 },
+    skip: 6
+  })
+  assert.deepEqual(applied.record, records[0])
+  // Every earlier attempt stays in the log.
+  assert.ok(readFileSync(log, 'utf8').startsWith(before))
+  assert.equal(readFileSync(log, 'utf8').trim().split('\n').length, 7)
+
+  // After the reset the name dispatches again, and the limit counts from the reset.
+  assert.deepEqual(attempt(), { ok: true, name: 'ingest', attempt: 1, next: 'dispatch', file: log })
+  assert.equal(reply(['still refused']).next, 'retry')
+  assert.equal(attempt().next, 'retry')
+  assert.equal(reply([]).next, 'proceed')
+  // Nothing to reset now: the name has not stopped since.
+  assert.throws(() => reset(), /ingest has not stopped/)
+
+  // The metrics count every attempt once, before and after the reset; the ledger counts the record.
+  const replies = readReplies(root, CHANGE).value.ingest
+  assert.deepEqual(replies, { dispatches: 6, valid: 1, invalid: 3, retries: 2, stops: 1 })
+  assert.equal(readMetricsLedger(root, CHANGE).value.counts['attempt-reset'], 1)
+  // The ledger CLI does not write a reset: only the held command does.
+  assert.throws(() => appendRecord(root, CHANGE, 'attempt-reset', { name: 'ingest', reason: 'x' }), /unknown kind/)
+})
+
+test('a reset is refused for a dispatch whose run restarts on its own', () => {
+  const root = host()
+  for (const name of ['ai-review r1', 'ai-fix F1 r1', 'verify c4']) {
+    assert.throws(() => call(root, 'reset', '--name', name, '--reason', 'x'), /restarts its own count/, name)
+  }
+  assert.throws(() => call(root, 'reset', '--name', 'T3 implement', '--reason', 'x'), /not a dispatch name/)
 })
 
 test('a fix loop counts its rounds by the re-reviews attempted and trips the breaker at the cap', () => {

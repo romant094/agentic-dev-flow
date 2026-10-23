@@ -17,9 +17,16 @@
 // (`mode: resume`); a fresh dispatch carries the errors as its question only where the harness
 // cannot resume the agent (`mode: fresh`). The consequence of `stop` stays with each phase: apply
 // marks the dispatch BLOCKED, the review stage writes its stopped record, archive stops.
+//
+// A stop the environment caused (a permission denial, a missing tool) ends only by a developer
+// reset (`dispatch.mjs reset`): held, a preview with its plan id, until the developer's yes with
+// that id; then an `attempt-reset` ledger record (lib/ledger.mjs). The log keeps every event, and
+// the metrics count them all; only the limit counts the name's events after the last reset.
+import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { countAttempts, DispatchError, MAX_ATTEMPTS, nextFor, parseName, sddDir } from './dispatch.mjs'
+import { appendAttemptReset, ATTEMPT_RESET, readRecords } from './ledger.mjs'
 
 export const EVENTS = ['dispatch', 'invalid', 'valid']
 export const attemptsFile = (root, change) => join(sddDir(root, change), 'attempts.jsonl')
@@ -48,8 +55,12 @@ export const readLog = (file) => (existsSync(file) ? readFileSync(file, 'utf8') 
 // reply, `retry` after the first, `stop` from the second (MAX_ATTEMPTS refused replies). `since`
 // (an ISO time) counts only the events at or after it: a phase that starts its run again (the
 // review stage's `start --fresh`) reuses its names, and the earlier run's events no longer count.
-export function standing(text, name, { since = null } = {}) {
-  const events = parseEvents(text).filter((e) => e.name === name && (since === null || String(e.at ?? '') >= since))
+// `skip` passes over the name's first events, those a developer reset covers (resetSkip).
+export function standing(text, name, { since = null, skip = 0 } = {}) {
+  const events = parseEvents(text)
+    .filter((e) => e.name === name)
+    .slice(skip)
+    .filter((e) => since === null || String(e.at ?? '') >= since)
   const count = (event) => events.filter((e) => e.event === event).length
   const invalid = count('invalid')
   return { name, dispatches: count('dispatch'), invalid, valid: count('valid'), next: nextForInvalid(invalid) }
@@ -69,15 +80,16 @@ const checkName = (name) => {
 
 // `dispatch.mjs attempt`: records one dispatch of `name`. `attempt` counts the dispatches of the
 // name, legacy lines included: 1 dispatches, 2 retries, 3 stops.
-export function recordDispatch(root, change, name, options) {
-  return recordDispatchAt(attemptsFile(root, change), name, options)
+// Counted from the name's last developer reset.
+export function recordDispatch(root, change, name, options = {}) {
+  return recordDispatchAt(attemptsFile(root, change), name, { ...options, skip: resetSkip(root, change, name) })
 }
 
 // The same, into the log `file`: a dispatch that serves no change keeps its own (lib/retro.mjs).
-export function recordDispatchAt(file, name, { now = new Date().toISOString() } = {}) {
+export function recordDispatchAt(file, name, { now = new Date().toISOString(), skip = 0 } = {}) {
   checkName(name)
   append(file, { name, at: now, event: 'dispatch' })
-  const attempt = countAttempts(readLog(file), name)
+  const attempt = countAttempts(readLog(file), name, { skip })
   return { name, attempt, next: nextFor(attempt), file }
 }
 
@@ -87,14 +99,15 @@ export function recordDispatchAt(file, name, { now = new Date().toISOString() } 
 // `fresh` on a retry (`resume: false` when the harness cannot resume the agent), null otherwise.
 // Refused once the name has stopped: nothing a stopped dispatch replies is recorded. `since` as
 // `standing` takes it.
+// Counted from the name's last developer reset.
 export function recordReply(root, change, reply) {
-  return recordReplyAt(attemptsFile(root, change), reply)
+  return recordReplyAt(attemptsFile(root, change), { ...reply, skip: resetSkip(root, change, reply.name) })
 }
 
 // The same, into the log `logFile`.
-export function recordReplyAt(logFile, { name, file, errors = [], result, resume = true, since = null, now = new Date().toISOString() }) {
+export function recordReplyAt(logFile, { name, file, errors = [], result, resume = true, since = null, skip = 0, now = new Date().toISOString() }) {
   checkName(name)
-  const before = standing(readLog(logFile), name, { since })
+  const before = standing(readLog(logFile), name, { since, skip })
   if (before.next === 'stop') throw new DispatchError(`${name} stopped after ${before.invalid} invalid replies; nothing it replies is recorded`)
   if (errors.length === 0) {
     const log = append(logFile, { name, at: now, event: 'valid', file, ...(result === undefined ? {} : { result }) })
@@ -105,4 +118,65 @@ export function recordReplyAt(logFile, { name, file, errors = [], result, resume
   const mode = next === 'retry' ? (resume ? 'resume' : 'fresh') : null
   const log = append(logFile, { name, at: now, event: 'invalid', file, errors, mode, next })
   return { ok: false, valid: false, errors, next, mode, invalid, replyFile: file, log }
+}
+
+// ---------------------------------------------------------------- the developer reset
+
+// Roles whose run restarts its own count: the review stage (`review.mjs start --fresh`) and
+// verify (`verify.mjs run`); a reset of theirs is refused with that pointer.
+const OWN_RESTART = { 'ai-review': 'review.mjs start --fresh', 'ai-fix': 'review.mjs start --fresh', verify: 'verify.mjs run' }
+
+// How many of the name's events the limit passes over: the last reset's `skip`, else 0.
+export function resetSkip(root, change, name) {
+  const last = readRecords(root, change).filter((r) => r.kind === ATTEMPT_RESET && r.name === name).at(-1)
+  return Number.isInteger(last?.skip) ? last.skip : 0
+}
+
+// Where the name stands for the limit, from its last reset; `since` as `standing` takes it.
+export const standingOf = (root, change, name, { since = null } = {}) =>
+  standing(readLog(attemptsFile(root, change)), name, { since, skip: resetSkip(root, change, name) })
+
+// `dispatch.mjs reset`: without `yes`, the held plan: which events of the stopped name stop
+// counting, and its id; nothing is written. With `yes` equal to that id (the log and the reason
+// unchanged since the preview), the `attempt-reset` ledger record, and the name dispatches again.
+// Refused for a name that has not stopped, for a role whose run restarts on its own, and for an
+// id that is not the current plan's.
+export function resetAttempts(root, change, name, { reason, yes = null, env, now } = {}) {
+  checkName(name)
+  const role = parseName(name).role
+  if (OWN_RESTART[role]) refuseReset(`${name} restarts its own count: run ${OWN_RESTART[role]} instead of a reset`)
+  if (typeof reason !== 'string' || reason.trim() === '') refuseReset('a reset needs the developer\'s --reason')
+  const all = parseEvents(readLog(attemptsFile(root, change))).filter((e) => e.name === name)
+  const from = resetSkip(root, change, name)
+  const covered = all.slice(from)
+  const count = (event) => covered.filter((e) => e.event === event).length
+  const covers = { events: covered.length, dispatches: count('dispatch'), invalid: count('invalid'), valid: count('valid') }
+  if (!(covers.invalid >= MAX_ATTEMPTS || covers.dispatches > MAX_ATTEMPTS)) {
+    refuseReset(`${name} has not stopped (${covers.dispatches} dispatches, ${covers.invalid} invalid replies since ${from ? 'its last reset' : 'its first dispatch'}); a reset is only for a stopped dispatch`)
+  }
+  const plan = `reset-${createHash('sha256').update(JSON.stringify({ change, name, reason, from, covered })).digest('hex').slice(0, 12)}`
+  const command = `dispatch.mjs reset --change ${change} --name "${name}" --reason "${reason}"`
+  if (yes === null) {
+    return {
+      ok: true,
+      state: 'pending',
+      held: true,
+      name,
+      plan,
+      covers,
+      preview: [
+        `${name}: ${covers.dispatches} dispatches and ${covers.invalid} invalid replies stop counting toward the limit; they stay in attempts.jsonl and in the metrics`,
+        `reason: ${reason}`,
+        `writes the ledger record ${ATTEMPT_RESET} by the developer; the next dispatch of ${name} is its first again`
+      ],
+      waiting: `the developer's yes: ${command} --yes ${plan}`
+    }
+  }
+  if (yes !== plan) refuseReset(`plan ${yes} does not match the current reset plan of ${name}; run ${command} without --yes for a new preview`)
+  const { record, path } = appendAttemptReset(root, change, { name, reason, plan, covers, skip: all.length }, { ...(env ? { env } : {}), ...(now ? { now } : {}) })
+  return { ok: true, state: 'done', name, record, ledger: path, next: 'dispatch' }
+}
+
+function refuseReset(message) {
+  throw new DispatchError(message)
 }

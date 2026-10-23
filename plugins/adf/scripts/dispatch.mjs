@@ -34,7 +34,17 @@
 //       is missing; its change may already be archived.
 //   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <change worktree>]
 //       records one attempt of the dispatch and returns { ok, name, attempt, next }, next one of
-//       dispatch (the first), retry (the one retry of a refused reply), stop (BLOCKED)
+//       dispatch (the first), retry (the one retry of a refused reply), stop (BLOCKED); counted
+//       from the name's last developer reset
+//   dispatch.mjs reset   --change <name> --name "<dispatch name>" --reason "<text>" [--yes <plan>]
+//                        [--root <change worktree>]
+//       the developer reset of a stopped dispatch whose stop the environment caused, held for the
+//       developer's yes (lib/attempts.mjs resetAttempts). Without --yes { ok, state: pending,
+//       held, name, plan, covers, preview, waiting }, nothing written; with --yes <plan> the
+//       `attempt-reset` ledger record, { ok, state: done, name, record, ledger, next: dispatch }.
+//       The log keeps every attempt; only the limit counts from the reset. Refused for a name
+//       that has not stopped, for ai-review, ai-fix and verify, and for a plan id that is not the
+//       current preview's
 //   dispatch.mjs round   --change <name> [--task <N> | --group <G>] [--root <change worktree>]
 //       where a fix loop stands, read from the recorded attempts: a task's, a group's after its
 //       merge review, or, with neither, the final review's. A round is complete once its
@@ -77,7 +87,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readArchiveState } from './lib/archive.mjs'
-import { attemptsFile, recordDispatch, recordReply, standing } from './lib/attempts.mjs'
+import { attemptsFile, recordDispatch, recordReply, resetAttempts, standingOf } from './lib/attempts.mjs'
 import {
   ARCHIVE_ROLES,
   DispatchError,
@@ -114,12 +124,13 @@ export const USAGE = `usage:
   dispatch.mjs plan --change <name> --role <role> [--task <N>] [--group <G>] [--round <k>] [--topic <word>] [--check c4|c8] [--slice <n>] [--finding F<n>] [--capability <capability>] [--root <dir>]
   dispatch.mjs prompt (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>]
   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <dir>]
+  dispatch.mjs reset --change <name> --name "<dispatch name>" --reason "<text>" [--yes <plan>] [--root <dir>]
   dispatch.mjs reply --change <name> --name "<dispatch name>" --file <reply file> [--resume yes|no] [--root <dir>]
   dispatch.mjs round --change <name> [--task <N> | --group <G>] [--root <dir>]`
 
 export class UsageError extends Error {}
 
-const FLAGS = ['--change', '--role', '--task', '--group', '--round', '--topic', '--check', '--slice', '--finding', '--capability', '--root', '--question-file', '--base', '--head', '--name', '--file', '--resume']
+const FLAGS = ['--change', '--role', '--task', '--group', '--round', '--topic', '--check', '--slice', '--finding', '--capability', '--root', '--question-file', '--base', '--head', '--name', '--file', '--resume', '--reason', '--yes']
 
 function parse(argv) {
   const values = {}
@@ -426,7 +437,7 @@ function recordReplyOf(values, { root, change, main }) {
   // The review stage counts only its current run's events (lib/review-state.mjs).
   const since = ['ai-review', 'ai-fix'].includes(parts.role) ? reviewSince(root, change) : null
   // A stopped dispatch's reply is not checked: recordReply refuses it.
-  const stopped = standing(readOr(attemptsFile(root, change)) ?? '', name, { since }).next === 'stop'
+  const stopped = standingOf(root, change, name, { since }).next === 'stop'
   const text = stopped ? null : readOr(path)
   const { errors, result } = stopped
     ? { errors: [] }
@@ -460,7 +471,7 @@ function readQuestion(file) {
 export function run(argv, { cwd = process.cwd(), main } = {}) {
   const { values, rest } = parse(argv)
   const [command, ...extra] = rest
-  if (extra.length > 0 || !['plan', 'prompt', 'attempt', 'round', 'reply'].includes(command) || !values.change) throw new UsageError(USAGE)
+  if (extra.length > 0 || !['plan', 'prompt', 'attempt', 'reset', 'round', 'reply'].includes(command) || !values.change) throw new UsageError(USAGE)
   const root = resolve(cwd, values.root ?? '.')
   const change = values.change
   // The ingest runs on the archived change; every other dispatch on an active one.
@@ -474,6 +485,11 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
     return { ok: true, ...recordDispatch(root, change, values.name) }
   }
 
+  if (command === 'reset') {
+    if (!values.name || !values.reason || Object.keys(values).some((k) => !['change', 'name', 'reason', 'yes', 'root'].includes(k))) throw new UsageError(USAGE)
+    return resetAttempts(root, change, values.name, { reason: values.reason, yes: values.yes ?? null })
+  }
+
   if (command === 'reply') {
     if (!values.name || !values.file || Object.keys(values).some((k) => !['change', 'name', 'file', 'resume', 'root'].includes(k))) throw new UsageError(USAGE)
     return { name: values.name, ...recordReplyOf(values, { root, change, main: main ?? mainCheckout(root) }) }
@@ -485,7 +501,8 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
   }
 
   if (!values.role) throw new UsageError(USAGE)
-  if (values.name) throw new UsageError('--name belongs to attempt and reply')
+  if (values.name) throw new UsageError('--name belongs to attempt, reset and reply')
+  if (values.reason || values.yes) throw new UsageError('--reason and --yes belong to reset')
   if (values.file || values.resume) throw new UsageError('--file and --resume belong to reply')
   if (command === 'plan' && (values['question-file'] || values.base || values.head)) throw new UsageError('--question-file, --base and --head belong to prompt')
   const inputs = {

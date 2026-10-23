@@ -241,6 +241,20 @@ reply file, and record no reply a second time through another call. Route on `ne
 - `stop`: the second refusal of the name. The dispatch is `BLOCKED`: it produced no result, and
   nothing it reported is recorded.
 
+A dispatch stopped on the limit stays stopped. When the cause was the environment, a permission
+denial or a missing tool, and the environment is now fixed, ask the developer whether to reset
+its attempts, and show the reset's preview:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" reset --change <change> --name "<name>" --reason "<the developer's reason>" --root <root>
+```
+
+On their yes, run the same command with `--yes <plan>`, the preview's plan id, and resume from
+the name's `attempt`. Never reset without the developer's answer. The reset writes an
+`attempt-reset` ledger record; the earlier attempts stay in the log and in the metrics, and only
+the limit counts from the reset. The review stage and verify restart their own counts and take
+no reset.
+
 A missing reply file is a refusal: a reply that is prose and no file is one. Record an attempt
 before every dispatch and every retry; `round` counts the rounds from those records. To show a
 reply to the developer, at an escalation or with the sweep's findings, render it rather than

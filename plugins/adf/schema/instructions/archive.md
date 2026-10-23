@@ -160,7 +160,8 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
      `dispatch.mjs reply`. On a refusal record another attempt: `next: retry` sends the reply back
      once, to the same agent, resumed, with its `errors` (`mode: resume`); where the harness
      cannot resume it, pass `--resume no` and dispatch the prompt afresh with the errors as its
-     question (`mode: fresh`). `next: stop` stops archive. Then run `merge` again with every valid
+     question (`mode: fresh`). `next: stop` stops archive; a stop the environment caused ends
+     only by the developer reset under step 7. Then run `merge` again with every valid
      reply, one `--resolutions` per file: the script joins them into one list. A conflict may
      instead be settled by rebasing the stale delta, with the developer.
    - **A new capability** gets a spec skeleton whose Purpose is a placeholder, and the step
@@ -213,7 +214,18 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    On a refusal record another attempt: `detail.next` `retry` sends the reply back once, to the
    same agent, resumed, with the step's `errors` (`detail.mode` `resume`); where the harness
    cannot resume it, pass `--resume no` and dispatch the prompt afresh with the errors as its
-   question (`fresh`). `stop` stops archive. `nothingLearned` writes no page, no log entry and
+   question (`fresh`). `stop` stops archive, and so does every later `attempt` of `ingest`.
+   When the cause was the environment, a permission denial or a missing tool, and the
+   environment is now fixed, the developer reset ends the stop, as the apply instruction states
+   it (`${CLAUDE_PLUGIN_ROOT}/schema/instructions/apply.md`, "A dispatch stopped on the limit"):
+   ask the developer and show the preview of
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" reset --change <change> --name ingest --reason "<the developer's reason>" --root <root>
+   ```
+
+   and on their yes run it with `--yes <plan>`, then resume this step from its `attempt`.
+   `nothingLearned` writes no page, no log entry and
    no commit; an empty ingest is worse than none. The debt ids `placements` removed go into the
    log entry as one more bullet, or, with nothing learned, into an entry of their own; with no
    knowledge plugin the skipped step's report says they were not logged.

@@ -157,6 +157,23 @@ export function appendRecord(root, change, kind, fields, { env = process.env, no
   return { record, path }
 }
 
+// A developer reset of a stopped dispatch's attempts (`dispatch.mjs reset`, lib/attempts.mjs
+// resetAttempts), written only after the developer's yes to its held plan: { id, kind
+// "attempt-reset", at, sessionId?, by "developer", name, reason, plan, covers { events,
+// dispatches, invalid, valid }, skip }. `skip` is how many of the name's events in attempts.jsonl
+// the limit no longer counts. Kept out of KINDS, so `ledger.mjs` cannot type one past the hold.
+export const ATTEMPT_RESET = 'attempt-reset'
+
+export function appendAttemptReset(root, change, fields, { env = process.env, now = new Date().toISOString() } = {}) {
+  const path = ledgerPath(root, change)
+  const n = readRecords(root, change).filter((r) => r.kind === ATTEMPT_RESET).length + 1
+  const sessionId = env[SESSION_ENV] ?? null
+  const record = { id: `${ATTEMPT_RESET}-${n}`, kind: ATTEMPT_RESET, at: now, ...(sessionId ? { sessionId } : {}), by: 'developer', ...fields }
+  mkdirSync(dirname(path), { recursive: true })
+  appendFileSync(path, `${JSON.stringify(record)}\n`, 'utf8')
+  return { record, path }
+}
+
 // The session record of a phase, written once per harness session: a second call in the session
 // that already holds a `session` record of this phase writes nothing. propose records its session
 // when it makes the change and again whenever it continues one, so both routes call this. The

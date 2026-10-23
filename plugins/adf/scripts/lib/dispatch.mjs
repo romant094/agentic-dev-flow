@@ -518,19 +518,22 @@ export function renderPrompt({ plan, change, skeletons, fields, question, tokens
 // BLOCKED. The n-th recorded attempt of one dispatch name: 1 dispatches, 2 retries, 3 stops.
 export const nextFor = (attempt) => (attempt === 1 ? 'dispatch' : attempt <= MAX_ATTEMPTS ? 'retry' : 'stop')
 
-// The `dispatch` events of one name (lib/attempts.mjs); a line with no `event` is one.
-export function countAttempts(text, name) {
+// The `dispatch` events of one name (lib/attempts.mjs); a line with no `event` is one. `skip`
+// passes over the name's first events of any kind: those a developer reset covers.
+export function countAttempts(text, name, { skip = 0 } = {}) {
   return text
     .split('\n')
     .filter(Boolean)
-    .filter((line) => {
+    .map((line) => {
       try {
-        const event = JSON.parse(line)
-        return event.name === name && (event.event ?? 'dispatch') === 'dispatch'
+        return JSON.parse(line)
       } catch {
-        return false
+        return null
       }
-    }).length
+    })
+    .filter((event) => event?.name === name)
+    .slice(skip)
+    .filter((event) => (event.event ?? 'dispatch') === 'dispatch').length
 }
 
 // ---------------------------------------------------------------- fix rounds

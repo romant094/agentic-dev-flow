@@ -1,6 +1,6 @@
 {
 	"name": "agentic-dev-flow",
-	"version": "0.14.7",
+	"version": "0.14.8",
 	"private": true,
 	"description": "Agentic Dev Flow: a spec-driven change workflow core and the plugins that extend it",
 	"license": "MIT",
