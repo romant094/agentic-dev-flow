@@ -39,6 +39,7 @@ import { MAX_ATTEMPTS, parseName } from './dispatch.mjs'
 import { readRecords } from './ledger.mjs'
 import { commentFor, coveringIgnore, parseMarker } from './marker.mjs'
 import { cell, checkFindings, checkFix, CLOSED, computeVerdict, reviewConfig, SEVERITIES, where } from './review.mjs'
+import { isTestFile } from './tdd-proof.mjs'
 
 export const ROUND_CAP = 3
 export const REVIEWER_LEVEL = 'architecture'
@@ -47,8 +48,11 @@ export const fixName = (id, round) => `ai-fix ${id} r${round}`
 export const RULINGS = { range: 'review-range', slices: 'review-slices', suite: 'review-suite', round: (k) => `review-round-${k}` }
 export const recordPath = (change) => `openspec/changes/${change}/review.md`
 export const recordMessage = (change) => `docs(openspec): review ${change}`
-// A fix commit may touch, besides the finding's file, the tests of the behaviour it changes.
-export const TEST_FILE = /(?:^|\/)(?:__tests__|tests?|spec)\/|[._-](?:test|spec)\.[^/]+$|_test\.go$/
+// A fix commit touches the finding's file, its tests, or both. A test of a file is a test file
+// (lib/tdd-proof.mjs's recognition) whose name, without its extension and its test marker, is
+// the file's name without its extension: `__tests__/a.spec.ts`, `a.test.ts` or `test_a.py` for `a.ts`.
+const bareName = (path) => path.split('/').pop().replace(/\.[^.]*$/, '')
+export const isTestOf = (test, file) => test !== file && isTestFile(test) && bareName(test).replace(/[._-](?:test|spec)$/, '').replace(/^test_/, '') === bareName(file)
 
 export class Refusal extends Error {
   constructor(message, extra = {}) {
@@ -131,7 +135,7 @@ function stoppedBy(root, change, start) {
 export function liveState(root, change) {
   const state = loadState(root, change)
   if (!state.start) refuse(`no review of ${change} is started: run review.mjs start --change ${change}`)
-  if (state.stopped) refuse(`the review stage of ${change} stopped: ${state.stopped.reason}; nothing is recorded, fixed or reviewed again until review.mjs start --change ${change} --fresh`)
+  if (state.stopped) refuse(`the review stage of ${change} stopped: ${state.stopped.reason}; nothing is recorded, fixed or reviewed again until review.mjs start --change ${change} --fresh`, { stopped: true, next: 'stop' })
   return state
 }
 
@@ -392,9 +396,41 @@ export function fixTarget(root, change, { round: k, finding: id }) {
 
 // A fixer's reply to the fix of `finding` (the dispatch `ai-fix F<n> r<k>`, named by the command,
 // never by the reply): a reply naming another finding is invalid. `fixed` with a commit in round
-// k's fix range that touches the finding's file and otherwise only test files closes the
-// finding; `false-positive` leaves it open with its argument, for the developer.
-export function recordFix(root, change, { round: k, finding: id, text, file = null, resume = true, now = new Date().toISOString() }) {
+// k's fix range that touches the finding's file, its tests or both closes the finding; a commit
+// that fails the check makes the reply invalid, so it uses the finding's one retry like any other
+// invalid reply. `false-positive` leaves it open with its argument, for the developer. Every
+// refusal carries `next`: `retry` (dispatch the fixer again) or `stop` (no fixer is dispatched
+// for this finding; `stopped` when the stage stopped).
+export function recordFix(root, change, options) {
+  try {
+    return fixReplyChecked(root, change, options)
+  } catch (error) {
+    if (error instanceof Refusal && error.extra?.next === undefined) error.extra = { ...error.extra, retry: false, next: 'stop' }
+    throw error
+  }
+}
+
+// What is wrong with `sha` as the fix of `f` in round `r`: { errors, sha, files }.
+function fixCommitErrors(root, state, r, f, sha0) {
+  const git = gitAt(root)
+  const no = (message) => ({ errors: [`$.sha: ${message}`] })
+  const sha = tryGit(git, 'rev-parse', '--verify', '--quiet', `${sha0}^{commit}`)
+  if (!sha) return no(`${sha0} is not a commit`)
+  const head = git('rev-parse', 'HEAD')
+  if (sha === r.findings.fixBase || !isAncestor(git, r.findings.fixBase, sha) || !isAncestor(git, sha, head)) {
+    return no(`${sha.slice(0, 7)} is not in round ${r.round}'s fix range ${r.findings.fixBase.slice(0, 7)}..${head.slice(0, 7)}`)
+  }
+  if (git('rev-list', '--parents', '-n', '1', sha).split(' ').length > 2) return no(`${sha.slice(0, 7)} is a merge commit; a fix is one commit of its own`)
+  const files = git('diff-tree', '--no-commit-id', '--name-only', '-r', '--no-renames', '-z', sha).split('\0').filter(Boolean)
+  if (files.length === 0) return no(`${sha.slice(0, 7)} touches no file; a fix commit touches ${f.file}, the file ${f.id} names, or its tests`)
+  const others = files.filter((x) => x !== f.file && !isTestOf(x, f.file))
+  if (others.length > 0) return no(`${sha.slice(0, 7)} touches ${others.join(', ')}, which is neither ${f.file} nor a test of it; a fix commit touches its finding's file and its tests only`)
+  const reused = Object.entries(state.dispositions).find(([, x]) => x.as === 'fixed' && x.sha === sha)
+  if (reused) return no(`${sha.slice(0, 7)} is already the fix of ${reused[0]}; each fix is its own commit`)
+  return { errors: [], sha, files }
+}
+
+function fixReplyChecked(root, change, { round: k, finding: id, text, file = null, resume = true, now = new Date().toISOString() }) {
   const state = liveState(root, change)
   const r = state.rounds[k - 1]
   if (!r?.findings) refuse(`round ${k}'s findings are not stored`)
@@ -403,7 +439,9 @@ export function recordFix(root, change, { round: k, finding: id, text, file = nu
   const d = state.dispositions[f.id]
   if (CLOSED.includes(d?.as)) refuse(`${f.id} is already ${describe(d)}`)
   const checked = checkFix(text)
-  const errors = !checked.valid ? checked.errors : checked.reply.finding === id ? [] : [`$.finding: ${checked.reply.finding} is not ${id}, the finding this dispatch was sent to fix`]
+  let commit = { errors: [] }
+  if (checked.valid && checked.reply.finding === id && checked.reply.outcome === 'fixed') commit = fixCommitErrors(root, state, r, f, checked.reply.sha)
+  const errors = !checked.valid ? checked.errors : checked.reply.finding === id ? commit.errors : [`$.finding: ${checked.reply.finding} is not ${id}, the finding this dispatch was sent to fix`]
   const refused = recordChecked(root, change, state, { name: fixName(id, k), file, errors, resume })
   if (refused) return { ...refused, fenced: checked.fenced }
   const reply = checked.reply
@@ -418,20 +456,7 @@ export function recordFix(root, change, { round: k, finding: id, text, file = nu
       next: `put the argument to the developer: a dismissal needs ledger.mjs ruling --change ${change} --finding ${f.id} --as dismissed --decision "<their reason>", then the marker and review.mjs disposition --as dismissed; a rejected claim needs ledger.mjs ruling --change ${change} --finding ${f.id} --as fix --decision "<their reason>", then review.mjs fixplan lists it again`
     }
   }
-  const git = gitAt(root)
-  const sha = tryGit(git, 'rev-parse', '--verify', '--quiet', `${reply.sha}^{commit}`)
-  if (!sha) refuse(`${reply.sha} is not a commit`)
-  const head = git('rev-parse', 'HEAD')
-  if (sha === r.findings.fixBase || !isAncestor(git, r.findings.fixBase, sha) || !isAncestor(git, sha, head)) {
-    refuse(`${sha.slice(0, 7)} is not in round ${k}'s fix range ${r.findings.fixBase.slice(0, 7)}..${head.slice(0, 7)}`)
-  }
-  if (git('rev-list', '--parents', '-n', '1', sha).split(' ').length > 2) refuse(`${sha.slice(0, 7)} is a merge commit; a fix is one commit of its own`)
-  const files = git('diff-tree', '--no-commit-id', '--name-only', '-r', '--no-renames', '-z', sha).split('\0').filter(Boolean)
-  if (!files.includes(f.file)) refuse(`${sha.slice(0, 7)} does not touch ${f.file}, the file ${f.id} names`)
-  const others = files.filter((x) => x !== f.file && !TEST_FILE.test(x))
-  if (others.length > 0) refuse(`${sha.slice(0, 7)} touches ${others.join(', ')} besides ${f.file}; a fix commit touches its finding's file and its tests only`)
-  const reused = Object.entries(state.dispositions).find(([, x]) => x.as === 'fixed' && x.sha === sha)
-  if (reused) refuse(`${sha.slice(0, 7)} is already the fix of ${reused[0]}; each fix is its own commit`)
+  const { sha, files } = commit
   writeJson(fixFile, { ...reply, sha, at: now })
   const record = { as: 'fixed', round: k, sha, files, failureMode: reply.failureMode, at: now }
   writeJson(join(state.dir, 'dispositions.json'), { ...state.dispositions, [f.id]: record })

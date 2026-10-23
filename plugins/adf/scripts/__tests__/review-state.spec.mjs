@@ -9,7 +9,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { appendRecord } from '../lib/ledger.mjs'
 import { readRegistry, writeRegistry } from '../lib/registry.mjs'
-import { checkRecord, mapLine, markerCheck, reviewDir, TEST_FILE } from '../lib/review-state.mjs'
+import { checkRecord, isTestOf, mapLine, markerCheck, reviewDir } from '../lib/review-state.mjs'
+import { isTestFile } from '../lib/tdd-proof.mjs'
 import { run as dispatch } from '../dispatch.mjs'
 import { run as review } from '../review.mjs'
 import { run as suite } from '../suite.mjs'
@@ -198,23 +199,63 @@ test('a fix is one commit in the fix range touching its finding file and tests o
   assert.deepEqual([plan.next.name, plan.fixes.map((e) => e.name)], ['ai-fix F1 r1', ['ai-fix F1 r1', 'ai-fix F3 r1', 'ai-fix F2 r1']])
   const fixFile = (name, value, id = value.finding) => R(change, 'fix', '--change', 'add-x', '--round', '1', '--finding', id, '--file', reply(change, name, value))
   const old = git(change, 'rev-parse', 'HEAD~1')
-  assert.match(fixFile('x1', { finding: 'F1', outcome: 'fixed', sha: old, failureMode: 'm' }).error, /is not in round 1's fix range/)
-  assert.match(fixFile('x2', { finding: 'F9', outcome: 'fixed', sha: old, failureMode: 'm' }).error, /F9 is not a finding of round 1/)
-  const both = fix(change, 1, 'F1', { 'src/a.ts': 'a1 fixed\na2\n', 'src/b.ts': 'b1 too\n' })
-  assert.match(both.out.error, /touches src\/b\.ts besides src\/a\.ts/)
+  const outOfRange = fixFile('x1', { finding: 'F1', outcome: 'fixed', sha: old, failureMode: 'm' })
+  assert.deepEqual([outOfRange.ok, outOfRange.retry, outOfRange.next], [false, true, 'retry'])
+  assert.match(outOfRange.errors[0], /is not in round 1's fix range/)
+  const unknown = fixFile('x2', { finding: 'F9', outcome: 'fixed', sha: old, failureMode: 'm' })
+  assert.deepEqual([unknown.retry, unknown.next], [false, 'stop'])
+  assert.match(unknown.error, /F9 is not a finding of round 1/)
   const good = fix(change, 1, 'F1', { 'src/a.ts': 'a1 fixed again\na2\n', 'src/a.test.ts': 'test\n' })
   assert.deepEqual([good.out.ok, good.out.tests], [true, ['src/a.test.ts']])
-  assert.match(fixFile('x3', { finding: 'F3', outcome: 'fixed', sha: good.sha, failureMode: 'm' }).error, /already the fix of F1/)
-  assert.match(fixFile('x4', { finding: 'F1', outcome: 'fixed', sha: good.sha, failureMode: 'm' }).error, /F1 is already fixed in/)
-  const other = fix(change, 1, 'F3', { 'src/b.ts': 'b1 changed\n' })
-  assert.match(other.out.error, /does not touch src\/a\.ts, the file F3 names/)
+  const reused = fixFile('x3', { finding: 'F3', outcome: 'fixed', sha: good.sha, failureMode: 'm' })
+  assert.deepEqual([reused.retry, reused.next], [true, 'retry'])
+  assert.match(reused.errors[0], /already the fix of F1/)
+  const closed = fixFile('x4', { finding: 'F1', outcome: 'fixed', sha: good.sha, failureMode: 'm' })
+  assert.deepEqual([closed.retry, closed.next], [false, 'stop'])
+  assert.match(closed.error, /F1 is already fixed in/)
   const claim = fixFile('x5', { finding: 'F2', outcome: 'false-positive', failureMode: 'b1 is never null', argument: 'src/b.ts:1 is a constant' })
   assert.deepEqual([claim.ok, claim.awaiting], [true, 'developer'])
   assert.match(claim.next, /ruling --change add-x --finding F2 --as dismissed/)
   const again = R(change, 'fixplan', '--change', 'add-x', '--round', '1')
   assert.deepEqual([again.next.finding, again.fixes.map((e) => e.finding), again.awaitingDeveloper], ['F3', ['F3'], [{ finding: 'F2', argument: 'src/b.ts:1 is a constant' }]])
-  assert.match(fixFile('x6', '{"finding": "F3"}', 'F3').error, /invalid/)
-  assert.equal(TEST_FILE.test('apps/x/__tests__/a.spec.mjs') && TEST_FILE.test('pkg/a_test.go') && !TEST_FILE.test('src/latest.ts'), true)
+  const second = fixFile('x6', '{"finding": "F3"}', 'F3')
+  assert.deepEqual([second.stopped, second.next], [true, 'stop'])
+  assert.match(second.error, /a second invalid reply from ai-fix F3 r1 stops the stage/)
+  assert.equal(isTestFile('apps/x/__tests__/a.spec.mjs') && isTestFile('pkg/a_test.go') && !isTestFile('src/latest.ts'), true)
+})
+
+test('a fix commit touches the finding file, its tests or both; another source file or an unrelated test is refused with a retry, then a stop', () => {
+  const change = setup({ files: { 'src/a.ts': 'a1\na2\n', 'src/b.ts': 'b1\n' } })
+  reviewed(change, finding('F1', 'HIGH', { line: 1, title: 'line 1 has no test' }), finding('F2', 'HIGH'), finding('F3', 'HIGH', { line: 1 }))
+  // A missing test is fixed by a commit that touches only the tests of the named file.
+  const tested = fix(change, 1, 'F1', { 'src/__tests__/a.spec.ts': 'test a1\n', 'tests/test_a.py': 'test a1\n' })
+  assert.deepEqual([tested.out.ok, tested.out.files, tested.out.tests], [true, ['src/__tests__/a.spec.ts', 'tests/test_a.py'], ['src/__tests__/a.spec.ts', 'tests/test_a.py']])
+  // Another source file, alone or beside the named one, is refused; the finding keeps its one retry.
+  const source = fix(change, 1, 'F2', { 'src/a.ts': 'a1\na2 fixed\n', 'src/b.ts': 'b1 too\n' })
+  assert.deepEqual([source.out.ok, source.out.retry, source.out.next, source.out.name], [false, true, 'retry', 'ai-fix F2 r1'])
+  assert.match(source.out.errors[0], /touches src\/b\.ts, which is neither src\/a\.ts nor a test of it; a fix commit touches its finding's file and its tests only/)
+  // A test-only commit whose tests are another file's is refused too.
+  const unrelated = fix(change, 1, 'F3', { 'src/b.test.ts': 'test b1\n' })
+  assert.deepEqual([unrelated.out.ok, unrelated.out.retry, unrelated.out.next], [false, true, 'retry'])
+  assert.match(unrelated.out.errors[0], /touches src\/b\.test\.ts, which is neither src\/a\.ts nor a test of it/)
+  // The second refused commit of one finding stops the stage.
+  const stop = fix(change, 1, 'F3', { 'src/b.ts': 'b1 changed\n' })
+  assert.deepEqual([stop.out.ok, stop.out.retry, stop.out.stopped, stop.out.next], [false, undefined, true, 'stop'])
+  assert.match(stop.out.error, /a second invalid reply from ai-fix F3 r1 stops the stage/)
+  const stopped = fix(change, 1, 'F2', { 'src/a.ts': 'a1\na2 fixed again\n' })
+  assert.deepEqual([stopped.out.ok, stopped.out.stopped, stopped.out.next], [false, true, 'stop'])
+  assert.match(stopped.out.error, /the review stage of add-x stopped/)
+})
+
+test('a test of a file is a test file named after it', () => {
+  assert.equal(isTestOf('src/__tests__/review-state.spec.mjs', 'src/lib/review-state.mjs'), true)
+  assert.equal(isTestOf('src/a.test.ts', 'src/a.ts'), true)
+  assert.equal(isTestOf('pkg/a_test.go', 'pkg/a.go'), true)
+  assert.equal(isTestOf('tests/test_a.py', 'a.py'), true)
+  assert.equal(isTestOf('src/a.service.spec.ts', 'src/a.service.ts'), true)
+  assert.equal(isTestOf('src/b.test.ts', 'src/a.ts'), false)
+  assert.equal(isTestOf('src/a.ts', 'src/a.ts'), false)
+  assert.equal(isTestOf('src/a-helper.ts', 'src/a.ts'), false)
 })
 
 test('a false-positive claim the developer rejects is listed again as a fix, with the argument and the decision; --also is kept', () => {
@@ -435,9 +476,9 @@ test('assemble refuses a dirty tree and a commit no round reviewed; a marker-onl
 })
 
 test('the suite after the fixes runs with the base check; a new failure blocks unless the developer rules on it', () => {
-  const change = setup({ command: 'test ! -f src/flag.test.ts' })
+  const change = setup({ command: 'test ! -f src/a.test.ts' })
   reviewed(change, finding('F1', 'HIGH'))
-  fix(change, 1, 'F1', { 'src/a.ts': 'line1\nline2 fixed\nline3\n', 'src/flag.test.ts': 'x\n' })
+  fix(change, 1, 'F1', { 'src/a.ts': 'line1\nline2 fixed\nline3\n', 'src/a.test.ts': 'x\n' })
   assert.match(R(change, 'assemble', '--change', 'add-x').error, /suite has not run/)
   R(change, 'round', '--change', 'add-x')
   R(change, 'input', '--round', '2', '--change', 'add-x', '--prompt', PROMPT)

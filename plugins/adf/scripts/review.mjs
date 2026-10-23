@@ -65,11 +65,15 @@
 //                  [--root <dir>]
 //       check the reply of the fixer dispatched as `ai-fix F<n> r<k>` (the finding is the
 //       command's: a reply naming another finding is invalid); `fixed` needs its sha in the
-//       round's fix range, one commit touching the finding's file and otherwise only test
-//       files, and records the disposition; `false-positive` leaves the finding open with its
-//       argument, for the developer. Invalid replies: one retry, as response, keyed by the
-//       dispatch name.
-//       { ok, finding, outcome, sha?, files?, tests?, awaiting?, next? }
+//       round's fix range, one commit touching the finding's file, its tests or both (a test
+//       of the file: a test file named after it) and nothing else, and records the
+//       disposition; `false-positive` leaves the finding open with its argument, for the
+//       developer. A commit that fails the check makes the reply invalid. Invalid replies: one
+//       retry, as response, keyed by the dispatch name. Every refusal carries `next`: `retry`
+//       (`retry: true`) or `stop` (no fixer for this finding; `stopped: true` when the stage
+//       stopped).
+//       { ok, finding, outcome, sha?, files?, tests?, awaiting?, next? }; refused: as response,
+//       or { ok: false, error, retry: false, next: 'stop', stopped? }
 //   review.mjs disposition --change <name> --finding F<n> --as dismissed|accepted|recorded
 //                          [--body-file <file>] [--root <dir>]
 //       dismissed: the developer's ruling (`ledger.mjs ruling --finding F<n> --as dismissed`)

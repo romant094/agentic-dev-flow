@@ -164,8 +164,10 @@ are `review-range`, `review-slices`, `review-suite`, `review-round-<k>` on a che
 
    `--finding` is the finding the fixer was dispatched for: the retry count is kept by the
    dispatch name `ai-fix F<n> r<k>`, never by the reply's content, and a reply naming another
-   finding is invalid. `fixed` is checked against the round's fix range and the finding's file,
-   and closes the finding. An invalid reply follows step 7's retry rule. Then run `fixplan` again; the fixes
+   finding is invalid. `fixed` is checked against the round's fix range and the finding's file:
+   the commit touches that file, its tests (test files named after it) or both, and nothing
+   else. It closes the finding. A commit that fails the check makes the reply invalid, and an
+   invalid reply follows step 7's retry rule. Every refusal says `next`: `retry` or `stop`. Then run `fixplan` again; the fixes
    are done when `next` is null.
 
 9. **Settle what is not fixed.**
