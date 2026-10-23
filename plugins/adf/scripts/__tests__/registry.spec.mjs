@@ -186,7 +186,7 @@ test('a registry entry whose plugin is not installed or disabled is absent: no t
   plugin(root, 'g', { name: 'g', contract: '1.0', provides: { knowledge: { script: 's.mjs', operations: ['context', 'log', 'check'] } } })
   const added = addExtension(root, 'plugins/g', core)
   assert.deepEqual(readRegistry(root).extensions.at(-1), { path: 'plugins/g', points: ['knowledge'] })
-  assert.match(addReport(added, checkRegistry(root, core)), /\nWarning: adf-memory@agentic-dev-flow is in the registry but not installed/)
+  assert.match(addReport({ ...added, settings: { added: [], notes: [] } }, checkRegistry(root, core)), /\nWarning: adf-memory@agentic-dev-flow is in the registry but not installed/)
 })
 
 test('validateDeclaration needs a script inside the plugin and every operation of the point', () => {
