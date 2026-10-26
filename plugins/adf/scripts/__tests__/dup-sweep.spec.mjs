@@ -213,18 +213,18 @@ test('a finding recorded with a symbol after its line still clears when its file
   assert.deepEqual(sweepState(change, 'add-x'), { ran: true, ids: ['S1'], open: [], cleared: [{ id: 'S1', by: 'consolidated' }] })
 })
 
-test('a sweep reply naming a location in any form but path:line[-line] is refused, with the form expected', () => {
+test('a sweep reply with text after the line of a location is refused, with the form expected; a bare path, path:line and path:line-line pass', () => {
   const { change } = host()
   mkdirSync(join(change, 'r'), { recursive: true })
   const finding = (introduced, existing) => ({ introduced, existing, why: 'Same projection.' })
-  writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', findings: [finding('src/b.ts:16 toChanges', 'src/a.ts:33'), finding('src/b.ts:2-9', 'pickKeys')] }))
+  writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', findings: [finding('src/b.ts:16 toChanges', 'src/a.ts:33'), finding('src/b.ts:2-9', 'src/a.ts:4-8 pickKeys()')] }))
   const expected = [
-    '$.findings[0].introduced: "src/b.ts:16 toChanges" is not a location; write path:line or path:line-line, with nothing after the line',
-    '$.findings[1].existing: "pickKeys" is not a location; write path:line or path:line-line, with nothing after the line'
+    '$.findings[0].introduced: "src/b.ts:16 toChanges" has text after its line; write path, path:line or path:line-line, with nothing after the line',
+    '$.findings[1].existing: "src/a.ts:4-8 pickKeys()" has text after its line; write path, path:line or path:line-line, with nothing after the line'
   ]
   assert.deepEqual(sweep(['filter', 'r/s.json', '--root', change]).reasons, expected)
   const out = dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/s.json', '--root', change], { main: change })
   assert.deepEqual([out.valid, out.next, out.errors], [false, 'retry', expected])
-  writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', findings: [finding('src/b.ts:16', 'src/a.ts:33-40')] }))
+  writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', findings: [finding('src/b.ts:16', 'src/a.ts:33-40'), finding('src/c.ts', 'src/a.ts')] }))
   assert.equal(dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/s.json', '--root', change], { main: change }).valid, true)
 })

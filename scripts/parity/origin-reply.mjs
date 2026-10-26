@@ -19,7 +19,7 @@
 //
 // Every difference must fall in a class of lib/reply-v1.mjs CLASSES (verdict-computed,
 // tests-structured, commits-from-git, text-nonempty, line-integer, blocker-required,
-// dispositions-checked, role-removed, cli-form): every reason of the refusing side must match the
+// dispositions-checked, location-form, role-removed, cli-form): every reason of the refusing side must match the
 // class. For a reply both accept, a stated status or verdict the port computes differently is
 // counted (status-computed, verdict-computed), not failed. Exit 1 on an unexplained difference.
 import { spawnSync } from 'node:child_process'

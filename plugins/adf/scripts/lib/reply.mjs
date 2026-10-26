@@ -62,9 +62,8 @@
 //   sweep
 //     { verdict: CLEAN | FINDINGS, findings, dropped, dispositions? }
 //     Dispositions are required exactly when sweepInputs reports a second question, one for each
-//     REMOVED or RENAMED requirement it lists; every `introduced` and `existing` is a location
-//     `path:line[-line]` (lib/sweep.mjs locationErrors); the findings a DUP marker accepts are
-//     dropped.
+//     REMOVED or RENAMED requirement it lists; no `introduced` or `existing` carries text after
+//     its line (lib/sweep.mjs locationErrors); the findings a DUP marker accepts are dropped.
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'

@@ -11,7 +11,7 @@
     {
       "name": "adf",
       "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
-      "version": "0.14.10",
+      "version": "0.14.11",
       "source": "./plugins/adf"
     },
     {

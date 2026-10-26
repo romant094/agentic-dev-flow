@@ -39,7 +39,7 @@ import { c8Reply, completeImpl, ingestStaleAnswers, specMergeReply } from './rep
 import { markerFor, originMarkerFor, originPlaceholder } from '../../../plugins/adf-gitlab/scripts/lib/forge.mjs'
 import { parseGraph, taskBody } from '../../../plugins/adf/scripts/lib/dispatch.mjs'
 import { parsePlanTasks } from '../../../plugins/adf/scripts/lib/plan-symbols.mjs'
-import { isTestFile } from '../../../plugins/adf/scripts/lib/tdd-proof.mjs'
+import { isTestOf } from '../../../plugins/adf/scripts/lib/review-state.mjs'
 
 export const PHASES = ['propose', 'apply', 'verify', 'review', 'archive', 'land']
 export const MID_FLIGHT_PHASES = ['apply', 'verify', 'review', 'archive']
@@ -799,13 +799,22 @@ function verify(ctx) {
 
 // ---------------------------------------------------------------- review
 
-// A fix commit made again as two: the finding's file and the test files first, then the rest.
-// Returns { fix, rest, actions }, or null when nothing but those files changed.
-function splitFix(ctx, sha, findingFile) {
-  const files = commitFiles(ctx.git, ctx.root, sha).map((f) => f.file)
-  const first = files.filter((f) => f === findingFile || isTestFile(f))
+// The parts of a fix commit `review.mjs fix` refused for touching a file besides its finding's
+// file and that file's tests: { first, rest }, the finding's file and its tests (lib/review-state.mjs
+// isTestOf) first, everything else after. Null for any other refusal, or when a part is empty.
+export function fixSplit(fx, files, findingFile) {
+  if (!(fx.json?.errors ?? []).some((e) => /^\$\.sha: \S+ touches .*, which is neither .* nor a test of it/.test(e))) return null
+  const first = files.filter((f) => f === findingFile || isTestOf(f, findingFile))
   const rest = files.filter((f) => !first.includes(f))
-  if (!rest.length || !first.length) return null
+  return first.length && rest.length ? { first, rest } : null
+}
+
+// A fix commit made again as two (fixSplit's parts). Returns { fix, rest, actions }, or null when
+// the refusal is no other-files refusal or the commit cannot be split.
+function splitFix(ctx, fx, sha, findingFile) {
+  const parts = fixSplit(fx, commitFiles(ctx.git, ctx.root, sha).map((f) => f.file), findingFile)
+  if (!parts) return null
+  const { first, rest } = parts
   const message = ctx.git(ctx.root, 'show', '-s', '--format=%B', sha)
   ctx.git(ctx.root, 'reset', '-q', '--soft', `${sha}^`)
   ctx.git(ctx.root, 'reset', '-q')
@@ -897,8 +906,9 @@ function review(ctx) {
         ctx.difference('review', `review.mjs fix refuses the origin's fix of ${next.finding}`, fx.refusal)
         // A workaround for a fix commit that touches more than the finding's file and its tests:
         // the commit made again as two, the finding's file and its tests first, the rest after
-        // it, so the fix is recorded and the next round reviews the rest with it.
-        const split = /touches .* besides /.test(fx.refusal ?? '') ? splitFix(ctx, made.sha, next.file) : null
+        // it, so the fix is recorded and the next round reviews the rest with it. The refused
+        // reply used the finding's first attempt; the split reply is its one retry.
+        const split = splitFix(ctx, fx, made.sha, next.file)
         if (split) {
           ctx.record.shaMap[fixItem.reply.sha] = split.fix
           const file2 = fp.json.replyFile.replace(/\.json$/, '-2.json')

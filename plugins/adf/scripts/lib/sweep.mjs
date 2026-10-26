@@ -15,7 +15,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { changeDir, readChangeMeta } from './changes.mjs'
-import { coveringMarker, findMarkers, LOCATION } from './dup.mjs'
+import { coveringMarker, findMarkers, TRAILING_TEXT } from './dup.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { baseRef } from './plan-symbols.mjs'
 import { appendRecord, appendScripted, readRecords } from './ledger.mjs'
@@ -133,14 +133,15 @@ export function dupFilter(root, replyFindings) {
   return { verdict: findings.length ? 'FINDINGS' : 'CLEAN', findings, dropped }
 }
 
-// Each finding's `introduced` and `existing` must be a location in the one form (lib/dup.mjs
-// LOCATION): a symbol after the line once kept `locate` from reading the file, and a
-// consolidated duplicate stayed open. One error per location in another form.
+// No finding's `introduced` or `existing` may carry text after its line (lib/dup.mjs
+// TRAILING_TEXT): a symbol after the line once kept `locate` from reading the file, and a
+// consolidated duplicate stayed open. A bare path, `path:line` and `path:line-line` pass. One
+// error per location with text after its line.
 export function locationErrors(findings) {
   const errors = []
   ;(findings ?? []).forEach((f, i) => {
     for (const key of ['introduced', 'existing']) {
-      if (!LOCATION.test(String(f[key] ?? ''))) errors.push(`$.findings[${i}].${key}: "${f[key]}" is not a location; write path:line or path:line-line, with nothing after the line`)
+      if (TRAILING_TEXT.test(String(f[key] ?? '').trim())) errors.push(`$.findings[${i}].${key}: "${f[key]}" has text after its line; write path, path:line or path:line-line, with nothing after the line`)
     }
   })
   return errors

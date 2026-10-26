@@ -106,6 +106,10 @@ export const CLASSES = {
     why: 'v1 takes dispositions as optional; v2 requires exactly one for each REMOVED or RENAMED requirement the change lists, and none when it lists none',
     ours: /^\$\.dispositions/
   },
+  'location-form': {
+    why: 'v1 accepts any text as a sweep location; v2 refuses text after a location\'s line (`path:16 symbolName`), which once kept a consolidated duplicate open, and accepts a bare path, path:line and path:line-line',
+    ours: /^\$\.findings\[\d+\]\.(introduced|existing): .* has text after its line; /
+  },
   'role-removed': { why: 'the v1 spec-merge counts role is gone; the port\'s spec-merge replies under spec-merge-resolution.schema.json' },
   'cli-form': { why: 'the port\'s CLI is `reply.mjs check --change --name --file`; a stray positional is a wrong call there, ignored by the origin' }
 }

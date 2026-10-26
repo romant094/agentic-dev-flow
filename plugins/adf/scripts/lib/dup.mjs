@@ -82,9 +82,9 @@ export function findMarkers(root) {
   return markers
 }
 
-// The one location form a sweep reply may write, `path:line` or `path:line-line`
-// (lib/sweep.mjs locationErrors refuses any other).
-export const LOCATION = /^\S(?:.*\S)?:[1-9]\d*(?:-[1-9]\d*)?$/
+// A location with text after its line (`path:16 symbolName`), the one form a sweep reply may not
+// write (lib/sweep.mjs locationErrors); a bare path, `path:line` and `path:line-line` pass.
+export const TRAILING_TEXT = /:\d+(?:-\d+)?\s+\S/
 
 // A finding's `introduced` as { file, line }: `path:12`, `path:12-30`, or a bare path (line
 // null). Text after the line, which replies written before the form was checked carry

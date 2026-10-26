@@ -17,7 +17,7 @@ import { createSandbox } from '../lib/sandbox.mjs'
 import { findCandidates } from '../lib/replay-candidates.mjs'
 import { buildReplies } from '../lib/replay-replies.mjs'
 import { ORDER, PLUGINS } from '../lib/replay-host.mjs'
-import { draftCheck, drive, driveMidFlight, runReport, writeRunRecord } from '../lib/replay-drive.mjs'
+import { draftCheck, drive, driveMidFlight, fixSplit, runReport, writeRunRecord } from '../lib/replay-drive.mjs'
 import { originPlaceholder } from '../../../plugins/adf-gitlab/scripts/lib/forge.mjs'
 import { ARCHIVED, BRANCH, CHANGE, DEV, fixtureOrigin } from './replay-fixture.mjs'
 
@@ -136,6 +136,17 @@ test('mid-flight: the origin\'s propose commit and Draft continued by the port; 
     assert.equal(r.resume.same, true)
   })
   assert.deepEqual(snapshot(F.dir), before)
+})
+
+test('fixSplit: a fix refused for a file besides its finding\'s and that file\'s tests is split there, the tests of other files going with the rest', () => {
+  const errors = ['$.sha: d0b7cc8 touches src/b/b.service.ts, src/b/__tests__/b.service.spec.ts, which is neither src/a/a.service.ts nor a test of it; a fix commit touches its finding\'s file and its tests only']
+  const files = ['src/b/__tests__/b.service.spec.ts', 'src/b/b.service.ts', 'src/a/__tests__/a.service.spec.ts', 'src/a/a.service.ts']
+  assert.deepEqual(fixSplit({ ok: false, json: { errors } }, files, 'src/a/a.service.ts'), {
+    first: ['src/a/__tests__/a.service.spec.ts', 'src/a/a.service.ts'],
+    rest: ['src/b/__tests__/b.service.spec.ts', 'src/b/b.service.ts']
+  })
+  assert.equal(fixSplit({ ok: false, json: { errors: ['$.sha: abc is not a commit'] } }, files, 'src/a/a.service.ts'), null)
+  assert.equal(fixSplit({ ok: false, json: { errors } }, ['src/a/a.service.ts'], 'src/a/a.service.ts'), null)
 })
 
 test('draftCheck: one adf: block, no opsx: block and no placeholder', () => {
