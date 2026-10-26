@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "adf/ingest.schema.json",
   "title": "ADF ingest reply",
-  "description": "The ingest agent's reply at archive: the knowledge pages it changed and why, an answer for every stale entry, the two fixed answers and the log entry the core writes through the knowledge role. nothingLearned true means no pages and no log; every stale entry still needs an answer. lib/ingest.mjs checkIngestReply adds the rules a schema cannot state.",
+  "description": "The ingest agent's reply at archive: the edit of every knowledge page it changes, creates or deletes, as a git patch with the reason, applied by archive.mjs ingest (the agent writes no page), an answer for every stale entry, the two fixed answers and the log entry the core writes through the knowledge role. nothingLearned true means no pages and no log; every stale entry still needs an answer. lib/ingest.mjs checkIngestReply adds the rules a schema cannot state.",
   "type": "object",
   "additionalProperties": false,
   "required": ["nothingLearned", "pages", "stale", "invariant", "likelyMistake"],
@@ -31,10 +31,11 @@
     "page": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["path", "why"],
+      "required": ["path", "why", "patch"],
       "properties": {
         "path": { "type": "string", "minLength": 1 },
-        "why": { "type": "string", "pattern": "\\S" }
+        "why": { "type": "string", "pattern": "\\S" },
+        "patch": { "type": "string", "pattern": "\\S" }
       }
     },
     "stale": {

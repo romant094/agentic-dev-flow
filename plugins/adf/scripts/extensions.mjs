@@ -3,8 +3,7 @@
 // on a refusal, so a command file reads the result instead of parsing prose.
 //
 //   extensions.mjs init                      create the registry if missing; declare ADF
-//                                            in the host's .claude/settings.json, with the
-//                                            knowledge write rules; ignore
+//                                            in the host's .claude/settings.json; ignore
 //                                            the flow's local state; add the planning guide
 //                                            and the review prompt (review.prompt);
 //                                            then the Superpowers gate (`superpowers`) and
@@ -13,9 +12,7 @@
 //                                            set the branch policy in the registry
 //   extensions.mjs add <id|path> [--config J]
 //                                            enable a plugin, installed (name@marketplace)
-//                                            or at a path; copy the host files it declares;
-//                                            for a knowledge provider, add the knowledge
-//                                            write rules to the host's settings
+//                                            or at a path; copy the host files it declares
 //   extensions.mjs remove <name>             disable a plugin
 //   extensions.mjs check                     validate the registry and every plugin
 //
@@ -28,21 +25,16 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { allowInHost, declareInHost, knowledgeWriteRules, marketplaceSource } from './lib/host-settings.mjs'
+import { declareInHost, marketplaceSource } from './lib/host-settings.mjs'
 import { detectIntegration, readBranches, setBranches } from './lib/branches.mjs'
 import { createPlanningGuide, createReviewPrompt, ignoreLocalDirs } from './lib/host-files.mjs'
-import { knowledgePaths } from './lib/roles.mjs'
 import { addExtension, addReport, branchesReport, checkRegistry, initRegistry, initReport, removeExtension, removeReport } from './lib/registry.mjs'
 import { checkSuperpowers, claudeHome } from './lib/superpowers.mjs'
 import { isMain } from './lib/main.mjs'
-import { WORKTREES_DIR } from './lib/workspace.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const contract = JSON.parse(readFileSync(join(here, '..', 'contract', 'contract.json'), 'utf8'))
 const core = { coreContract: contract.version, points: contract.points }
-
-// The allow rules for the knowledge provider's paths; none without a provider.
-const knowledgeRules = (root, home) => knowledgeWriteRules(knowledgePaths(root, { ...core, home }).paths, WORKTREES_DIR)
 
 function option(args, name) {
   const i = args.indexOf(name)
@@ -64,7 +56,7 @@ export function run(argv) {
       const result = {
         ...initRegistry(root, contract.version),
         contract: contract.version,
-        settings: declareInHost(root, { source: marketplaceSource(home), allow: knowledgeRules(root, home) }),
+        settings: declareInHost(root, { source: marketplaceSource(home) }),
         gitignore: ignoreLocalDirs(root),
         planningGuide: createPlanningGuide(root),
         reviewPrompt: createReviewPrompt(root),
@@ -84,7 +76,6 @@ export function run(argv) {
     case 'add': {
       if (!target) throw new Error('usage: add <plugin id or path> [--config <json>]')
       const added = addExtension(root, target, { ...core, home, config: config && JSON.parse(config) })
-      added.settings = allowInHost(root, added.points.includes('knowledge') ? knowledgeRules(root, home) : [])
       const check = checkRegistry(root, { ...core, home })
       return { ...added, check, report: addReport(added, check) }
     }

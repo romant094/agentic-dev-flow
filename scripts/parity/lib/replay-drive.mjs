@@ -960,6 +960,23 @@ function placements(ctx) {
   return ctx.run('archive', 'archive.mjs', ['placements', '--change', name, '--root', ctx.root])
 }
 
+// The ingest agent writes no page: each page's edit is a patch in its reply. The replay writes the
+// pages as the origin's commit holds them, takes each one's `git diff`, and puts the tree back.
+function pagePatches(git, cwd, rev, files) {
+  const tracked = new Set(files.filter((f) => git.orNull(cwd, 'ls-files', '--error-unmatch', '--', f) !== null))
+  writeFrom(git, cwd, rev, files)
+  const fresh = files.filter((f) => !tracked.has(f) && existsSync(join(cwd, f)))
+  const run = (...args) => execFileSync('git', ['-c', 'core.quotePath=false', ...args], { cwd, encoding: 'utf8', maxBuffer: 1 << 28 })
+  if (fresh.length) run('add', '-N', '--', ...fresh)
+  const patches = Object.fromEntries(files.map((f) => [f, run('diff', '--no-color', '--no-ext-diff', '--', f)]))
+  if (fresh.length) {
+    run('reset', '-q', '--', ...fresh)
+    for (const f of fresh) rmSync(join(cwd, f), { force: true })
+  }
+  if (tracked.size) run('checkout', '-q', '--', ...tracked)
+  return patches
+}
+
 function ingest(ctx) {
   const { name } = ctx
   const stale = ctx.run('archive', 'ingest.mjs', ['stale', '--change', name, '--root', ctx.root])
@@ -973,15 +990,15 @@ function ingest(ctx) {
   if (item && !item.missing) {
     const at = item.source[0].commit
     const pages = item.reply.pages.map((p) => p.path)
-    writeFrom(ctx.git, ctx.root, at, [...pages, ...(item.deleted ?? [])])
+    const patches = pagePatches(ctx.git, ctx.root, at, pages)
     const answers = ingestStaleAnswers(item, stale.json.stale ?? [])
     let staleAnswers = answers.stale
     if (!staleAnswers) {
       staleAnswers = (stale.json.stale ?? []).map((s) => (item.reply.pages.some((p) => p.path === s.path) ? { path: s.path, outcome: 'updated' } : { path: s.path, outcome: 'still-true', argument: 'replay: injected; the origin\'s ingest left the page as it was' }))
       why.push(answers.missing)
     }
-    reply = { ...item.reply, stale: staleAnswers }
-    ctx.rec.agent('archive', 'ingest', [`wrote ${pages.length} page(s) as ${at.slice(0, 8)} holds them`, `wrote the reply ${prompt.json.replyFile}`], why.length ? [{ kind: 'injected', why: why.join('; ') }] : [])
+    reply = { ...item.reply, pages: item.reply.pages.map((p) => ({ ...p, patch: patches[p.path] })), stale: staleAnswers }
+    ctx.rec.agent('archive', 'ingest', [`returned ${pages.length} page edit(s) as ${at.slice(0, 8)} holds the pages`, `wrote the reply ${prompt.json.replyFile}`], why.length ? [{ kind: 'injected', why: why.join('; ') }] : [])
   } else {
     reply = { nothingLearned: true, pages: [], stale: (stale.json.stale ?? []).map((s) => ({ path: s.path, outcome: 'still-true', argument: 'replay: injected' })), invariant: '', likelyMistake: '' }
     ctx.rec.agent('archive', 'ingest', [`wrote the reply ${prompt.json.replyFile}`], [{ kind: 'injected', why: `no ingest reply (${item?.missing ?? 'no item'}); nothingLearned is injected` }])

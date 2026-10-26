@@ -198,23 +198,31 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role ingest --root <root>
    ```
 
-   and dispatch its `prompt` as it is, to its `agent`, named `name`. The agent adds what the change taught, and corrects or removes what the change made
-   stale: a stale page is read as fact by every later agent. It answers both fixed questions,
-   the invariant no single file shows and what a future implementer would most plausibly get
-   wrong, and answers every stale entry `updated`, `removed` or `still-true` with its argument.
-   It writes no log entry and commits nothing. Then:
+   and dispatch its `prompt` as it is, to its `agent`, named `name`. The agent decides what the
+   change taught, and what it made stale to correct or remove: a stale page is read as fact by
+   every later agent. It answers both fixed questions, the invariant no single file shows and
+   what a future implementer would most plausibly get wrong, and answers every stale entry
+   `updated`, `removed` or `still-true` with its argument. It writes no page: it reads the
+   knowledge base and returns every page it changes, creates or deletes as a `git` patch in its
+   reply, which the script applies. Claude Code asks for an interactive approval of every write
+   under a project's `.claude/` directory, whatever the allow rules say, so an agent writing a
+   page there would stop on a prompt. It writes no log entry and commits nothing. Then:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/archive.mjs" ingest --change <change> --reply <replyFile> [--resume no] --root <root>
    ```
 
-   The script checks that the pages the reply lists are exactly the files changed under the
-   knowledge base and that every stale entry has an answer, then writes the log entry through
-   the knowledge role. It records the reply as an event of the dispatch `ingest`, its one record.
+   The script checks the whole reply before it writes anything: that the knowledge base holds no
+   change the agent made itself, that each page's patch edits only that page, inside the
+   knowledge base's paths and outside its log, through no symbolic link, and applies to the tree,
+   and that every stale entry has an answer that holds once the edits are applied. Then it
+   applies the edits in the change worktree with `git apply`, all or none, and writes the log
+   entry through the knowledge role; a failed log write takes the edits back. It records the reply as an event of the dispatch `ingest`, its one record.
    On a refusal record another attempt: `detail.next` `retry` sends the reply back once, to the
    same agent, resumed, with the step's `errors` (`detail.mode` `resume`); where the harness
    cannot resume it, pass `--resume no` and dispatch the prompt afresh with the errors as its
-   question (`fresh`). `stop` stops archive, and so does every later `attempt` of `ingest`.
+   question (`fresh`). A refused reply leaves the tree as it was. `stop` stops archive, and so
+   does every later `attempt` of `ingest`; its output names the reset command (`reset`).
    When the cause was the environment, a permission denial or a missing tool, and the
    environment is now fixed, the developer reset ends the stop, as the apply instruction states
    it (`${CLAUDE_PLUGIN_ROOT}/schema/instructions/apply.md`, "A dispatch stopped on the limit"):

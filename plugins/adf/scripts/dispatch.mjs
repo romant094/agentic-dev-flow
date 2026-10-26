@@ -35,7 +35,9 @@
 //   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <change worktree>]
 //       records one attempt of the dispatch and returns { ok, name, attempt, next }, next one of
 //       dispatch (the first), retry (the one retry of a refused reply), stop (BLOCKED); counted
-//       from the name's last developer reset
+//       from the name's last developer reset. A stop carries reset: { command, note }, the
+//       `dispatch.mjs reset` command and that the developer is asked first (none for ai-review,
+//       ai-fix and verify)
 //   dispatch.mjs reset   --change <name> --name "<dispatch name>" --reason "<text>" [--yes <plan>]
 //                        [--root <change worktree>]
 //       the developer reset of a stopped dispatch whose stop the environment caused, held for the
@@ -56,7 +58,8 @@
 //       checks the reply through its role's checker (the role read from the name) and records a
 //       `valid` or `invalid` event of the name (lib/attempts.mjs). { ok, valid, errors, next, mode,
 //       invalid, replyFile, log, result? }: next `proceed` for a valid reply; for a refused one
-//       `retry` (the first) or `stop` (the second: BLOCKED, nothing it reported is recorded);
+//       `retry` (the first) or `stop` (the second: BLOCKED, nothing it reported is recorded,
+//       `reset` as `attempt` gives it);
 //       mode `resume` on a retry, `fresh` when --resume no says the harness cannot resume the
 //       agent, else null. A missing reply file is a refused reply. The checkers: lib/reply.mjs
 //       for the apply roles, whose computed `result` (the impl status, the review verdicts, ...)

@@ -22,6 +22,7 @@ import { appendRecord } from '../lib/ledger.mjs'
 import { initRegistry, setDebtRoot } from '../lib/registry.mjs'
 import { writeSpecsBase } from '../lib/specs.mjs'
 import { create } from '../lib/workspace.mjs'
+import { pagePatch } from './fixtures/page-patch.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const CLI = join(here, '..', 'archive.mjs')
@@ -491,9 +492,9 @@ test('ingest adds the resolved debt ids to the knowledge log entry', () => {
   }
   for (const step of ['check', 'placements', 'merge', 'move', 'commit-specs']) assert.equal(call(h, [step], deps).ok, true, step)
   assert.equal(ingestRun(['stale', '--change', 'add-x', '--root', h.wt], { knowledge: () => context }).state, 'done')
-  put(h.wt, { [`${MEM}/entities/widgets.md`]: '# Widgets\n\nWidgets are stored dry.\n' })
+  const page = { path: `${MEM}/entities/widgets.md`, why: 'the dry store', patch: pagePatch(h.wt, `${MEM}/entities/widgets.md`, '# Widgets\n\nWidgets are stored dry.\n') }
   const reply = join(h.wt, '..', 'reply.json')
-  writeFileSync(reply, JSON.stringify({ nothingLearned: false, pages: [{ path: `${MEM}/entities/widgets.md`, why: 'the dry store' }], stale: [], invariant: 'a widget is stored dry', likelyMistake: 'storing it wet', log: { title: 'Dry widget store', bullets: ['widgets are stored dry'] } }))
+  writeFileSync(reply, JSON.stringify({ nothingLearned: false, pages: [page], stale: [], invariant: 'a widget is stored dry', likelyMistake: 'storing it wet', log: { title: 'Dry widget store', bullets: ['widgets are stored dry'] } }))
   const ingest = call(h, ['ingest', '--reply', reply], deps)
   assert.equal(ingest.ok, true, ingest.refusal)
   assert.deepEqual(logged, [{ type: 'ingest', title: 'Dry widget store', bullets: ['widgets are stored dry', "Resolved debt, moved to its block's resolved.md in the debt tree: snmp-01, snmp-03."] }])
@@ -599,17 +600,19 @@ test('ingest writes the log through the knowledge role and commit-memory commits
   assert.match(call(h, ['ingest'], deps).refusal, /ingest needs --reply: run ingest\.mjs stale --change add-x/)
   const stale = ingestRun(['stale', '--change', 'add-x', '--root', h.wt], { knowledge: () => context })
   assert.equal(stale.state, 'done')
-  put(h.wt, { [`${MEM}/entities/widgets.md`]: '# Widgets\n\nWidgets are stored dry.\n' })
+  const page = { path: `${MEM}/entities/widgets.md`, why: 'the dry store', patch: pagePatch(h.wt, `${MEM}/entities/widgets.md`, '# Widgets\n\nWidgets are stored dry.\n') }
   const reply = join(h.wt, '..', 'reply.json')
-  writeFileSync(reply, JSON.stringify({ nothingLearned: false, pages: [{ path: `${MEM}/entities/widgets.md`, why: 'the dry store' }], stale: [], invariant: 'a widget is stored dry', likelyMistake: 'storing it wet', log: { title: 'Dry widget store', bullets: ['widgets are stored dry'] } }))
+  writeFileSync(reply, JSON.stringify({ nothingLearned: false, pages: [page], stale: [], invariant: 'a widget is stored dry', likelyMistake: 'storing it wet', log: { title: 'Dry widget store', bullets: ['widgets are stored dry'] } }))
   put(h.wt, { 'docs/stray.md': 'not in scope\n', [`${MEM}/entities/stray.md`]: '# Stray\n' })
   const refused = call(h, ['ingest', '--reply', reply], deps)
   assert.equal(refused.state, 'failed')
-  assert.match(refused.refusal, /\.claude\/memory\/entities\/stray\.md changed, but the reply does not list it/)
+  assert.match(refused.refusal, /\.claude\/memory\/entities\/stray\.md is changed in the tree: write no page yourself/)
+  assert.equal(existsSync(join(h.wt, MEM, 'entities', 'widgets.md')), false, 'a refused reply applies nothing')
   rmSync(join(h.wt, MEM, 'entities', 'stray.md'))
   const ingest = call(h, ['ingest', '--reply', reply], deps)
   assert.equal(ingest.ok, true, ingest.refusal)
   assert.deepEqual(ingest.detail.paths, [`${MEM}/entities/widgets.md`, `${MEM}/log.md`])
+  assert.equal(readFileSync(join(h.wt, MEM, 'entities', 'widgets.md'), 'utf8'), '# Widgets\n\nWidgets are stored dry.\n')
   assert.deepEqual(logged, [{ type: 'ingest', title: 'Dry widget store', bullets: ['widgets are stored dry'] }])
   assert.equal(call(h, ['ingest', '--reply', reply], deps).already, true)
   assert.equal(logged.length, 1, 'a done ingest writes no second log entry')
@@ -640,6 +643,8 @@ test('a refused ingest reply goes back once, resumed, and a second refusal stops
   const second = call(h, ['ingest', '--reply', reply, '--resume', 'no'], deps)
   assert.deepEqual([second.state, second.detail.next, second.detail.mode, second.detail.invalid], ['failed', 'stop', null, 2])
   assert.match(second.refusal, /a second refused reply of `ingest` stops archive/)
+  assert.match(second.refusal, /dispatch\.mjs reset --change add-x --name "ingest" --reason "<the developer's reason>", only when the environment caused the stop .* ask the developer first/)
+  assert.equal(second.detail.reset.command, 'dispatch.mjs reset --change add-x --name "ingest" --reason "<the developer\'s reason>"')
   writeFileSync(reply, JSON.stringify({ nothingLearned: true, pages: [], stale: [] }))
   const after = call(h, ['ingest', '--reply', reply], deps)
   assert.equal(after.state, 'failed')
@@ -647,6 +652,53 @@ test('a refused ingest reply goes back once, resumed, and a second refusal stops
   assert.deepEqual(logged, [], 'a stopped ingest writes no log entry')
   const events = readFileSync(join(h.wt, '.superpowers', 'sdd', 'add-x', 'attempts.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
   assert.deepEqual(events.map((e) => [e.name, e.event, e.next]), [['ingest', 'invalid', 'retry'], ['ingest', 'invalid', 'stop']])
+})
+
+// The ingest agent writes no page: archive applies the edits its reply carries, in the change
+// worktree, after the whole reply is checked; a refusal or a failed log write leaves no edit.
+test('ingest applies the reply\'s page edits; a bad patch or a path outside the knowledge base is refused with nothing applied', () => {
+  const MEM = '.claude/memory'
+  const SPEC = `${MEM}/concepts/widgets.md`
+  const h = archiveHost({ extra: { [`${MEM}/index.md`]: '# Index\n', [`${MEM}/log.md`]: '# Log\n', [SPEC]: '# Widgets\n\nRead openspec/specs/widgets/spec.md: widgets are stored wet.\n', [`${MEM}/entities/old.md`]: '# Old\n' } })
+  const context = { state: 'done', plugin: 'memory', index: `${MEM}/index.md`, instructions: { ingest: '/p/ingest.md' }, paths: [`${MEM}/**`], log: [`${MEM}/log.md`] }
+  let logAnswer = { state: 'done', path: `${MEM}/log.md`, entry: '', rotated: [] }
+  const deps = { ...NONE, knowledge: () => context, knowledgeLog: () => logAnswer }
+  for (const step of ['check', 'placements', 'merge', 'move', 'commit-specs']) assert.equal(call(h, [step], deps).ok, true, step)
+  const stale = ingestRun(['stale', '--change', 'add-x', '--root', h.wt], { knowledge: () => context })
+  assert.deepEqual(stale.stale.map((s) => s.path), [SPEC])
+  const before = git(h.wt, 'status', '--porcelain', '--untracked-files=all')
+  const pages = [
+    { path: SPEC, why: 'widgets are stored dry now', patch: pagePatch(h.wt, SPEC, '# Widgets\n\nRead openspec/specs/widgets/spec.md: widgets are stored dry.\n') },
+    { path: `${MEM}/entities/old.md`, why: 'nothing is old any more', patch: pagePatch(h.wt, `${MEM}/entities/old.md`, null) },
+    { path: `${MEM}/concepts/dry.md`, why: 'the invariant', patch: pagePatch(h.wt, `${MEM}/concepts/dry.md`, '# Dry\n\nA widget is stored dry.\n') }
+  ]
+  const answer = { nothingLearned: false, pages, stale: [{ path: SPEC, outcome: 'updated' }], invariant: 'a widget is stored dry', likelyMistake: 'storing it wet', log: { title: 'Dry widgets', bullets: ['concepts/widgets.md: dry'] } }
+  const reply = join(h.wt, '..', 'ingest-reply.json')
+  // A patch that does not apply, beside a path outside the knowledge base: refused, retry, nothing applied.
+  const badPatch = pages[0].patch.replace('widgets are stored wet.', 'widgets are kept wet.')
+  writeFileSync(reply, JSON.stringify({ ...answer, pages: [{ ...pages[0], patch: badPatch }, { path: 'src/x.txt', why: 'w', patch: pagePatch(h.wt, 'src/x.txt', 'wet\n') }, ...pages.slice(1)] }))
+  const refused = call(h, ['ingest', '--reply', reply], deps)
+  assert.deepEqual([refused.state, refused.detail.next, refused.detail.mode], ['failed', 'retry', 'resume'])
+  assert.match(refused.refusal, /does not apply to \.claude\/memory\/concepts\/widgets\.md as the tree holds it/)
+  assert.match(refused.refusal, /src\/x\.txt is outside the knowledge base/)
+  assert.equal(git(h.wt, 'status', '--porcelain', '--untracked-files=all'), before, 'nothing applied')
+  // A failed log write takes the applied edits back.
+  writeFileSync(reply, JSON.stringify(answer))
+  logAnswer = { state: 'refused', plugin: 'memory', error: 'the log is locked' }
+  const unlogged = call(h, ['ingest', '--reply', reply], deps)
+  assert.equal(unlogged.state, 'failed')
+  assert.equal(git(h.wt, 'status', '--porcelain', '--untracked-files=all'), before, 'a failed log write leaves no edit')
+  // The valid reply: the edits applied in the change worktree, the stale answer seen against them.
+  logAnswer = { state: 'done', path: `${MEM}/log.md`, entry: '', rotated: [] }
+  const done = call(h, ['ingest', '--reply', reply], deps)
+  assert.equal(done.ok, true, done.refusal)
+  assert.match(readFileSync(join(h.wt, SPEC), 'utf8'), /widgets are stored dry\./)
+  assert.equal(existsSync(join(h.wt, MEM, 'entities', 'old.md')), false)
+  assert.equal(readFileSync(join(h.wt, MEM, 'concepts', 'dry.md'), 'utf8'), '# Dry\n\nA widget is stored dry.\n')
+  assert.deepEqual(done.detail.paths, [`${MEM}/concepts/dry.md`, SPEC, `${MEM}/entities/old.md`])
+  const memory = call(h, ['commit-memory'], deps)
+  assert.equal(memory.ok, true, memory.refusal)
+  assert.deepEqual(memory.detail.files, [`${MEM}/concepts/dry.md`, SPEC, `${MEM}/entities/old.md`])
 })
 
 test('mr-input gathers the tasks, the Why, the scenarios and the run evidence', () => {

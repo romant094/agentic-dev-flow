@@ -22,5 +22,5 @@ plugin's configuration as a JSON object.
 
 3. Show `report` as it is.
 
-Do not commit: the developer commits the registry, the copied host files and the settings with
-the rest of their change.
+Do not commit: the developer commits the registry and the copied host files with the rest of
+their change.

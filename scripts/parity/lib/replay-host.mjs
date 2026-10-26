@@ -280,7 +280,6 @@ export function setupHost(sandbox, candidate, { registry = recordedRegistry(), g
     const out = step(`extensions.mjs add ${entry.name}`, 'add', (path, r) => {
       if (path === '.claude/adf-extensions.json') return `${entry.name} enabled as a path entry${entry.config ? ` with config ${JSON.stringify(entry.config)}` : ', defaults'}`
       if ((r.json?.hostFiles?.copied ?? []).includes(path)) return `a host file ${entry.name} declares, copied`
-      if (path === '.claude/settings.json' && r.json?.settings?.added?.length) return `host settings added: ${r.json.settings.added.join(', ')}`
       return null
     }, () => run.core('extensions.mjs', ...args))
     if (out.json?.ok === false && out.json.error) refuse(`extensions.mjs add ${entry.name}`, out)

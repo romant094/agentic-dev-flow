@@ -11,7 +11,8 @@
 //       { ok: true, state: 'none', report }, nothing written, and archive skips the ingest.
 //   ingest.mjs check --change <name> --reply <file> [--root <dir>]
 //       after it: the reply against schema/ingest.schema.json and the rules of
-//       checkIngestReply, with the changed files read from `git status`.
+//       checkIngestReply, with the changed files read from `git status` and each page's patch
+//       checked with `git apply --check`; nothing is written (`archive.mjs ingest` applies).
 //       { ok, valid, errors, log, reply }: `log` is the knowledge role's `log` input to write,
 //       null when nothing was learned. A refused reply goes back once (`dispatch.mjs attempt`);
 //       a second refusal stops archive.

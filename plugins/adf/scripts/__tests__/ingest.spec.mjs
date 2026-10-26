@@ -2,12 +2,13 @@
 // diff and delta specs, and the reply check against the schema and the tree.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { checkIngestReply, findChangeDir, ingestLogInput, INGEST_SCHEMA_PATH, linkTargets, pageReasons, touchedPaths } from '../lib/ingest.mjs'
 import { readSchema, unknownKeywords } from '../lib/review.mjs'
 import { run } from '../ingest.mjs'
 import { commitFiles, git } from './fixtures/spec-merge/repo.mjs'
+import { pagePatch } from './fixtures/page-patch.mjs'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -94,39 +95,55 @@ test('staleList lists every page naming a deleted, renamed or rewritten path or 
   ])
 })
 
+// A knowledge base of its own: a.md, b.md and c.md beside the log, committed.
+function kb() {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'adf-kb-')))
+  execFileSync('git', ['init', '-q', '-b', 'develop', root])
+  git(root, 'config', 'user.email', 't@example.com')
+  git(root, 'config', 'user.name', 'T')
+  commitFiles(root, { [`${MEM}/a.md`]: '# A\n\nThe entry point is src/a.mjs.\n', [`${MEM}/b.md`]: '# B\n', [`${MEM}/c.md`]: '# C\n', [`${MEM}/log.md`]: '# Log\n', 'src/x.mjs': 'x\n' }, 'init')
+  return root
+}
+
 const STALE = [{ path: `${MEM}/a.md`, reasons: ['x'] }, { path: `${MEM}/b.md`, reasons: ['y'] }, { path: `${MEM}/c.md`, reasons: ['z'] }]
-const reply = (over = {}) => ({
+const pagesOf = (root) => [
+  { path: `${MEM}/a.md`, why: 'corrected the entry point', patch: pagePatch(root, `${MEM}/a.md`, '# A\n\nThe entry point is gone.\n') },
+  { path: `${MEM}/b.md`, why: 'the page described a deleted module', patch: pagePatch(root, `${MEM}/b.md`, null) },
+  { path: `${MEM}/new.md`, why: 'the invariant', patch: pagePatch(root, `${MEM}/new.md`, '# New\n\nThe cache is written before the index.\n') }
+]
+const replyFor = (root, over = {}) => ({
   nothingLearned: false,
-  pages: [{ path: `${MEM}/a.md`, why: 'corrected the entry point' }, { path: `${MEM}/b.md`, why: 'the page described a deleted module' }, { path: `${MEM}/new.md`, why: 'the invariant' }],
+  pages: pagesOf(root),
   stale: [{ path: `${MEM}/a.md`, outcome: 'updated' }, { path: `${MEM}/b.md`, outcome: 'removed' }, { path: `${MEM}/c.md`, outcome: 'still-true', argument: 'it names the module, not its parser' }],
   invariant: 'The cache is written before the index.',
   likelyMistake: 'Reading the index before the cache.',
   log: { title: 'what add-x taught', bullets: ['entities/a.md: entry point', 'new.md: the invariant'] },
   ...over
 })
-const tree = {
-  stale: STALE,
-  changedFiles: [`${MEM}/a.md`, `${MEM}/b.md`, `${MEM}/new.md`, 'src/x.mjs'],
-  knowledgePaths: [`${MEM}/**`],
-  logPaths: [`${MEM}/log.md`],
-  exists: (p) => p !== `${MEM}/b.md`
-}
-const errorsOf = (r, t = tree) => checkIngestReply(r, t).errors.join('\n')
+const treeOf = (root) => ({ root, stale: STALE, changedFiles: ['src/x.mjs'], knowledgePaths: [`${MEM}/**`], logPaths: [`${MEM}/log.md`] })
 
-test('a reply lists exactly the changed pages and answers every stale entry once', () => {
+test('a reply carries every page edit as a patch, checked without a write, and answers every stale entry once', () => {
+  const root = kb()
+  const tree = treeOf(root)
+  const reply = (over) => replyFor(root, over)
+  const errorsOf = (r, t = tree) => checkIngestReply(r, t).errors.join('\n')
   const ok = checkIngestReply(JSON.stringify(reply()), tree)
   assert.deepEqual({ valid: ok.valid, errors: ok.errors }, { valid: true, errors: [] })
   assert.deepEqual(ingestLogInput(ok.reply), { type: 'ingest', title: 'what add-x taught', bullets: ['entities/a.md: entry point', 'new.md: the invariant'] })
-  assert.match(errorsOf(reply({ pages: reply().pages.slice(1) })), /a\.md changed, but the reply does not list it/)
-  assert.match(errorsOf(reply({ pages: [...reply().pages, { path: `${MEM}/z.md`, why: 'w' }] })), /z\.md is listed, but it is not a changed file/)
+  assert.equal(git(root, 'status', '--porcelain'), '', 'the check writes nothing')
+  // A plain unified diff, as `diff -u` with labels writes it, is a patch too.
+  const plain = [{ ...reply().pages[1], patch: `--- a/${MEM}/b.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-# B\n` }, ...reply().pages.filter((p) => !p.path.endsWith('b.md'))]
+  assert.deepEqual(checkIngestReply(reply({ pages: plain }), tree).errors, [])
   assert.match(errorsOf(reply({ pages: [...reply().pages, reply().pages[0]] })), /listed twice/)
+  assert.match(errorsOf(reply({ pages: [{ path: `${MEM}/a.md`, why: 'w' }, ...reply().pages.slice(1)] })), /patch/)
   assert.match(errorsOf(reply({ stale: reply().stale.slice(0, 2) })), /c\.md is stale and has no answer/)
   assert.match(errorsOf(reply({ stale: [...reply().stale, reply().stale[0]] })), /answered twice/)
   assert.match(errorsOf(reply({ stale: [...reply().stale, { path: `${MEM}/q.md`, outcome: 'updated' }] })), /q\.md is not on the stale list/)
   assert.match(errorsOf(reply({ stale: [reply().stale[0], reply().stale[1], { path: `${MEM}/c.md`, outcome: 'still-true' }] })), /argument is required/)
-  assert.match(errorsOf(reply({ stale: [reply().stale[0], { path: `${MEM}/b.md`, outcome: 'updated' }, reply().stale[2]] })), /b\.md is answered updated, but the file is gone/)
-  assert.match(errorsOf(reply(), { ...tree, exists: () => true }), /answered removed, but the file still exists/)
-  assert.match(errorsOf(reply({ stale: [reply().stale[0], reply().stale[1], { path: `${MEM}/c.md`, outcome: 'updated' }] })), /c\.md is answered updated, but the file did not change/)
+  // The stale answers are checked against the tree as the edits leave it.
+  assert.match(errorsOf(reply({ stale: [reply().stale[0], { path: `${MEM}/b.md`, outcome: 'updated' }, reply().stale[2]] })), /b\.md is answered updated, but the reply deletes it; answer removed/)
+  assert.match(errorsOf(reply({ pages: reply().pages.filter((p) => !p.path.endsWith('b.md')) })), /b\.md is answered removed, but the reply does not delete it/)
+  assert.match(errorsOf(reply({ stale: [reply().stale[0], reply().stale[1], { path: `${MEM}/c.md`, outcome: 'updated' }] })), /c\.md is answered updated, but the reply carries no edit of it/)
   assert.match(errorsOf(reply(), { ...tree, changedFiles: [...tree.changedFiles, `${MEM}/log.md`] }), /write no log entry yourself/)
   assert.match(errorsOf(reply({ invariant: ' ' })), /invariant/)
   assert.match(errorsOf(reply({ log: null })), /log/)
@@ -136,18 +153,51 @@ test('a reply lists exactly the changed pages and answers every stale entry once
   assert.match(checkIngestReply('nope', tree).errors.join(''), /not JSON/)
 })
 
+test('a page the agent wrote itself is refused: every edit comes in the reply', () => {
+  const root = kb()
+  writeFileSync(join(root, MEM, 'c.md'), '# C\n\nwritten by hand\n')
+  const out = checkIngestReply(replyFor(root), { ...treeOf(root), changedFiles: ['src/x.mjs', `${MEM}/c.md`] })
+  assert.match(out.errors.join('\n'), /\.claude\/memory\/c\.md is changed in the tree: write no page yourself; return its edit as a page's patch in the reply/)
+})
+
+test('an edit outside the knowledge base, through a symbolic link, of the log, or that does not apply is refused', () => {
+  const root = kb()
+  const tree = treeOf(root)
+  const stale = STALE.map((s) => ({ path: s.path, outcome: 'still-true', argument: 'it holds' }))
+  const one = (page) => checkIngestReply(replyFor(root, { pages: [page], stale }), tree).errors.join('\n')
+  const fresh = (path) => pagePatch(root, path, '# P\n')
+  assert.match(one({ path: 'src/y.md', why: 'w', patch: fresh('src/y.md') }), /src\/y\.md is outside the knowledge base \(\.claude\/memory\/\*\*\)/)
+  assert.match(one({ path: `${MEM}/../src/y.md`, why: 'w', patch: fresh('src/y.md') }), /is not a relative path inside the repository/)
+  assert.match(one({ path: `/${MEM}/y.md`, why: 'w', patch: fresh(`${MEM}/y.md`) }), /is not a relative path inside the repository/)
+  assert.match(one({ path: `${MEM}/log.md`, why: 'w', patch: pagePatch(root, `${MEM}/log.md`, '# Log\n\nmine\n') }), /is the log, which the script writes/)
+  assert.match(one({ path: `${MEM}/y.md`, why: 'w', patch: fresh('src/y.md') }), /must edit \.claude\/memory\/y\.md and nothing else; it touches src\/y\.md/)
+  assert.match(one({ path: `${MEM}/y.md`, why: 'w', patch: 'not a patch\n' }), /git apply cannot read it/)
+  const stalePatch = pagePatch(root, `${MEM}/a.md`, '# A\n\nnew\n').replace('The entry point is src/a.mjs.', 'Some other text.')
+  assert.match(one({ path: `${MEM}/a.md`, why: 'w', patch: stalePatch }), /does not apply to \.claude\/memory\/a\.md as the tree holds it/)
+  mkdirSync(join(root, 'outside'))
+  symlinkSync(join(root, 'outside'), join(root, MEM, 'link'))
+  const linked = `diff --git a/${MEM}/link/y.md b/${MEM}/link/y.md\nnew file mode 100644\n--- /dev/null\n+++ b/${MEM}/link/y.md\n@@ -0,0 +1 @@\n+# Y\n`
+  assert.match(one({ path: `${MEM}/link/y.md`, why: 'w', patch: linked }), /\.claude\/memory\/link is a symbolic link/)
+  const makesLink = `diff --git a/${MEM}/z.md b/${MEM}/z.md\nnew file mode 120000\n--- /dev/null\n+++ b/${MEM}/z.md\n@@ -0,0 +1 @@\n+../../outside\n\\ No newline at end of file\n`
+  assert.match(one({ path: `${MEM}/z.md`, why: 'w', patch: makesLink }), /makes a symbolic link/)
+  assert.equal(git(root, 'status', '--porcelain'), '?? .claude/memory/link', 'nothing applied')
+})
+
 test('nothingLearned: no page and no log, and every stale entry still answered still-true', () => {
-  const quiet = { ...tree, changedFiles: ['src/x.mjs'], exists: () => true }
+  const root = kb()
+  const quiet = treeOf(root)
+  const errorsOf = (r) => checkIngestReply(r, quiet).errors.join('\n')
   const stillTrue = STALE.map((s) => ({ path: s.path, outcome: 'still-true', argument: 'it holds' }))
-  const ok = checkIngestReply(reply({ nothingLearned: true, pages: [], stale: stillTrue, invariant: '', likelyMistake: '', log: null }), quiet)
+  const ok = checkIngestReply({ nothingLearned: true, pages: [], stale: stillTrue, invariant: '', likelyMistake: '', log: null }, quiet)
   assert.deepEqual(ok.errors, [])
   assert.equal(ingestLogInput(ok.reply), null)
-  assert.match(errorsOf(reply({ nothingLearned: true, pages: [], stale: [], log: null }), quiet), /has no answer/)
-  assert.match(errorsOf(reply({ nothingLearned: true, pages: [], stale: stillTrue }), quiet), /there is no log entry/)
-  assert.match(errorsOf(reply({ nothingLearned: true, stale: stillTrue, log: null })), /no page may change/)
+  assert.match(errorsOf(replyFor(root, { nothingLearned: true, pages: [], stale: [], log: null })), /has no answer/)
+  assert.match(errorsOf(replyFor(root, { nothingLearned: true, pages: [], stale: stillTrue })), /there is no log entry/)
+  assert.match(errorsOf(replyFor(root, { nothingLearned: true, stale: stillTrue, log: null })), /no page may change/)
   const updated = [{ ...stillTrue[0], outcome: 'updated' }, ...stillTrue.slice(1)]
-  assert.match(errorsOf(reply({ nothingLearned: true, pages: [], stale: updated, log: null }), quiet), /nothingLearned is true; with no page changed every answer is still-true/)
+  assert.match(errorsOf(replyFor(root, { nothingLearned: true, pages: [], stale: updated, log: null })), /nothingLearned is true; with no page changed every answer is still-true/)
 })
+
 
 test('ingest.mjs stale writes the dispatch input, and check reads the tree; no provider skips', () => {
   const { change } = repo()
@@ -166,11 +216,12 @@ test('ingest.mjs stale writes the dispatch input, and check reads the tree; no p
   assert.deepEqual(stale.stale.map((s) => s.path), [`${MEM}/concepts/req.md`, `${MEM}/concepts/spec.md`, `${MEM}/entities/a.md`, `${MEM}/entities/b.md`, `${MEM}/entities/c.md`])
   assert.deepEqual(stale.knowledge, { index: KNOWLEDGE.index, instruction: '/plugin/instructions/ingest.md', paths: KNOWLEDGE.paths, log: KNOWLEDGE.log })
 
-  writeFileSync(join(change, MEM, 'entities', 'a.md'), '# A\n\nThe entry point is gone.\n')
-  rmSync(join(change, MEM, 'entities', 'b.md'))
   const answer = {
     nothingLearned: false,
-    pages: [{ path: `${MEM}/entities/a.md`, why: 'a.mjs is gone' }, { path: `${MEM}/entities/b.md`, why: 'b.mjs moved; the page only pointed at it' }],
+    pages: [
+      { path: `${MEM}/entities/a.md`, why: 'a.mjs is gone', patch: pagePatch(change, `${MEM}/entities/a.md`, '# A\n\nThe entry point is gone.\n') },
+      { path: `${MEM}/entities/b.md`, why: 'b.mjs moved; the page only pointed at it', patch: pagePatch(change, `${MEM}/entities/b.md`, null) }
+    ],
     stale: [
       { path: `${MEM}/entities/a.md`, outcome: 'updated' },
       { path: `${MEM}/entities/b.md`, outcome: 'removed' },
@@ -184,6 +235,7 @@ test('ingest.mjs stale writes the dispatch input, and check reads the tree; no p
   writeFileSync(file, JSON.stringify(answer))
   const checked = run(['check', '--change', 'add-x', '--reply', file, '--root', change])
   assert.deepEqual({ ok: checked.ok, errors: checked.errors, log: checked.log }, { ok: true, errors: [], log: { type: 'ingest', title: 'add-x', bullets: ['a.md updated'] } })
+  assert.equal(git(change, 'status', '--porcelain'), '', 'check applies nothing')
   writeFileSync(file, JSON.stringify({ ...answer, pages: answer.pages.slice(0, 1) }))
   assert.equal(run(['check', '--change', 'add-x', '--reply', file, '--root', change]).ok, false)
   assert.throws(() => run(['check', '--change', 'add-x', '--root', change]), /usage/)

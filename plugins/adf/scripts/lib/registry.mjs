@@ -391,9 +391,8 @@ export function addReport(added, check) {
     `Enabled: ${added.name} (${added.points.length ? added.points.join(', ') : 'no points'})`,
     `Host files copied: ${added.hostFiles.copied.length ? added.hostFiles.copied.join(', ') : 'none'}`,
     `Host files already present: ${added.hostFiles.kept.length ? added.hostFiles.kept.join(', ') : 'none'}`,
-    `Settings added: ${added.settings.added.length ? added.settings.added.join(', ') : 'none'}`,
     checkLine(check),
-    'Nothing was committed: the developer commits the registry, the copied host files and the settings.'
+    'Nothing was committed: the developer commits the registry and the copied host files.'
   ].join('\n')
 }
 

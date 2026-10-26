@@ -22,6 +22,8 @@
 // reset (`dispatch.mjs reset`): held, a preview with its plan id, until the developer's yes with
 // that id; then an `attempt-reset` ledger record (lib/ledger.mjs). The log keeps every event, and
 // the metrics count them all; only the limit counts the name's events after the last reset.
+// `recordDispatch` and `recordReply` name that reset on a `stop` (`reset`, resetHint), for every
+// name but a role whose run restarts its own count.
 import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -80,9 +82,9 @@ const checkName = (name) => {
 
 // `dispatch.mjs attempt`: records one dispatch of `name`. `attempt` counts the dispatches of the
 // name, legacy lines included: 1 dispatches, 2 retries, 3 stops.
-// Counted from the name's last developer reset.
+// Counted from the name's last developer reset. On a stop, `reset` names the developer reset.
 export function recordDispatch(root, change, name, options = {}) {
-  return recordDispatchAt(attemptsFile(root, change), name, { ...options, skip: resetSkip(root, change, name) })
+  return withReset(change, name, recordDispatchAt(attemptsFile(root, change), name, { ...options, skip: resetSkip(root, change, name) }))
 }
 
 // The same, into the log `file`: a dispatch that serves no change keeps its own (lib/retro.mjs).
@@ -99,9 +101,14 @@ export function recordDispatchAt(file, name, { now = new Date().toISOString(), s
 // `fresh` on a retry (`resume: false` when the harness cannot resume the agent), null otherwise.
 // Refused once the name has stopped: nothing a stopped dispatch replies is recorded. `since` as
 // `standing` takes it.
-// Counted from the name's last developer reset.
+// Counted from the name's last developer reset. On a stop, `reset` names the developer reset.
 export function recordReply(root, change, reply) {
-  return recordReplyAt(attemptsFile(root, change), { ...reply, skip: resetSkip(root, change, reply.name) })
+  return withReset(change, reply.name, recordReplyAt(attemptsFile(root, change), { ...reply, skip: resetSkip(root, change, reply.name) }))
+}
+
+const withReset = (change, name, out) => {
+  const reset = out.next === 'stop' ? resetHint(change, name) : null
+  return reset ? { ...out, reset } : out
 }
 
 // The same, into the log `logFile`.
@@ -125,6 +132,16 @@ export function recordReplyAt(logFile, { name, file, errors = [], result, resume
 // Roles whose run restarts its own count: the review stage (`review.mjs start --fresh`) and
 // verify (`verify.mjs run`); a reset of theirs is refused with that pointer.
 const OWN_RESTART = { 'ai-review': 'review.mjs start --fresh', 'ai-fix': 'review.mjs start --fresh', verify: 'verify.mjs run' }
+
+// The way out of a stop on the limit: { command, note }, the `dispatch.mjs reset` preview and
+// that the developer is asked first; null for a role whose run restarts its own count.
+export function resetHint(change, name) {
+  if (OWN_RESTART[parseName(name)?.role]) return null
+  return {
+    command: `dispatch.mjs reset --change ${change} --name "${name}" --reason "<the developer's reason>"`,
+    note: 'only when the environment caused the stop (a permission denial, a missing tool) and is fixed now, ask the developer first, show them the preview this command prints (it writes nothing), and on their yes run it with --yes <plan>'
+  }
+}
 
 // How many of the name's events the limit passes over: the last reset's `skip`, else 0.
 export function resetSkip(root, change, name) {

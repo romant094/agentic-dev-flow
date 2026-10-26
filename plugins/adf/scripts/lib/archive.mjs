@@ -42,10 +42,13 @@
 //                 the date placements resolved the debt with when it resolved any.
 //   commit-specs  `docs(specs): archive <name>`: the old and the new change directory and the
 //                 main spec files of the change's capabilities, only those paths.
-//   ingest        the ingest reply (lib/ingest.mjs checkIngestFile), the log written through the
-//                 knowledge role's `log`, with a bullet naming the debt ids placements resolved
-//                 (an entry of its own when nothing was learned); with no knowledge provider the
-//                 step is `skipped` and its report says the resolved ids were not logged.
+//   ingest        the ingest reply (lib/ingest.mjs checkIngestFile), the page edits it carries
+//                 applied with `git apply` in the change worktree once the whole reply is valid,
+//                 and taken back when the reply cannot be recorded or the log write fails; the
+//                 log written through the knowledge role's `log`, with a bullet naming the debt
+//                 ids placements resolved (an entry of its own when nothing was learned); with
+//                 no knowledge provider the step is `skipped` and its report says the resolved
+//                 ids were not logged.
 //   commit-memory `docs(memory): ingest what <name> taught`: only the paths the ingest and the
 //                 placement wrote.
 //   metrics       lib/metrics.mjs buildRecord after the ingest is committed, so the ingest is
@@ -82,6 +85,7 @@ import { commitPaths } from './commit.mjs'
 import { dispatchName } from './dispatch.mjs'
 import { listTree, resolveEntry } from './debt.mjs'
 import { checkIngestFile, findChangeDir, workingChanges } from './ingest.mjs'
+import { gitApply } from './verify.mjs'
 import { mainCheckout } from './installed.mjs'
 import { readRecords, unresolvedDebt } from './ledger.mjs'
 import { localMerge } from './local-merge.mjs'
@@ -560,7 +564,8 @@ export function commitSpecsStep(ctx) {
 // The checked reply is an event of the dispatch `ingest` in the change's shared log
 // (lib/attempts.mjs): the first refused reply goes back to the agent once (resumed with the
 // errors, or afresh with them as its question when `resume` is false), the second stops archive,
-// and nothing the stopped dispatch replies afterwards is recorded or written.
+// and nothing the stopped dispatch replies afterwards is recorded or written. The agent writes no
+// page: the edits its reply carries are applied here, all or none, after the reply is checked.
 export function ingestStep(ctx, { reply = null, resume = true } = {}) {
   return runStep(ctx, 'ingest', (state) => {
     const { root, change } = ctx
@@ -576,15 +581,32 @@ export function ingestStep(ctx, { reply = null, resume = true } = {}) {
     if (context.state !== 'done') refuse(knowledgeReport('context', context))
     if (!reply) refuse(`ingest needs --reply: run ingest.mjs stale --change ${change}, dispatch \`ingest\` at level architecture with its input, and pass the reply file`)
     const checked = checkIngestFile(root, change, reply, { exclude: settledDetail(state, 'placements').debtFiles ?? [] })
-    const recorded = recordReply(root, change, { name: 'ingest', file: resolve(reply), errors: checked.errors, resume })
-    if (!checked.valid) {
+    // `git apply` writes every edit or none; a refusal here is the reply's, recorded as such.
+    const errors = [...checked.errors]
+    if (errors.length === 0 && checked.patch) {
+      try {
+        gitApply(root, [], checked.patch)
+      } catch (error) {
+        errors.push(`the page edits do not apply, and nothing was changed: ${String(error.stderr || error.message).trim()}`)
+      }
+    }
+    const applied = errors.length === 0 && Boolean(checked.patch)
+    const undo = () => applied && gitApply(root, ['-R'], checked.patch)
+    let recorded
+    try {
+      recorded = recordReply(root, change, { name: 'ingest', file: resolve(reply), errors, resume })
+    } catch (error) {
+      undo()
+      throw error
+    }
+    if (errors.length > 0) {
       const how = recorded.next === 'stop'
-        ? 'a second refused reply of `ingest` stops archive; the developer decides what follows'
+        ? `a second refused reply of \`ingest\` stops archive; the developer decides what follows; the way out is ${recorded.reset.command}, ${recorded.reset.note}`
         : recorded.mode === 'resume' ? 'resume the `ingest` agent once with the errors' : 'dispatch `ingest` once more with the errors as its question'
       return {
         state: 'failed',
-        refusal: `the ingest reply is refused: ${checked.errors.join('; ')}; ${how}`,
-        detail: { errors: checked.errors, next: recorded.next, mode: recorded.mode, invalid: recorded.invalid }
+        refusal: `the ingest reply is refused: ${errors.join('; ')}; ${how}`,
+        detail: { errors, next: recorded.next, mode: recorded.mode, invalid: recorded.invalid, ...(recorded.reset ? { reset: recorded.reset } : {}) }
       }
     }
     if (checked.log === null && resolved.length === 0) return { state: 'done', detail: { nothingLearned: true, paths: [], report: 'Knowledge: nothing learned that the code and the history do not carry; no page and no log entry.' } }
@@ -592,8 +614,17 @@ export function ingestStep(ctx, { reply = null, resume = true } = {}) {
     const log = checked.log === null
       ? { type: 'ingest', title: `Resolved debt of ${change}`, bullets: [debtBullet] }
       : { ...checked.log, bullets: [...checked.log.bullets, ...(resolved.length ? [debtBullet] : [])] }
-    const result = ctx.knowledgeLog(log)
-    if (result.state !== 'done') refuse(knowledgeReport('log', result))
+    let result
+    try {
+      result = ctx.knowledgeLog(log)
+    } catch (error) {
+      undo()
+      throw error
+    }
+    if (result.state !== 'done') {
+      undo()
+      refuse(`${knowledgeReport('log', result)}; the page edits were taken back, and the step runs again with the same reply`)
+    }
     const isLog = matcher(checked.input.knowledge.log ?? [])
     const paths = [
       ...checked.reply.pages.map((p) => p.path),

@@ -65,7 +65,7 @@ test('init, add, check, remove on a fresh host', () => {
   const added = adf(root, 'add', 'plugins/sample', '--config', '{"greeting":"hi"}')
   assert.equal(added.code, 0)
   const { check, report, ...enabled } = added.out
-  assert.deepEqual(enabled, { name: 'sample', points: [], hostFiles: { copied: [], kept: [] }, settings: { added: [], notes: [] } })
+  assert.deepEqual(enabled, { name: 'sample', points: [], hostFiles: { copied: [], kept: [] } })
   assert.deepEqual(check.plugins, [{ name: 'sample', path: 'plugins/sample', points: [] }])
   assert.match(report, /^Enabled: sample \(no points\)\n[\s\S]*Registry check: ok/)
 
@@ -127,7 +127,7 @@ test('an installed plugin is enabled by id, its host files copied once, and a ro
   adfAt(root, forgeHome, 'branches', '--integration', 'develop')
   const added = adfAt(root, forgeHome, 'add', 'forge-a@mk')
   assert.equal(added.code, 0)
-  assert.deepEqual({ ...added.out, check: undefined, report: undefined }, { name: 'forge-a', points: ['forge'], hostFiles: { copied: ['.forge/mr.md'], kept: [] }, settings: { added: [], notes: [] }, check: undefined, report: undefined })
+  assert.deepEqual({ ...added.out, check: undefined, report: undefined }, { name: 'forge-a', points: ['forge'], hostFiles: { copied: ['.forge/mr.md'], kept: [] }, check: undefined, report: undefined })
   assert.equal(added.out.check.ok, true)
   assert.equal(existsSync(join(root, '.forge', 'mr.md')), true)
   const registry = JSON.parse(readFileSync(join(root, '.claude', 'adf-extensions.json'), 'utf8'))
@@ -176,21 +176,6 @@ test('the memory plugin enables as the one knowledge provider and copies its ske
   assert.deepEqual(added.out.points, ['knowledge'])
   assert.deepEqual(added.out.hostFiles.copied, ['.claude/memory/index.md', '.claude/memory/log.md', '.claude/memory/system.md'])
   assert.equal(added.out.check.ok, true)
-  // The knowledge base is writable in the main checkout and in every change worktree.
-  const rules = ['Edit(/.claude/memory/**)', 'Write(/.claude/memory/**)', 'Edit(/.claude/worktrees/*/.claude/memory/**)', 'Write(/.claude/worktrees/*/.claude/memory/**)']
-  const settingsFile = join(root, '.claude', 'settings.json')
-  assert.deepEqual(added.out.settings.added, rules.map((rule) => `permissions.allow ${rule}`))
-  assert.match(added.out.report, /Settings added: permissions\.allow Edit\(\/\.claude\/memory\/\*\*\), /)
-  assert.deepEqual(JSON.parse(readFileSync(settingsFile, 'utf8')).permissions.allow, rules)
-  assert.deepEqual(adf(root, 'init').out.settings.added, [])
-  // A host set up before the rules existed, with its own main-checkout rule: init adds the
-  // rules once.
-  const old = JSON.parse(readFileSync(settingsFile, 'utf8'))
-  old.permissions.allow = ['Edit(.claude/memory/**)']
-  writeFileSync(settingsFile, JSON.stringify(old, null, '\t'))
-  assert.deepEqual(adf(root, 'init').out.settings.added, rules.map((rule) => `permissions.allow ${rule}`))
-  assert.deepEqual(adf(root, 'init').out.settings.added, [])
-  assert.deepEqual(JSON.parse(readFileSync(settingsFile, 'utf8')).permissions.allow, ['Edit(.claude/memory/**)', ...rules])
   // A second knowledge provider is refused: a role has at most one.
   const other = join(root, 'plugins', 'other-memory')
   mkdirSync(other, { recursive: true })

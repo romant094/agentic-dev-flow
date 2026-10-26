@@ -27,7 +27,7 @@ error.
 
 | Operation | Input | Result when `done` |
 |---|---|---|
-| `context` | `{}` | `base`, `index` (host-relative path of the index), `exists`, `instructions` (absolute paths of `ingest`, `query`, `lint`, `fix`), `paths` (`[".claude/memory/**"]`, the globs an ingest may write), `log` (`[".claude/memory/log.md", ".claude/memory/log-archive/**"]`, the files only `log` writes; archive's ingest check refuses an agent that edited them) |
+| `context` | `{}` | `base`, `index` (host-relative path of the index), `exists`, `instructions` (absolute paths of `ingest`, `query`, `lint`, `fix`), `paths` (`[".claude/memory/**"]`, the globs an ingest may edit; archive applies the edits the ingest reply carries), `log` (`[".claude/memory/log.md", ".claude/memory/log-archive/**"]`, the files only `log` writes; archive's ingest check refuses an agent that edited them) |
 | `log` | `type` (`ingest`, `query`, `lint`, `task`), `title`, and `bullets` or `commit` + `reason`; `amend` | `entry` (the text written), `rotated` (the months moved to `log-archive/`), `amended`, `path` |
 | `check` | `{}` | `findings` (`unindexed`, `broken-link`, `malformed-header`, `out-of-order`, `missing`), `pages` (the pages checked), `excluded` (the pages left out) |
 

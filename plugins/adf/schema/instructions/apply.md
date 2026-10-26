@@ -241,9 +241,10 @@ reply file, and record no reply a second time through another call. Route on `ne
 - `stop`: the second refusal of the name. The dispatch is `BLOCKED`: it produced no result, and
   nothing it reported is recorded.
 
-A dispatch stopped on the limit stays stopped. When the cause was the environment, a permission
-denial or a missing tool, and the environment is now fixed, ask the developer whether to reset
-its attempts, and show the reset's preview:
+A dispatch stopped on the limit stays stopped; the `stop` of `attempt` and `reply` carries the
+reset command below in `reset`. When the cause was the environment, a permission denial or a
+missing tool, and the environment is now fixed, ask the developer whether to reset its
+attempts, and show the reset's preview:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" reset --change <change> --name "<name>" --reason "<the developer's reason>" --root <root>

@@ -667,8 +667,8 @@ function ingestPhase(git, h, candidate) {
   const lacks = [unnamed.length ? `no log bullet names ${unnamed.join(', ')}` : null, invariant ? null : 'no added paragraph states the invariant', likelyMistake ? null : 'no added paragraph states what a future implementer would most plausibly get wrong', title ? null : 'the log entry has no title'].filter(Boolean)
   if (lacks.length) return missing('archive', 'reply', 'ingest', lacks.join('; '), partial)
   const reply = { nothingLearned: false, pages: partial.pages, stale: [], invariant: invariant.text, likelyMistake: likelyMistake.text, log: partial.log }
-  return replyItem('archive', 'ingest', reply, [...source, ...whys.map((w) => (w.own ? src(at, w.path) : src(at, MEMORY_LOG[0], w.line, { page: w.path }))), invariant.source, likelyMistake.source], (t) => checkIngestReply(t, { stale: [], changedFiles: pages.map((p) => p.file), knowledgePaths: [`${MEMORY}**`], logPaths: [MEMORY_LOG[0], `${MEMORY_LOG[1]}**`], exists: () => true }), {
-    by: 'ingest.mjs checkIngestReply (the changed pages of the record)',
+  return replyItem('archive', 'ingest', reply, [...source, ...whys.map((w) => (w.own ? src(at, w.path) : src(at, MEMORY_LOG[0], w.line, { page: w.path }))), invariant.source, likelyMistake.source], (t) => checkIngestReply({ ...JSON.parse(t), pages: [] }, { stale: [], changedFiles: [], knowledgePaths: [`${MEMORY}**`], logPaths: [MEMORY_LOG[0], `${MEMORY_LOG[1]}**`], exists: () => true }), {
+    by: 'ingest.mjs checkIngestReply (all but the pages: each page\'s patch is made against the replay\'s tree and checked where archive.mjs ingest applies it)',
     context: 'stale is answered per path ingest.mjs stale lists in the replay (ingestStaleAnswers)',
     deleted: pages.filter((p) => p.status === 'D').map((p) => p.file)
   })

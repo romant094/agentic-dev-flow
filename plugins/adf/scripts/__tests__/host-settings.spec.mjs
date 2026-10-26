@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { declareInHost, knowledgeWriteRules, marketplaceSource, PLUGIN_KEY } from '../lib/host-settings.mjs'
+import { declareInHost, marketplaceSource, PLUGIN_KEY } from '../lib/host-settings.mjs'
 
 const github = { source: 'github', repo: 'owner/agentic-dev-flow' }
 const temp = (prefix) => mkdtempSync(join(tmpdir(), prefix))
@@ -47,35 +47,4 @@ test('a local-directory marketplace is never written into the host', () => {
   const result = declareInHost(root, { source: null })
   assert.match(result.notes[0], /local directory/)
   assert.equal(settingsOf(root).extraKnownMarketplaces['agentic-dev-flow'], undefined)
-})
-
-test('the knowledge write rules cover the main checkout and every change worktree, from the project root', () => {
-  assert.deepEqual(knowledgeWriteRules(['kb/**', 'notes/log.md'], 'wt'), [
-    'Edit(/kb/**)',
-    'Write(/kb/**)',
-    'Edit(/wt/*/kb/**)',
-    'Write(/wt/*/kb/**)',
-    'Edit(/notes/log.md)',
-    'Write(/notes/log.md)',
-    'Edit(/wt/*/notes/log.md)',
-    'Write(/wt/*/notes/log.md)'
-  ])
-  assert.deepEqual(knowledgeWriteRules([], 'wt'), [])
-})
-
-test('a host with the old main-checkout rule gets the worktree rules once, and a re-run adds nothing', () => {
-  const root = temp('adf-host-')
-  mkdirSync(join(root, '.claude'))
-  const before = { permissions: { allow: ['Read(.claude/memory/**)', 'Edit(.claude/memory/**)'], deny: ['x'] }, enabledPlugins: { [PLUGIN_KEY]: true } }
-  writeFileSync(join(root, '.claude', 'settings.json'), JSON.stringify(before, null, '\t'))
-  const allow = knowledgeWriteRules(['.claude/memory/**'], '.claude/worktrees')
-  const first = declareInHost(root, { source: null, allow })
-  assert.deepEqual(first.added, allow.map((rule) => `permissions.allow ${rule}`))
-  assert.deepEqual(settingsOf(root).permissions, {
-    allow: ['Read(.claude/memory/**)', 'Edit(.claude/memory/**)', ...allow],
-    deny: ['x']
-  })
-  const again = declareInHost(root, { source: null, allow })
-  assert.deepEqual(again.added, [])
-  assert.deepEqual(settingsOf(root).permissions.allow, ['Read(.claude/memory/**)', 'Edit(.claude/memory/**)', ...allow])
 })

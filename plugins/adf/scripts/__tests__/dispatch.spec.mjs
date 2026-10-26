@@ -316,6 +316,29 @@ test('attempts per name: the first dispatches, the second retries, the third sto
   assert.equal(bad.status, 1)
 })
 
+// The limit's stop names the way out the developer owns: the reset, asked for first. A role that
+// restarts its own count names none.
+test('a stop on the limit names the developer reset and says the developer is asked first', () => {
+  const root = host()
+  const attempt = (name) => call(root, 'attempt', '--name', name)
+  const reply = (name) => recordReply(root, CHANGE, { name, file: join(root, 'r.json'), errors: ['write denied'] })
+  const command = `dispatch.mjs reset --change ${CHANGE} --name "T3 impl" --reason "<the developer's reason>"`
+  assert.equal(attempt('T3 impl').reset, undefined)
+  assert.equal(reply('T3 impl').reset, undefined)
+  attempt('T3 impl')
+  const stopped = reply('T3 impl')
+  assert.equal(stopped.next, 'stop')
+  assert.equal(stopped.reset.command, command)
+  assert.match(stopped.reset.note, /ask the developer first/)
+  const third = attempt('T3 impl')
+  assert.deepEqual([third.next, third.reset.command], ['stop', command])
+  assert.match(third.reset.note, /ask the developer first/)
+  for (const name of ['ai-fix F1 r1', 'verify c4']) {
+    const out = [1, 2, 3].map(() => attempt(name)).at(-1)
+    assert.deepEqual([out.next, out.reset], ['stop', undefined], name)
+  }
+})
+
 // A dispatch stopped because the environment refused it (a permission denial, a missing tool)
 // gets a way out once the environment is fixed: a developer reset, held for the developer's yes.
 test('a developer reset restarts the count of a stopped dispatch; the preview changes nothing; history and metrics keep every attempt', () => {
