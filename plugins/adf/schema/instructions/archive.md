@@ -171,9 +171,9 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
      `<main>/.superpowers/sdd/<change>/archive/` and pass `--purpose <capability>=<file>`. The
      report names every capability whose Purpose was written this way.
 
-5. **`move`.** `archive.mjs move`: the ledger is copied into the change once, after the last
-   ledger write, and the change moves to `archive/<date>-<name>`, the date from the clock. A
-   target that exists is refused with what to do.
+5. **`move`.** `archive.mjs move`: the ledger is copied into the change, and the change moves
+   to `archive/<date>-<name>`, the date from the clock. A target that exists is refused with
+   what to do.
 
 6. **`commit-specs`.** `archive.mjs commit-specs`: one commit, `docs(specs): archive
    <change>`, of the change's old and new directories and the main spec files of its
@@ -250,7 +250,9 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    Neither stops archive. A record that fails its schema fails the step and writes nothing.
 
 10. **`commit-metrics`.** `archive.mjs commit-metrics`: one commit, `chore(metrics): record
-    <change>`, of only the paths `metrics` wrote. Nothing to commit is no commit.
+    <change>`, of only the paths `metrics` wrote and the ledger, which the step copies into the
+    archived change again first, so the archive holds every record written since `move`.
+    Nothing to commit is no commit.
 
 11. **`mr`: the merge request.** Ask the forge first:
 
@@ -303,7 +305,8 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
     never forced, its branch kept. A change made in place, or a worktree already gone, is
     reported, not failed. A worktree with uncommitted changes is refused with its status, for
     the developer to settle; so is a worktree whose ledger the archived change holds no copy
-    of. From here on, pass `--root <main>`.
+    of. The worktree's active-change pointer goes to the main checkout first, so land finds the
+    change. From here on, pass `--root <main>`.
 
 14. **Report.**
 

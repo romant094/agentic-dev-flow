@@ -47,7 +47,8 @@
 //       failure; no transcripts: degraded, the record written and detail.gap naming why; a record
 //       that fails its schema: failed, nothing written
 //   archive.mjs commit-metrics --change <name>
-//       `chore(metrics): record <name>`: only the paths metrics wrote; nothing to commit is no
+//       `chore(metrics): record <name>`: only the paths metrics wrote and the ledger, copied into the
+//       archived change again first; nothing to commit is no
 //       commit
 //   archive.mjs mr --change <name> [--body <file> --summary "<scope>: <description>" | --title <t>]
 //       the forge role's finalize; no forge: skipped (no --body needed); a forge and no --body:

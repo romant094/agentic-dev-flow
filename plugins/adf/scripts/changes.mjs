@@ -9,6 +9,17 @@
 //                                                    the repository (main and change worktrees),
 //                                                    with `duplicates` and `choices` (a label
 //                                                    per change and per unresolved worktree)
+//   changes.mjs active [--change <name>] [--archived]
+//                                                    the change a command acts on, from the
+//                                                    checkout --root lies in (lib/active.mjs):
+//                                                    a name sets that checkout's pointer
+//                                                    (.adf/active.json) and a switch is recorded;
+//                                                    none reads the pointers, else the one change
+//                                                    in flight; `ask` true leaves the choice to
+//                                                    the developer, with `choices`. --archived
+//                                                    resolves an archived change for land.
+//                                                    { ok, ask, change, root, branch, source,
+//                                                    switched?, reason?, choices? }
 //   changes.mjs status [--change <name>] [--report]  each artifact: done, ready or blocked;
 //                                                    --report adds the rendered propose report
 //                                                    (the merge request is forge.mjs's own report)
@@ -61,6 +72,7 @@ import {
 import { buildOrder, loadSchema } from './lib/schema.mjs'
 import { isMain } from './lib/main.mjs'
 import { findChanges } from './lib/resolve.mjs'
+import { resolveActive } from './lib/active.mjs'
 import { recordSessionOnce } from './lib/ledger.mjs'
 import { markDone, nextArtifact } from './lib/propose.mjs'
 import { callRole, CORE, knowledgeReport } from './lib/roles.mjs'
@@ -112,6 +124,7 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
   const base = option(args, '--base')
   const report = flag(args, '--report')
   const allowMain = flag(args, '--allow-main')
+  const archived = flag(args, '--archived')
   const [command, target] = args
   const schema = loadSchema(schemaDir)
   const change = () => inferChange(root, given, schema)
@@ -125,6 +138,10 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
     case 'find': {
       const found = findChanges(root, schema)
       return { ...found, ...findChoices(found) }
+    }
+    case 'active': {
+      if (target) throw new Error(`active takes no "${target}"; usage: active [--change <name>] [--archived]`)
+      return resolveActive(root, { name: given ?? null, schema, archived, env })
     }
     case 'status': {
       if (target) throw new Error(`status takes no "${target}"; usage: status [--change <name>] [--report]`)
@@ -164,7 +181,7 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
       writing()
       return archiveChange(resolve(root), given)
     default:
-      throw new Error('usage: changes.mjs new|list|find|status|instructions|next|done|skip|schema|archive [--root <dir>]')
+      throw new Error('usage: changes.mjs new|list|find|active|status|instructions|next|done|skip|schema|archive [--root <dir>]')
   }
 }
 

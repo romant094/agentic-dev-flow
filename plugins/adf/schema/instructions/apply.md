@@ -105,7 +105,8 @@ with no group worktree.
 **Dispatch in rounds, under the tree guard.**
 
 A round issues at most one dispatch per running group, all of them in one response, and waits
-for the completion notices instead of polling. Within one worktree the skill's rule holds: one
+for every reply, as the dispatch rule under `## Tools` in
+`${CLAUDE_PLUGIN_ROOT}/schema/prompts/frame.md` states. Within one worktree the skill's rule holds: one
 implementer at a time. Before a round:
 
 ```bash
@@ -151,8 +152,9 @@ chose; it puts reviews at the integration level or above and merge reviews and t
 at the architecture level, and a fix loop entering round 2 is re-dispatched one level higher.
 Round 1 resumes the implementer that holds the context. The roles are `impl`, `review`,
 `re-review` and `fix` with `--task`; `fix` and `re-review` also with `--group`, or alone after
-the final review, and with `--round` from round 1 on; `merge-review` with `--group`;
-`final-review`; `sweep`; `investigate` with a one-word `--topic`. `--base` and `--head` are
+the final review, or with `--subject sweep` for a consolidation, and with `--round` from round 1
+on; `merge-review` with `--group`; `final-review`; `sweep`, and with `--round` for a
+consolidation's re-sweep; `investigate` with a one-word `--topic`. `--base` and `--head` are
 commit ids, the range of the review package.
 
 Name every dispatch in the fixed form. The name is what the metrics read the role, the task and
@@ -199,6 +201,12 @@ review. It counts the rounds from the recorded attempts, a round being one `fix`
 - `escalate-to-developer`: a group's loop or the final review's at the breaker. Stop and put
   the open findings to the developer.
 
+`round` also says `adjudicate` or `escalate-to-developer` before the breaker, with
+`blockedFix` and `reason`, when the running round's `fix` returned `BLOCKED` with no commit: a
+finding that needs no code change has nothing to re-review, and every further round would be the
+same. Rule on it as at the breaker, `accepted` or `dismissed` with the evidence as the decision.
+Without that condition, adjudication waits for the breaker.
+
 **The reply is a file of its role's shape; a script computes its result.**
 
 The prompt names the reply file, an absolute path into the change worktree, never a group
@@ -231,9 +239,11 @@ reply file, and record no reply a second time through another call. Route on `ne
     go to the fix loop; `rule`, rule on each id of `result.toRule` and each item of
     `result.unverifiable` first. `result.deferred` are the minor quality findings, kept for the
     final review.
-  - `re-review`: `result.addressed`, `result.open` and `result.result`, as for a review.
+  - `re-review`: `result.addressed`, `result.open` and `result.result`, as for a review; a
+    consolidation's also `result.notConsolidated`, the sweep findings it found not consolidated.
   - `sweep`: `result.verdict` (`CLEAN` or `FINDINGS`), `result.findings` and `result.dropped`,
-    the findings a `DUP` marker accepts; `debt`, the debt records its `dispositions` became.
+    the findings a `DUP` marker accepts; `debt`, the debt records its `dispositions` became; a
+    re-sweep's `reSweep`, its round's ledger record.
   - `investigate`: the script checks the shape only; the reply's `answer` is yours to read.
 - `retry`: the reply is refused, the first time, and goes back once, to the same agent, resumed,
   with `errors` (`mode: resume`); where the harness cannot resume it, pass `--resume no` and
@@ -284,7 +294,7 @@ load beside `subagent-driven-development`:
   summed up in `result.addressed` and `result.open`. The review package's BASE is
   `result.range.base`, so no BASE is recorded before a dispatch.
 - **A ruling settles one item of a loop.** Rule on an item of `toRule` or `unverifiable`, or on
-  an open finding at the breaker, and record it:
+  an open finding when `round` says `adjudicate`, and record it:
 
   ```bash
   node "${CLAUDE_PLUGIN_ROOT}/scripts/ledger.mjs" ruling --change <change> --subject <T<n>|G|final|sweep> --finding <F<n>|U<n>|S<n>> --as accepted|dismissed|fix --decision "<what and why>" --root <root>
@@ -418,7 +428,8 @@ kept for the developer.
 **The code reuse sweep: once per change, over the merged branch.**
 
 When every group is merged, every task ticked and the final review's fixes are in, issue the
-`sweep` dispatch, exactly once, before the whole-suite run. Never per group: a duplicate
+`sweep` dispatch, exactly once, before the whole-suite run; a consolidation's re-sweep is a
+dispatch of its own, below. Never per group: a duplicate
 introduced by two groups is invisible to either group's own sweep, and that is the case most
 worth catching. It is not a phase: no artifact, no verify check, no command. `dispatch.mjs`
 puts it at the integration level: a cheap dispatch answers `CLEAN` almost always, which leaves
@@ -444,8 +455,23 @@ introduced file changed between the sweep that last reported it and that later o
 the sweep does not clear it: a second `CLEAN` on an unchanged branch would launder the first
 finding.
 
-The consolidation is reviewed work, not an untasked edit: a `fix` dispatch with a scoped
-`re-review`, and its files get "Added during apply" lines. Neither the sweep nor apply
+The consolidation is reviewed work, not an untasked edit, done in rounds. Open a round:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/sweep.mjs" consolidate --change <change> --reason "<why consolidate, not dismiss>" --root <root>
+```
+
+It writes the round's `consolidation` ledger record, over every open sweep finding and every
+open finding of the consolidation's own review loop, and returns the round's three names. Then
+dispatch them in turn, each through `dispatch.mjs` with `--subject sweep --round <round>` for
+the first two and `--round <round>` for the third: `fix sweep r<k>`, whose prompt carries the
+open findings and their files as its scope, so it needs no question; `re-review sweep r<k>`
+over the fix's range, whose files get "Added during apply" lines as every fix's do; and the
+re-sweep `sweep r<k>`, whose accepted reply writes the round's `re-sweep` ledger record of what
+it cleared and what stays open. A finding the re-review reports is the next round's, with
+whatever the re-sweep left open; a call before the round's re-sweep is accepted returns the
+round in flight. After the last round the script refuses, and the open findings go to the
+developer. Neither the sweep nor apply
 dismisses a finding. A finding you believe is a false positive goes to the developer with the
 reasoning; silence is not approval, because an automatic dismissal is indistinguishable from a
 missed finding. On the developer's dismissal:
@@ -504,6 +530,31 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" set --command "<command>" --root 
 ```
 
 On a decline, run nothing and report that the whole suite was not run; never a silent pass.
+
+`status` `environment-broken` means the base measured its environment, not its code:
+`environment.reason` says whether it failed at scale with one environment error, or a package's
+suite ran on neither side. Run the worktree preparation once, then the suite again:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/prepare.mjs" run --worktree <root> --root <root> --force
+```
+
+Still `environment-broken`: stop and give the developer two options. (a) They fix the
+environment, and you run the suite again. (b) They rule the suite not measured, which verify
+reads as not run, never as a pass:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/ledger.mjs" ruling --change <change> --check test-record --reason "suite not measured: <their reason>" --root <root>
+```
+
+Never record such a run as `pre-existing`.
+
+**Worktree preparation is the scripts' job.** The planning guide's `## Worktree preparation`
+lists the builds a fresh worktree lacks. The scripts run them: at provisioning, before each
+covering and whole-suite run when their inputs changed, and after a group merge
+(`group-merge` reports it as `prepare`; a failed step there goes to the developer). No agent
+runs those builds itself, the orchestrator included; a missing build is a missing step of the
+recipe, for the developer to add with `prepare.mjs add`.
 
 `--record` writes `openspec/changes/<change>/.apply-test-record.md`, whose `**Commit:**` line
 verify reads, and `--commit` commits that file alone. Run it as apply's final commit, after

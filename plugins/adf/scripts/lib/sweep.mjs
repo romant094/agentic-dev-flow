@@ -7,16 +7,21 @@
 // - the second question's input: every REMOVED or RENAMED requirement of the change's delta
 //   specs, with its `**Code Disposition:**` text, or null when it has none (itself a finding);
 // - the DUP markers already in the tree, and the filter that drops a finding a marker accepts;
-// - the debt records of the reply's dispositions, one per removed or renamed requirement.
+// - the debt records of the reply's dispositions, one per removed or renamed requirement;
+// - a consolidation round over the open findings (`consolidate`), its `consolidation` ledger
+//   record, and the `re-sweep` record of the round's re-sweep.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { changeDir, readChangeMeta } from './changes.mjs'
-import { coveringMarker, findMarkers } from './dup.mjs'
+import { coveringMarker, findMarkers, LOCATION } from './dup.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { baseRef } from './plan-symbols.mjs'
-import { appendRecord, readRecords } from './ledger.mjs'
+import { appendRecord, appendScripted, readRecords } from './ledger.mjs'
+import { attemptsFile, parseEvents, readLog } from './attempts.mjs'
+import { MAX_ROUNDS } from './dispatch.mjs'
+import { consolidationState, sweepState } from './loop.mjs'
 import { findSection, parseSections } from './specs.mjs'
 
 export const SWEEP_SCHEMA = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema', 'sweep.schema.json')
@@ -128,16 +133,65 @@ export function dupFilter(root, replyFindings) {
   return { verdict: findings.length ? 'FINDINGS' : 'CLEAN', findings, dropped }
 }
 
-// The sweep reply, checked under sweep.schema.json, with every finding a DUP marker accepts
-// dropped. A refused reply is no verdict, never CLEAN: the result is then { ok: false, reasons }.
-// The coverage of the dispositions is checked where the change is known, by `dispatch.mjs reply`
-// (lib/reply.mjs).
+// Each finding's `introduced` and `existing` must be a location in the one form (lib/dup.mjs
+// LOCATION): a symbol after the line once kept `locate` from reading the file, and a
+// consolidated duplicate stayed open. One error per location in another form.
+export function locationErrors(findings) {
+  const errors = []
+  ;(findings ?? []).forEach((f, i) => {
+    for (const key of ['introduced', 'existing']) {
+      if (!LOCATION.test(String(f[key] ?? ''))) errors.push(`$.findings[${i}].${key}: "${f[key]}" is not a location; write path:line or path:line-line, with nothing after the line`)
+    }
+  })
+  return errors
+}
+
+// The sweep reply, checked under sweep.schema.json and locationErrors, with every finding a DUP
+// marker accepts dropped. A refused reply is no verdict, never CLEAN: the result is then { ok:
+// false, reasons }. The coverage of the dispositions is checked where the change is known, by
+// `dispatch.mjs reply` (lib/reply.mjs).
 export function filterReply(root, text) {
   const parsed = parseReply(text)
-  const reasons = parsed.errors.length ? parsed.errors : validateJson(readSchema(SWEEP_SCHEMA), parsed.reply)
+  const schemaErrors = parsed.errors.length ? parsed.errors : validateJson(readSchema(SWEEP_SCHEMA), parsed.reply)
+  const reasons = schemaErrors.length ? schemaErrors : locationErrors(parsed.reply.findings)
   if (reasons.length) return { ok: false, error: 'the sweep reply is refused; it is no verdict', reasons }
   const reply = parsed.reply
   return { ok: true, ...dupFilter(root, reply.findings), ...(reply.dispositions ? { dispositions: reply.dispositions } : {}) }
+}
+
+// The names of consolidation round k: its fix, the fix's re-review, and the re-sweep.
+export const roundNames = (k) => ({ fix: `fix sweep r${k}`, reReview: `re-review sweep r${k}`, sweep: `sweep r${k}` })
+
+// Opens a consolidation round on what is open (lib/loop.mjs consolidationState): the sweep's
+// findings and its review loop's, recorded as a `consolidation` ledger record with the reason
+// before the fix is dispatched; `dispatch.mjs prompt --role fix --subject sweep` refuses a round
+// with no record. A round whose re-sweep has no accepted reply yet is in flight: it is returned
+// again (`already`), nothing recorded. At MAX_ROUNDS the developer decides.
+// Returns { ok, round, findings, fix, reReview, sweep, record, already }.
+export function consolidate(root, change, { reason, env = process.env } = {}) {
+  if (typeof reason !== 'string' || !reason.trim()) throw new Error('--reason is empty: say why the findings are consolidated rather than dismissed')
+  const rounds = readRecords(root, change).filter((r) => r.kind === 'consolidation')
+  const last = rounds.at(-1)
+  if (last) {
+    const k = Number(last.round)
+    const reswept = parseEvents(readLog(attemptsFile(root, change))).some((e) => e.event === 'valid' && e.name === roundNames(k).sweep)
+    if (!reswept) return { ok: true, round: k, findings: last.findings.split(','), ...roundNames(k), record: last, already: true }
+  }
+  const state = consolidationState(root, change)
+  if (state.open.length === 0) throw new Error('nothing to consolidate: no sweep finding and no finding of a consolidation is open')
+  const k = rounds.length + 1
+  if (k > MAX_ROUNDS) throw new Error(`the consolidation has run ${MAX_ROUNDS} rounds; escalate to the developer with what is open: ${state.open.join(', ')}`)
+  const { record } = appendScripted(root, change, 'consolidation', { round: String(k), findings: state.open.join(','), reason: reason.trim() }, { env })
+  return { ok: true, round: k, findings: state.open, ...roundNames(k), record, already: false }
+}
+
+// The `re-sweep` ledger record of an accepted `sweep r<k>` reply: what round k's re-sweep
+// cleared and what stays open, read from the sweep state once the reply is recorded.
+export function recordReSweep(root, change, round, { env = process.env } = {}) {
+  const state = sweepState(root, change)
+  const list = (ids) => (ids.length ? ids.join(',') : 'none')
+  const cleared = state.cleared.map((c) => c.id)
+  return appendScripted(root, change, 're-sweep', { round: String(round), cleared: list(cleared), open: list(state.open.map((f) => f.id)) }, { env }).record
 }
 
 // One `debt` record per disposition of an accepted sweep reply, carrying the sweep's answer as

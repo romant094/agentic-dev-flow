@@ -20,6 +20,9 @@ You are dispatched as `{{name}}`, at the {{level}} capability level, for {{subje
   file it names.
 - One denied call is not a lost tool: continue with the named scripts, one plain command per
   call. Report `blocked`, naming the script, only when a named script itself is refused.
+- Dispatch every agent in the foreground, and wait for every dispatched agent's reply before
+  ending the turn: never end a turn with a dispatch outstanding. In a headless session a
+  background agent dies with the turn that started it, and its work is lost.
 
 ## Rules
 

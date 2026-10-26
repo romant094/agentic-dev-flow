@@ -28,7 +28,7 @@ const CASES = {
   're-review': [
     { role: 're-review', summary: 'F1 addressed.', previous: [{ id: 'F1', status: 'addressed', file: 'src/a.mjs', line: 12 }], findings: [], outOfScope: [{ file: 'src/b.mjs', line: null, title: 'Old naming' }] },
     { role: 're-review', summary: 'F1 open.', previous: [{ id: '1', status: 'open', file: 'src/a.mjs', line: 12 }], findings: [] },
-    ['$: outOfScope is required', '$.previous[0].id: "1" does not match ^F[1-9][0-9]*$', '$.previous[0].status: must be one of addressed, not-addressed']
+    ['$: outOfScope is required', '$.previous[0].id: "1" does not match ^[FS][1-9][0-9]*$', '$.previous[0].status: must be one of addressed, not-addressed']
   ],
   sweep: [
     { role: 'sweep', findings: [{ introduced: 'src/new.mjs:4 parseDate', existing: 'src/util.mjs:20 parseDate', why: 'Same parsing.' }], dispositions: [{ requirement: 'Old export', disposition: 'Removed with its callers.' }] },

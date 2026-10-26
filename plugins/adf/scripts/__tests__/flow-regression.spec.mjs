@@ -380,3 +380,22 @@ test('every core script that commits is named in the english-check hook', async 
   const missing = found.filter((name) => !Object.hasOwn(CORE_COMMIT_SCRIPTS, name))
   assert.deepEqual(missing, [], `core scripts that commit and are not in CORE_COMMIT_SCRIPTS:\n  ${missing.join('\n  ')}`)
 })
+
+// --- No dispatch outstanding at the end of a turn ----------------------------------------
+
+// In a headless session an executor sent the ingest as a background agent and ended its turn;
+// the agent died with the turn. The rule is stated once, under `## Tools` in the frame, and every
+// command that dispatches binds its session to those rules.
+test('the frame states the foreground dispatch rule, and every command that dispatches binds it', () => {
+  const frame = readFileSync(join(adf, 'schema', 'prompts', 'frame.md'), 'utf8')
+  const tools = frame.slice(frame.indexOf('## Tools'), frame.indexOf('## Rules'))
+  assert.match(normalise(tools), /never end a turn with a dispatch outstanding/)
+  const commands = join(adf, 'commands')
+  const bound = /`## Tools` in\s+`\$\{CLAUDE_PLUGIN_ROOT\}\/schema\/prompts\/frame\.md`, and they bind this session too/
+  const unbound = readdirSync(commands)
+    .filter((f) => f.endsWith('.md'))
+    .map((f) => [f, readFileSync(join(commands, f), 'utf8')])
+    .filter(([, text]) => /dispatch/i.test(text) && !bound.test(text))
+    .map(([f]) => f)
+  assert.deepEqual(unbound, [])
+})

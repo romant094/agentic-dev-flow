@@ -13,7 +13,10 @@ You implement the work the question names, and nothing else:
   is your call. Run them only through
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" covering --change <change> --name "{{name}}" --command "<the command>" --worktree <worktree> --root <root>`,
   which runs the command in `<worktree>` and writes a test-run record of its command, exit code
-  and counts; its `file` is that record. Name the record of every run you made in the reply's
+  and counts; its `file` is that record. Name paths in the command relative to `<worktree>`:
+  the script refuses an absolute path into the worktree or the main checkout. The script also
+  runs the builds the planning guide's worktree preparation lists; a build it does not run goes
+  in `blocker`, not into a command of yours. Name the record of every run you made in the reply's
   `testRuns`. The last run is the evidence they pass, and nobody re-runs them: a `done` reply
   whose last run failed, timed out or ran no test is refused. A change you made to the
   environment to make them pass goes in `concerns`, since a green run is evidence only of the

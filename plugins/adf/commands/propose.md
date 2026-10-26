@@ -40,7 +40,9 @@ any tracker keys the change works on.
 
    If `ok` is false, show `refusal` and create nothing; for uncommitted work, also show
    `git status`. If `workspace.exists`, the change is in flight: ask whether to continue it there
-   or to choose another name. To continue, `workspace.path` is the root; go to step 8.
+   or to choose another name. To continue, `workspace.path` is the root; make it the active
+   change there with `changes.mjs active --change <name> --root <root>`, as the resolve
+   instruction states, and go to step 8.
 
 3. **Gather the scope.** From the main checkout:
 
@@ -104,8 +106,9 @@ any tracker keys the change works on.
    node "${CLAUDE_PLUGIN_ROOT}/scripts/propose.mjs" create --change <name> --branch <branch> --base <integration|current>
    ```
 
-   If it refuses, show `refusal` or `error` and stop. Otherwise `root` is the worktree. Every
-   later step passes `--root <root>`. Say: "Working on `<branch>` in `<root>`, base `<base>`."
+   If it refuses, show `refusal` or `error` and stop. Otherwise `root` is the worktree, and the
+   change is its active change (`active`), so the later commands need no name. Every later step
+   passes `--root <root>`. Say: "Working on `<branch>` in `<root>`, base `<base>`."
    When the scope holds a tracker item, start it: run `scope.mjs start --change <name>`, show
    `report`, and when `state` is `pending` ask for a yes, then run it again with `--yes`.
 

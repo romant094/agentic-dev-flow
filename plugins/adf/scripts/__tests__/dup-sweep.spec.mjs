@@ -4,7 +4,7 @@ import { strict as assert } from 'node:assert'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { commentFor, coveringMarker, parseMarker } from '../lib/dup.mjs'
+import { commentFor, coveringMarker, locate, parseMarker } from '../lib/dup.mjs'
 import { recordReply } from '../lib/attempts.mjs'
 import { appendRecord, listRecords } from '../lib/ledger.mjs'
 import { sweepState } from '../lib/loop.mjs'
@@ -191,4 +191,40 @@ test('a sweep finding stays open across sweeps until consolidated, marked or dis
   mark(other, ['--file', 'src/c.ts', '--line', '1'])
   const marked = sweepState(other, 'add-x')
   assert.deepEqual([marked.open, marked.cleared], [[], [{ id: 'S1', by: 'marker', marker: 'src/c.ts:1' }]])
+})
+
+test('locate reads path:line and path:line-line, and drops text after the line that older records carry', () => {
+  assert.deepEqual(locate('src/b.ts:16'), { file: 'src/b.ts', line: 16 })
+  assert.deepEqual(locate('src/b.ts:12-30'), { file: 'src/b.ts', line: 12 })
+  assert.deepEqual(locate('src/b.ts:16 toChanges'), { file: 'src/b.ts', line: 16 })
+  assert.deepEqual(locate('src/b.ts:12-30 projectRow()'), { file: 'src/b.ts', line: 12 })
+  assert.deepEqual(locate('src/b.ts'), { file: 'src/b.ts', line: null })
+  assert.equal(locate('toChanges'), null)
+})
+
+test('a finding recorded with a symbol after its line still clears when its file is consolidated', () => {
+  const { change } = host()
+  commitIn(change, 'src/b.ts', 'export const b = 1\n')
+  const b = { introduced: 'src/b.ts:1 b', existing: 'src/a.ts:12 a', why: 'Same constant.' }
+  swept(change, [b])
+  assert.deepEqual(sweepState(change, 'add-x').open.map((f) => f.id), ['S1'])
+  commitIn(change, 'src/b.ts', "export { a as b } from './a.ts'\n")
+  swept(change, [])
+  assert.deepEqual(sweepState(change, 'add-x'), { ran: true, ids: ['S1'], open: [], cleared: [{ id: 'S1', by: 'consolidated' }] })
+})
+
+test('a sweep reply naming a location in any form but path:line[-line] is refused, with the form expected', () => {
+  const { change } = host()
+  mkdirSync(join(change, 'r'), { recursive: true })
+  const finding = (introduced, existing) => ({ introduced, existing, why: 'Same projection.' })
+  writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', findings: [finding('src/b.ts:16 toChanges', 'src/a.ts:33'), finding('src/b.ts:2-9', 'pickKeys')] }))
+  const expected = [
+    '$.findings[0].introduced: "src/b.ts:16 toChanges" is not a location; write path:line or path:line-line, with nothing after the line',
+    '$.findings[1].existing: "pickKeys" is not a location; write path:line or path:line-line, with nothing after the line'
+  ]
+  assert.deepEqual(sweep(['filter', 'r/s.json', '--root', change]).reasons, expected)
+  const out = dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/s.json', '--root', change], { main: change })
+  assert.deepEqual([out.valid, out.next, out.errors], [false, 'retry', expected])
+  writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', findings: [finding('src/b.ts:16', 'src/a.ts:33-40')] }))
+  assert.equal(dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/s.json', '--root', change], { main: change }).valid, true)
 })

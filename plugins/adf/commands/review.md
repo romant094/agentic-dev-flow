@@ -22,12 +22,12 @@ than one file opened goes to a read-only agent that returns a verdict, named `in
 <topic>` with a one-word topic. Read one named file directly. The diff, the reviewer's input
 and the replies stay in their files: read the scripts' verdicts, counts and refusals.
 
-**Input:** `$ARGUMENTS` is the change name, optional. Without it, infer the change from the
-conversation; if that is vague or ambiguous, the selection in step 1 asks.
+**Input:** `$ARGUMENTS` is the change name, optional. Without it, a change the conversation
+names is passed as the name; otherwise the active change answers in step 1.
 
 1. **Select the change and run the preflight.** Follow the resolve instruction: run
-   `node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" find`, have the developer confirm the
-   change, and say `Using change: <name> in <root>`. Then run `preflight.mjs --phase review`,
+   `node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" active [--change <name>]`, which answers
+   without asking unless `ask` is true, and say `Using change: <name> in <root>`. Then run `preflight.mjs --phase review`,
    as the instruction states. On `ok: false`, stop: show `refusal`, which names the remedy, and
    write nothing. From here on, pass `--change <name> --root <root>` to every core script and
    run git with `git -C <root>`.

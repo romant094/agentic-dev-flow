@@ -13,6 +13,7 @@ import { changeDir, META_FILE, readChangeMeta } from './changes.mjs'
 import { mainCheckout } from './installed.mjs'
 import { planInputs } from './plan.mjs'
 import { baseRef } from './plan-symbols.mjs'
+import { prepareWorktree } from './prepare.mjs'
 import { provisionWorktree, teardownWorktree } from './provision.mjs'
 import { callRole } from './roles.mjs'
 import { gitIn, WORKTREES_DIR } from './workspace.mjs'
@@ -89,7 +90,7 @@ export function mergeGroup(changeRoot, { change, group }) {
   if (attempt(git, 'merge-base', '--is-ancestor', tip, 'HEAD') !== null) {
     const found = mergeOf(git, tip)
     if (!found) throw new Error(`${groupBranch} is already in ${branch} without a merge commit; there is no merge to review`)
-    return { merged: true, already: true, into: branch, branch: groupBranch, commit: found.mergeCommit, ...found, conflicts: [] }
+    return { merged: true, already: true, into: branch, branch: groupBranch, commit: found.mergeCommit, ...found, conflicts: [], prepare: prepareMerged(changeRoot) }
   }
   try {
     git('merge', '--no-ff', '--no-edit', groupBranch)
@@ -99,7 +100,14 @@ export function mergeGroup(changeRoot, { change, group }) {
     return { merged: false, into: branch, branch: groupBranch, conflicts }
   }
   const mergeCommit = git('rev-parse', 'HEAD')
-  return { merged: true, already: false, into: branch, branch: groupBranch, commit: mergeCommit, mergeCommit, firstParent: git('rev-parse', 'HEAD^1'), conflicts: [] }
+  return { merged: true, already: false, into: branch, branch: groupBranch, commit: mergeCommit, mergeCommit, firstParent: git('rev-parse', 'HEAD^1'), conflicts: [], prepare: prepareMerged(changeRoot) }
+}
+
+// The merge brought the group's inputs into the change worktree: the recipe's steps whose inputs
+// changed run there (lib/prepare.mjs). The merge stands either way; a failed step is reported.
+function prepareMerged(changeRoot) {
+  const p = prepareWorktree(changeRoot)
+  return { ok: p.ok, ran: p.ran, skipped: p.skipped, ...(p.error ? { error: p.error } : {}) }
 }
 
 // The merge commit on the change branch whose second parent is the group branch's tip.

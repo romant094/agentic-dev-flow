@@ -149,6 +149,28 @@ test('tasks.mjs lint exits 1 on an error finding and 0 on warnings alone', () =>
   assert.equal(run(['lint', '--root', bad]).code, 2)
 })
 
+test('tasks.mjs lint refuses a taken or partial scope key that no task names, by the rule verify uses', () => {
+  const root = host('## 1. G\n\n- [ ] 1.1 greet the user (PROJ-1)\n- [ ] 1.2 wave\n')
+  const items = [
+    { source: 'tracker', key: 'PROJ-1', state: 'taken' },
+    { source: 'debt', key: 'snmp-01', state: 'taken' },
+    { source: 'tracker', key: 'PROJ-12', state: 'partial' },
+    { source: 'tracker', key: 'PROJ-3', state: 'excluded', reason: 'later' }
+  ]
+  writeFileSync(join(root, 'openspec', 'changes', 'c', 'scope.json'), JSON.stringify({ version: 1, change: 'c', tracker: { state: 'done', plugin: 't' }, items }))
+  const out = run(['lint', '--change', 'c', '--root', root])
+  assert.equal(out.code, 1)
+  assert.deepEqual(
+    out.result.findings.filter((f) => f.kind === 'scope-key').map((f) => [f.severity, f.message]),
+    [
+      ['error', 'snmp-01 (taken) is named by no task: name it, as a whole word, on the task that addresses it'],
+      ['error', 'PROJ-12 (partial) is named by no task: name it, as a whole word, on the task that addresses it']
+    ]
+  )
+  writeFileSync(join(root, 'openspec', 'changes', 'c', 'tasks.md'), '## 1. G\n\n- [ ] 1.1 greet the user (PROJ-1)\n- [ ] 1.2 wave for snmp-01\n- [ ] 1.3 the rest of PROJ-12\n')
+  assert.deepEqual([run(['lint', '--change', 'c', '--root', root]).code, run(['lint', '--change', 'c', '--root', root]).result.findings], [0, []])
+})
+
 test('tick --plan-task refuses until the task review loop is clean or a ruling closes each item left', () => {
   const root = repo()
   const tick = () => run(['tick', '--plan-task', '1', '--change', 'c', '--root', root])

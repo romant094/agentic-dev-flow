@@ -102,8 +102,8 @@ test('a name out of the form is refused', () => {
     [{ role: 'merge-review', group: 'b' }, /not a group letter/],
     [{ role: 'sweep', group: 'A' }, /takes no --group/],
     [{ role: 'fix', task: 1, round: 0 }, /positive integer/],
-    [{ role: 'merge-review', group: 'A', round: 2 }, /belongs to a task dispatch, or to a fix or re-review/],
-    [{ role: 'sweep', round: 1 }, /belongs to a task dispatch/],
+    [{ role: 'merge-review', group: 'A', round: 2 }, /belongs to a task dispatch, to a fix or re-review, or to a re-sweep/],
+    [{ role: 'final-review', round: 1 }, /belongs to a task dispatch/],
     [{ role: 'verify', check: 'c5' }, /needs --check/],
     [{ role: 'verify', check: 'assemble' }, /needs --check/],
     [{ role: 'verify', check: 'c6' }, /needs --check/],
@@ -448,6 +448,29 @@ test('a fix loop counts its rounds by the re-reviews attempted and trips the bre
   for (const name of ['fix A r1', 're-review A r1']) call(root, 'attempt', '--name', name)
   assert.deepEqual(call(root, 'round', '--group', 'A'), { ok: true, subject: 'A', completed: 1, max: 5, next: 'fix', round: 2, fix: 'fix A r2', reReview: 're-review A r2' })
   assert.equal(cli(root, 'round', '--change', CHANGE, '--role', 'fix').status, 2)
+})
+
+test('a fix round that returns BLOCKED with no commit goes to adjudication before the breaker', () => {
+  const event = (name, extra = {}) => JSON.stringify({ name, ...extra })
+  const blocked = (name, commits = []) => event(name, { event: 'valid', result: { status: 'BLOCKED', next: 'blocked', commits, range: null, blocker: 'nothing to fix' } })
+  const text = [event('T7 review'), event('T7 fix r1'), blocked('T7 fix r1')].join('\n')
+  assert.deepEqual(roundOf(text, { task: 7 }), {
+    subject: 'T7',
+    completed: 0,
+    max: MAX_ROUNDS,
+    next: 'adjudicate',
+    blockedFix: 'T7 fix r1',
+    reason: 'T7 fix r1 returned BLOCKED with no commit: nothing is left to re-review, so the open findings are ruled now'
+  })
+  // A group's or the final review's loop goes to the developer, as at the breaker.
+  assert.equal(roundOf([event('fix B r2'), blocked('fix B r2'), event('re-review B r1')].join('\n'), { group: 'B' }).next, 'escalate-to-developer')
+  assert.equal(roundOf(blocked('fix r1'), {}).next, 'escalate-to-developer')
+  // Without that condition the loop runs on to the breaker: a blocked fix with a commit, a done
+  // fix, an earlier round's blocked fix, another subject's.
+  assert.equal(roundOf(blocked('T7 fix r1', [{ sha: 'a'.repeat(40) }]), { task: 7 }).next, 'fix')
+  assert.equal(roundOf(event('T7 fix r1', { event: 'valid', result: { status: 'DONE', commits: [] } }), { task: 7 }).next, 'fix')
+  assert.deepEqual(Object.values(roundOf([blocked('T7 fix r1'), event('T7 re-review r1')].join('\n'), { task: 7 })).slice(3, 5), ['fix', 2])
+  assert.equal(roundOf(blocked('T8 fix r1'), { task: 7 }).next, 'fix')
 })
 
 test('a re-review over a fix range names the files no task covers, owned by the task under review', () => {

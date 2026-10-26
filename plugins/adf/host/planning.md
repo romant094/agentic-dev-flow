@@ -53,6 +53,16 @@ backticks, such as a local environment file. Each is copied when the worktree ha
 linked; a path git does not ignore is skipped. The project's plugins adjust the copies, for
 example a database address. -->
 
+## Worktree preparation
+
+<!-- The commands that rebuild what a fresh worktree lacks because git ignores it, such as a
+built shared package or generated code, one list item each: the command in backticks, then the
+input paths whose change makes it run again, each in backticks, for example
+- `npm run build --workspace <package>` from `packages/<package>`
+The flow's scripts run each command in a new worktree once its providers have run, and again
+before a covering or whole-suite run, or after a group merge, when its inputs changed since its
+last run there. /adf:init proposes candidates and writes the ones the developer confirms. -->
+
 ## Checks that need the developer
 
 <!-- Checks an implementer cannot run on its own, such as a pass against a live environment or

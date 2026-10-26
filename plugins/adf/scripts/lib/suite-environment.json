@@ -1,0 +1,15 @@
+{
+  "description": "What lib/suite.mjs reads as a broken environment in a whole-suite run with the base check. A base run that fails at scale with one signature, or a runner summary that shows a package's suite ran on neither side, is environment-broken, never pre-existing. A signature's pattern is a regular expression matched per output line; its first group, when it has one, is the key that makes two matches one shared error. At scale: the most frequent signature key matches at least minOccurrences lines and at least minShare of the failures the base run names.",
+  "scale": { "minOccurrences": 5, "minShare": 0.5 },
+  "signatures": [
+    { "id": "module-not-found", "pattern": "Cannot find module '([^']+)'" },
+    { "id": "package-not-found", "pattern": "Cannot find package '([^']+)'" },
+    { "id": "python-module-not-found", "pattern": "No module named '([^']+)'" },
+    { "id": "command-not-found", "pattern": "(\\S+): (?:command )?not found$" },
+    { "id": "shared-library-missing", "pattern": "error while loading shared libraries: ([^:\\s]+)" },
+    { "id": "connection-refused", "pattern": "ECONNREFUSED (\\S+)" }
+  ],
+  "notRun": [
+    { "id": "turbo", "summary": "Tasks:\\s+(?<successful>\\d+) successful, (?<total>\\d+) total", "failed": "^\\s*Failed:\\s+(?<tasks>\\S.*)$" }
+  ]
+}

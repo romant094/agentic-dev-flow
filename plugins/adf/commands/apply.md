@@ -22,12 +22,12 @@ A question that needs more than one file opened goes to a read-only agent that r
 verdict, `dispatch.mjs prompt --role investigate --topic <word>`. Read one named file directly.
 Keep raw suite and script output out of your context where a pass or fail line answers.
 
-**Input:** `$ARGUMENTS` is the change name, optional. Without it, infer the change from the
-conversation; if that is vague or ambiguous, the selection in step 1 asks.
+**Input:** `$ARGUMENTS` is the change name, optional. Without it, a change the conversation
+names is passed as the name; otherwise the active change answers in step 1.
 
 1. **Select the change.** Follow the resolve instruction: run
-   `node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" find`, have the developer confirm the
-   change, and say `Using change: <name> in <root>`. From here on, pass `--change <name>
+   `node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" active [--change <name>]`, which answers
+   without asking unless `ask` is true, and say `Using change: <name> in <root>`. From here on, pass `--change <name>
    --root <root>` to every core script and run git with `git -C <root>`.
 
 2. **Check that Superpowers is available.** The preflight runs that gate (the check of

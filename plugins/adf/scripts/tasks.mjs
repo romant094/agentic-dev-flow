@@ -13,12 +13,15 @@
 //       { item, ticked, already, sha?, paths? }
 //   tasks.mjs lint --change <name> [--root <dir>]
 //       { ok, findings: [{ severity, kind, line, message }] }: the checkbox grammar, item
-//       numbers against their group, duplicates; a warning for a path or a command.
+//       numbers against their group, duplicates; a warning for a path or a command; an error
+//       (`scope-key`) for each taken or partial key of the change's scope.json that no task
+//       names, by the rule verify's tasks check applies (lib/scope.mjs scopeNaming).
 //
 // Exit 1 on a refusal or an error finding, 2 on a usage error.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { changeDir } from './lib/changes.mjs'
+import { changeDir, parseTasks } from './lib/changes.mjs'
+import { scopeNaming } from './lib/scope.mjs'
 import { commitTick, itemForPlanTask, lintTasks, tickGate, tickTask } from './lib/tasks.mjs'
 import { isMain } from './lib/main.mjs'
 import { loadSchema } from './lib/schema.mjs'
@@ -57,7 +60,15 @@ function exec(argv) {
     if (args.length > 1 || planTask || commit) throw new Usage('lint takes --change and --root only')
     const file = join(dir, tracks)
     if (!existsSync(file)) throw new Error(`${change} has no ${tracks}`)
-    const findings = lintTasks(readFileSync(file, 'utf8'))
+    const text = readFileSync(file, 'utf8')
+    // The scope's keys are mapped onto the tasks here, at propose, by verify's own rule.
+    const unnamed = scopeNaming(root, change, parseTasks(text)).unnamed.map(({ key, state }) => ({
+      severity: 'error',
+      kind: 'scope-key',
+      line: null,
+      message: `${key} (${state}) is named by no task: name it, as a whole word, on the task that addresses it`
+    }))
+    const findings = [...lintTasks(text), ...unnamed]
     const ok = !findings.some((f) => f.severity === 'error')
     return { code: ok ? 0 : 1, result: { ok, file: `openspec/changes/${change}/${tracks}`, findings } }
   }

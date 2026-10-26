@@ -31,20 +31,22 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { attemptsFile, parseEvents, readLog } from './attempts.mjs'
-import { parseName, sddDir } from './dispatch.mjs'
+import { parseName, sddDir, SWEEP_SUBJECT } from './dispatch.mjs'
 import { coveringMarker, findMarkers, locate } from './dup.mjs'
 import { readRecords } from './ledger.mjs'
 import { gitIn } from './workspace.mjs'
 
 export const REVIEW_ROLES = ['review', 'final-review', 'merge-review']
 export const LOOP_ROLES = [...REVIEW_ROLES, 're-review']
-export const SWEEP_SUBJECT = 'sweep'
+export { SWEEP_SUBJECT }
 export const CLOSING = ['accepted', 'dismissed']
 
 const unique = (list) => [...new Set(list)]
 
-// The subject a review loop belongs to: T<n>, a group letter, or `final`.
-export const subjectOf = (parts) => (parts.task !== undefined ? `T${parts.task}` : parts.group !== undefined ? parts.group : 'final')
+// The subject a review loop belongs to: T<n>, a group letter, `sweep` for a consolidation's fix
+// and re-review, or `final`.
+export const subjectOf = (parts) =>
+  parts.subject !== undefined ? parts.subject : parts.task !== undefined ? `T${parts.task}` : parts.group !== undefined ? parts.group : 'final'
 
 // The computed results of the subject's accepted reviews and re-reviews, in log order.
 export function subjectHistory(eventsText, subject) {
@@ -202,7 +204,8 @@ function changedBetween(git, from, to, file) {
 }
 
 export function sweepState(root, change, { git = gitIn(root) } = {}) {
-  const runs = parseEvents(readLog(attemptsFile(root, change))).filter((e) => e.event === 'valid' && e.name === 'sweep' && e.result)
+  // The first sweep and every re-sweep (`sweep r<k>`), in log order.
+  const runs = parseEvents(readLog(attemptsFile(root, change))).filter((e) => e.event === 'valid' && parseName(e.name)?.role === 'sweep' && e.result)
   if (runs.length === 0) return { ran: false, ids: [], open: [], cleared: [] }
   const ids = new Map()
   const open = new Map()
@@ -232,4 +235,28 @@ export function sweepState(root, change, { git = gitIn(root) } = {}) {
     else still.push(f)
   }
   return { ran: true, ids: [...ids.values()], open: still, cleared }
+}
+
+// ---------------------------------------------------------------- the consolidation
+
+// What a consolidation round works on: the sweep's open findings (S<n>) and the open findings of
+// its own review loop (F<n>, from the accepted `re-review sweep r<k>` results). The re-sweep, not
+// the re-review, clears a sweep finding, so a re-review's not-addressed S<n> never enters the
+// loop's open set. { subject, sweep, loop, open, rendered, files }: `files` the introduced and
+// existing files of the open sweep findings and the files of the open loop findings, the fix's
+// scope.
+export function consolidationState(root, change, options = {}) {
+  const sweep = sweepState(root, change, options)
+  const rulings = subjectRulings(readRecords(root, change), SWEEP_SUBJECT)
+  const loop = loopState(subjectHistory(readLog(attemptsFile(root, change)), SWEEP_SUBJECT), rulings)
+  const byId = new Map(loop.findings.map((f) => [f.id, f]))
+  const rendered = [
+    ...sweep.open.map((f) => `${f.id} ${f.introduced} repeats ${f.existing}: ${f.why}`),
+    ...loop.open.map((id) => renderFinding(byId.get(id), rulings.get(id)))
+  ]
+  const files = unique([
+    ...sweep.open.flatMap((f) => [locate(f.introduced)?.file, locate(f.existing)?.file]),
+    ...loop.open.map((id) => byId.get(id)?.file)
+  ].filter(Boolean).map((f) => f.replace(/^\.\//, '')))
+  return { subject: SWEEP_SUBJECT, sweep, loop, open: [...sweep.open.map((f) => f.id), ...loop.open], rendered, files }
 }

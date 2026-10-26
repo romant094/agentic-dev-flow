@@ -12,6 +12,7 @@ import { setBranches } from '../lib/branches.mjs'
 import { findChoices, inferChange, statusReport } from '../lib/changes.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { createChange, GATE_RUNNERS, markDone, nextArtifact, redirectTarget } from '../lib/propose.mjs'
+import { pointerOf } from '../lib/active.mjs'
 import { initRegistry, readRegistry, writeRegistry } from '../lib/registry.mjs'
 import { forgeInput, forgeReport, titleFrom } from '../lib/roles.mjs'
 import { GATES, loadSchema } from '../lib/schema.mjs'
@@ -148,6 +149,8 @@ test('create makes the worktree, the change with its base, and the propose sessi
   assert.equal(JSON.parse(readFileSync(join(root, 'openspec', 'changes', 'add-thing', '.adf.json'), 'utf8')).base, 'develop')
   assert.equal(made.ledger.recorded, true)
   assert.equal(git(root, 'branch', '--show-current'), 'feat/add-thing')
+  // The new change is the worktree's active change (lib/active.mjs).
+  assert.deepEqual([made.active.key, pointerOf(root).change], ['feat/add-thing', 'add-thing'])
 })
 
 test('next hands out each artifact in order, done gates it, and commit takes only the change', async () => {

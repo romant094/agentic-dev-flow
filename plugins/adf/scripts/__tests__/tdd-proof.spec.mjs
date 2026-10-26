@@ -38,6 +38,14 @@ test('a test that fails without the code and passes with it is a proof; the tree
   assert.equal(git(change, 'rev-parse', 'HEAD'), sha)
 })
 
+test('a test command that names the worktree or the main checkout by absolute path is refused before any worktree is made', () => {
+  const { root, change, sha } = twoCommits()
+  for (const test of [`node ${change}/test/f.test.mjs`, `node test/f.test.mjs --root=${root}`]) {
+    assert.throws(() => run(['--worktree', change, '--commit', sha, '--test', test, '--change', 'add-x']), /worktree-relative/, test)
+  }
+  assert.equal(existsSync(join(root, '.claude/worktrees', `add-x--tdd-${sha.slice(0, 7)}`)), false)
+})
+
 test('a test that passes on the parent is no proof', () => {
   const { change, sha } = twoCommits("import { f } from '../src/f.mjs'\nif (typeof f !== 'function') process.exit(1)\n")
   const out = run(args(change, sha))

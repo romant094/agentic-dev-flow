@@ -82,10 +82,16 @@ export function findMarkers(root) {
   return markers
 }
 
+// The one location form a sweep reply may write, `path:line` or `path:line-line`
+// (lib/sweep.mjs locationErrors refuses any other).
+export const LOCATION = /^\S(?:.*\S)?:[1-9]\d*(?:-[1-9]\d*)?$/
+
 // A finding's `introduced` as { file, line }: `path:12`, `path:12-30`, or a bare path (line
-// null). A symbol with no path gives null: no marker can be matched to it.
+// null). Text after the line, which replies written before the form was checked carry
+// (`path:16 symbolName`), is dropped. A symbol with no path gives null: no marker can be
+// matched to it.
 export function locate(introduced) {
-  const m = /^(.+?):(\d+)(?:-\d+)?$/.exec(String(introduced ?? '').trim())
+  const m = /^(.+?):(\d+)(?:-\d+)?(?:\s.*)?$/.exec(String(introduced ?? '').trim())
   if (m) return { file: m[1], line: Number(m[2]) }
   const bare = String(introduced ?? '').trim()
   return /[/.]/.test(bare) && !/\s/.test(bare) ? { file: bare, line: null } : null

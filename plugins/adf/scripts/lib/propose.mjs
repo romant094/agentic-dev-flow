@@ -28,6 +28,7 @@ import {
 import { commitPaths } from './commit.mjs'
 import { mainCheckout } from './installed.mjs'
 import { appendRecord } from './ledger.mjs'
+import { setPointer } from './active.mjs'
 import { changeScopeFile, readScope, recordable, scopeSourcesGate } from './scope.mjs'
 import { changeAgainstMain, checkCapabilities, validateProject, writeSpecsBase } from './specs.mjs'
 import { create as createWorkspace } from './workspace.mjs'
@@ -266,7 +267,9 @@ export function createChange(mainRoot, { change, branch, base }, schema, { env =
   } catch (error) {
     ledger = { recorded: false, error: error.message }
   }
-  return { ok: true, change, root: made.root, branch: made.branch, base: made.base, baseRef: made.baseRef, changeRoot: created.changeRoot, ledger, ...(copied ? { scope: copied } : {}) }
+  // The new change is the active change of its checkout (lib/active.mjs).
+  const { key, file } = setPointer(made.root, change, { env })
+  return { ok: true, change, root: made.root, branch: made.branch, base: made.base, baseRef: made.baseRef, changeRoot: created.changeRoot, ledger, active: { key, file }, ...(copied ? { scope: copied } : {}) }
 }
 
 export const proposeMessage = (change) => `docs(openspec): propose ${change}`

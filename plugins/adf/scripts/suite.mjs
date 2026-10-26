@@ -12,8 +12,9 @@
 //                 [--section test-record|review] [--timeout <minutes>]
 //       run the command in <root> through the platform shell, its output to
 //       .superpowers/sdd/<change>/suite/<stamp>.txt, never to stdout:
-//       { status, exit, counts, outputFile, failing, base?, preExisting, newFailures, blocking,
-//         comparison, ok, record?, section? }
+//       { status, exit, counts, outputFile, failing, base?, environment?, preExisting,
+//         newFailures, blocking, comparison, ok, record?, section? }; status is pass, fail,
+//       pre-existing, environment-broken (with `environment.reason`) or not-run
 //       --base-check on a failure runs it again in a worktree of the change's base, then
 //       removes that worktree (never forced) to tell a pre-existing failure from a new one
 //       --record writes openspec/changes/<change>/.apply-test-record.md, apply's final commit;

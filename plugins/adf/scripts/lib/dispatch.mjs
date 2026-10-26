@@ -9,6 +9,8 @@
 //   T<n> <role>, T<n> <role> r<k>          role impl | review | re-review | fix
 //   final-review, sweep, investigate <topic>, merge-review <G>
 //   fix [<G>] [r<k>], re-review [<G>] [r<k>]
+//   fix sweep r<k>, re-review sweep r<k>, sweep r<k>   (a sweep finding's consolidation, round k:
+//                  the fix, its re-review and the re-sweep; lib/sweep.mjs consolidate)
 //   verify c4 | verify c8   (schema/instructions/verify.md)
 //   ai-review r<k>, ai-review r<k> s<n>, ai-fix F<n> r<k>   (the review stage)
 //   spec-merge <capability>, ingest   (archive)
@@ -104,6 +106,9 @@ export const MAX_ATTEMPTS = 2
 // Task-less roles that loop in rounds: the fix and re-review after a merge review or the final
 // review.
 export const ROUNDED = ['fix', 're-review']
+// The subject of a consolidation's fix and re-review (`--subject sweep`), whose round is the
+// consolidation's; the re-sweep after it is `sweep r<k>`.
+export const SWEEP_SUBJECT = 'sweep'
 
 const TOPIC = /^[A-Za-z0-9]+$/
 const GROUP = /^[A-Z]$/
@@ -239,8 +244,16 @@ export function parseGraph(planText) {
 
 // ---------------------------------------------------------------- names
 
-export function dispatchName({ role, task, group, round, topic, check, slice, finding, capability, id }) {
+export function dispatchName({ role, task, group, round, topic, check, slice, finding, capability, id, subject }) {
   if (!ROLES.includes(role)) refuse(`unknown role "${role}"; known: ${ROLES.join(', ')}`)
+  if (subject !== undefined) {
+    if (!ROUNDED.includes(role)) refuse('--subject belongs to fix and re-review')
+    if (subject !== SWEEP_SUBJECT) refuse(`--subject is ${SWEEP_SUBJECT}, not "${subject}"`)
+    if (task !== undefined || group !== undefined) refuse(`--subject ${SWEEP_SUBJECT} takes no --task or --group`)
+    if (round === undefined) refuse(`${role} --subject ${SWEEP_SUBJECT} needs --round <k>, the consolidation's round`)
+    if (!(Number.isInteger(round) && round >= 1)) refuse(`round "${round}" is not a positive integer`)
+    return `${role} ${SWEEP_SUBJECT} r${round}`
+  }
   if (capability !== undefined && role !== 'spec-merge') refuse('--capability belongs to spec-merge')
   if (id !== undefined && role !== 'retro') refuse('an id belongs to retro')
   if (role === 'retro') {
@@ -286,7 +299,7 @@ export function dispatchName({ role, task, group, round, topic, check, slice, fi
     return round === undefined ? `T${task} ${role}` : `T${task} ${role} r${round}`
   }
   if (!Object.hasOwn(TASKLESS, role)) refuse(`${role} needs --task`)
-  if (round !== undefined && !ROUNDED.includes(role)) refuse('--round belongs to a task dispatch, or to a fix or re-review')
+  if (round !== undefined && !ROUNDED.includes(role) && role !== 'sweep') refuse('--round belongs to a task dispatch, to a fix or re-review, or to a re-sweep')
   if (role === 'investigate') {
     if (!TOPIC.test(topic ?? '')) refuse(`investigate needs --topic, one word of letters and digits, not "${topic ?? ''}"`)
     return `investigate ${topic}`
@@ -323,6 +336,10 @@ export function parseName(name) {
   if (m && SCOPE_KEY.test(m[1])) return { role: 'land-comment', key: m[1] }
   m = /^(final-review|sweep)$/.exec(text)
   if (m) return { role: m[1] }
+  m = /^(fix|re-review) sweep r([1-9]\d*)$/.exec(text)
+  if (m) return { role: m[1], subject: SWEEP_SUBJECT, round: Number(m[2]) }
+  m = /^sweep r([1-9]\d*)$/.exec(text)
+  if (m) return { role: 'sweep', round: Number(m[1]) }
   m = /^(merge-review) ([A-Z])$/.exec(text) ?? /^(fix|re-review)(?: ([A-Z]))?(?: r([1-9]\d*))?$/.exec(text)
   if (m) return { role: m[1], ...(m[2] ? { group: m[2] } : {}), ...(m[3] ? { round: Number(m[3]) } : {}) }
   return null
@@ -401,6 +418,7 @@ export function planDispatch(inputs, { root, main, planText, exists }) {
   if (role === 'investigate' || role === 'final-review' || role === 'sweep' || (task === undefined && group === undefined)) {
     out.agent = `adf:${taskless(role, round)}`
     out.worktree = root
+    if (inputs.subject !== undefined) out.subject = inputs.subject
     out.replyFile = replyFile(root, change, name, exists)
     return out
   }
@@ -545,29 +563,40 @@ export const MAX_ROUNDS = 5
 // Where a fix loop stands, from the attempts recorded so far. A round is complete once its
 // re-review was dispatched. Below the breaker the next round is dispatched (`fix`); at it, a
 // task's open findings are adjudicated by the orchestrator (`adjudicate`), and a group's or the
-// final review's go to the developer (`escalate-to-developer`).
+// final review's go to the developer (`escalate-to-developer`). A round whose fix returned BLOCKED
+// with no commit goes the same way before the breaker.
 //   subject: { task } | { group } | {} (after the final review)
 export function roundOf(attemptsText, { task, group } = {}) {
   if (task !== undefined && group !== undefined) refuse('a fix loop is a task\'s or a group\'s, not both')
   if (task !== undefined && !(Number.isInteger(task) && task >= 1)) refuse(`task "${task}" is not a positive integer`)
   if (group !== undefined && !GROUP.test(group)) refuse(`group "${group}" is not a group letter`)
   let completed = 0
+  const fixes = new Map()
   for (const line of String(attemptsText ?? '').split('\n')) {
+    let event
     let parsed
     try {
-      parsed = parseName(JSON.parse(line).name)
+      event = JSON.parse(line)
+      parsed = parseName(event.name)
     } catch {
       continue
     }
-    if (parsed?.role !== 're-review' || parsed.round === undefined) continue
+    // A consolidation's rounds are its own (lib/sweep.mjs consolidate), never the final review's.
+    if (parsed?.round === undefined || parsed.subject !== undefined) continue
     if (parsed.task !== task || parsed.group !== group) continue
-    completed = Math.max(completed, parsed.round)
+    if (parsed.role === 're-review') completed = Math.max(completed, parsed.round)
+    else if (parsed.role === 'fix' && event.event === 'valid' && event.result) fixes.set(parsed.round, { name: event.name, result: event.result })
   }
   const subject = task !== undefined ? `T${task}` : group !== undefined ? group : 'final'
-  if (completed >= MAX_ROUNDS) {
-    return { subject, completed, max: MAX_ROUNDS, next: task !== undefined ? 'adjudicate' : 'escalate-to-developer' }
-  }
+  const ruling = task !== undefined ? 'adjudicate' : 'escalate-to-developer'
+  if (completed >= MAX_ROUNDS) return { subject, completed, max: MAX_ROUNDS, next: ruling }
   const round = completed + 1
+  // The running round's fix came back BLOCKED with no commit: there is nothing to re-review, and
+  // every further round would be the same, so its open findings are ruled now, as at the breaker.
+  const fix = fixes.get(round)
+  if (fix?.result.status === 'BLOCKED' && !(fix.result.commits ?? []).length) {
+    return { subject, completed, max: MAX_ROUNDS, next: ruling, blockedFix: fix.name, reason: `${fix.name} returned BLOCKED with no commit: nothing is left to re-review, so the open findings are ruled now` }
+  }
   const names = (role) => dispatchName({ role, round, ...(task !== undefined ? { task } : {}), ...(group !== undefined ? { group } : {}) })
   return { subject, completed, max: MAX_ROUNDS, next: 'fix', round, fix: names('fix'), reReview: names('re-review') }
 }

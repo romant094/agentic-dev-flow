@@ -104,6 +104,13 @@ function writeLand(main, change, land) {
 
 const nextOf = (land) => LAND_STEPS.find((s) => !FINAL.has(land.steps[s].state)) ?? null
 
+// Whether land has nothing left to do for the change: complete, skipped, or stopped on a merge
+// request closed without a merge (`report` reads the same states).
+export function landFinished(main, change) {
+  const land = readLand(main, change)
+  return nextOf(land) === null || land.steps.check.state === 'skipped' || land.steps.wait.state === 'closed'
+}
+
 // deps: { now() -> Date, home }. The roles are the registry's: the tests enable fixture plugins.
 export function landContext(rootArg, change, { now = () => new Date(), home } = {}) {
   if (!CHANGE.test(change ?? '')) refuse(`"${change ?? ''}" is not a kebab-case change name`)

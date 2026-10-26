@@ -3,12 +3,18 @@
 // subagent dispatch, and the count of its attempts. Prints one JSON object on stdout; exit 1 on a
 // refusal, exit 2 on a usage error.
 //
-//   dispatch.mjs plan    --change <name> --role <role> [--task <N>] [--group <G>] [--round <k>]
-//                        [--topic <word>] [--check c4|c8] [--root <change worktree>]
+//   dispatch.mjs plan    --change <name> --role <role> [--task <N>] [--group <G>] [--subject sweep]
+//                        [--round <k>] [--topic <word>] [--check c4|c8] [--root <change worktree>]
 //       { ok, name, role, agent, worktree, replyFile, ... }; a verify dispatch also names the
 //       sectionFile its recorded reply becomes
 //       --round names a task's fix round, or a fix or re-review round after a merge review or
-//       the final review (fix B r2)
+//       the final review (fix B r2); with --subject sweep, a fix or re-review of a sweep
+//       finding's consolidation round (fix sweep r1), and on sweep the round's re-sweep
+//       (sweep r1). A consolidation's fix and re-review are refused before `sweep.mjs
+//       consolidate` recorded their round; their prompt carries the open sweep findings and the
+//       consolidation's own (lib/loop.mjs consolidationState), and the fix's files in scope are
+//       the duplicates' files. An accepted re-sweep writes the round's `re-sweep` ledger record,
+//       returned as `reSweep`
 //   dispatch.mjs plan    --change <name> --role ai-review --round <k> [--slice <n>] [--root <dir>]
 //   dispatch.mjs plan    --change <name> --role ai-fix --finding F<n> --round <k> [--root <dir>]
 //       the review stage: `ai-review r<k>` (`ai-review r<k> s<n>` for one slice of a diff over
@@ -52,7 +58,9 @@
 //       merge review, or, with neither, the final review's. A round is complete once its
 //       re-review was attempted. { ok, subject, completed, max, next, round?, fix?, reReview? }:
 //       next `fix` names the round's two dispatches; at the breaker (MAX_ROUNDS) next is
-//       `adjudicate` for a task and `escalate-to-developer` for a group or the final review
+//       `adjudicate` for a task and `escalate-to-developer` for a group or the final review, and
+//       so it is before the breaker when the running round's fix returned BLOCKED with no commit
+//       (then with `blockedFix` and `reason`)
 //   dispatch.mjs reply   --change <name> --name "<dispatch name>" --file <reply file>
 //                        [--resume yes|no] [--root <change worktree>]
 //       checks the reply through its role's checker (the role read from the name) and records a
@@ -113,8 +121,20 @@ import { checkFindings, checkFix } from './lib/review.mjs'
 import { checkSpecMergeReply, writeConflictTexts } from './lib/spec-merge.mjs'
 import { mergePreview } from './lib/specs.mjs'
 import { fixTarget, Refusal, reviewSince } from './lib/review-state.mjs'
-import { recordDispositions, sweepInputs } from './lib/sweep.mjs'
-import { LOOP_ROLES, openFindings, renderDeferred, subjectHistory, subjectOf, subjectState, withProofFinding, writeDeferred } from './lib/loop.mjs'
+import { recordDispositions, recordReSweep, sweepInputs } from './lib/sweep.mjs'
+import { readRecords } from './lib/ledger.mjs'
+import {
+  consolidationState,
+  LOOP_ROLES,
+  openFindings,
+  renderDeferred,
+  subjectHistory,
+  subjectOf,
+  subjectState,
+  SWEEP_SUBJECT,
+  withProofFinding,
+  writeDeferred
+} from './lib/loop.mjs'
 import { readTaskProof, taskProof } from './lib/tdd-proof.mjs'
 import { gitIn } from './lib/workspace.mjs'
 import { c4Inputs, candidatesFile, recordVerifyReply, schemaPath } from './lib/verify-reply.mjs'
@@ -124,7 +144,7 @@ export const PLUGIN_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..'
 export const PROMPTS_DIR = join(PLUGIN_ROOT, 'schema', 'prompts')
 
 export const USAGE = `usage:
-  dispatch.mjs plan --change <name> --role <role> [--task <N>] [--group <G>] [--round <k>] [--topic <word>] [--check c4|c8] [--slice <n>] [--finding F<n>] [--capability <capability>] [--root <dir>]
+  dispatch.mjs plan --change <name> --role <role> [--task <N>] [--group <G>] [--subject sweep] [--round <k>] [--topic <word>] [--check c4|c8] [--slice <n>] [--finding F<n>] [--capability <capability>] [--root <dir>]
   dispatch.mjs prompt (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>]
   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <dir>]
   dispatch.mjs reset --change <name> --name "<dispatch name>" --reason "<text>" [--yes <plan>] [--root <dir>]
@@ -133,7 +153,7 @@ export const USAGE = `usage:
 
 export class UsageError extends Error {}
 
-const FLAGS = ['--change', '--role', '--task', '--group', '--round', '--topic', '--check', '--slice', '--finding', '--capability', '--root', '--question-file', '--base', '--head', '--name', '--file', '--resume', '--reason', '--yes']
+const FLAGS = ['--change', '--role', '--task', '--group', '--subject', '--round', '--topic', '--check', '--slice', '--finding', '--capability', '--root', '--question-file', '--base', '--head', '--name', '--file', '--resume', '--reason', '--yes']
 
 function parse(argv) {
   const values = {}
@@ -302,7 +322,16 @@ function promptFor(inputs, plan, values, root, planText, main) {
     fields.push(['Plan', join(root, 'openspec', 'changes', change, 'plan.md')])
     // A fix and its re-review carry the subject's open findings, rendered from the accepted
     // review results and the rulings, once a review of the subject is recorded.
-    if (inputs.role === 'fix' || inputs.role === 're-review') {
+    if ((inputs.role === 'fix' || inputs.role === 're-review') && inputs.subject === SWEEP_SUBJECT) {
+      // A consolidation round: the open sweep findings and its own loop's, in their files.
+      if (!readRecords(root, change).some((r) => r.kind === 'consolidation' && r.round === String(inputs.round))) {
+        throw new DispatchError(`no consolidation of round ${inputs.round} is recorded: run sweep.mjs consolidate --change ${change} --reason "<why>" first`)
+      }
+      const state = consolidationState(root, change)
+      if (state.open.length === 0) throw new DispatchError('the sweep has no open finding and its consolidation none: there is nothing to consolidate')
+      fields.push(['Files in scope', state.files.map((f) => join(plan.worktree, f))], ['Open findings', state.rendered])
+      questionOptional = true
+    } else if (inputs.role === 'fix' || inputs.role === 're-review') {
       const state = subjectState(root, change, subjectOf(inputs))
       if (state.state !== 'unreviewed') {
         try {
@@ -452,7 +481,9 @@ function recordReplyOf(values, { root, change, main }) {
   if (recorded.valid && LOOP_ROLES.includes(parts.role)) writeDeferred(root, change)
   // An accepted sweep's dispositions become debt records in the same call (lib/sweep.mjs).
   const debt = recorded.valid && parts.role === 'sweep' && result?.dispositions ? recordDispositions(root, change, result.dispositions) : undefined
-  return { ...recorded, ...(result === undefined ? {} : { result }), ...(debt === undefined ? {} : { debt }) }
+  // An accepted re-sweep closes its consolidation round in the ledger.
+  const reSweep = recorded.valid && parts.role === 'sweep' && parts.round !== undefined ? recordReSweep(root, change, parts.round) : undefined
+  return { ...recorded, ...(result === undefined ? {} : { result }), ...(debt === undefined ? {} : { debt }), ...(reSweep === undefined ? {} : { reSweep }) }
 }
 
 function existsArchived(root, change) {
@@ -513,6 +544,7 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
     role: values.role,
     task: number(values.task),
     group: values.group,
+    subject: values.subject,
     round: number(values.round),
     topic: values.topic,
     check: values.check,

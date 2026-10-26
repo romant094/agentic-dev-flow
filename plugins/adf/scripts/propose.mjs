@@ -8,7 +8,8 @@
 //       with its base recorded, and the propose session in the ledger. A scope gathered for the
 //       change (scope.mjs) that holds an item or a skipped tracker is copied into the change as
 //       scope.json, which the commit carries; `scope` names it.
-//       { ok, change, root, branch, base, baseRef, changeRoot, ledger, scope? }
+//       The change becomes the active change of its checkout (lib/active.mjs), `active` naming
+//       the pointer. { ok, change, root, branch, base, baseRef, changeRoot, ledger, active, scope? }
 //   propose.mjs commit [--change <name>] [--root <worktree>]
 //       Refused until every artifact apply needs is done and every gate of every written
 //       artifact passes; then commits openspec/changes/<name>/ alone with the message

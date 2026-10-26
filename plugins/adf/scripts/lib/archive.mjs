@@ -59,7 +59,8 @@
 //                 named; a record that fails its schema is `failed`, nothing written. A re-run
 //                 writes the same files; once commit-metrics is done it changes nothing, since a
 //                 new record would measure its own commit.
-//   commit-metrics `chore(metrics): record <name>`: only the paths metrics wrote.
+//   commit-metrics `chore(metrics): record <name>`: only the paths metrics wrote and the ledger,
+//                 copied into the archived change again first.
 //   mr            the forge role's `finalize`; `none` is `skipped`, `degraded` keeps the role's
 //                 fallback file and the step is `degraded`. With a forge and no `--body` the step
 //                 holds, `pending`, and returns what it needs: mr-input, then the body file.
@@ -78,7 +79,7 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
-import { archiveChange, archiveDate, archiveTarget, CHANGES_DIR, changeStatus, globToRegExp, META_FILE, parseTasks, readChangeMeta } from './changes.mjs'
+import { archiveChange, archiveDate, archiveTarget, CHANGES_DIR, changeStatus, globToRegExp, LEDGER_FILE, META_FILE, parseTasks, readChangeMeta } from './changes.mjs'
 import { attemptsFile, recordReply } from './attempts.mjs'
 import { readBranches } from './branches.mjs'
 import { commitPaths } from './commit.mjs'
@@ -87,7 +88,7 @@ import { listTree, resolveEntry } from './debt.mjs'
 import { checkIngestFile, findChangeDir, workingChanges } from './ingest.mjs'
 import { gitApply } from './verify.mjs'
 import { mainCheckout } from './installed.mjs'
-import { readRecords, unresolvedDebt } from './ledger.mjs'
+import { ledgerPath, readRecords, unresolvedDebt } from './ledger.mjs'
 import { localMerge } from './local-merge.mjs'
 import { asV2, buildRecord, candidates, RECORD_FILE, RecordError } from './metrics.mjs'
 import { QUIET_RUN } from './metrics-records.mjs'
@@ -102,6 +103,7 @@ import { loadSchema } from './schema.mjs'
 import { defaultProjectsDir } from './transcripts.mjs'
 import { fetchRef, LINT_DUE, sinceLastRetro } from './window.mjs'
 import { remove as removeWorktree } from './workspace.mjs'
+import { handOver } from './active.mjs'
 
 export const STEPS = ['check', 'placements', 'merge', 'move', 'commit-specs', 'ingest', 'commit-memory', 'metrics', 'commit-metrics', 'mr', 'merge-local', 'remove']
 export const STEP_STATES = ['pending', 'done', 'degraded', 'failed', 'skipped']
@@ -685,9 +687,22 @@ export function metricsStep(ctx) {
   })
 }
 
+// The final commit carries the ledger again: `move` copied it before the ingest, and every record
+// written since (an attempt reset, the ingest's, a resumed session's) would otherwise be missing
+// from the archive, the copy that outlives the worktree. Copying the live ledger here, each run,
+// makes the archived copy equal it; an unchanged copy commits nothing.
+function refreshLedger(ctx, target) {
+  const live = ledgerPath(ctx.root, ctx.change)
+  if (!target || !existsSync(live)) return []
+  const copy = `${target}/${LEDGER_FILE}`
+  copyFileSync(live, join(ctx.root, copy))
+  return [copy]
+}
+
 export function commitMetricsStep(ctx) {
   return runStep(ctx, 'commit-metrics', (state) => {
-    const own = new Set(settledDetail(state, 'metrics').files ?? [])
+    const ledger = refreshLedger(ctx, settledDetail(state, 'move').target)
+    const own = new Set([...(settledDetail(state, 'metrics').files ?? []), ...ledger])
     return commitOwn(ctx, { mine: (f) => own.has(f), message: `chore(metrics): record ${ctx.change}` })
   })
 }
@@ -838,8 +853,10 @@ export function mergeLocalStep(ctx, { yes = false, no = false } = {}) {
 
 export function removeStep(ctx) {
   return runStep(ctx, 'remove', () => {
+    // The worktree's active-change pointer outlives it in the main checkout, for land.
+    const pointer = ctx.root === ctx.main ? null : handOver(ctx.root, ctx.main, ctx.change)
     const out = removeWorktree(ctx.main, { change: ctx.change }, { core: { ...CORE, ...(ctx.home ? { home: ctx.home } : {}) } })
-    return { state: 'done', detail: out }
+    return { state: 'done', detail: { ...out, ...(pointer?.handed ? { pointer: pointer.key } : {}) } }
   })
 }
 

@@ -153,6 +153,27 @@ export function namesKey(text, key) {
   return new RegExp(`(?<![A-Za-z0-9_-])${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![A-Za-z0-9_-])`).test(text)
 }
 
+// The one rule mapping a change's scope onto its tasks: each taken or partial key, a tracker key
+// or a debt id, must be named by a task, as a whole word. Taking a key is decided at propose, so
+// the tasks gate applies it there (`tasks.mjs lint`), and verify's `tasks` check applies it
+// again on the ticked list. `tasks` are lib/changes.mjs parseTasks items. A change with no
+// scope.json, or whose tracker was skipped, has no key to map and says so in `lines`.
+// Returns { lines, unnamed: [{ key, state }] }.
+export function scopeNaming(root, change, tasks) {
+  const file = changeScopeFile(root, change)
+  if (!existsSync(file)) return { lines: ['scope: the change has no scope.json; no key to map'], unnamed: [] }
+  const scope = JSON.parse(readFileSync(file, 'utf8'))
+  const lines = scope.tracker?.state === 'skipped' ? [`scope: the tracker was skipped for this change (${scope.tracker.reason}); no tracker key to map`] : []
+  const unnamed = []
+  for (const item of (scope.items ?? []).filter((i) => IN_SCOPE.includes(i.state))) {
+    const naming = tasks.filter((t) => namesKey(t.description, item.key)).map((t) => t.description.split(/\s/)[0])
+    if (naming.length === 0) unnamed.push({ key: item.key, state: item.state })
+    lines.push(`scope: ${item.key} (${item.state}) ${naming.length ? `named by ${naming.join(', ')}` : 'named by no task'}`)
+  }
+  if (lines.length === 0) lines.push('scope: no item is taken or partial')
+  return { lines, unnamed }
+}
+
 // ---------------------------------------------------------------- words
 
 const STOP = new Set(['about', 'after', 'again', 'also', 'before', 'being', 'change', 'could', 'does', 'each', 'from', 'have', 'into', 'just', 'make', 'more', 'must', 'only', 'other', 'over', 'should', 'some', 'such', 'than', 'that', 'their', 'them', 'then', 'there', 'these', 'they', 'this', 'when', 'where', 'which', 'will', 'with', 'would'])

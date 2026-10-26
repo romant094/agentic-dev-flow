@@ -40,7 +40,7 @@ import { planDispatch } from './dispatch.mjs'
 import { mainCheckout } from './installed.mjs'
 import { planInputs } from './plan.mjs'
 import { provisionWorktree, teardownWorktree } from './provision.mjs'
-import { PLANNING_FILE, runOnce, sectionBounds } from './suite.mjs'
+import { PLANNING_FILE, refusePinnedPaths, runOnce, sectionBounds } from './suite.mjs'
 import { gitIn, WORKTREES_DIR } from './workspace.mjs'
 
 export const TEST_FILE = /(^|\/)(__tests__|tests?|specs?)\/|[._-](test|spec)\.[^/]+$|(^|\/)test_[^/]+\.py$/
@@ -65,6 +65,7 @@ function pruneDirs(top, file) {
 export function tddProof(worktree, { change, commit, test, testFiles = null, share = [], root = worktree, timeoutMinutes = DEFAULT_TIMEOUT_MINUTES, core }) {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(change ?? '')) throw new Error(`change name "${change}" is not kebab-case`)
   if (!test || !test.trim()) throw new Error('no test command')
+  refusePinnedPaths(test, worktree)
   const git = gitIn(worktree)
   let sha
   let parent

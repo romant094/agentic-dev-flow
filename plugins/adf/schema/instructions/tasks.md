@@ -1,7 +1,8 @@
 Create the task list that breaks down the implementation work.
 
 Follow the template exactly. The apply phase parses the checkbox format to track progress; the
-`tasks-lint` gate checks that grammar, the item numbers against their group, and duplicates.
+`tasks-lint` gate checks that grammar, the item numbers against their group, duplicates, and
+the scope's keys (below).
 
 - Group related tasks under numbered `##` headings.
 - Each task MUST be a checkbox: `- [ ] X.Y Task description`.
@@ -10,6 +11,13 @@ Follow the template exactly. The apply phase parses the checkbox format to track
 
 Reference the specs for what needs to be built, and `design.md`, when it exists, for how. The
 design instruction states when `design.md` is written.
+
+**Every key the change takes is named by the task that addresses it.** Taking a tracker issue
+or a debt entry is decided at propose, so the mapping is made here, not found at verify. When
+the change holds a `scope.json`, name each taken or partial key, a tracker key or a debt id, as
+a whole word on the task that addresses it. The `tasks-lint` gate refuses a key no task names,
+and verify's `tasks` check applies the same rule to the ticked list. A change with no
+`scope.json`, or a tracker skipped for the change, has no key to map.
 
 **Granularity — `tasks.md` answers "what", not "how".**
 

@@ -19,6 +19,7 @@ import { encodeKeys } from '../lib/transcripts.mjs'
 import { setBranches } from '../lib/branches.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
+import { readPointers, setPointer } from '../lib/active.mjs'
 import { initRegistry, setDebtRoot } from '../lib/registry.mjs'
 import { writeSpecsBase } from '../lib/specs.mjs'
 import { create } from '../lib/workspace.mjs'
@@ -165,6 +166,7 @@ function drive(h, deps = NONE, args = ARGS) {
 test('a full archive with no forge and no knowledge base: merged, moved, committed, merged locally, removed', () => {
   const h = archiveHost()
   recordDispatch(h.wt, 'add-x', 'T1 impl', { now: '2026-10-19T08:00:00.000Z' })
+  setPointer(h.wt, 'add-x', { env: {} })
   const events = readFileSync(join(h.wt, '.superpowers', 'sdd', 'add-x', 'attempts.jsonl'), 'utf8')
   const deps = measured(h)
   const steps = drive(h, deps)
@@ -198,6 +200,8 @@ test('a full archive with no forge and no knowledge base: merged, moved, committ
   assert.equal(local.detail.merged, true)
   assert.deepEqual({ state: removed.detail.state, branch: removed.detail.branch }, { state: 'removed', branch: 'feat/add-x' })
   assert.equal(existsSync(h.wt), false)
+  // The worktree's active-change pointer is handed to the main checkout, for land.
+  assert.deepEqual([removed.detail.pointer, readPointers(h.root)['feat/add-x'].change], ['feat/add-x', 'add-x'])
   assert.equal(git(h.root, 'branch', '--show-current'), 'develop')
   assert.equal(git(h.root, 'rev-list', '--parents', '-1', 'HEAD').split(' ').length, 3, 'a --no-ff merge commit')
   assert.match(readFileSync(join(h.root, 'openspec/specs/widgets/spec.md'), 'utf8'), /### Requirement: Track/)
@@ -289,6 +293,25 @@ test('a price fetch is no step failure: none and stale are recorded, a changed t
   assert.ok(stale.detail.files.includes('.adf/prices/2026-10-19.json'), 'the entry an earlier run wrote is still committed')
   const commit = call(h, ['commit-metrics'])
   assert.deepEqual(commit.detail.files, ['.adf/prices/2026-10-19.json', `${TARGET}/metrics.json`])
+})
+
+test('the archived ledger is copied again at the last commit, so it holds every record written after the move', () => {
+  const h = archiveHost()
+  const live = join(h.wt, '.superpowers', 'sdd', 'add-x', 'ledger.jsonl')
+  for (const step of ['check', 'placements', 'merge', 'move', 'commit-specs']) assert.equal(call(h, [step]).ok, true, step)
+  // Records after the move: a reset of the ingest's attempts, a resumed archive session.
+  appendRecord(h.wt, 'add-x', 'deviation', { rule: 'ingest reset', reason: 'the environment denied a tool' }, { env: {} })
+  appendRecord(h.wt, 'add-x', 'session', { phase: 'archive' }, { env: { CLAUDE_CODE_SESSION_ID: 's2' } })
+  for (const step of ['ingest', 'commit-memory', 'metrics']) assert.equal(call(h, [step]).ok, true, step)
+  assert.notEqual(readFileSync(join(h.wt, TARGET, 'ledger.jsonl'), 'utf8'), readFileSync(live, 'utf8'))
+  // A failed run of the step copies nothing it commits; the re-run copies and commits.
+  const failed = call(h, ['commit-metrics'], { ...NONE, fault: (s) => { if (s === 'commit-metrics') throw new Error('injected') } })
+  assert.equal(failed.ok, false)
+  const committed = call(h, ['commit-metrics'])
+  assert.ok(committed.detail.files.includes(`${TARGET}/ledger.jsonl`))
+  assert.equal(git(h.wt, 'show', `${committed.detail.commit}:${TARGET}/ledger.jsonl`), readFileSync(live, 'utf8').trimEnd())
+  assert.equal(git(h.wt, 'status', '--porcelain'), '')
+  assert.equal(call(h, ['commit-metrics']).already, true)
 })
 
 test('a re-run of metrics writes the same files, and once the record is committed changes nothing', () => {

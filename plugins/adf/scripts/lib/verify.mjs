@@ -24,7 +24,7 @@ import { baseRef, EXTENSIONS } from './plan-symbols.mjs'
 import { readRegistry } from './registry.mjs'
 import { c4Lines, c8Lines, fence as fenceText } from './reply-render.mjs'
 import { callHook, CORE, hookProviders, knowledgePaths } from './roles.mjs'
-import { changeScopeFile, namesKey } from './scope.mjs'
+import { scopeNaming } from './scope.mjs'
 import { checkSpecsBase, extractRequirementsSection, parseDeltaSpec, validateProject } from './specs.mjs'
 import { countsOf, readTestRecord } from './suite.mjs'
 import { claudeHome } from './superpowers.mjs'
@@ -125,22 +125,11 @@ function checkValidation(root, change) {
     : { verdict: 'fail', summary: `${change} has ${errors} validation issue${errors === 1 ? '' : 's'}`, text: lines.join('\n') }
 }
 
-// The change's scope (lib/scope.mjs): each taken or partial item's key, a tracker key or a debt
-// id, must be named by a task, as a whole word. A change with no scope.json, or whose tracker
-// was skipped, passes with a note.
+// The change's scope is mapped onto its tasks by the one rule of lib/scope.mjs scopeNaming, which
+// the tasks gate applied at propose.
 function scopeKeys(root, change, tasks) {
-  const file = changeScopeFile(root, change)
-  if (!existsSync(file)) return { lines: ['scope: the change has no scope.json; no key to map'], unnamed: [] }
-  const scope = JSON.parse(readFileSync(file, 'utf8'))
-  const lines = scope.tracker?.state === 'skipped' ? [`scope: the tracker was skipped for this change (${scope.tracker.reason}); no tracker key to map`] : []
-  const unnamed = []
-  for (const item of (scope.items ?? []).filter((i) => ['taken', 'partial'].includes(i.state))) {
-    const naming = tasks.filter((t) => namesKey(t.description, item.key)).map((t) => t.description.split(/\s/)[0])
-    if (naming.length === 0) unnamed.push(item.key)
-    lines.push(`scope: ${item.key} (${item.state}) ${naming.length ? `named by ${naming.join(', ')}` : 'named by no task'}`)
-  }
-  if (lines.length === 0) lines.push('scope: no item is taken or partial')
-  return { lines, unnamed }
+  const { lines, unnamed } = scopeNaming(root, change, tasks)
+  return { lines, unnamed: unnamed.map((u) => u.key) }
 }
 
 function checkTasks(root, change, tracks) {
@@ -303,6 +292,10 @@ function checkTestRecord(root, change, git) {
   const countLines = [`test counts: ${counts.replies} impl/fix repl${counts.replies === 1 ? 'y' : 'ies'} read`, ...counts.warnings.map((w) => `  warning: ${w}`)]
   const done = (verdict, summary, lines) => ({ verdict, summary, text: [...lines, '', ...countLines].join('\n'), countWarnings: counts.warnings })
   if (recordText === null) return done('fail', 'no apply test record: run the suite', [`${changePrefix(change)}${RECORD_FILE} is missing`])
+  // An environment-broken run measured nothing: not run, never green, until the developer rules.
+  if (/^\*\*Result:\*\* environment-broken[ \t]*$/m.test(recordText)) {
+    return done('not-run', 'the whole suite was not measured: the apply test record says the environment is broken', ['**Result:** environment-broken'])
+  }
   // Only the record's own field counts: a "commit <hex>" inside quoted runner output is not it.
   const m = RECORD_COMMIT.exec(recordText)
   if (!m) return done('fail', 'the apply test record names no commit: run the suite', ['no `**Commit:** <sha>` line in the record'])

@@ -32,6 +32,12 @@
 // be told apart there; compare the two output files before relying on it. A command that cannot
 // run on the base (exit 126 or 127, a spawn error, or no base-check worktree) blocks.
 //
+// A base run that measures its environment rather than its code is `environment-broken`, before
+// any comparison: it fails at scale with one environment error signature, or a runner summary
+// shows a package's suite ran on neither side (suite-environment.json holds the signatures, the
+// scale and the summaries). It blocks, nothing on it is pre-existing, its record carries no
+// `**Commit:**`, and verify reads it as not run.
+//
 // The run is `blocking` unless it passed or every failure is pre-existing. A suite that cannot
 // run at all (exit 126 or 127) is a failure, never a pass.
 //
@@ -41,10 +47,12 @@
 // whole group, so a grandchild the suite started stops with it; on Windows `taskkill /T` stops
 // the process tree.
 import { spawnSync } from 'node:child_process'
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { changeDir } from './changes.mjs'
 import { addBaseCheck, removeBaseCheck } from './groups.mjs'
+import { mainCheckout } from './installed.mjs'
+import { prepareWorktree } from './prepare.mjs'
 import { CHECKS, countsIn, RECORD_FILE, reconcileCounts, verifyDir } from './verify.mjs'
 import { gitIn } from './workspace.mjs'
 
@@ -248,6 +256,69 @@ function attempt(fn) {
   }
 }
 
+// ---------------------------------------------------------------- a broken environment
+
+// The signatures, the scale and the runner summaries of suite-environment.json: data, so a
+// project's runner or error joins by an entry, never by code.
+export const ENVIRONMENT = JSON.parse(readFileSync(new URL('./suite-environment.json', import.meta.url), 'utf8'))
+export const ENVIRONMENT_BROKEN = 'environment-broken'
+
+// The most frequent environment signature of an output, as { id, key, occurrences }, or null.
+// Each line counts once, for the first signature it matches.
+export function environmentSignature(text, data = ENVIRONMENT) {
+  const signatures = data.signatures.map((s) => ({ id: s.id, re: new RegExp(s.pattern) }))
+  const counts = new Map()
+  for (const line of String(text ?? '').replace(ANSI, '').split(/\r?\n/)) {
+    for (const { id, re } of signatures) {
+      const m = re.exec(line)
+      if (!m) continue
+      const key = m[1] ?? null
+      const at = `${id}\u0000${key ?? ''}`
+      counts.set(at, { id, key, occurrences: (counts.get(at)?.occurrences ?? 0) + 1 })
+      break
+    }
+  }
+  return [...counts.values()].sort((a, b) => b.occurrences - a.occurrences)[0] ?? null
+}
+
+// How many tasks the runners' last summaries say did not run: total less successful less failed.
+export function notRunIn(text, data = ENVIRONMENT) {
+  const lines = String(text ?? '').replace(ANSI, '').split(/\r?\n/)
+  let count = 0
+  for (const entry of data.notRun) {
+    const summary = new RegExp(entry.summary)
+    const failedRe = entry.failed ? new RegExp(entry.failed) : null
+    let last = null
+    let failed = 0
+    for (const line of lines) {
+      const m = summary.exec(line)
+      if (m) last = m.groups
+      const f = failedRe?.exec(line)
+      if (f) failed += f.groups.tasks.split(/[,\s]+/).filter(Boolean).length
+    }
+    if (last) count += Math.max(0, Number(last.total) - Number(last.successful) - failed)
+  }
+  return count
+}
+
+// Why a failing run with a failing base measures the environment, not the change; null when it
+// does not. The base fails at scale with one signature, or a task ran on neither side.
+function environmentOf(headNotRun, base, data = ENVIRONMENT) {
+  if (!base || base.cannotRun || !(Number.isInteger(base.exit) && base.exit !== 0)) return null
+  const out = {}
+  const reasons = []
+  const s = base.signature
+  if (s && s.occurrences >= data.scale.minOccurrences && s.occurrences >= data.scale.minShare * base.failing.length) {
+    out.signature = { ...s, failing: base.failing.length }
+    reasons.push(`the base fails at scale on one environment error: ${s.id}${s.key === null ? '' : ` ${s.key}`}, ${s.occurrences} times over ${base.failing.length} failures`)
+  }
+  if (headNotRun > 0 && base.notRun > 0) {
+    out.notRun = { head: headNotRun, base: base.notRun }
+    reasons.push(`a package's suite ran on neither side: ${headNotRun} task(s) did not run on the branch, ${base.notRun} on the base`)
+  }
+  return reasons.length ? { ...out, reason: reasons.join('; ') } : null
+}
+
 function baseCheck(root, change, command, file, timeoutMinutes) {
   let made
   try {
@@ -265,6 +336,8 @@ function baseCheck(root, change, command, file, timeoutMinutes) {
       exit: ran.exit,
       outputFile: rel(root, file),
       failing: failingIn(ran.text),
+      signature: environmentSignature(ran.text),
+      notRun: notRunIn(ran.text),
       cannotRun: ran.cannotRun,
       ...(ran.timedOut ? { timedOut: true } : {}),
       ...(ran.error ? { error: ran.error } : {})
@@ -335,6 +408,7 @@ export function recordText(result) {
     if (b.removed === false) lines.push(`- the base-check worktree was not removed: ${b.removeError}`)
     lines.push(`- comparison: ${result.comparison}`, '')
   }
+  if (result.environment) lines.push('## Environment broken: the suite is not measured', '', `- ${result.environment.reason}`, '')
   if (result.preExisting.length) lines.push('## Pre-existing failures, separate work', '', ...result.preExisting.map((f) => `- ${f}`), '')
   if (result.blocking && result.newFailures.length) lines.push('## Failures that block', '', ...result.newFailures.map((f) => `- ${f}`), '')
   return lines.join('\n')
@@ -344,6 +418,7 @@ export function recordText(result) {
 // output file, in the shape computeVerdict accepts.
 function sectionVerdict(result) {
   if (result.status === 'not-run') return { verdict: 'not-run', summary: `the whole suite was not run: ${result.reason}` }
+  if (result.status === ENVIRONMENT_BROKEN) return { verdict: 'not-run', summary: `the whole suite was not measured: ${result.environment.reason}` }
   if (result.status === 'pass') return { verdict: 'pass', summary: `the whole suite passed (exit 0) at ${result.commit.slice(0, 7)}` }
   if (result.status === 'pre-existing') {
     return { verdict: 'warn', summary: `the suite fails (exit ${result.exit}) only on what also fails on the base: ${result.preExisting.join('; ')}` }
@@ -386,7 +461,7 @@ function writeReviewSection(root, change, result) {
     commit: result.commit ?? null,
     command: result.command,
     exit: result.exit,
-    ...(result.reason ? { reason: result.reason } : {}),
+    ...(result.reason ? { reason: result.reason } : result.environment ? { reason: result.environment.reason } : {}),
     ...(result.timedOut ? { timedOut: true } : {}),
     counts: result.counts,
     outputFile: result.outputFile,
@@ -403,6 +478,15 @@ function writeReviewSection(root, change, result) {
 
 // ---------------------------------------------------------------- run
 
+// The worktree preparation before a run (lib/prepare.mjs): the steps whose inputs changed since
+// the worktree's last preparation. A failed step refuses the run, since the suite would measure
+// the missing build, not the code. Returns { ran, skipped }.
+function prepared(dir, guideRoot) {
+  const p = prepareWorktree(dir, { guideRoot })
+  if (!p.ok) throw new Error(`worktree preparation failed: ${p.error}`)
+  return { ran: p.ran, skipped: p.skipped }
+}
+
 export function runSuite(rootArg, { change, baseCheck: withBaseArg = false, record = false, section = null, timeoutMinutes = DEFAULT_TIMEOUT_MINUTES, now = new Date().toISOString() }) {
   const root = resolve(rootArg)
   if (!change) throw new Error('no change name')
@@ -417,6 +501,7 @@ export function runSuite(rootArg, { change, baseCheck: withBaseArg = false, reco
   if (command === null) {
     result = { status: 'not-run', reason, command: null, now, exit: null, counts: [], outputFile: null, preExisting: [], newFailures: [], blocking: true }
   } else {
+    prepared(root, root)
     const commit = git('rev-parse', 'HEAD')
     const dirty = dirtyPaths(git, change)
     const stamp = stampOf(now)
@@ -430,14 +515,17 @@ export function runSuite(rootArg, { change, baseCheck: withBaseArg = false, reco
     const fresh = proof === null || ran.text.replace(ANSI, '').includes(proof)
     let base
     let verdict
+    let environment = null
     if (!fresh) verdict = { preExisting: [], newFailures: head.failing, blocking: true, comparison: 'none' }
     else if (ran.exit === 0) verdict = { preExisting: [], newFailures: [], blocking: false, comparison: 'none' }
     else if (ran.cannotRun) verdict = { preExisting: [], newFailures: head.failing, blocking: true, comparison: 'none' }
     else {
       if (withBase) base = baseCheck(root, change, command, join(dir, `${stamp}-base.txt`), timeoutMinutes)
-      verdict = compare(head, base)
+      // A base broken by its environment measures nothing, so nothing on it is pre-existing.
+      environment = environmentOf(notRunIn(ran.text), base)
+      verdict = environment ? { preExisting: [], newFailures: [], blocking: true, comparison: 'none' } : compare(head, base)
     }
-    const status = ran.exit === 0 && fresh ? 'pass' : verdict.blocking ? 'fail' : 'pre-existing'
+    const status = ran.exit === 0 && fresh ? 'pass' : environment ? ENVIRONMENT_BROKEN : verdict.blocking ? 'fail' : 'pre-existing'
     result = {
       status,
       command,
@@ -455,6 +543,7 @@ export function runSuite(rootArg, { change, baseCheck: withBaseArg = false, reco
       outputFile: rel(root, file),
       failing: head.failing,
       ...(base ? { base } : {}),
+      ...(environment ? { environment } : {}),
       ...verdict
     }
   }
@@ -539,6 +628,21 @@ export function countsOf(text) {
   return found
 }
 
+// A covering or proof command that names the worktree or the main checkout by absolute path is
+// pinned to that tree: the test-first proof runs the same command in a throwaway worktree of the
+// commit's parent, and a pinned command tests the new code there, so the proof says a new test
+// passed without its code. Throws naming the path; any other absolute path is the command's own.
+export function refusePinnedPaths(command, worktree) {
+  const dir = resolve(worktree)
+  const trees = [dir, attempt(() => realpathSync(dir)), mainCheckout(dir), attempt(() => realpathSync(mainCheckout(dir)))].filter(Boolean)
+  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  for (const tree of [...new Set(trees)].sort((a, b) => b.length - a.length)) {
+    if (new RegExp(`(?<![\\w.@~/-])${escape(tree)}(?![\\w.@~-])`).test(command)) {
+      throw new Error(`the command names ${tree}, an absolute path inside the worktree or the main checkout; use worktree-relative paths: the test-first proof runs the same command in a throwaway worktree, where an absolute path tests another tree`)
+    }
+  }
+}
+
 export function runCovering(rootArg, { change, name, command, worktree, timeoutMinutes = DEFAULT_TIMEOUT_MINUTES, now = new Date().toISOString() }) {
   const root = resolve(rootArg)
   if (!change) throw new Error('no change name')
@@ -550,8 +654,10 @@ export function runCovering(rootArg, { change, name, command, worktree, timeoutM
   if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
   const dir = resolve(worktree)
   if (!existsSync(dir)) throw new Error(`the worktree ${dir} does not exist`)
+  refusePinnedPaths(cmd, dir)
   const sha = attempt(() => gitIn(dir)('rev-parse', 'HEAD'))
   if (!sha) throw new Error(`${dir} is not a git worktree with a commit`)
+  const prepare = prepared(dir, root)
   const stem = join(root, '.superpowers', 'sdd', change, TESTS_DIR, `${base}-${stampOf(now)}`)
   const outFile = `${stem}.txt`
   const ran = runOnce(cmd, dir, outFile, timeoutMinutes)
@@ -568,7 +674,7 @@ export function runCovering(rootArg, { change, name, command, worktree, timeoutM
   }
   const file = `${stem}.json`
   writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
-  return { file: rel(root, file), ...record }
+  return { file: rel(root, file), ...record, prepare }
 }
 
 // A test-run record runCovering wrote, checked for its shape; throws naming the file and the

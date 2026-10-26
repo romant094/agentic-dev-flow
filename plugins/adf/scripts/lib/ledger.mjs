@@ -87,10 +87,11 @@ export function buildRecord(kind, fields, { existing = [], sessionId = null, now
   if (kind === 'ruling' && 'as' in fields && !RULING_AS.includes(fields.as)) throw new Error(`--as must be one of: ${RULING_AS.join(', ')}`)
   if (subjectRuling) {
     if (!SUBJECT.test(fields.subject)) throw new Error(`--subject must be T<n>, a group letter, final or sweep, got "${fields.subject}"`)
-    const id = fields.subject === 'sweep' ? /^S[1-9]\d*$/ : /^[FU][1-9]\d*$/
-    if (!id.test(fields.finding)) throw new Error(`--finding must be ${fields.subject === 'sweep' ? 'a sweep finding id such as S2' : 'a finding id such as F3, or an unverifiable item such as U1'}, got "${fields.finding}"`)
-    if (fields.as === 'fix' && (fields.subject === 'sweep' || fields.finding.startsWith('U'))) {
-      throw new Error(`${fields.finding} is accepted or dismissed, never ruled fix: ${fields.subject === 'sweep' ? 'a sweep finding is consolidated by a fix and its re-review' : 'a defect found while checking it is a finding of its own'}`)
+    // The sweep's subject also holds its consolidation's review loop (`re-review sweep r<k>`).
+    const id = fields.subject === 'sweep' ? /^[SFU][1-9]\d*$/ : /^[FU][1-9]\d*$/
+    if (!id.test(fields.finding)) throw new Error(`--finding must be ${fields.subject === 'sweep' ? 'a sweep finding id such as S2, or a finding of its consolidation such as F1' : 'a finding id such as F3, or an unverifiable item such as U1'}, got "${fields.finding}"`)
+    if (fields.as === 'fix' && (fields.finding.startsWith('S') || fields.finding.startsWith('U'))) {
+      throw new Error(`${fields.finding} is accepted or dismissed, never ruled fix: ${fields.finding.startsWith('S') ? 'a sweep finding is consolidated by a fix and its re-review' : 'a defect found while checking it is a finding of its own'}`)
     }
   }
   if (kind === 'skill-edit' && !SHA.test(fields.sha)) throw new Error(`--sha must be a commit sha in lower-case hex, got "${fields.sha}"`)
@@ -169,6 +170,35 @@ export function appendAttemptReset(root, change, fields, { env = process.env, no
   const n = readRecords(root, change).filter((r) => r.kind === ATTEMPT_RESET).length + 1
   const sessionId = env[SESSION_ENV] ?? null
   const record = { id: `${ATTEMPT_RESET}-${n}`, kind: ATTEMPT_RESET, at: now, ...(sessionId ? { sessionId } : {}), by: 'developer', ...fields }
+  mkdirSync(dirname(path), { recursive: true })
+  appendFileSync(path, `${JSON.stringify(record)}\n`, 'utf8')
+  return { record, path }
+}
+
+// Records a script writes after its own checks, never typed through `ledger.mjs`, each kind with
+// its fields, every one a non-empty string. Kept out of KINDS like ATTEMPT_RESET:
+//   consolidation  round, findings, reason   `sweep.mjs consolidate`: a round of consolidating
+//                                            the open sweep findings (S<n>, comma-separated)
+//   re-sweep       round, cleared, open      `dispatch.mjs reply` on an accepted `sweep r<k>`:
+//                                            what the round's re-sweep cleared and left open
+//   switch         from, to, pointer         `changes.mjs active`: the active-change pointer of
+//                                            a checkout moved from one change to this one
+export const SCRIPTED = {
+  consolidation: ['round', 'findings', 'reason'],
+  're-sweep': ['round', 'cleared', 'open'],
+  switch: ['from', 'to', 'pointer']
+}
+
+export function appendScripted(root, change, kind, fields, { env = process.env, now = new Date().toISOString() } = {}) {
+  const keys = SCRIPTED[kind]
+  if (!keys) throw new Error(`"${kind}" is no scripted record; one of: ${Object.keys(SCRIPTED).join(', ')}`)
+  for (const key of keys) if (typeof fields[key] !== 'string' || fields[key].trim() === '') throw new Error(`${kind} needs ${key}`)
+  const extra = Object.keys(fields).filter((k) => !keys.includes(k))
+  if (extra.length) throw new Error(`${kind} takes no ${extra.join(', ')}`)
+  const path = ledgerPath(root, change)
+  const n = readRecords(root, change).filter((r) => r.kind === kind).length + 1
+  const sessionId = env[SESSION_ENV] ?? null
+  const record = { id: `${kind}-${n}`, kind, at: now, ...(sessionId ? { sessionId } : {}), ...Object.fromEntries(keys.map((k) => [k, fields[k]])) }
   mkdirSync(dirname(path), { recursive: true })
   appendFileSync(path, `${JSON.stringify(record)}\n`, 'utf8')
   return { record, path }

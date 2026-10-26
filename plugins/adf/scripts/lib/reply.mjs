@@ -62,7 +62,9 @@
 //   sweep
 //     { verdict: CLEAN | FINDINGS, findings, dropped, dispositions? }
 //     Dispositions are required exactly when sweepInputs reports a second question, one for each
-//     REMOVED or RENAMED requirement it lists; the findings a DUP marker accepts are dropped.
+//     REMOVED or RENAMED requirement it lists; every `introduced` and `existing` is a location
+//     `path:line[-line]` (lib/sweep.mjs locationErrors); the findings a DUP marker accepts are
+//     dropped.
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -71,12 +73,12 @@ import { globToRegExp } from './changes.mjs'
 import { APPLY_SCHEMAS, parseGraph, parseName, planDispatch, RETRO_ROLES, retroInputFile, sddDir } from './dispatch.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { readRecords } from './ledger.mjs'
-import { loopState, REVIEW_ROLES, subjectHistory, subjectOf, subjectRulings } from './loop.mjs'
+import { consolidationState, loopState, REVIEW_ROLES, subjectHistory, subjectOf, subjectRulings, SWEEP_SUBJECT } from './loop.mjs'
 import { parsePlan, rangeCommits, taskMatchers } from './plan.mjs'
 import { readRegistry } from './registry.mjs'
 import { check as checkRetro, compute as computeRetro } from './retro.mjs'
 import { readTestRecord, recordName, TESTS_DIR } from './suite.mjs'
-import { dupFilter, sweepInputs } from './sweep.mjs'
+import { dupFilter, locationErrors, sweepInputs } from './sweep.mjs'
 import { gitIn } from './workspace.mjs'
 
 export const SCHEMA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema')
@@ -141,7 +143,8 @@ const reReview = {
   check(reply, ctx) {
     const errors = findingErrors(reply.findings, '$.findings')
     const subject = subjectOf(ctx.parts)
-    const open = ctx.history.length ? loopState(ctx.history, ctx.rulings).open : undefined
+    // A consolidation's re-review answers the open sweep findings and its own loop's.
+    const open = ctx.consolidation ? ctx.consolidation.open : ctx.history.length ? loopState(ctx.history, ctx.rulings).open : undefined
     if (open === undefined) return [...errors, `$.previous: no accepted review of ${subject} is recorded, so there is no open set to answer`]
     const seen = new Set()
     reply.previous.forEach(({ id }, i) => {
@@ -155,11 +158,14 @@ const reReview = {
   compute(reply, ctx) {
     const routed = routeFindings(reply.findings, ctx.history)
     const status = (s) => reply.previous.filter((p) => p.status === s).map((p) => p.id)
-    const open = [...status('not-addressed'), ...routed.open]
+    // A sweep finding (S<n>) stays the re-sweep's to clear: it is reported, never looped.
+    const swept = (id) => id.startsWith('S')
+    const open = [...status('not-addressed').filter((id) => !swept(id)), ...routed.open]
     return {
       subject: subjectOf(ctx.parts),
       previous: reply.previous,
       addressed: status('addressed'),
+      ...(ctx.consolidation ? { notConsolidated: status('not-addressed').filter(swept) } : {}),
       findings: routed.findings,
       open,
       toRule: routed.toRule,
@@ -251,7 +257,9 @@ function implFacts(reply, ctx) {
     .flatMap((t) => t.covers)
   const prefix = `openspec/changes/${ctx.change}/`
   const allowed = (readRegistry(ctx.root)?.outsidePlan ?? []).map((g) => globToRegExp(g))
-  const exempt = (file) => file.startsWith(prefix) || allowed.some((re) => re.test(file)) || covers.some((c) => c(file))
+  // A consolidation's fix also works in the duplicate's files (lib/loop.mjs consolidationState).
+  const own = new Set(ctx.consolidation?.files ?? [])
+  const exempt = (file) => file.startsWith(prefix) || own.has(file) || allowed.some((re) => re.test(file)) || covers.some((c) => c(file))
   const outOfScope = [...new Set(commits.flatMap((c) => c.files))].filter((file) => !exempt(file))
   const scopeName = ctx.parts.task !== undefined ? `Task ${ctx.parts.task}` : ctx.parts.group !== undefined ? `group ${ctx.parts.group}'s tasks` : 'any task of the plan'
   for (const file of outOfScope) concerns.push({ text: `changed outside the **Files:** of ${scopeName}`, file, source: 'script' })
@@ -291,9 +299,10 @@ const sweep = {
   check(reply, ctx) {
     const listed = ctx.sweep.removedOrRenamed.map((r) => r.requirement ?? r.from)
     const given = reply.dispositions ?? []
-    if (!ctx.sweep.secondQuestion) return given.length ? ['$.dispositions: the change lists no REMOVED or RENAMED requirement, so the reply gives no disposition'] : []
-    if (reply.dispositions === undefined) return [`$.dispositions: required, one for each REMOVED or RENAMED requirement: ${listed.join(', ')}`]
-    const errors = []
+    const located = locationErrors(reply.findings)
+    if (!ctx.sweep.secondQuestion) return [...located, ...(given.length ? ['$.dispositions: the change lists no REMOVED or RENAMED requirement, so the reply gives no disposition'] : [])]
+    if (reply.dispositions === undefined) return [...located, `$.dispositions: required, one for each REMOVED or RENAMED requirement: ${listed.join(', ')}`]
+    const errors = [...located]
     const seen = new Set()
     given.forEach(({ requirement }, i) => {
       if (!listed.includes(requirement)) errors.push(`$.dispositions[${i}].requirement: ${requirement} is no REMOVED or RENAMED requirement of the change`)
@@ -346,6 +355,7 @@ export function replyContext(root, change, name, { main = root } = {}) {
       ctx.history = subjectHistory(readOr(attemptsFile(root, change)) ?? '', subjectOf(parts))
       ctx.rulings = subjectRulings(readRecords(root, change), subjectOf(parts))
     }
+    if (parts.subject === SWEEP_SUBJECT) ctx.consolidation = consolidationState(root, change)
     if (parts.role === 'sweep') ctx.sweep = sweepInputs(root, change)
     if (parts.role === 'retro') {
       const text = readOr(retroInputFile(root, parts.id))

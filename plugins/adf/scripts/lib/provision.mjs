@@ -1,8 +1,9 @@
 // Every worktree the core makes is provisioned for the host's stack before anything runs in it,
 // and torn down before the core removes it. The core knows no stack: it copies the untracked
 // files the planning guide's `## Worktree copies` section names from the main checkout, then
-// calls the `provision` hook, whose providers do the rest (contract/README.md). A removal calls
-// the `teardown` hook first.
+// calls the `provision` hook, whose providers do the rest (contract/README.md), then runs the
+// guide's `## Worktree preparation` recipe (lib/prepare.mjs). A removal calls the `teardown` hook
+// first.
 //
 // The worktree's and the main checkout's `git status --porcelain` are compared before the hook
 // and after it, and any difference refuses with the paths: a provider that changed a tracked
@@ -22,6 +23,7 @@ import { changeDir, readChangeMeta } from './changes.mjs'
 import { mainCheckout } from './installed.mjs'
 import { baseRef } from './plan-symbols.mjs'
 import { callHook, CORE } from './roles.mjs'
+import { prepareWorktree } from './prepare.mjs'
 import { claudeHome } from './superpowers.mjs'
 
 export const KINDS = ['change', 'group', 'base-check', 'proof']
@@ -143,9 +145,12 @@ export function provisionWorktree(root, { worktree, kind, change, files = [], ne
   const treeBefore = status(tree)
 
   const hook = callHook(root, 'provision', input, core)
+  // The recipe's builds need what the providers gave the tree, so they run after the hook.
+  const prepare = hook.state === 'refused' ? null : prepareWorktree(tree, { guideRoot: root })
   const changed = [...differ(treeBefore, status(tree)).map((p) => `${p} (worktree)`), ...differ(mainBefore, status(main)).map((p) => `${p} (main checkout)`)]
   const errors = []
   if (hook.state === 'refused') errors.push(`provision refused: ${hook.results.at(-1)?.error ?? 'no reason given'}`)
+  if (prepare && !prepare.ok) errors.push(`worktree preparation failed: ${prepare.error}`)
   if (changed.length) errors.push(`provision changed what git tracks or sees: ${changed.join(', ')}; a provider writes only ignored paths of the worktree, never the main checkout`)
   const state = errors.length ? 'refused' : hook.state
   const report = [
@@ -154,9 +159,10 @@ export function provisionWorktree(root, { worktree, kind, change, files = [], ne
     ...(copies.kept.length ? [`kept: ${copies.kept.join(', ')}`] : []),
     ...notes,
     ...hookLines(hook),
+    ...(prepare && (prepare.ran.length || prepare.skipped.length) ? prepare.report.split('\n').filter((l) => l.startsWith('Preparation:')) : []),
     ...errors
   ].join('\n')
-  return { ok: errors.length === 0, state, worktree: tree, kind, input, copies, hook, notes, report, ...(errors.length ? { error: errors.join('; ') } : {}) }
+  return { ok: errors.length === 0, state, worktree: tree, kind, input, copies, hook, notes, ...(prepare ? { prepare: { ok: prepare.ok, ran: prepare.ran, skipped: prepare.skipped } } : {}), report, ...(errors.length ? { error: errors.join('; ') } : {}) }
 }
 
 // Calls `teardown` for a worktree about to be removed, while it still exists. Returns { ok,

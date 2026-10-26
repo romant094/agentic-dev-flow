@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { setBranches } from '../lib/branches.mjs'
 import { baseCheckPath } from '../lib/groups.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
+import { appendRecord } from '../lib/ledger.mjs'
 import { initRegistry, readRegistry } from '../lib/registry.mjs'
 import { commandIn, countLines, countsOf, failingIn, proofIn, readCommand, readTestRecord, runCovering, runSuite, writeCommand } from '../lib/suite.mjs'
 import { computeVerdict, runChecks, verifyDir } from '../lib/verify.mjs'
@@ -29,6 +30,21 @@ const [mode, extra] = readFileSync('mode.txt', 'utf8').trim().split('+')
 if (extra === 'junk') writeFileSync('junk.txt', 'x')
 console.log('MARKER-RAW-OUTPUT')
 if (mode === 'anon') { console.error('Error: boom'); process.exit(1) }
+if (mode.startsWith('env:')) {
+  const n = Number(mode.slice(4))
+  for (let i = 1; i <= n; i++) {
+    console.log('FAIL src/t' + i + '.spec.ts')
+    console.log("  src/t" + i + ".spec.ts:1:1 - error TS2307: Cannot find module '@w/shared' or its corresponding type declarations.")
+  }
+  console.log('Test Suites: ' + n + ' failed, ' + n + ' total')
+  process.exit(1)
+}
+if (mode.startsWith('turbo:')) {
+  mode.slice(6).split(',').forEach((name, i) => console.log('not ok ' + (i + 1) + ' - ' + name))
+  console.log(' Tasks:    1 successful, 3 total')
+  console.log('Failed:    server#test')
+  process.exit(1)
+}
 if (mode.startsWith('spec:')) {
   const names = mode.slice(5).split(',')
   console.log('\u2714 stays (0.1ms)')
@@ -222,6 +238,48 @@ test('a failure that also fails on the base is pre-existing; a partial overlap b
   const partial = host({ baseMode: 'fail:a', headMode: 'fail:a,b' })
   const p = runSuite(partial.root, { change: CHANGE, baseCheck: true })
   assert.deepEqual([p.preExisting, p.newFailures, p.blocking], [['a'], ['b'], true])
+})
+
+test('a base that fails at scale on one environment error is environment-broken, never pre-existing', () => {
+  const { root } = host({ baseMode: 'env:6', headMode: 'env:7' })
+  const r = runSuite(root, { change: CHANGE, baseCheck: true, record: true, section: 'test-record' })
+  assert.equal(r.status, 'environment-broken')
+  assert.deepEqual([r.ok, r.blocking, r.preExisting], [false, true, []])
+  assert.deepEqual(r.environment.signature, { id: 'module-not-found', key: '@w/shared', occurrences: 6, failing: 6 })
+  assert.match(r.environment.reason, /the base fails at scale on one environment error: module-not-found @w\/shared, 6 times over 6 failures/)
+  const record = readFileSync(join(root, r.record), 'utf8')
+  assert.doesNotMatch(record, /\*\*Commit:\*\*/)
+  assert.match(record, /\*\*Result:\*\* environment-broken/)
+  assert.doesNotMatch(record, /Pre-existing/)
+  assert.equal(r.section.verdict, 'not-run')
+  assert.match(r.section.summary, /not measured/)
+
+  // Verify reads the record as not run: unmeasured until the developer rules, and then accepted
+  // as not run, never as a pass.
+  commit(root, { [changeFile('.apply-test-record.md')]: record }, 'record')
+  rmSync(verifyDir(root, CHANGE), { recursive: true, force: true })
+  const check = runChecks(root, { change: CHANGE, now: 'T' }).checks.find((c) => c.id === 'test-record')
+  assert.deepEqual([check.verdict, /the whole suite was not measured/.test(check.summary)], ['not-run', true])
+  judged(root, CHANGE)
+  assert.deepEqual(computeVerdict(root, { change: CHANGE }).needsRuling, ['test-record'])
+  appendRecord(root, CHANGE, 'ruling', { check: 'test-record', reason: 'suite not measured: the environment cannot build the shared package' })
+  const ruled = computeVerdict(root, { change: CHANGE }).checks.find((c) => c.id === 'test-record')
+  assert.deepEqual([ruled.verdict, ruled.accepted], ['not-run', 'suite not measured: the environment cannot build the shared package'])
+})
+
+test('an environment error below the scale stays a pre-existing comparison', () => {
+  const { root } = host({ baseMode: 'env:2', headMode: 'env:2' })
+  const r = runSuite(root, { change: CHANGE, baseCheck: true })
+  assert.equal(r.status, 'pre-existing')
+  assert.equal(r.environment, undefined)
+})
+
+test('a package suite that ran on neither side is environment-broken', () => {
+  const { root } = host({ baseMode: 'turbo:a', headMode: 'turbo:a' })
+  const r = runSuite(root, { change: CHANGE, baseCheck: true })
+  assert.equal(r.status, 'environment-broken')
+  assert.deepEqual(r.environment.notRun, { head: 1, base: 1 })
+  assert.match(r.environment.reason, /a package's suite ran on neither side: 1 task\(s\) did not run on the branch, 1 on the base/)
 })
 
 test('with no failing names, the comparison is of the whole run', () => {
@@ -481,4 +539,18 @@ test('covering refuses with exit 1, a usage error exits 2, and readTestRecord re
   assert.throws(() => readTestRecord(bad), /bad\.json: not a test-run record \(counts\)/)
   writeFileSync(bad, 'nope')
   assert.throws(() => readTestRecord(bad), /not a test-run record/)
+})
+
+test('a covering command that names the worktree or the main checkout by absolute path is refused', () => {
+  const { main, root } = coveringHost()
+  const args = (command) => ['covering', '--change', CHANGE, '--name', 'Task 1 impl', '--command', command, '--worktree', root, '--root', root]
+  for (const command of [`node ${root}/runner.cjs node-pass`, `node runner.cjs node-pass --config '{"rootDir":"${root}"}'`, `node runner.cjs node-pass --config '{"rootDir":"${main}/apps/x"}'`]) {
+    const out = cli(args(command))
+    assert.equal(out.code, 1, command)
+    assert.match(out.json.error, /absolute path .*use worktree-relative paths/, command)
+  }
+  assert.throws(() => runCovering(root, { change: CHANGE, name: 'abs', command: `node ${root}/runner.cjs node-pass`, worktree: root }), /worktree-relative/)
+  assert.equal(existsSync(join(root, '.superpowers', 'sdd', CHANGE, 'tests')), false, 'a refused command runs nothing')
+  // A relative path, and an absolute one outside both trees, run.
+  assert.equal(cli(args(`node ./runner.cjs node-pass ${tmpdir()}`)).code, 0)
 })

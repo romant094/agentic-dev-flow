@@ -47,9 +47,9 @@ pass. What resolves each check:
   the corpus is reported as advisory text and never gates.
 - `tasks`: every item of the tracked tasks file is ticked. Each open item blocks until it is
   ticked, or until the developer rules on it with the reason it stays open (manual, out of
-  scope, blocked). It also fails a key of the change's `scope.json` (a tracker key or a debt id),
-  taken or partial, that no task names as a whole word. A change with no `scope.json` passes
-  with a note, and so does a tracker skipped for the change, which leaves no tracker key.
+  scope, blocked). It also fails a taken or partial key of the change's `scope.json` that no
+  task names, by the rule the tasks instruction states and its `tasks-lint` gate applied at
+  propose; a change with no key to map passes with a note.
 - `deltas`: each capability's delta against its main spec. `needs sync` is expected before
   archive, which merges the deltas: a warning naming the capabilities, not a failure. A
   `conflict` is a delta archive could not apply, and fails.
@@ -101,7 +101,9 @@ check; one that does not reproduce there fails it. On `comparison: "whole-run"`,
 output files before relying on the result. A suite that cannot run at all in this workspace (a
 missing dependency or service), or that runs past its timeout, is a failure, not a pass: the
 developer decides whether to provision it or to accept the risk with a ruling. When the guide
-holds no whole-suite command, the section is `not-run` with that reason. No agent runs the
+holds no whole-suite command, the section is `not-run` with that reason. So is a run, recorded
+by apply or re-run here, whose status is `environment-broken`: the suite was not measured, and
+it stays not run until the developer rules on `test-record`, never a pass. No agent runs the
 suite: there is no `verify c6` dispatch.
 
 The section quotes the runner's real output, its own pass and fail counts and its file or suite

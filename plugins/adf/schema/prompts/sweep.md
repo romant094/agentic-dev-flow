@@ -6,8 +6,9 @@ coverage, correctness, performance and security are out of scope: a sweep drifti
 becomes a second unbounded review. The project's planning guide may give examples of what counts
 in its stack. You hold no fix authority.
 
-Each duplicate is one finding of the reply, with its `introduced` and `existing` (a path with
-its line, or a symbol) and `why`, one sentence on what the two share; a branch that adds none
-gets an empty `findings`. State no verdict: the script computes `CLEAN` or `FINDINGS` from the
+Each duplicate is one finding of the reply, with its `introduced` and `existing`, each a
+location written `path:line` or `path:line-line` and nothing after it (a symbol's name goes in
+`why`), and `why`, one sentence on what the two share; a branch that adds none gets an empty
+`findings`. A location in another form refuses the reply. State no verdict: the script computes `CLEAN` or `FINDINGS` from the
 findings an accepted `DUP` marker does not cover. A finding that cannot name a pre-existing
 location is dropped, not reported at lower confidence.

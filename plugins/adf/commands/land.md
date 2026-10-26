@@ -22,7 +22,11 @@ Run every script call below as one plain command per Bash call, and read its JSO
 output: the rules for tools are stated in full under `## Tools` in
 `${CLAUDE_PLUGIN_ROOT}/schema/prompts/frame.md`, and they bind this session too.
 
-**Input:** `$ARGUMENTS` is the change name. Without it, ask which archived change to land.
+**Input:** `$ARGUMENTS` is the change name, optional. Without it, a change the conversation
+names is the name; otherwise run
+`node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" active --archived`, as the resolve instruction
+(`${CLAUDE_PLUGIN_ROOT}/schema/instructions/resolve.md`) states, and ask which archived change
+to land only when it returns `ask` true.
 
 1. **Resume.** From the main checkout:
 
