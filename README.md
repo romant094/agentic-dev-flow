@@ -93,13 +93,15 @@ A project on npm workspaces, PostgreSQL or Prisma provisions every worktree the 
 with the stack plugins, enabled in this order, each with its project values in `config`:
 
 ```
-/adf:add adf-npm-workspaces@agentic-dev-flow '{"build":["npm run build:shared"]}'
+/adf:add adf-npm-workspaces@agentic-dev-flow
 /adf:add adf-postgres@agentic-dev-flow '{"prefix":"app","url":{"file":".env","key":"DATABASE_URL"},"exec":{"docker":"db"}}'
 /adf:add adf-prisma@agentic-dev-flow
 ```
 
 Each is installed first, like the plugins above. The planning guide names the files every
-worktree gets a copy of (`## Worktree copies`), and a plan that needs a database says so
+worktree gets a copy of (`## Worktree copies`), the builds a fresh worktree lacks
+(`## Worktree preparation`, which `/adf:init` proposes; the `build` field of
+`adf-npm-workspaces` is deprecated in its favour), and a plan that needs a database says so
 (`**Needs:** database`).
 
 A project on Jira enables the tracker with its non-secret values in `config`, then sets up its
@@ -150,7 +152,9 @@ plugins/adf-prisma/               provision: an own client, migrations and seed;
 plugins/adf-jira/                 the tracker role on Jira Server and Data Center; guarded two-phase Jira skills
 plugins/adf-maintainer/           the upstream role on GitHub, through gh: the maintainer's only
 scripts/parity/                   dev tools: compare the ported scripts with the origin's and the
-                                  openspec CLI on the origin project (npm run parity -- <root>)
+                                  openspec CLI on the origin project, and replay its archived
+                                  changes through the whole cycle in a sandbox
+                                  (npm run parity -- <root>)
 test/fixtures/                    a host project and a plugin for end-to-end tests
 docs/roadmap.md                   the porting order
 docs/lessons/                     the origin project's rules per capability, with reasons

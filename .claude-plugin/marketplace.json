@@ -11,13 +11,13 @@
     {
       "name": "adf",
       "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
-      "version": "0.14.11",
+      "version": "0.15.0",
       "source": "./plugins/adf"
     },
     {
       "name": "adf-gitlab",
       "description": "ADF forge plugin for GitLab: pushes a change branch and keeps its merge request through glab",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "source": "./plugins/adf-gitlab"
     },
     {
@@ -41,7 +41,7 @@
     {
       "name": "adf-npm-workspaces",
       "description": "ADF provisioning for npm workspaces: a worktree's own node_modules with its workspace links inside the worktree, and a guard against npm install in a worktree",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "source": "./plugins/adf-npm-workspaces"
     },
     {

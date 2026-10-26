@@ -53,7 +53,8 @@ no actions. An entry in the worktree that the main checkout does not have is kep
 
 Then each command in `config.build` runs through the shell in the worktree, in order. A command
 that fails refuses the run with its exit code and the last 20 lines of its output; the commands
-after it do not run.
+after it do not run. `config.build` is deprecated: list those builds in the core's worktree
+preparation recipe instead (below).
 
 ## Configuration
 
@@ -61,10 +62,18 @@ The registry entry's `config`:
 
 | Field | Default | Meaning |
 |---|---|---|
-| `build` | `[]` | shell commands run in the worktree after provisioning, for example `["npm run build:shared"]` |
+| `build` | `[]` | deprecated: shell commands run in the worktree after provisioning, for example `["npm run build:shared"]` |
 | `unshared` | `[]` | entry names never shared with the main checkout, added to `.vite` and `.vite-temp` |
 
 An unknown field is refused.
+
+`build` still runs as described, but it runs only at provisioning. The core's worktree
+preparation recipe, `## Worktree preparation` in the host's `openspec/planning.md`, names each
+build with the input paths that trigger it, and the core's scripts run it at provisioning and
+again before a covering or whole-suite run, or after a group merge, when its inputs changed
+(`plugins/adf/scripts/prepare.mjs`; `/adf:init` proposes the candidates). Move each `build`
+command into the recipe with `prepare.mjs add` and remove `build` from the registry entry, so
+the same build does not run twice.
 
 ## Registry order
 

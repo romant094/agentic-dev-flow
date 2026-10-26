@@ -57,3 +57,273 @@ analysis of 2026-10-22.
   developer keeps the two branches the mid-flight mode needs until iteration 15.
 - No origin content is committed to this repository: candidates are found at run time, and no
   change name, commit, bundle or merge request body is stored here.
+
+Settled by the developer on 2026-10-26, all as recommended, from the agent pass (step 10):
+
+- D12 A review fix may touch the finding's file, its tests or both; a test of the file is a
+  test file named after it. A missing-test finding is fixed by a test-only commit.
+- D13 A false alarm of the test-first proof (a finding the evidence shows the check caused,
+  not the tests) is dismissed by a ruling and a deviation; `suite.mjs covering` and
+  `tdd-proof` refuse a command that names a checkout by absolute path, the cause of that alarm.
+- D14 The planning guide's `## Worktree preparation` lists the builds a fresh worktree lacks,
+  each with the input paths that trigger it; `/adf:init` proposes candidates and the developer
+  confirms them; the scripts run them, never an agent.
+- D15 A base that fails at scale with one environment error signature, or a suite that ran on
+  neither side, is `environment-broken`, never `pre-existing`; it blocks.
+- D16 The active change is per worktree: a change the conversation names is passed as the
+  name; else the checkout's pointer in `.adf/active.json`; else the one change in flight; the
+  developer is asked only otherwise.
+- D17 The tasks gate at propose refuses a taken or partial key, a debt id or a tracker key,
+  that no task names: the rule verify's `tasks` check applies.
+- D18 The ingest agent writes no page: its reply carries each page's edit as a patch, and
+  `archive.mjs ingest` checks and applies it. The port writes no permission rule into the host.
+- D19 A stopped dispatch's attempt count is reset only by the developer, through a held command
+  recorded in the ledger.
+- D20 A fix round that returns `BLOCKED` with no commit goes to its ruling before the breaker:
+  the orchestrator rules for a task, the developer for a group or the final review.
+- D21 `adf-npm-workspaces` `config.build` is deprecated in favour of the recipe (D14), with no
+  change of behaviour.
+- D22 A main checkout on the integration branch with several worktree pointers: the script asks.
+- D23 Ledger records written after `commit-metrics` do not reach the archived copy: an accepted
+  residue, kept as port debt (`## Result`, left for later).
+- D24 Open findings of a consolidation's re-review do not block apply, as for the final review.
+- D25 The brainstorm does not read the `review.md` of a similar archived change: the origin
+  rule behind it is older-origin.
+- D26 The bench is simulated in the replay; bench testing becomes a plugin of its own later,
+  tuned on real changes.
+
+## Inputs for iteration 15
+
+The host setup driver (step 3) ran the port's own init path on the origin at each candidate's
+base, with the values recorded by iterations 12 and 13, and listed every edit it made or a
+port check demanded. The switch makes the same edits; none is committed here.
+
+- `.claude/adf-extensions.json`: the registry at contract 1.7 with `review.prompt`; the branch
+  policy (integration branch `develop`, detected by init); `debt.root` set to
+  `.claude/memory/tech-debt`; the entries, in this order: `adf-gitlab`, `adf-memory`,
+  `adf-english-check`, `adf-npm-workspaces`, `adf-postgres` (the README's example `config` with
+  the origin's own prefix), `adf-prisma`, and `adf-jira` with the `config` recorded in
+  `docs/iterations/13-tracker-jira.md`, `## Inputs for iteration 15`. At the switch each entry
+  names the installed plugin by id; the replay used `path` entries.
+- `.claude/settings.json`: `enabledPlugins["adf@agentic-dev-flow"]`.
+- `.gitignore`: `.adf/*`, `!.adf/prices/`, `!.adf/retro/`.
+- `openspec/planning.md`: the template, then the values the lessons record as pending on 15:
+  `## Whole-suite command` (`docs/lessons/apply.md`), `## Packages` with the origin's package
+  list and order (`docs/lessons/propose.md`), `## Fresh-run proof` (`docs/lessons/verify.md`),
+  `## Worktree copies` with the env file the database URL is rewritten in
+  (`plugins/adf-postgres/README.md`). New since step 3: `## Worktree preparation` (D14), the
+  build of the shared package and any generated code, each with its input paths; confirm the
+  candidates `/adf:init` proposes rather than writing them by hand. With the recipe in place,
+  the `adf-npm-workspaces` entry carries no `build` (D21).
+- `openspec/review-prompt.md`: the template, for the team to tune.
+- `.gitlab/merge_request_templates/adf.md`: the host file `adf-gitlab` declares, copied by
+  `/adf:add`.
+- The debt tree: the header's last column `Jira` becomes `Tracker` in every debt table of
+  every category index (eight files and nine tables on 2026-10-22, one file holds two;
+  `debt.mjs check` refuses the tree until each is renamed); the example row in the root
+  index's format description is removed, and the switch replaces that description with the
+  port's (`plugins/adf/contract/debt-format.md`).
+- The tracker profile: `/adf-jira:setup` once after the switch, with the env keys and the
+  profile location recorded in iteration 13's inputs; until then the tracker check is
+  `degraded` and propose offers to skip it.
+
+The changes in flight at the switch (eight change directories on the origin's `develop` on
+2026-10-26, more in its worktrees; each with a Draft opened by the origin's merge request
+script):
+
+- Each is pinned to the origin schema and has no `.adf.json`. The port reads an in-flight
+  change's base from a `base:` line in its `.openspec.yaml`, else the integration branch
+  (`readChangeMeta`). Check the base of each in-flight change at the switch: a change forked
+  from a feature branch would get the integration branch as its base, the wrong one; give it a
+  `base:` line first.
+- `adf-gitlab` `finalize` writes the `adf:` block in place of the same change's `opsx:` block
+  or placeholder, once (D6); the Drafts need no hand edit.
+- The mid-flight replay (step 6) continued such a change from its own propose commit through
+  the port's apply to archive; verify's `specs-base` warns, not fails, on a change with no
+  `specs-base.json`.
+
+Run `/adf:init` (and `/adf:add`) interactively at the switch, never headless: Claude Code
+asks for an approval of every write under a project's `.claude/` directory, the registry and
+the settings included, and no allow rule lifts it (`docs/lessons/superpowers-gate.md`).
+
+Bench testing: the replay simulated the hardware pass the origin's plans hold (the agent pass's
+bench answer was simulated, D26). A bench plugin is future work; tune it on real changes after
+the switch, not on the replay.
+
+## Result
+
+Commits (`git log --oneline bbee130..HEAD`, before this release step; the version-only patch
+bumps are in them):
+
+```
+57738cd fix(adf): refuse only text after a sweep location's line; parity replay splits a fix by the finding's own tests
+3805b9d fix(adf): worktree preparation recipe, environment-broken suite verdict, active change per worktree, sweep consolidation round, taken debt named at propose
+eaa5ab7 fix(adf): apply ingest page edits by script, drop the ineffective allow rules, name the reset on a limit stop
+0e0fbb7 feat(adf): let the developer reset a stopped dispatch's attempt count through a held command recorded in the ledger
+c5e7cee fix(adf): make the knowledge base writable in every change worktree through host allow rules
+e70e9d5 fix(adf): accept a review fix that touches only the tests of the finding's file; every fix refusal says retry or stop
+e2154d7 fix(adf): one tools rule for every agent, per-role dispatch examples, deletion check skips knowledge and debt pages
+bd92b12 fix(adf): read an in-flight change's base, one execution-graph parser, commit-none replies, specs-base warning
+7622422 test(parity): compare the replay with the origin and classify each difference
+8dba2a9 test(parity): drive the replay through every phase, fresh and mid-flight
+8b2d8f3 test(parity): match the reworded adf-jira registry note
+7bffe71 test(parity): replay host setup and replies built from the origin's records
+4894246 test(parity): replay sandbox and candidate discovery for the behaviour check
+7f6cf63 fix(adf): no package boundary without a Packages guide, fewer false path warnings
+2af127b feat(adf-gitlab): finalize takes over the origin's Draft block of the same change
+53aad23 docs(iterations): iteration 14 replays only the developer's own changes, answered from transcripts
+```
+
+The candidates, by kind (D2; found by rule at run time, never named here): a small fix, a
+database change (a migration and the stack plugins' path), a flow-only change of the earlier
+flow era (its differences from that era are `older-origin`), and a large change with parallel
+groups, which also runs mid-flight from the origin's own propose commit.
+
+By step:
+
+- 1 (4894246) `scripts/parity/lib/sandbox.mjs`: the per-run cache clone, a shared clone and a
+  bare remote per candidate, home, config and temp directories inside the sandbox, logging
+  fakes of `glab`, `docker`, `psql` and `npx` first on `PATH`, the fake-Jira preload, and the
+  isolation assertion. `sandbox.spec.mjs` passes, the poisoned-`PATH` refusal among it. Every
+  run ends with "Origin unchanged: true" (refs, `git status` and stash hashed before and
+  after); a ref the developer's own work in flight moved during a run is named as such.
+- 2 (4894246) `replay-candidates.mjs`: the developer's regular archived changes of the final
+  flow by rule, plus the named exceptions, with the merge request, the branch and the base,
+  exact where the local branch survives, else the merge's first parent (D3);
+  `replay-candidates.spec.mjs` passes on a fixture repository.
+- 3 (7bffe71, 8b2d8f3) `replay-host.mjs`: the port's own init path at each candidate's base
+  with the values of iterations 12 and 13. The host check passes after setup; the edit list is
+  `## Inputs for iteration 15` above. The run also fixed the `adf-jira` registry entry recorded
+  in iteration 13, which used `id` for `plugin`.
+- 4 (7bffe71) `replay-replies.mjs`: every structured reply of the cycle built from the origin's
+  artifacts, commits, ledger and review record, each validated by the port's own checks and
+  naming its source; a reply the records cannot give is missing, never invented.
+- 5 (8dba2a9) `replay-drive.mjs`, fresh mode: every candidate reaches the end of archive and
+  land; a resumed archive gives the same result.
+- 6 (2af127b, 8dba2a9) mid-flight mode: the large candidate continues from the origin's own
+  propose commit, pinned to the origin schema, to the end of archive; `finalize` writes the
+  `adf:` block in place of the same change's `opsx:` block or placeholder once
+  (`forge.spec.mjs`).
+- 7 (7622422) `scripts/parity/origin-replay.mjs` in `npm run parity`: each difference
+  `explained` (it cites a lessons row), `older-origin`, `injected` or `defect`, the rest
+  recorded only. The first full run, 206 differences:
+
+  | Run | Total | Explained | Older-origin | Injected | Defect | Recorded |
+  |---|---|---|---|---|---|---|
+  | small, fresh | 29 | 17 | 0 | 11 | 0 | 1 |
+  | database, fresh | 72 | 19 | 2 | 47 | 3 | 1 |
+  | large, fresh | 36 | 19 | 1 | 14 | 1 | 1 |
+  | flow-only, fresh | 32 | 15 | 4 | 13 | 0 | 0 |
+  | large, mid-flight | 37 | 14 | 1 | 18 | 3 | 1 |
+
+  The seven defects were four port defects: a labelled group cell such as "A: contracts" was
+  a group to `plan.mjs` and not to `dispatch.mjs`; no valid `impl` reply existed for a
+  verification-only task whose Commit step says none (three tasks); an in-flight change with
+  `.openspec.yaml` and no `.adf.json` was refused; verify's `specs-base` failed a change with
+  no base entry where archive warns.
+- 8 (7f6cf63) the plan graph gap (D8): on the origin's 18 regular final-flow plans, no task is
+  outside every group, so that stays an error, and the flow-only candidate's two such tasks are
+  `older-origin`. `plan-lint` gave 29 false cross-package warnings with no `## Packages` guide,
+  now none; `tasks-lint` no longer reads `N/A`, a bare directory name or an artifact name as a
+  path.
+- 9 (bd92b12) the four defects fixed: one execution-graph parser (`parseExecutionGraph`), the
+  commit-none `impl` reply checked against the plan text, an in-flight change's base through
+  `readChangeMeta`, and verify's `specs-base` warning. The replay after the fixes, then after
+  the step 10 fixes (the release run, 2026-10-26):
+
+  | Run | After step 9: total, explained, older-origin, injected, defect, recorded | Release run: the same |
+  |---|---|---|
+  | small, fresh | 29, 17, 0, 11, 0, 1 | 29, 17, 0, 11, 0, 1 |
+  | database, fresh | 68, 19, 2, 46, 0, 1 | 68, 19, 2, 46, 0, 1 |
+  | large, fresh | 34, 19, 1, 13, 0, 1 | 34, 19, 1, 13, 0, 1 |
+  | flow-only, fresh | 32, 15, 4, 13, 0, 0 | 32, 15, 4, 13, 0, 0 |
+  | large, mid-flight | 31, 13, 1, 16, 0, 1 | 31, 13, 1, 16, 0, 1 |
+
+  Both runs: 194 differences, no `defect`, and every phase a run drives reached (fresh: host
+  to land; mid-flight: host, then apply to archive). The step 10 fixes changed no count.
+- 10 the agent pass (D1, D11): one more of the developer's small changes, a form change of 9
+  tasks in three groups, through `/adf:propose`, `/adf:apply`, `/adf:verify`, `/adf:review`,
+  `/adf:archive` and `/adf:land` in a sandbox, by an executor session that followed the
+  commands' text and an answerer session that answered from the developer's transcripts of
+  that change and its artifacts, naming the source of each answer. Every phase was reached;
+  verify PASS WITH WARNINGS and review PASS, as in the origin; the merge request went Draft →
+  ready and stays open, since no one merges in the sandbox; land skipped, the tracker having
+  been skipped for the change. Nothing left the sandbox, and the origin was unchanged.
+  - Questions: 28. By answer kind: 1 found verbatim, 13 matched by meaning (`injected`, D11),
+    3 answered from the code and the artifacts, 11 with no record. Of those 11: 7 went to the
+    developer, 1 was the first asking of a question that came back after a resume, and 3 were the sandbox's
+    own (the tracker with no token, skipped with a reason; the bench consent, simulated, D26;
+    the ingest's write permission, a port defect below). The developer also confirmed each
+    attempt reset after a port fix.
+  - The developer's 7 rulings: a permission refusal is not a developer question, re-dispatch
+    under the frame's Tools rule; a test-first finding dismissed as a false alarm (D13); the
+    bench pass answered as run and passed (simulated, D26); two sweep duplicates accepted as
+    consolidated and the third dismissed with the project's own deferral reason; verify's
+    `tasks` key check and a contradiction check accepted by ruling, the debt widened (D17); the
+    review's test-only fix kept, the port's fix check corrected (D12); archive's placements
+    approved as proposed.
+  - Permission refusals: about 18 compound shell commands from the dispatched agents before
+    the frame's single Tools rule (e2154d7), none after it. The refusals left were the
+    ingest's page writes under `.claude/`, which no allow rule lifts (below).
+  - Cost: about $122 (executor $117.19, answerer $4.28, a smoke run $0.21), against the
+    planned $15–30. The executor ran on the top model throughout, and it was resumed six
+    times on newer port versions after the fixes below, each resume reading the whole session
+    again.
+  - The final tree against the origin's: the code, 33 files in both, 22 only in the origin's,
+    5 only in the port's; the knowledge base, the port's ingest edited 7 of the 11 pages the
+    origin's did, and one page of its own; the new capability's main spec, 6 requirements in
+    the port against 7 in the origin. The missing one is `older-origin`: it came from an origin
+    review finding never filed as debt. The comparison tool marks 91 differences `defect`, 87
+    of them ledger records: an agent pass makes its own rulings, so no origin ruling has a
+    port twin and back; the others are this pass's setup commit as the base, the
+    `specs-validate` refusal of the agent's own first draft (fixed by the agent at once), the
+    spec merge of different specs, and the merge request left open. Each was read and none is a
+    port defect.
+  - Port defects found and fixed: the dispatched agents' compound shell commands (one Tools
+    rule in the frame, per-role dispatch examples) and the propose skill's Execution Handoff
+    question (e2154d7); the deletion sweep refusing a plan over knowledge and debt pages
+    (e2154d7); a missing-test review fix refused (e70e9d5); no way to reset a stopped
+    dispatch's attempt count (0e0fbb7); the ingest's page writes refused (eaa5ab7, below);
+    the worktree builds an agent ran by hand, a base failing for its environment read as
+    pre-existing, the change asked for on every command, a consolidation with no dispatch of
+    its own, a taken key no task names found only at verify, a fix loop running to the breaker
+    on a finding with nothing to fix, a background dispatch dying with the turn, the archived
+    ledger missing the records written after the move, and a test-first proof run on the new
+    code through an absolute path (3805b9d); a sweep location with a symbol after its line
+    keeping a consolidated duplicate open (57738cd).
+  - The allow rules c5e7cee wrote into the host were ineffective: Claude Code treats every
+    file under a project's `.claude/` directory as sensitive and asks for an interactive
+    approval of every Edit or Write there even when a `permissions.allow` rule matches
+    (headless probes, `docs/lessons/superpowers-gate.md`). eaa5ab7 removed them: the ingest
+    reply carries each page's edit as a patch, and `archive.mjs ingest` checks and applies it
+    (D18).
+  - Open: ledger records written after `commit-metrics` (a land run's, a later resume's) do not
+    reach the archived copy; accepted by the developer as port debt (D23, left for later).
+- 11 (this step): `## Result`, the inputs for iteration 15, the decisions D12–D26,
+  `adf-npm-workspaces` `config.build` deprecated in its README (D21), versions, marketplace,
+  README and roadmap row 14. No lessons row was added: every row this iteration changed
+  carries its "since iteration 14" note, and none is pending on 14.
+
+Checks, on 2026-10-26:
+
+- `npm test`: 1446 tests, 1441 pass, 0 failures, 5 skipped (the live openspec parity with `OPENSPEC_DIST` not set, and four live origin tests with `ADF_ORIGIN` not set: the name parity of `adf-postgres` and three of the replay); `check-lessons.mjs`: ok, 770 rows, 19 pending, none on 14.
+- `npm run parity -- <origin>` with the four fresh candidates and the mid-flight one (the
+  author, `ADF_REPLAY_FRESH`, `ADF_REPLAY_MID`): 23 of 23 PASS, `origin-replay.mjs` among them with no `defect`, the origin unchanged.
+- `claude plugin validate .`: passed.
+- Not run: a real database create and drop, a real `prisma generate` (fakes, D4); a live
+  `glab`, Jira or bench; the agent pass on the larger candidates (D1; row 18 repeats it on
+  real systems after the switch).
+
+Left for later:
+
+- Ledger records written after `commit-metrics` do not reach the archived `ledger.jsonl`
+  (D23): `commit-metrics` copies the live ledger before the final commit, so a record written
+  later (a land run, a resume after the final commit) stays only in the live ledger, which
+  the worktree removal deletes.
+- Bench testing as a plugin of its own (D26), tuned on real changes after the switch.
+- The comparison's ledger rules suit injected replies; an agent pass needs a rule of its own
+  that pairs rulings by meaning rather than by text.
+
+Versions: adf 0.15.0, contract 1.7 unchanged; adf-gitlab 0.6.0; adf-npm-workspaces 0.1.1;
+adf-memory 0.2.1 (bumped during the iteration); adf-english-check 0.6.0, adf-jira 0.2.0,
+adf-maintainer 0.1.0, adf-postgres 0.1.0 and adf-prisma 0.1.0 unchanged.
