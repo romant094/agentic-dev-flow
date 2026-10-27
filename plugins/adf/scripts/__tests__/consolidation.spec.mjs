@@ -129,3 +129,23 @@ test('an accepted re-sweep is recorded in the ledger with what it cleared and wh
   const record = listRecords(change, 'add-x').find((r) => r.kind === 're-sweep')
   assert.deepEqual([record.round, record.cleared, record.open], ['1', 'S1', 'none'])
 })
+
+test('a finding recorded with absolute locations lists its files in scope once, under the worktree', () => {
+  const made = host({ 'plan.md': PLAN })
+  const { change } = made
+  commitIn(change, 'src/a.ts', 'export const a = 1\n')
+  commitIn(change, 'src/b.ts', 'export const b = 1\n')
+  const finding = { introduced: join(change, 'src/b.ts:1'), existing: join(change, 'src/a.ts:1'), why: 'Same constant.' }
+  recordReply(change, 'add-x', { name: 'sweep', file: 'sweep.json', result: { verdict: 'FINDINGS', findings: [finding], dropped: [], head: git(change, 'rev-parse', 'HEAD') } })
+  sweep(['consolidate', '--change', 'add-x', '--reason', 'consolidate', '--root', change])
+  const out = call(change, 'prompt', '--role', 'fix', '--subject', 'sweep', '--round', '1')
+  assert.ok(out.prompt.includes(`- Files in scope:\n  - ${join(change, 'src/b.ts')}\n  - ${join(change, 'src/a.ts')}\n- `), out.prompt)
+})
+
+test('the fix of a consolidation asks to reuse an existing helper before writing a replacement', () => {
+  const { change } = swept()
+  sweep(['consolidate', '--change', 'add-x', '--reason', 'consolidate', '--root', change])
+  const out = call(change, 'prompt', '--role', 'fix', '--subject', 'sweep', '--round', '1')
+  assert.match(out.prompt, /Before you write a replacement, search the tree for an existing helper with that behaviour:\sreuse it, or say in `concerns` why not\./)
+  assert.doesNotMatch(call(change, 'prompt', '--role', 'sweep', '--round', '1').prompt, /search the tree for an existing helper/)
+})

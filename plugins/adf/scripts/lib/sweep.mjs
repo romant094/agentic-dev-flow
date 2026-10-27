@@ -15,7 +15,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { changeDir, readChangeMeta } from './changes.mjs'
-import { coveringMarker, findMarkers, TRAILING_TEXT } from './dup.mjs'
+import { coveringMarker, findMarkers, relativeFindings, relativeLocation, TRAILING_TEXT } from './dup.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { baseRef } from './plan-symbols.mjs'
 import { appendRecord, appendScripted, readRecords } from './ledger.mjs'
@@ -135,29 +135,31 @@ export function dupFilter(root, replyFindings) {
 
 // No finding's `introduced` or `existing` may carry text after its line (lib/dup.mjs
 // TRAILING_TEXT): a symbol after the line once kept `locate` from reading the file, and a
-// consolidated duplicate stayed open. A bare path, `path:line` and `path:line-line` pass. One
-// error per location with text after its line.
-export function locationErrors(findings) {
+// consolidated duplicate stayed open. A bare path, `path:line` and `path:line-line` pass. Nor,
+// given `root`, may it be absolute outside the repository (lib/dup.mjs relativeLocation); one
+// absolute under it is accepted and recorded relative. One error per location at fault.
+export function locationErrors(findings, root) {
   const errors = []
   ;(findings ?? []).forEach((f, i) => {
     for (const key of ['introduced', 'existing']) {
       if (TRAILING_TEXT.test(String(f[key] ?? '').trim())) errors.push(`$.findings[${i}].${key}: "${f[key]}" has text after its line; write path, path:line or path:line-line, with nothing after the line`)
+      else if (root !== undefined && relativeLocation(root, f[key]) === null) errors.push(`$.findings[${i}].${key}: "${f[key]}" is outside the repository; write the path relative to the repository root`)
     }
   })
   return errors
 }
 
-// The sweep reply, checked under sweep.schema.json and locationErrors, with every finding a DUP
-// marker accepts dropped. A refused reply is no verdict, never CLEAN: the result is then { ok:
+// The sweep reply, checked under sweep.schema.json and locationErrors, its locations made
+// relative to `root`, with every finding a DUP marker accepts dropped. A refused reply is no verdict, never CLEAN: the result is then { ok:
 // false, reasons }. The coverage of the dispositions is checked where the change is known, by
 // `dispatch.mjs reply` (lib/reply.mjs).
 export function filterReply(root, text) {
   const parsed = parseReply(text)
   const schemaErrors = parsed.errors.length ? parsed.errors : validateJson(readSchema(SWEEP_SCHEMA), parsed.reply)
-  const reasons = schemaErrors.length ? schemaErrors : locationErrors(parsed.reply.findings)
+  const reasons = schemaErrors.length ? schemaErrors : locationErrors(parsed.reply.findings, root)
   if (reasons.length) return { ok: false, error: 'the sweep reply is refused; it is no verdict', reasons }
   const reply = parsed.reply
-  return { ok: true, ...dupFilter(root, reply.findings), ...(reply.dispositions ? { dispositions: reply.dispositions } : {}) }
+  return { ok: true, ...dupFilter(root, relativeFindings(root, reply.findings)), ...(reply.dispositions ? { dispositions: reply.dispositions } : {}) }
 }
 
 // The names of consolidation round k: its fix, the fix's re-review, and the re-sweep.

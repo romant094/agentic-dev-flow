@@ -177,10 +177,11 @@ const SUITE_LINE = {
   'not-run': 'not run'
 }
 
-function pushLine(push) {
-  if (!push) return 'no group merge pushed yet'
+// The last push (push.json): a group-finish's carries its group, the whole-suite record's none.
+export function pushLine(push) {
+  if (!push) return 'nothing pushed yet'
   if (push.state === 'none') return 'no forge plugin is enabled, nothing was pushed'
-  if (push.state === 'done') return 'after each group merge'
+  if (push.state === 'done') return push.group === undefined ? 'done, with the whole-suite record' : `done, after group ${push.group}'s merge`
   if (push.state === 'degraded') return `degraded: ${push.hint ?? push.error ?? 'no hint'}`
   return `${push.state}: ${push.error ?? push.hint ?? ''}`.trim()
 }

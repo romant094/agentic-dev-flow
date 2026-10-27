@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { blockedNames, suiteOf } from '../lib/apply-status.mjs'
+import { blockedNames, pushLine, suiteOf } from '../lib/apply-status.mjs'
 import { addGroup, finishGroup, mergeGroup } from '../lib/groups.mjs'
 import { recordReply } from '../lib/attempts.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
@@ -174,4 +174,11 @@ test('an open sweep finding is shown and keeps apply from complete until the dev
   appendRecord(change, 'add-x', 'ruling', { subject: 'sweep', finding: 'S1', as: 'dismissed', decision: 'the values differ in meaning' })
   const done = run(['--change', 'add-x', '--root', change])
   assert.deepEqual([done.complete, done.sweep.open, done.sweep.cleared.map((c) => c.by)], [true, [], ['ruling']])
+})
+
+test('the push line names where the last push came from: a group merge or the whole-suite record', () => {
+  assert.equal(pushLine(null), 'nothing pushed yet')
+  assert.equal(pushLine({ state: 'done', group: 2 }), "done, after group 2's merge")
+  assert.equal(pushLine({ state: 'done' }), 'done, with the whole-suite record')
+  assert.equal(pushLine({ state: 'refused', error: 'no branches' }), 'refused: no branches')
 })

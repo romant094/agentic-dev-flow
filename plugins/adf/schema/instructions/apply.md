@@ -439,10 +439,11 @@ requirement's `**Code Disposition:**`, all read by `sweep.mjs inputs`. It holds 
 and no fix authority, and dispatches no agent; its tree access widens no other reviewer's
 scope.
 
-Its reply is recorded like every other, with `dispatch.mjs reply`, which drops every finding
-whose introduced location carries a `DUP` marker naming that existing location, computes the
-verdict from what is left, and records the HEAD the sweep ran on. A sweep with no accepted reply
-after its retry is no verdict, never `CLEAN`. The same call writes each entry of an accepted
+Its reply is recorded like every other, with `dispatch.mjs reply`, which records every location
+relative to the repository root (an absolute one under it is made relative, one outside it
+refuses the reply), drops every finding whose introduced location carries a `DUP` marker
+naming that existing location, computes the verdict from what is left, and records the HEAD
+the sweep ran on. A sweep with no accepted reply after its retry is no verdict, never `CLEAN`. The same call writes each entry of an accepted
 reply's `dispositions` as a `debt` carrying the sweep's answer as its reason, listed in its
 output as `debt`; it never blocks apply.
 
@@ -451,7 +452,8 @@ maintainability finding that blocks; every other stays advisory. `apply-status.m
 open ones as `sweep.open`, each `S<n>` by its first report, and reports `complete` false while
 one is open. Resolution is one of two things: consolidate on the existing code, or the developer
 dismisses the finding. A consolidation clears it when a later sweep no longer reports it and its
-introduced file changed between the sweep that last reported it and that later one. Re-running
+introduced file changed between the sweep that last reported it and that later one, unless an
+accepted debt record of `dup.mjs mark` names the pair: that finding was dismissed. Re-running
 the sweep does not clear it: a second `CLEAN` on an unchanged branch would launder the first
 finding.
 
@@ -477,8 +479,12 @@ reasoning; silence is not approval, because an automatic dismissal is indistingu
 missed finding. On the developer's dismissal:
 
 ```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/dup.mjs" mark --change <change> --file <introduced file> [--line <n>] --existing "<existing>" --why "<the finding's why>" --reason "<the developer's reason>" --root <root> --commit
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dup.mjs" mark --change <change> --finding <the sweep's reply file> --id S<n> --reason "<the developer's reason>" --root <root> --commit
 ```
+
+It reads the introduced location, `existing` and `why` from the reply, so the finding's prose
+never passes through the shell; `--file`, `--line`, `--existing` and `--why` in place of
+`--finding` and `--id` give them by hand.
 
 It places the `DUP` marker on the introduced location, records the accepted debt, which
 archive resolves as `accepted`, and commits the marked file alone. The marker stops a
@@ -497,9 +503,9 @@ duplicate. Its text is:
 ADF DUP <existing> -- <reason>
 ```
 
-`<existing>` is the finding's `existing` value, verbatim; `<reason>` is the developer's, in one
-line. For example `// ADF DUP src/a.ts:12 -- the wire format differs` or `# ADF DUP
-config/base.yaml:4 -- kept per environment`.
+`<existing>` is the finding's `existing` value, relative to the repository root; `<reason>` is
+the developer's, in one line. For example `// ADF DUP src/a.ts:12 -- the wire format differs`
+or `# ADF DUP config/base.yaml:4 -- kept per environment`.
 
 **The whole suite, once, at the end.**
 
@@ -519,7 +525,8 @@ worktree of the base, never by stashing, made as `workspace.mjs base-check-add -
 work and do not block, `newFailures` pause apply like any other implementation issue, and a
 base that cannot run the command blocks until the developer rules. When the runner's names
 cannot be parsed and the two failure sets only partly overlap, `comparison` says so: judge it
-from the output files, and say how.
+from the output files, and say how. `--commit` commits the record and pushes the change branch
+once, as `group-finish` does; read its `push.state` as there.
 
 `status` `not-run` means the guide holds no command. Find one in the project's own files (its
 package manifest's scripts, a build file, its continuous-integration configuration), propose it
