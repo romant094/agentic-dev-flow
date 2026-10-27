@@ -16,11 +16,15 @@
 //
 // The reuse sweep's open findings (lib/loop.mjs sweepState) are reported as `sweep.open`, and
 // apply is not complete while one is open: the one maintainability finding that blocks.
+//
+// In an apply round (`plan.mjs reopen`, lib/ledger.mjs applyRound) the groups it froze count as
+// merged base, the sweep's findings are the round's, and `round` names it: { round, base,
+// checks, tasks, group, frozen }, null in round 0.
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { changeDir } from './changes.mjs'
 import { groupState, pushPath } from './groups.mjs'
-import { appendRecord, readRecords, unresolvedDebt } from './ledger.mjs'
+import { appendRecord, applyRound, readRecords, unresolvedDebt } from './ledger.mjs'
 import { sweepState } from './loop.mjs'
 import { DEFAULT_CAP, parsePlan, parseTaskItems, schedule, testFirst } from './plan.mjs'
 import { tickMessage } from './tasks.mjs'
@@ -83,7 +87,8 @@ export function applyStatus(root, change, { tracks = 'tasks.md', cap = DEFAULT_C
   const lastHandoff = records.filter((r) => r.kind === 'handoff').at(-1) ?? null
   const lastSession = records.filter((r) => r.kind === 'session' && r.phase === 'apply').at(-1) ?? null
 
-  const sched = schedule(planText, { state: groupState(root, change), ticked: (id) => items.some((i) => i.id === id && i.done), cap })
+  const round = applyRound(records)
+  const sched = schedule(planText, { state: groupState(root, change), ticked: (id) => items.some((i) => i.id === id && i.done), cap, frozen: round?.frozen ?? [] })
   if (!sched.ok) return { ok: false, change, findings: sched.findings, error: 'the Execution Graph is missing or defective; plan.mjs lint names why' }
 
   const named = blockedNames(lastHandoff?.blocked)
@@ -138,6 +143,7 @@ export function applyStatus(root, change, { tracks = 'tasks.md', cap = DEFAULT_C
     push,
     suite: suiteOf(read(join(dir, TEST_RECORD))),
     sweep: { ran: sweep.ran, open: sweep.open.map(({ id, introduced, existing, why }) => ({ id, introduced, existing, why })), cleared: sweep.cleared },
+    round: round && { round: round.round, base: round.base, checks: round.checks, tasks: round.tasks, group: round.group, frozen: round.frozen },
     complete
   }
 }

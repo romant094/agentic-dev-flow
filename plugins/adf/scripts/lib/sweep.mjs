@@ -4,6 +4,8 @@
 //
 // - the range: the change's base from its metadata, `origin/<base>` when that remote-tracking
 //   ref exists, else `<base>`, through `git merge-base` with HEAD (as plan-symbols resolves it);
+//   in an apply round (lib/ledger.mjs applyRound) from the round's base instead: the round's diff
+//   alone, still compared against the whole tree;
 // - the second question's input: every REMOVED or RENAMED requirement of the change's delta
 //   specs, with its `**Code Disposition:**` text, or null when it has none (itself a finding);
 // - the DUP markers already in the tree, and the filter that drops a finding a marker accepts;
@@ -18,10 +20,10 @@ import { changeDir, readChangeMeta } from './changes.mjs'
 import { coveringMarker, findMarkers, relativeFindings, relativeLocation, TRAILING_TEXT } from './dup.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { baseRef } from './plan-symbols.mjs'
-import { appendRecord, appendScripted, readRecords } from './ledger.mjs'
+import { appendRecord, appendScripted, applyRound, readRecords } from './ledger.mjs'
 import { attemptsFile, parseEvents, readLog } from './attempts.mjs'
 import { MAX_ROUNDS } from './dispatch.mjs'
-import { consolidationState, sweepState } from './loop.mjs'
+import { atOrAfter, consolidationState, roundStart, sweepState } from './loop.mjs'
 import { findSection, parseSections } from './specs.mjs'
 
 export const SWEEP_SCHEMA = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema', 'sweep.schema.json')
@@ -102,6 +104,7 @@ export function sweepInputs(root, change) {
     throw new Error(`git merge-base ${ref} HEAD failed in ${root}; the base does not resolve`)
   }
   const head = git('rev-parse', 'HEAD')
+  const round = applyRound(readRecords(root, change))
   const removedOrRenamed = specFiles(join(dir, 'specs')).flatMap((file) =>
     removalsIn(readFileSync(file, 'utf8')).map((r) => ({ ...r, spec: file.slice(dir.length + 1).split('\\').join('/') }))
   )
@@ -111,7 +114,8 @@ export function sweepInputs(root, change) {
     base: ref,
     mergeBase,
     head,
-    range: `${mergeBase}..${head}`,
+    round: round?.round ?? 0,
+    range: `${round?.base ?? mergeBase}..${head}`,
     secondQuestion: removedOrRenamed.length > 0,
     removedOrRenamed,
     missingDisposition: removedOrRenamed.filter((r) => r.codeDisposition === null).map((r) => r.requirement ?? r.from),
@@ -169,15 +173,18 @@ export const roundNames = (k) => ({ fix: `fix sweep r${k}`, reReview: `re-review
 // findings and its review loop's, recorded as a `consolidation` ledger record with the reason
 // before the fix is dispatched; `dispatch.mjs prompt --role fix --subject sweep` refuses a round
 // with no record. A round whose re-sweep has no accepted reply yet is in flight: it is returned
-// again (`already`), nothing recorded. At MAX_ROUNDS the developer decides.
+// again (`already`), nothing recorded. At MAX_ROUNDS the developer decides. Rounds count within
+// the current apply round (lib/loop.mjs roundStart): an apply round's consolidation starts at 1.
 // Returns { ok, round, findings, fix, reReview, sweep, record, already }.
 export function consolidate(root, change, { reason, env = process.env } = {}) {
   if (typeof reason !== 'string' || !reason.trim()) throw new Error('--reason is empty: say why the findings are consolidated rather than dismissed')
-  const rounds = readRecords(root, change).filter((r) => r.kind === 'consolidation')
+  const records = readRecords(root, change)
+  const since = roundStart(records)
+  const rounds = records.filter((r) => r.kind === 'consolidation').filter(atOrAfter(since))
   const last = rounds.at(-1)
   if (last) {
     const k = Number(last.round)
-    const reswept = parseEvents(readLog(attemptsFile(root, change))).some((e) => e.event === 'valid' && e.name === roundNames(k).sweep)
+    const reswept = parseEvents(readLog(attemptsFile(root, change))).filter(atOrAfter(since)).some((e) => e.event === 'valid' && e.name === roundNames(k).sweep)
     if (!reswept) return { ok: true, round: k, findings: last.findings.split(','), ...roundNames(k), record: last, already: true }
   }
   const state = consolidationState(root, change)

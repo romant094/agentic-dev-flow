@@ -3,11 +3,12 @@
 // Prints one JSON object on stdout; exit 1 on a refusal, exit 2 on a usage error.
 //
 //   sweep.mjs inputs --change <name> [--root <change worktree>]
-//       { ok, change, base, mergeBase, head, range, secondQuestion,
+//       { ok, change, base, mergeBase, head, round, range, secondQuestion,
 //         removedOrRenamed: [{ op, requirement, from?, codeDisposition, spec }],
 //         missingDisposition, dupMarkers: [{ file, line, existing, reason, wholeFile }] }
 //       base is `origin/<base>` when that ref exists, else `<base>`, from the change's metadata;
-//       range is merge-base..HEAD, the diff the sweep reads. secondQuestion is true when a delta
+//       range is merge-base..HEAD, the diff the sweep reads; in apply round `round` (0 before
+//       any, `plan.mjs reopen`) the round's base..HEAD. secondQuestion is true when a delta
 //       spec carries REMOVED or RENAMED; codeDisposition null is itself a finding.
 //   sweep.mjs filter <reply file> [--root <change worktree>] [--record --change <name>]
 //       { ok, verdict, findings, dropped, dispositions?, debt? }: the validated sweep reply with
@@ -22,7 +23,8 @@
 //       recorded as a `consolidation` ledger record; fix, reReview and sweep are the round's
 //       dispatch names (`fix sweep r<k>`, `re-review sweep r<k>`, `sweep r<k>`). A round whose
 //       re-sweep has no accepted reply is returned again with already true, nothing recorded.
-//       Refused with nothing open, and after the last round (lib/dispatch.mjs MAX_ROUNDS).
+//       Refused with nothing open, and after the last round (lib/dispatch.mjs MAX_ROUNDS). In an
+//       apply round its findings and rounds count from the round's start: round 1 again.
 //
 // A relative <reply file> is read from --root (default: the current directory).
 import { readFileSync } from 'node:fs'

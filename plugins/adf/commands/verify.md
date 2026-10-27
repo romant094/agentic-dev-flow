@@ -57,4 +57,5 @@ names is passed as the name; otherwise the active change answers in step 1.
 
 9. **Report.** Show the `report` that `assemble` returned. End with what is blocked on the
     developer, if anything; the report carries the next step: `/adf:review` on `PASS` or `PASS
-    WITH WARNINGS`; on `FAIL`, the fix the failing checks name and then `/adf:verify` again.
+    WITH WARNINGS`; on `FAIL`, the fix the failing checks name (code through an apply round,
+    `plan.mjs reopen`, then `/adf:apply`) and then `/adf:verify` again.

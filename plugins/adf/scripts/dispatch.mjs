@@ -42,8 +42,9 @@
 //       records one attempt of the dispatch and returns { ok, name, attempt, next }: attempt the
 //       count of its dispatches, for the metrics; next read from its refused replies since its
 //       last valid one, never from that count: dispatch (none refused), retry (one), stop (two:
-//       BLOCKED). Counted from the name's last developer reset, and for verify and the review
-//       stage from the current run's start, as reply counts them. A stop carries reset: { command, note }, the
+//       BLOCKED). Counted from the name's last developer reset, and for verify, the review
+//       stage and the roles an apply round runs again (final-review, sweep, fix, re-review) from
+//       the current run's start, as reply counts them. A stop carries reset: { command, note }, the
 //       `dispatch.mjs reset` command and that the developer is asked first (none for ai-review,
 //       ai-fix and verify)
 //   dispatch.mjs reset   --change <name> --name "<dispatch name>" --reason "<text>" [--yes <plan>]
@@ -57,7 +58,8 @@
 //       current preview's
 //   dispatch.mjs round   --change <name> [--task <N> | --group <G>] [--root <change worktree>]
 //       where a fix loop stands, read from the recorded attempts: a task's, a group's after its
-//       merge review, or, with neither, the final review's. A round is complete once its
+//       merge review, or, with neither, the final review's (from the current apply round's
+//       start, `plan.mjs reopen`). A round is complete once its
 //       re-review was attempted. { ok, subject, completed, max, next, round?, fix?, reReview? }:
 //       next `fix` names the round's two dispatches; at the breaker (MAX_ROUNDS) next is
 //       `adjudicate` for a task and `escalate-to-developer` for a group or the final review, and
@@ -87,7 +89,8 @@
 // task, the group, or the final review) has an accepted review carries `Open findings`, rendered
 // from the results and the rulings, so its question file becomes optional; with no open finding
 // it refuses. `final-review` writes .superpowers/sdd/<change>/deferred.json and carries what the
-// earlier reviews deferred. The `review` of a test-first task runs its proof first when the
+// earlier reviews deferred. In an apply round the final review's loop, the sweep's findings and
+// consolidation rounds and the deferred list read only the round's events and records. The `review` of a test-first task runs its proof first when the
 // planning guide has a `## Test-first shares` section (lib/tdd-proof.mjs taskProof) and carries
 // the result; without it, the reviewer runs tdd-proof. reply then adds to a task review's result
 // the proof's critical finding (proof false, commitPasses true), to a sweep's the HEAD it ran
@@ -126,10 +129,12 @@ import { fixTarget, Refusal } from './lib/review-state.mjs'
 import { recordDispositions, recordReSweep, sweepInputs } from './lib/sweep.mjs'
 import { readRecords } from './lib/ledger.mjs'
 import {
+  atOrAfter,
   consolidationState,
   LOOP_ROLES,
   openFindings,
   renderDeferred,
+  roundStart,
   subjectHistory,
   subjectOf,
   subjectState,
@@ -326,7 +331,8 @@ function promptFor(inputs, plan, values, root, planText, main) {
     // review results and the rulings, once a review of the subject is recorded.
     if ((inputs.role === 'fix' || inputs.role === 're-review') && inputs.subject === SWEEP_SUBJECT) {
       // A consolidation round: the open sweep findings and its own loop's, in their files.
-      if (!readRecords(root, change).some((r) => r.kind === 'consolidation' && r.round === String(inputs.round))) {
+      const records = readRecords(root, change)
+      if (!records.filter(atOrAfter(roundStart(records))).some((r) => r.kind === 'consolidation' && r.round === String(inputs.round))) {
         throw new DispatchError(`no consolidation of round ${inputs.round} is recorded: run sweep.mjs consolidate --change ${change} --reason "<why>" first`)
       }
       const state = consolidationState(root, change)
@@ -468,7 +474,8 @@ function recordReplyOf(values, { root, change, main }) {
   if (values.resume !== undefined && !['yes', 'no'].includes(values.resume)) throw new UsageError('--resume is yes or no')
   if (parts.role === 'verify') return recordVerifyReply(root, change, { name, file, resume: values.resume !== 'no' })
   const path = resolve(root, file)
-  // The review stage counts only its current run's events (lib/attempts.mjs runSince).
+  // The review stage and an apply round's restarted roles count only their current run's events
+  // (lib/attempts.mjs runSince).
   const since = runSince(root, change, parts.role)
   // A stopped dispatch's reply is not checked: recordReply refuses it.
   const stopped = standingOf(root, change, name, { since }).next === 'stop'
@@ -533,7 +540,9 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
 
   if (command === 'round') {
     if (Object.keys(values).some((k) => !['change', 'task', 'group', 'root'].includes(k))) throw new UsageError(USAGE)
-    return { ok: true, ...roundOf(readOr(attemptsFile(root, change)) ?? '', { task: number(values.task), group: values.group }) }
+    // The final review's loop counts from the current apply round (lib/attempts.mjs runSince).
+    const final = values.task === undefined && values.group === undefined
+    return { ok: true, ...roundOf(readOr(attemptsFile(root, change)) ?? '', { task: number(values.task), group: values.group, since: final ? runSince(root, change, 'final-review') : null }) }
   }
 
   if (!values.role) throw new UsageError(USAGE)

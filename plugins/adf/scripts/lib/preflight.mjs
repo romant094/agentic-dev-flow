@@ -44,10 +44,17 @@ function readBase(root, change, dir = changeDir(root, change)) {
 // record is committed, and no commit after the one that last wrote it touches a path outside the
 // change directory. The record's verdict is its last `Verdict:` line, the one assemble writes.
 export const VERDICT_LINE = /^Verdict: (PASS WITH WARNINGS|PASS|FAIL)[ \t]*$/gm
+export const lastVerdict = (text) => [...String(text ?? '').matchAll(VERDICT_LINE)].at(-1)?.[1] ?? null
+
+// The failing checks a FAIL record names under `## Next step`, each a "- `<id>`: …" bullet.
+export function failingChecks(text) {
+  const section = /^## Next step\s*$([\s\S]*?)(?=^## |^Verdict: |(?![\s\S]))/m.exec(String(text ?? ''))?.[1] ?? ''
+  return [...section.matchAll(/^- `([^`]+)`:/gm)].map((m) => m[1])
+}
 
 function verifiedCode(root, change, git) {
   const record = `${CHANGES_DIR}/${change}/verify.md`
-  const verdict = [...readFileSync(join(root, record), 'utf8').matchAll(VERDICT_LINE)].at(-1)?.[1] ?? null
+  const verdict = lastVerdict(readFileSync(join(root, record), 'utf8'))
   if (!verdict) return { refusal: `${record} has no Verdict: line; run /adf:verify ${change} again.` }
   if (verdict === 'FAIL') return { verify: { verdict }, refusal: `${record} says Verdict: FAIL; fix what it names and run /adf:verify ${change} before the review.` }
   let commit
@@ -97,7 +104,14 @@ async function changePhase(out, { phase, change, root, env, schema, git }) {
   if (phase === 'apply') {
     out.state = apply.state
     if (apply.state === 'blocked') return stop(`${apply.instruction} Run /adf:propose ${change} to continue its artifacts up to the plan.`)
-    if (apply.state === 'all_done') return stop('Every task is complete; run /adf:verify next.')
+    if (apply.state === 'all_done') {
+      // After a verify FAIL the way back is an apply round (`plan.mjs reopen`).
+      const record = join(changeDir(root, change), 'verify.md')
+      if (existsSync(record) && lastVerdict(readFileSync(record, 'utf8')) === 'FAIL') {
+        return stop(`Every task is complete and ${CHANGES_DIR}/${change}/verify.md says Verdict: FAIL; open an apply round for the fix with plan.mjs reopen --change ${change} --title "<the fix>" --task-file <file>, then run apply again.`)
+      }
+      return stop('Every task is complete; run /adf:verify next.')
+    }
     const { code, result } = await planSymbols([change, '--root', root, '--phase', 'apply'])
     out.planFindings = result.findings
     if (code === 1) return stop(`The plan names ${result.findings.length} thing(s) the tree does not hold; correct plan.md from planFindings, then run apply again.`)

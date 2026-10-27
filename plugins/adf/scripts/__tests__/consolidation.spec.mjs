@@ -7,7 +7,9 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { recordReply } from '../lib/attempts.mjs'
 import { dispatchName, parseName, roundOf } from '../lib/dispatch.mjs'
-import { appendRecord, listRecords } from '../lib/ledger.mjs'
+import { appendRecord, appendScripted, listRecords } from '../lib/ledger.mjs'
+import { sweepState } from '../lib/loop.mjs'
+import { sweepInputs } from '../lib/sweep.mjs'
 import { checkReply, replyContext } from '../lib/reply.mjs'
 import { runCovering } from '../lib/suite.mjs'
 import { run as dispatch } from '../dispatch.mjs'
@@ -148,4 +150,33 @@ test('the fix of a consolidation asks to reuse an existing helper before writing
   const out = call(change, 'prompt', '--role', 'fix', '--subject', 'sweep', '--round', '1')
   assert.match(out.prompt, /Before you write a replacement, search the tree for an existing helper with that behaviour:\sreuse it, or say in `concerns` why not\./)
   assert.doesNotMatch(call(change, 'prompt', '--role', 'sweep', '--round', '1').prompt, /search the tree for an existing helper/)
+})
+
+// An apply round (`plan.mjs reopen`) sweeps again: its range starts at the round's base, and its
+// findings, their ids, rulings and consolidation rounds start anew; round 0's stay where they were.
+test('an apply round sweeps its own diff: findings, ids and consolidation rounds count from the round', () => {
+  const T0 = '2000-01-01T00:00:00.000Z'
+  const made = host({ 'plan.md': PLAN })
+  const { change } = made
+  commitIn(change, 'src/a.ts', 'export const a = 1\n')
+  commitIn(change, 'src/b.ts', 'export const b = 1\n')
+  const head0 = git(change, 'rev-parse', 'HEAD')
+  const old = { introduced: 'src/b.ts:1', existing: 'src/a.ts:1', why: 'Same constant.' }
+  recordReply(change, 'add-x', { name: 'sweep', file: 'sweep.json', result: { verdict: 'FINDINGS', findings: [old], dropped: [], head: head0 }, now: T0 })
+  appendRecord(change, 'add-x', 'ruling', { subject: 'sweep', finding: 'S1', as: 'dismissed', decision: 'round 0 ruled it' }, { now: T0 })
+  // Round 0, no round record: as before.
+  assert.deepEqual([sweepState(change, 'add-x').ran, sweepInputs(change, 'add-x').round], [true, 0])
+  appendScripted(change, 'add-x', 'apply-round', { round: '1', checks: 'tree', task: '2.1', group: 'B', base: head0, verify: head0, frozen: 'A' }, { now: '2000-01-02T00:00:00.000Z' })
+  const head1 = commitIn(change, 'src/c.ts', 'export const c = 1\n')
+  const inputs = sweepInputs(change, 'add-x')
+  assert.deepEqual([inputs.round, inputs.range], [1, `${head0}..${head1}`])
+  assert.deepEqual(sweepState(change, 'add-x'), { ran: false, ids: [], open: [], cleared: [] })
+  assert.throws(() => sweep(['consolidate', '--change', 'add-x', '--reason', 'r', '--root', change]), /nothing to consolidate/)
+  const fresh = { introduced: 'src/c.ts:1', existing: 'src/a.ts:1', why: 'Same constant again.' }
+  recordReply(change, 'add-x', { name: 'sweep', file: 'sweep-2.json', result: { verdict: 'FINDINGS', findings: [fresh], dropped: [], head: head1 } })
+  const state = sweepState(change, 'add-x')
+  assert.deepEqual(state.open.map((f) => [f.id, f.introduced]), [['S1', 'src/c.ts:1']], "round 0's ruling on S1 does not reach the round's S1")
+  const out = sweep(['consolidate', '--change', 'add-x', '--reason', 'consolidate', '--root', change])
+  assert.deepEqual([out.round, out.fix, out.already], [1, 'fix sweep r1', false])
+  assert.equal(call(change, 'prompt', '--role', 'fix', '--subject', 'sweep', '--round', '1').name, 'fix sweep r1')
 })

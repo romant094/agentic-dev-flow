@@ -72,7 +72,7 @@ import { globToRegExp } from './changes.mjs'
 import { APPLY_SCHEMAS, parseGraph, parseName, planDispatch, RETRO_ROLES, retroInputFile, sddDir } from './dispatch.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { readRecords } from './ledger.mjs'
-import { consolidationState, loopState, REVIEW_ROLES, subjectHistory, subjectOf, subjectRulings, SWEEP_SUBJECT } from './loop.mjs'
+import { consolidationState, loopState, REVIEW_ROLES, subjectHistory, subjectOf, subjectRulings, subjectSince, SWEEP_SUBJECT } from './loop.mjs'
 import { parsePlan, rangeCommits, taskMatchers } from './plan.mjs'
 import { readRegistry } from './registry.mjs'
 import { check as checkRetro, compute as computeRetro } from './retro.mjs'
@@ -352,8 +352,11 @@ export function replyContext(root, change, name, { main = root } = {}) {
       Object.assign(ctx, { planText, worktree: plan.worktree, scope: scopeOf(planText, parts) })
     }
     if ([...REVIEW_ROLES, 're-review'].includes(parts.role)) {
-      ctx.history = subjectHistory(readOr(attemptsFile(root, change)) ?? '', subjectOf(parts))
-      ctx.rulings = subjectRulings(readRecords(root, change), subjectOf(parts))
+      // The final review's loop counts from the current apply round (lib/loop.mjs subjectSince).
+      const records = readRecords(root, change)
+      const since = subjectSince(records, subjectOf(parts))
+      ctx.history = subjectHistory(readOr(attemptsFile(root, change)) ?? '', subjectOf(parts), since)
+      ctx.rulings = subjectRulings(records, subjectOf(parts), since)
     }
     if (parts.subject === SWEEP_SUBJECT) ctx.consolidation = consolidationState(root, change)
     if (parts.role === 'sweep') ctx.sweep = sweepInputs(root, change)

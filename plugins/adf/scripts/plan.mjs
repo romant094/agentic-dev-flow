@@ -27,22 +27,42 @@
 //       commits plan.md alone through lib/commit.mjs, with the message
 //       "docs(openspec): record work added during apply to <change>" (`commit`: its sha, or
 //       null when plan.md was already committed); without it the next tick commits the plan.
+//   plan.mjs reopen --change <name> --title <text> --task-file <file> [--root <dir>]
+//       Opens an apply round after a verify FAIL, or adds a task to the round open for that same
+//       FAIL record: appends the fix task (the file holds its text below the back-reference:
+//       Files, Interfaces, Level, Behaviour and acceptance, the steps) to tasks.md under the
+//       round's own group and to plan.md with its back-reference, puts it in the round's own
+//       Execution Graph row (wave 1), commits both files ("docs(openspec): open apply round <r>
+//       of <change>") and writes an `apply-round` ledger record. { ok, round, opened, task,
+//       item, group, frozen, checks, base, commit, record }: `frozen` the groups merged before
+//       the round, which form no pair and get no wave from it; `checks` the failing checks the
+//       record names; `base` the HEAD it opened on, where the round's sweep range starts.
+//       Refused, nothing written, unless verify.md is committed with its last `Verdict:` line
+//       FAIL, and when the task adds a plan-lint error.
+//
+// In an apply round, lint, graph and schedule treat the round's frozen groups as merged base.
 //
 // Exit 2 on a usage error.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { changeDir, globToRegExp, inferChange } from './lib/changes.mjs'
-import { commitPaths } from './lib/commit.mjs'
+import { appendScripted, applyRound, readRecords } from './lib/ledger.mjs'
+import { failingChecks, lastVerdict } from './lib/preflight.mjs'
+import { checkCommitPlace, commitPaths } from './lib/commit.mjs'
 import { PLANNING_GUIDE } from './lib/host-files.mjs'
 import { groupState } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
 import {
   addDuringApply,
   addedMessage,
+  addRoundTask,
   computeGraph,
   DEFAULT_CAP,
+  frozenGroups,
   lintPlanText,
+  lintTasks,
   parseDependsSpec,
+  parseGraph,
   parseGroupsSpec,
   parsePlan,
   parseTaskItems,
@@ -59,7 +79,7 @@ import { loadSchema } from './lib/schema.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
 import { gitIn } from './lib/workspace.mjs'
 
-const USAGE = 'usage: plan.mjs lint|graph|schedule|unplanned|added [--change <name>] [--root <dir>] (see the header for each command; without --change, the one active change under the root)'
+const USAGE = 'usage: plan.mjs lint|graph|schedule|unplanned|added|reopen [--change <name>] [--root <dir>] (see the header for each command; without --change, the one active change under the root)'
 
 class Usage extends Error {}
 class Refusal extends Error {}
@@ -85,6 +105,8 @@ function options(argv, flags, switches = []) {
 }
 
 const read = (path) => (existsSync(path) ? readFileSync(path, 'utf8') : null)
+// The groups the current apply round froze; none in round 0.
+const frozenOf = (root, change) => applyRound(readRecords(root, change))?.frozen ?? []
 const rel = (change, file) => `openspec/changes/${change}/${file}`
 
 function changeFiles(root, change) {
@@ -144,7 +166,8 @@ async function lint(o) {
     guideText: read(join(o.root, PLANNING_GUIDE)),
     planFile: rel(o.change, 'plan.md'),
     tasksFile: rel(o.change, tracks),
-    designFile: rel(o.change, 'design.md')
+    designFile: rel(o.change, 'design.md'),
+    frozen: frozenOf(o.root, o.change)
   })
   if (tasksText === null) findings.push({ severity: 'error', kind: 'no-tasks-file', file: rel(o.change, tracks), line: null, message: `${rel(o.change, tracks)} does not exist` })
   const swept = await sweepDeletes(tasks, { grep: grepIn(o.root), read: (p) => readFileSync(join(o.root, p), 'utf8'), exclude: archiveOwned(o.root) })
@@ -165,7 +188,12 @@ function graph(o) {
     throw new Usage(error.message)
   }
   const { tasks } = parsePlan(planText)
-  const g = computeGraph(tasks, spec, { depends, coupling })
+  // A frozen group keeps the wave and the dependencies the current graph gives it.
+  const current = parseGraph(planText)
+  const frozen = Object.fromEntries(
+    frozenOf(o.root, o.change).map((l) => [l, { wave: current?.groups.find((g) => g.letter === l)?.wave ?? 1, dependsOn: current?.depends[l] ?? [] }])
+  )
+  const g = computeGraph(tasks, spec, { depends, coupling, frozen })
   const groups = g.groups.map(({ letter, tasks: t, files, wave, dependsOn }) => ({ letter, tasks: t, files, wave, dependsOn }))
   const pairs = g.pairs.map(({ a, b, floor, shared, coupling: c, criticality, reason }) => ({ a, b, floor, shared, coupling: c, ...(criticality ? { criticality } : {}), reason }))
   const errors = [...g.errors, ...(o.write ? g.undecided.map((p) => `pair ${p}: the floor is weak-or-medium; decide weak or medium in --coupling`) : [])]
@@ -194,7 +222,7 @@ function scheduleCmd(o) {
   const items = parseTaskItems(tasksText ?? '')
   // A group is merged when the change branch holds its branch's merge commit (lib/groups.mjs).
   const state = groupState(o.root, o.change)
-  const result = schedule(planText, { state, ticked: (id) => items.some((i) => i.id === id && i.done), cap })
+  const result = schedule(planText, { state, ticked: (id) => items.some((i) => i.id === id && i.done), cap, frozen: frozenOf(o.root, o.change) })
   return { code: result.ok ? 0 : 1, result: { ...result, branch, root: o.root } }
 }
 
@@ -242,6 +270,53 @@ function added(o) {
   return { code: 0, result }
 }
 
+// `reopen`: one fix task of an apply round, after a verify FAIL. The round answers one FAIL
+// record: a second call for the same record adds to the open round, a FAIL record committed
+// after it opens the next.
+function reopen(o) {
+  if (!o.title || !o['task-file']) throw new Usage('--title and --task-file are required')
+  const { dir, planPath, planText, tasksText, tracks } = changeFiles(o.root, o.change)
+  if (tasksText === null) throw new Refusal(`${rel(o.change, tracks)} does not exist`)
+  const recordText = read(join(dir, 'verify.md'))
+  const verdict = lastVerdict(recordText)
+  if (verdict !== 'FAIL') {
+    const state = recordText === null ? 'does not exist' : verdict ? `says Verdict: ${verdict}` : 'has no Verdict: line'
+    throw new Refusal(`an apply round answers a verify FAIL, and ${rel(o.change, 'verify.md')} ${state}; nothing written`)
+  }
+  const git = gitIn(o.root)
+  const verify = git('log', '-1', '--format=%H', '--', rel(o.change, 'verify.md'))
+  if (!verify) throw new Refusal(`${rel(o.change, 'verify.md')} is not committed; run /adf:verify ${o.change} to assemble and commit it`)
+  const body = read(resolve(o['task-file']))
+  if (body === null) throw new Refusal(`no task file ${o['task-file']}`)
+  const last = applyRound(readRecords(o.root, o.change))
+  const same = last?.verify === verify
+  const round = same ? last.round : (last?.round ?? 0) + 1
+  const items = parseTaskItems(tasksText)
+  const ticked = (id) => items.some((i) => i.id === id && i.done)
+  const frozen = same ? last.frozen : frozenGroups(planText, { state: groupState(o.root, o.change), ticked, frozen: last?.frozen ?? [] })
+  let out
+  try {
+    out = addRoundTask({ planText, tasksText, title: o.title, body, round, item: same ? Number(last.tasks[0].split('.')[0]) : null, group: same ? last.group : null })
+  } catch (error) {
+    throw new Refusal(error.message)
+  }
+  // The task passes the lints the plan passed: an error it adds refuses, nothing written.
+  const lintErrors = (p, t) =>
+    [...lintPlanText({ planText: p, tasksText: t, frozen }).findings, ...lintTasks(t)].filter((f) => f.severity === 'error').map((f) => `${f.kind}: ${f.message}`)
+  const before = new Set(lintErrors(planText, tasksText))
+  const added = lintErrors(out.planText, out.tasksText).filter((e) => !before.has(e))
+  if (added.length) throw new Refusal(`the round's task does not pass the plan lint, nothing written: ${added.join('; ')}`)
+  checkCommitPlace(o.root)
+  const base = git('rev-parse', 'HEAD')
+  writeFileSync(planPath, out.planText)
+  writeFileSync(join(dir, tracks), out.tasksText)
+  const { commit } = commitPaths(o.root, { only: [rel(o.change, 'plan.md'), rel(o.change, tracks)], message: `docs(openspec): open apply round ${round} of ${o.change}` })
+  const checks = failingChecks(recordText)
+  const list = (values) => (values.length ? values.join(',') : 'none')
+  const { record } = appendScripted(o.root, o.change, 'apply-round', { round: String(round), checks: list(checks), task: out.item, group: out.group ?? 'none', base, verify, frozen: list(frozen) })
+  return { code: 0, result: { ok: true, round, opened: !same, task: out.task, item: out.item, group: out.group, frozen, checks, base, commit, record } }
+}
+
 export async function run(argv) {
   try {
     const command = argv[0]
@@ -250,7 +325,8 @@ export async function run(argv) {
       graph: [['root', 'groups', 'depends', 'coupling'], ['write']],
       schedule: [['root', 'cap'], []],
       unplanned: [['root'], []],
-      added: [['root', 'path', 'why', 'task', 'verb', 'date'], ['commit']]
+      added: [['root', 'path', 'why', 'task', 'verb', 'date'], ['commit']],
+      reopen: [['root', 'title', 'task-file'], []]
     }[command]
     if (!spec) throw new Usage(`unknown command "${command ?? ''}"`)
     const o = options(argv, ['change', ...spec[0]], spec[1])
@@ -258,6 +334,7 @@ export async function run(argv) {
     if (command === 'graph') return graph(o)
     if (command === 'schedule') return scheduleCmd(o)
     if (command === 'unplanned') return unplannedCmd(o)
+    if (command === 'reopen') return reopen(o)
     return added(o)
   } catch (error) {
     if (error instanceof Usage) return { code: 2, result: { ok: false, error: `${error.message}\n${USAGE}` } }

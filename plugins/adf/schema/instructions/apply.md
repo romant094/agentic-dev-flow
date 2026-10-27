@@ -329,7 +329,7 @@ the reviewer runs the proof.
 The per-task code review and the final whole-branch review come with
 `subagent-driven-development`; do not invoke them by hand. The final whole-branch review runs at
 the architecture level once every group is merged: it catches defects between tasks that no task
-review saw.
+review saw. It runs once per apply round, below: in a round, over the round's range.
 
 **Tick a task when its last dispatch returns.**
 
@@ -427,10 +427,11 @@ continues and merges. Only the wave-2 groups that depend on it wait. Apply concl
 every group worktree is merged and removed; a blocked group pauses apply, with its worktree
 kept for the developer.
 
-**The code reuse sweep: once per change, over the merged branch.**
+**The code reuse sweep: once per change, over the merged branch.** An apply round, below, runs it
+once more, over the round's diff.
 
 When every group is merged, every task ticked and the final review's fixes are in, issue the
-`sweep` dispatch, exactly once, before the whole-suite run; a consolidation's re-sweep is a
+`sweep` dispatch, exactly once per apply round, before the whole-suite run; a consolidation's re-sweep is a
 dispatch of its own, below. Never per group: a duplicate
 introduced by two groups is invisible to either group's own sweep, and that is the case most
 worth catching. It is not a phase: no artifact, no verify check, no command. `dispatch.mjs`
@@ -508,6 +509,33 @@ ADF DUP <existing> -- <reason>
 `<existing>` is the finding's `existing` value, relative to the repository root; `<reason>` is
 the developer's, in one line. For example `// ADF DUP src/a.ts:12 -- the wire format differs`
 or `# ADF DUP config/base.yaml:4 -- kept per environment`.
+
+**An apply round after a verify FAIL.** Round 0 is the apply above. When verify's record says
+`Verdict: FAIL` and the code must change, preflight refuses apply with every task ticked and names
+the round. Write the fix task's text below its back-reference (Files, Interfaces, Level,
+Behaviour and acceptance, the steps, test-first where the plan format asks) into a file, then:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" reopen --change <change> --title "<the fix>" --task-file <file> --root <root>
+```
+
+It refuses unless `verify.md` is committed with its last `Verdict:` line `FAIL`; a `PASS WITH
+WARNINGS` record goes to the review, whose fix loop takes defects. It appends the item to
+`tasks.md` under the round's own group, the task to `plan.md` with its back-reference, and the
+task to the round's own wave-1 row of the Execution Graph; it refuses a task that adds a plan-lint
+error, commits both files, and writes the `apply-round` ledger record: the round, the failing
+checks, the task, the base (the HEAD it opened on) and the groups it froze. Another task for the
+same `FAIL` record joins the round; a later `FAIL` record opens the next. Never edit `tasks.md`
+or `plan.md` by hand for a round.
+
+The groups merged before the round are frozen base: `plan.mjs lint`, `graph` and `schedule` and
+`apply-status.mjs` count them merged, pair them with no group and give them no wave, so the
+round's group is wave 1 and, alone, runs in the change worktree. Then apply runs as above for
+the round's tasks: their reviews, the final whole-branch review over the round's range (`base`
+to HEAD, `apply-status.mjs` `round.base`), the reuse sweep over the same range against the whole
+tree (`sweep.mjs inputs` reads it), the whole suite. The final review, the sweep, their fix
+loops and the consolidation keep their names; their attempts, findings, ids, rulings and rounds
+count from the round's start, so each starts anew. Then run verify again.
 
 **The whole suite, once, at the end.**
 

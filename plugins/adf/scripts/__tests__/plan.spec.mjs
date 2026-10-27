@@ -9,7 +9,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   addDuringApply,
+  addRoundTask,
   computeGraph,
+  frozenGroups,
   graphFindings,
   lintPlanText,
   packagesFromGuide,
@@ -503,4 +505,120 @@ test('plan.mjs added --commit commits plan.md alone with the fixed message; noth
   assert.equal(gitOut(change, 'show', '--name-only', '--format=', 'HEAD'), 'openspec/changes/add-x/plan.md')
   assert.match(readFileSync(join(dir, 'plan.md'), 'utf8'), /Added during apply, 2026-10-15/)
   assert.equal((await run(args)).result.commit, null)
+})
+
+// ---------------------------------------------------------------- an apply round
+
+// A fix task writing src/t1.ts, which group A (Tasks 1, 2) wrote and merged before the round.
+const FIX_BODY = [
+  '**Files:**',
+  '- Modify: `src/t1.ts` — the fix',
+  '',
+  '**Interfaces:** none',
+  '',
+  '**Level:** integration',
+  '',
+  '**Behaviour and acceptance:** the failing check passes.',
+  '',
+  '- [ ] **Step 1: RED** — a test',
+  '- [ ] **Step 2: GREEN** — the code',
+  '- [ ] **Step 3: Commit** — `fix: x`'
+].join('\n')
+const DONE = TASKS.replaceAll('[ ]', '[x]')
+const reopened = () => addRoundTask({ planText: plan(), tasksText: DONE, title: 'fix the tree check', body: FIX_BODY, round: 1 })
+
+test('a round task conflicting with a merged group gets wave 1, and the merged group stays independent', () => {
+  const { planText } = reopened()
+  const { tasks } = parsePlan(planText)
+  const spec = [{ letter: 'A', tasks: [1, 2] }, { letter: 'B', tasks: [3] }, { letter: 'C', tasks: [4] }]
+  // Without the round's frozen base, every group is unexecuted: C waits on A.
+  const naive = computeGraph(tasks, spec)
+  assert.deepEqual(naive.groups.map((g) => [g.letter, g.wave, g.dependsOn]), [['A', 1, []], ['B', 1, []], ['C', 2, ['A']]])
+  const frozen = { A: { wave: 1, dependsOn: [] }, B: { wave: 1, dependsOn: [] } }
+  const g = computeGraph(tasks, spec, { frozen, depends: { C: ['A'] } })
+  assert.deepEqual(g.groups.map((x) => [x.letter, x.wave, x.dependsOn]), [['A', 1, []], ['B', 1, []], ['C', 1, []]])
+  assert.deepEqual([g.pairs, g.errors], [[], []])
+  // The graph check: the floor of A/C is no error once A is frozen.
+  assert.deepEqual(kinds(errors(graphFindings(planText))), ['graph-floor'])
+  assert.deepEqual(errors(graphFindings(planText, undefined, { frozen: ['A', 'B'] })), [])
+  // The schedule: the frozen groups are merged base, and the round's group is the single live one.
+  const s = schedule(planText, { state: () => ({ merged: false, kept: false }), ticked: (id) => id !== '3.1', frozen: ['A', 'B'] })
+  assert.deepEqual([s.single, s.groups.map((x) => [x.letter, x.state]), s.startNow], [true, [['A', 'done'], ['B', 'done'], ['C', 'pending']], [3]])
+  assert.deepEqual(frozenGroups(plan(), { state: (n) => ({ merged: n <= 2, kept: false }), ticked: () => true }), ['A', 'B'])
+  assert.deepEqual(frozenGroups(plan(), { state: (n) => ({ merged: n === 1, kept: false }), ticked: () => true }), ['A'], 'an unmerged group is not frozen')
+})
+
+test('addRoundTask appends the item, the task and the graph row; a second task joins the round', () => {
+  const first = reopened()
+  assert.deepEqual([first.task, first.item, first.group], [4, '3.1', 'C'])
+  assert.ok(first.tasksText.endsWith('## 3. Apply round 1\n\n- [ ] 3.1 fix the tree check\n'), first.tasksText)
+  assert.ok(first.planText.includes('### Task 4: fix the tree check\n\n> Implements `tasks.md` 3.1.\n\n**Files:**'))
+  assert.equal(parseGraph(first.planText).groups.at(-1).line, parseGraph(plan()).groups.at(-1).line + 1)
+  assert.ok(first.planText.includes('| C | 4 | `src/t1.ts` | 1 |'))
+  assert.deepEqual(errors(lintPlanText({ planText: first.planText, tasksText: first.tasksText, frozen: ['A', 'B'] }).findings), [])
+  const second = addRoundTask({ planText: first.planText, tasksText: first.tasksText, title: 'and the docs', body: FIX_BODY.replace('src/t1.ts', 'src/t2.ts'), round: 1, item: 3, group: 'C' })
+  assert.deepEqual([second.task, second.item, second.group], [5, '3.2', 'C'])
+  assert.ok(second.planText.includes('| C | 4, 5 | `src/t1.ts`, `src/t2.ts` | 1 |'))
+  assert.deepEqual(errors(lintPlanText({ planText: second.planText, tasksText: second.tasksText, frozen: ['A', 'B'] }).findings), [])
+  assert.throws(() => addRoundTask({ planText: plan(), tasksText: DONE, title: 't', body: `### Task 9: x\n${FIX_BODY}`, round: 1 }), /"###" heading/)
+  assert.throws(() => addRoundTask({ planText: plan(), tasksText: DONE, title: 'two\nlines', body: FIX_BODY, round: 1 }), /one non-empty line/)
+})
+
+test('plan.mjs reopen: refused without a committed FAIL; then writes both files, commits them and records the round', async () => {
+  const { host, commitIn, git: gitOut } = await import('./git-host.mjs')
+  const { readRecords } = await import('../lib/ledger.mjs')
+  const { change, dir } = host({ 'plan.md': plan(), 'tasks.md': DONE })
+  // Groups A and B were merged into the change branch.
+  for (const n of [1, 2]) {
+    gitOut(change, 'checkout', '-q', '-b', `feat/add-x--group-${n}`)
+    commitIn(change, `src/t${n}.ts`, 'x\n')
+    gitOut(change, 'checkout', '-q', 'feat/add-x')
+    gitOut(change, 'merge', '-q', '--no-ff', '--no-edit', `feat/add-x--group-${n}`)
+  }
+  const body = join(realpathSync(mkdtempSync(join(tmpdir(), 'adf-reopen-'))), 'task.md')
+  writeFileSync(body, FIX_BODY)
+  const reopen = (title = 'fix the tree check', file = body) => run(['reopen', '--change', 'add-x', '--root', change, '--title', title, '--task-file', file])
+  const clean = () => gitOut(change, 'status', '--porcelain')
+  assert.match((await reopen()).result.error, /verify\.md does not exist; nothing written/)
+  commitIn(change, 'openspec/changes/add-x/verify.md', '# Verification Report\n\nVerdict: PASS WITH WARNINGS\n')
+  const warned = await reopen()
+  assert.deepEqual([warned.code, clean()], [1, ''])
+  assert.match(warned.result.error, /says Verdict: PASS WITH WARNINGS/)
+  const FAIL = '# Verification Report\n\n## Next step\n\nFix what each failing check names, then run verify again:\n\n- `tree`: no code\n- `ext:db:schema`: drift\n\nVerdict: FAIL\n'
+  const verify = commitIn(change, 'openspec/changes/add-x/verify.md', FAIL)
+  const base = gitOut(change, 'rev-parse', 'HEAD')
+  const out = await reopen()
+  assert.equal(out.code, 0, out.result.error)
+  assert.deepEqual(
+    [out.result.round, out.result.opened, out.result.task, out.result.item, out.result.group, out.result.frozen, out.result.checks, out.result.base],
+    [1, true, 4, '3.1', 'C', ['A', 'B'], ['tree', 'ext:db:schema'], base]
+  )
+  assert.equal(gitOut(change, 'log', '-1', '--format=%s'), 'docs(openspec): open apply round 1 of add-x')
+  assert.equal(gitOut(change, 'show', '--name-only', '--format=', 'HEAD'), 'openspec/changes/add-x/plan.md\nopenspec/changes/add-x/tasks.md')
+  assert.match(readFileSync(join(dir, 'tasks.md'), 'utf8'), /## 3\. Apply round 1\n\n- \[ \] 3\.1 fix the tree check\n$/)
+  const record = readRecords(change, 'add-x').at(-1)
+  assert.deepEqual(
+    [record.kind, record.round, record.checks, record.task, record.group, record.base, record.verify, record.frozen],
+    ['apply-round', '1', 'tree,ext:db:schema', '3.1', 'C', base, verify, 'A,B']
+  )
+  // The round's lint and schedule: A and B are merged base, C runs alone in the change worktree.
+  assert.equal((await run(['lint', '--change', 'add-x', '--root', change])).result.ok, true)
+  const s = (await run(['schedule', '--change', 'add-x', '--root', change])).result
+  assert.deepEqual([s.single, s.groups.map((g) => g.state), s.startNow], [true, ['done', 'done', 'pending'], [3]])
+  const { applyStatus } = await import('../lib/apply-status.mjs')
+  const status = applyStatus(change, 'add-x')
+  assert.deepEqual([status.single, status.remaining, status.round], [true, ['3.1'], { round: 1, base, checks: ['tree', 'ext:db:schema'], tasks: ['3.1'], group: 'C', frozen: ['A', 'B'] }])
+  // A second task for the same FAIL record joins the round.
+  const more = await reopen('and the docs')
+  assert.deepEqual([more.result.round, more.result.opened, more.result.item, more.result.group], [1, false, '3.2', 'C'])
+  // plan.mjs graph keeps the frozen groups' waves and pairs them with nothing.
+  const regraph = (await run(['graph', '--change', 'add-x', '--root', change, '--groups', 'A=1,2;B=3;C=4,5'])).result
+  assert.deepEqual([regraph.ok, regraph.groups.map((g) => [g.letter, g.wave, g.dependsOn]), regraph.pairs], [true, [['A', 1, []], ['B', 1, []], ['C', 1, []]], []])
+  // A task the plan lint refuses writes nothing.
+  writeFileSync(body, FIX_BODY.replace('**Level:** integration\n', ''))
+  const head = gitOut(change, 'rev-parse', 'HEAD')
+  const bad = await reopen('no level')
+  assert.equal(bad.code, 1)
+  assert.match(bad.result.error, /does not pass the plan lint, nothing written: missing-field: Task 6 has no \*\*Level:\*\*/)
+  assert.deepEqual([gitOut(change, 'rev-parse', 'HEAD'), clean(), readRecords(change, 'add-x').filter((r) => r.kind === 'apply-round').length], [head, '', 2])
 })
