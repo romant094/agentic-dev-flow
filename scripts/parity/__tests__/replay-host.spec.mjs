@@ -35,8 +35,8 @@ const ROOT_INDEX = [
 const BLOCK = (header) => [header, '|---|---|---|---|---|---|', '| `snmp-01` | Pool leaks | `pool.ts:10` | defect | `x` | K-9 |', ''].join('\n')
 
 // An origin whose develop holds the host files the switch meets; `block` is the snmp block's
-// table header.
-function fixtureOrigin({ block = '| ID | Title | Anchors | Class | Source | Jira |' } = {}) {
+// table header; `extra` adds or replaces files.
+function fixtureOrigin({ block = '| ID | Title | Anchors | Class | Source | Jira |', extra = {} } = {}) {
   const dir = join(realpathSync(mkdtempSync(join(tmpdir(), 'adf-host-origin-'))), 'origin')
   execFileSync('git', ['init', '-q', '-b', 'develop', dir])
   const files = {
@@ -45,7 +45,8 @@ function fixtureOrigin({ block = '| ID | Title | Anchors | Class | Source | Jira
     '.claude/memory/tech-debt/index.md': ROOT_INDEX,
     '.claude/memory/tech-debt/snmp/index.md': BLOCK(block),
     'openspec/specs/x/spec.md': '# x Specification\n\n## Purpose\n\nThe x capability is a fixture capability of the host setup test only.\n\n## Requirements\n\n### Requirement: X\n\nThe system SHALL x.\n\n#### Scenario: x\n\n- **WHEN** x\n- **THEN** x\n',
-    'package.json': '{ "name": "host", "private": true }\n'
+    'package.json': '{ "name": "host", "private": true }\n',
+    ...extra
   }
   for (const [path, text] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true })
@@ -138,6 +139,26 @@ test('the setup records each debt refusal with its minimal edit, commits on deve
     assert.ok(installed.plugins['superpowers@claude-plugins-official'][0].installPath.startsWith(sandbox.root))
   })
   assert.deepEqual(snapshot(origin.dir), before)
+})
+
+test('the setup runs init\'s worktree preparation step: every candidate confirmed, written to the host guide and committed', () => {
+  const origin = fixtureOrigin({
+    extra: {
+      'package.json': `${JSON.stringify({ name: 'host', private: true, workspaces: ['packages/*', 'apps/*'] })}\n`,
+      'packages/shared/package.json': `${JSON.stringify({ name: '@host/shared', scripts: { build: 'tsc' }, main: 'dist/index.js' })}\n`,
+      'apps/server/package.json': `${JSON.stringify({ name: '@host/server', dependencies: { '@host/shared': '*' } })}\n`
+    }
+  })
+  withHost(origin, (sandbox, c) => {
+    const r = setupHost(sandbox, c, { registry: REGISTRY, change: 'add-x' })
+    assert.equal(r.ok, true, editReport(r))
+    assert.deepEqual(r.unclaimed, [])
+    const prepare = r.edits.filter((e) => e.kind === 'prepare')
+    assert.deepEqual(prepare.map((e) => [e.path, e.step]), [['openspec/planning.md', 'prepare.mjs add npm run build --workspace @host/shared']])
+    assert.match(prepare[0].why, /@host\/server depends on @host\/shared/)
+    const guide = git(c.main, 'show', 'HEAD:openspec/planning.md')
+    assert.match(guide, /^## Worktree preparation$[\s\S]*^- `npm run build --workspace @host\/shared` from `packages\/shared`$/m)
+  })
 })
 
 test('a refusal no rule fixes is recorded with no edit, and the setup is not ok', () => {

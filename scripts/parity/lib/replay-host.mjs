@@ -8,8 +8,10 @@
 //      directory (the replay runs no Superpowers skill); known_marketplaces.json names this
 //      repository as a directory marketplace, as a local install does.
 //   2. extensions.mjs init; extensions.mjs branches --integration develop; debt.mjs root --set
-//      <debt root>; extensions.mjs add <this repository's plugin directory> --config <json> for
-//      each registry entry, in order (a path entry, not an installed id).
+//      <debt root>; with an empty recipe, prepare.mjs candidates and prepare.mjs add for each
+//      candidate, every one confirmed as init offers it (init's step 4); extensions.mjs add <this
+//      repository's plugin directory> --config <json> for each registry entry, in order (a path
+//      entry, not an installed id).
 //   3. The planning guide sections the switch writes from recorded values: the whole-suite
 //      command through `suite.mjs set`, the others by section.
 //   4. The host checks, before any of the edits below: each refusal is recorded as it is, and
@@ -223,7 +225,7 @@ export const passed = (checks) => checks.registry.ok && checks.debt.ok && checks
 // out; `change` (optional) names the change propose's preflight is run for. Returns
 //   { ok, edits: [{ path, step, kind, why }], refusals: [{ check, file, line, message, edit | null }],
 //     environment: [{ path, why }], unclaimed: [path], before, checks, commit, pushed, notes }
-// kind: init | branches | debt-root | add | recorded | refusal | stub. `before` holds the host
+// kind: init | branches | debt-root | prepare | add | recorded | refusal | stub. `before` holds the host
 // checks run before any edit of this step's own (after init, branches, the debt root and the
 // plugins), so every refusal the origin tree raises is in it.
 export function setupHost(sandbox, candidate, { registry = recordedRegistry(), guide = RECORDED_GUIDE, integration = 'develop', debtRoot = DEBT_ROOT, change = null, message = MESSAGE } = {}) {
@@ -274,6 +276,18 @@ export function setupHost(sandbox, candidate, { registry = recordedRegistry(), g
     const out = step('debt.mjs root --set', 'debt-root', (path, r) => (path === '.claude/adf-extensions.json' ? `debt.root = ${debtRoot}` : path === `${debtRoot}/index.md` && r.json?.created ? 'the debt tree\'s root index' : null), () => run.core('debt.mjs', 'root', '--set', debtRoot))
     if (out.json?.ok !== true) refuse('debt.mjs root --set', out)
   } else notes.push(`debt.root was already ${root.json?.root}`)
+
+  // Init's worktree preparation: with an empty recipe, every candidate confirmed as offered.
+  const recipe = run.core('prepare.mjs', 'recipe')
+  if (recipe.exit !== 0) refuse('prepare.mjs recipe', recipe)
+  if (recipe.json.steps.length === 0) {
+    const offered = run.core('prepare.mjs', 'candidates')
+    if (offered.exit !== 0) refuse('prepare.mjs candidates', offered)
+    for (const c of offered.json.candidates) {
+      const out = step(`prepare.mjs add ${c.command}`, 'prepare', (path) => (path === 'openspec/planning.md' ? `## Worktree preparation: \`${c.command}\` from ${c.inputs.join(', ')}, the candidate init offers, confirmed (${c.why})` : null), () => run.core('prepare.mjs', 'add', '--command', c.command, ...c.inputs.flatMap((p) => ['--input', p])))
+      if (out.exit !== 0) refuse(`prepare.mjs add ${c.command}`, out)
+    }
+  } else notes.push(`the worktree preparation recipe already had ${recipe.json.steps.length} step(s)`)
 
   for (const entry of registry) {
     const args = ['add', entry.path, ...(entry.config ? ['--config', JSON.stringify(entry.config)] : [])]
