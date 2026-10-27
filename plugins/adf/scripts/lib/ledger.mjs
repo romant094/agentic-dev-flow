@@ -183,10 +183,28 @@ export function appendAttemptReset(root, change, fields, { env = process.env, no
 //                                            what the round's re-sweep cleared and left open
 //   switch         from, to, pointer         `changes.mjs active`: the active-change pointer of
 //                                            a checkout moved from one change to this one
+//   apply-round    round, checks, task,      `plan.mjs reopen`: one fix task of an apply round
+//                  group, base, verify,      after a verify FAIL (applyRound)
+//                  frozen
 export const SCRIPTED = {
   consolidation: ['round', 'findings', 'reason'],
   're-sweep': ['round', 'cleared', 'open'],
-  switch: ['from', 'to', 'pointer']
+  switch: ['from', 'to', 'pointer'],
+  'apply-round': ['round', 'checks', 'task', 'group', 'base', 'verify', 'frozen']
+}
+
+// The current apply round, from the `apply-round` records of its number: { round, at, base,
+// verify, group, frozen, checks, tasks }. `at` and `base` (the HEAD it opened on) are its first
+// record's; `verify` the commit of the FAIL record it answers; `group` its Execution Graph
+// letter, null when the graph has no group table; `frozen` the groups merged before it. Null
+// before any round: round 0 is the original apply.
+export function applyRound(records) {
+  const all = records.filter((r) => r.kind === 'apply-round')
+  if (all.length === 0) return null
+  const of = all.filter((r) => r.round === all.at(-1).round)
+  const first = of[0]
+  const list = (v) => (v === 'none' ? [] : v.split(','))
+  return { round: Number(first.round), at: first.at, base: first.base, verify: first.verify, group: first.group === 'none' ? null : first.group, frozen: list(first.frozen), checks: list(first.checks), tasks: of.map((r) => r.task) }
 }
 
 export function appendScripted(root, change, kind, fields, { env = process.env, now = new Date().toISOString() } = {}) {

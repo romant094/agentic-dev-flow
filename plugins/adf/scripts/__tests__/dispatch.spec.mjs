@@ -11,8 +11,9 @@ import { schedule } from '../lib/plan.mjs'
 import { dispatchName, MAX_ROUNDS, normalize, parseGraph, parseName, planDispatch, renderPrompt, ROLES, roundOf, ruleSkeletons, verbatimBlocks } from '../lib/dispatch.mjs'
 import { frameTools, renderSkeleton } from '../lib/scope.mjs'
 import { PLUGIN_ROOT, PROMPTS_DIR, run } from '../dispatch.mjs'
-import { appendRecord } from '../lib/ledger.mjs'
-import { recordDispatch, recordReply } from '../lib/attempts.mjs'
+import { appendRecord, appendScripted } from '../lib/ledger.mjs'
+import { recordDispatch, recordReply, runSince, standingOf } from '../lib/attempts.mjs'
+import { subjectState, writeDeferred } from '../lib/loop.mjs'
 import { readLedger as readMetricsLedger, readReplies } from '../lib/metrics-records.mjs'
 import { ROLES as REPLY_ROLES } from '../lib/reply.mjs'
 
@@ -439,6 +440,40 @@ test('a reset is refused for a dispatch whose run restarts on its own', () => {
     assert.throws(() => call(root, 'reset', '--name', name, '--reason', 'x'), /restarts its own count/, name)
   }
   assert.throws(() => call(root, 'reset', '--name', 'T3 implement', '--reason', 'x'), /not a dispatch name/)
+})
+
+// An apply round (`plan.mjs reopen`) runs the final review, the sweep and the final review's fix
+// loop again under their own names: their counts start at the round; a task's stays its own.
+test('in an apply round the final review, the sweep and the final fix loop dispatch again, counted from the round', () => {
+  const root = host()
+  const T0 = '2000-01-01T00:00:00.000Z'
+  const refused = (name) => recordReply(root, CHANGE, { name, file: join(root, 'r.json'), errors: ['bad'], now: T0 })
+  for (const name of ['final-review', 'sweep', 'T3 impl']) {
+    recordDispatch(root, CHANGE, name, { now: T0 })
+    refused(name)
+    refused(name)
+  }
+  recordDispatch(root, CHANGE, 're-review r1', { now: T0 })
+  // Round 0, no round record: as before.
+  for (const name of ['final-review', 'sweep', 'T3 impl']) assert.equal(standingOf(root, CHANGE, name, { since: runSince(root, CHANGE, parseName(name).role) }).next, 'stop', name)
+  assert.equal(call(root, 'round').round, 2)
+  appendScripted(root, CHANGE, 'apply-round', { round: '1', checks: 'tree', task: '2.1', group: 'B', base: 'a'.repeat(40), verify: 'b'.repeat(40), frozen: 'A' }, { now: '2000-01-02T00:00:00.000Z' })
+  for (const name of ['final-review', 'sweep']) {
+    assert.deepEqual([call(root, 'attempt', '--name', name).attempt, call(root, 'reply', '--name', name, '--file', 'missing.json').next], [1, 'retry'], name)
+  }
+  assert.equal(call(root, 'attempt', '--name', 'T3 impl').next, 'stop', "a task's count is its own")
+  assert.deepEqual([call(root, 'round').round, call(root, 'round').fix], [1, 'fix r1'])
+})
+
+test("in an apply round the final review's loop and the deferred list read only the round; a task's loop is its own", () => {
+  const root = host()
+  const T0 = '2000-01-01T00:00:00.000Z'
+  const finding = (id, severity) => ({ id, severity, category: 'quality', file: 'src/t3.mjs', line: 1, title: 't', body: 'b' })
+  recordReply(root, CHANGE, { name: 'final-review', file: 'f.json', result: { subject: 'final', findings: [finding('F1', 'important')], open: ['F1'], toRule: [], deferred: [], outOfScope: [] }, now: T0 })
+  recordReply(root, CHANGE, { name: 'T3 review', file: 't.json', result: { subject: 'T3', findings: [finding('F1', 'minor')], open: [], toRule: [], deferred: ['F1'], outOfScope: [] }, now: T0 })
+  assert.deepEqual([subjectState(root, CHANGE, 'final').state, subjectState(root, CHANGE, 'T3').state, writeDeferred(root, CHANGE).items.length], ['fix', 'clean', 1])
+  appendScripted(root, CHANGE, 'apply-round', { round: '1', checks: 'tree', task: '2.1', group: 'B', base: 'a'.repeat(40), verify: 'b'.repeat(40), frozen: 'A' }, { now: '2000-01-02T00:00:00.000Z' })
+  assert.deepEqual([subjectState(root, CHANGE, 'final').state, subjectState(root, CHANGE, 'T3').state, writeDeferred(root, CHANGE).items.length], ['unreviewed', 'clean', 0])
 })
 
 test('a fix loop counts its rounds by the re-reviews attempted and trips the breaker at the cap', () => {

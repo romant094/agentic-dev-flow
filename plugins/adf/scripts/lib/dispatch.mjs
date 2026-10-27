@@ -542,8 +542,9 @@ export const MAX_ROUNDS = 5
 // task's open findings are adjudicated by the orchestrator (`adjudicate`), and a group's or the
 // final review's go to the developer (`escalate-to-developer`). A round whose fix returned BLOCKED
 // with no commit goes the same way before the breaker.
-//   subject: { task } | { group } | {} (after the final review)
-export function roundOf(attemptsText, { task, group } = {}) {
+//   subject: { task } | { group } | {} (after the final review); `since` (an ISO time) reads only
+//   the events at or after it: the final review's loop of an apply round starts anew.
+export function roundOf(attemptsText, { task, group, since = null } = {}) {
   if (task !== undefined && group !== undefined) refuse('a fix loop is a task\'s or a group\'s, not both')
   if (task !== undefined && !(Number.isInteger(task) && task >= 1)) refuse(`task "${task}" is not a positive integer`)
   if (group !== undefined && !GROUP.test(group)) refuse(`group "${group}" is not a group letter`)
@@ -560,6 +561,7 @@ export function roundOf(attemptsText, { task, group } = {}) {
     }
     // A consolidation's rounds are its own (lib/sweep.mjs consolidate), never the final review's.
     if (parsed?.round === undefined || parsed.subject !== undefined) continue
+    if (since !== null && String(event.at ?? '') < since) continue
     if (parsed.task !== task || parsed.group !== group) continue
     if (parsed.role === 're-review') completed = Math.max(completed, parsed.round)
     else if (parsed.role === 'fix' && event.event === 'valid' && event.result) fixes.set(parsed.round, { name: event.name, result: event.result })

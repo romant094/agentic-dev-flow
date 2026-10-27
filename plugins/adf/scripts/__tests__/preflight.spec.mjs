@@ -131,6 +131,14 @@ test('apply refuses without a plan, with every task done, on a plan finding and 
   const done = await check('apply', host({ tasks: '- [x] 1.1 a\n' }).change)
   assert.equal(done.state, 'all_done')
   assert.match(done.refusal, /\/adf:verify/)
+  // After a verify FAIL the refusal names the apply round instead.
+  const failed = host({ tasks: '- [x] 1.1 a\n' })
+  writeFileSync(join(failed.dir, 'verify.md'), '# Verification Report\n\nVerdict: PASS\n\nVerdict: FAIL\n')
+  const round = await check('apply', failed.change)
+  assert.equal(round.state, 'all_done')
+  assert.match(round.refusal, /verify\.md says Verdict: FAIL; open an apply round for the fix with plan\.mjs reopen --change add-x/)
+  writeFileSync(join(failed.dir, 'verify.md'), '# Verification Report\n\nVerdict: FAIL\n\nVerdict: PASS WITH WARNINGS\n')
+  assert.equal((await check('apply', failed.change)).refusal, 'Every task is complete; run /adf:verify next.')
 
   const finding = await check('apply', host({ plan: PLAN('missing.md') }).change)
   assert.equal(finding.ok, false)

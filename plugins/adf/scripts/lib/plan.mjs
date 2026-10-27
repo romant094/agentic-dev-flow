@@ -381,8 +381,9 @@ export async function sweepDeletes(tasks, { grep, read, exclude = () => false })
 // Everything plan-lint checks except the graph and the Delete sweep. Inputs are texts; a missing
 // design or guide is null. `provisioned` says whether the registry holds a `provision` provider:
 // the core judges no need word, so a word is reported only when nothing would provide it.
+// `frozen` names the groups an apply round froze (graphFindings).
 // Findings: { severity, kind, task?, file, line, message }.
-export function lintPlanText({ planText, tasksText, designText = null, guideText = null, planFile = 'plan.md', tasksFile = 'tasks.md', designFile = 'design.md', provisioned = false }) {
+export function lintPlanText({ planText, tasksText, designText = null, guideText = null, planFile = 'plan.md', tasksFile = 'tasks.md', designFile = 'design.md', provisioned = false, frozen = [] }) {
   const { tasks, lines } = parsePlan(planText)
   const findings = []
   const at = (file, line) => ({ file, line })
@@ -436,7 +437,7 @@ export function lintPlanText({ planText, tasksText, designText = null, guideText
   for (const risk of reconcileRisks(risks.filter((r) => !r.id), lines))
     say('warning', 'risk-unreconciled', at(designFile, risk.line), `no plan line seems to name the risk "${risk.text}" with a Task or a deferral (matched by words, so unsure); write it as [R1] in design.md and cite R1 in the plan`, { risk: risk.text })
 
-  for (const f of graphFindings(planText, tasks)) findings.push({ ...f, file: planFile })
+  for (const f of graphFindings(planText, tasks, { frozen })) findings.push({ ...f, file: planFile })
   return { tasks, findings }
 }
 
@@ -527,8 +528,11 @@ export function parseDependsSpec(spec) {
 // The graph of a chosen partition. `coupling` holds the agent's decisions per pair, keyed "A/B"
 // or "A-B": { coupling, criticality?, reason? }. A decision may raise the floor, never lower it.
 // Returns { groups, pairs, undecided, errors }; `undecided` lists the pairs whose floor is
-// weak-or-medium and that no decision settles.
-export function computeGraph(tasks, spec, { depends = {}, coupling = {} } = {}) {
+// weak-or-medium and that no decision settles. `frozen` holds the groups an apply round froze,
+// { <letter>: { wave, dependsOn } } as the current graph has them: they keep that wave and those
+// dependencies, form no pair, and a dependency on one is met already, so assignWaves sees only
+// the live groups.
+export function computeGraph(tasks, spec, { depends = {}, coupling = {}, frozen = {} } = {}) {
   const errors = []
   const numbers = tasks.map((t) => t.number)
   const owner = new Map()
@@ -545,8 +549,9 @@ export function computeGraph(tasks, spec, { depends = {}, coupling = {} } = {}) 
   const groups = spec.map((g) => ({ letter: g.letter, tasks: [...g.tasks].sort((a, b) => a - b), ...fileSets(tasks, g.tasks) }))
   const pairs = []
   const undecided = []
-  for (const a of groups)
-    for (const b of groups.slice(groups.indexOf(a) + 1)) {
+  const live = groups.filter((g) => !Object.hasOwn(frozen, g.letter))
+  for (const a of live)
+    for (const b of live.slice(live.indexOf(a) + 1)) {
       const { floor, shared } = couplingFloor(a, b)
       const d = decisions[pairKey(a.letter, b.letter)]
       const pair = { a: a.letter, b: b.letter, floor, shared, coupling: floor, reason: '' }
@@ -566,15 +571,20 @@ export function computeGraph(tasks, spec, { depends = {}, coupling = {} } = {}) 
       if (!pair.reason && shared.length) pair.reason = `${floor === 'strong' ? 'Both write' : 'Share'} ${shared.map((f) => `\`${f}\``).join(', ')}.`
       pairs.push(pair)
     }
+  const liveDepends = Object.fromEntries(
+    Object.entries(depends)
+      .filter(([g]) => !Object.hasOwn(frozen, g))
+      .map(([g, deps]) => [g, deps.filter((d) => !Object.hasOwn(frozen, d))])
+  )
   const { wave, dependsOn, errors: waveErrors } = assignWaves(
-    groups.map((g) => g.letter),
+    live.map((g) => g.letter),
     pairs,
-    depends
+    liveDepends
   )
   errors.push(...waveErrors)
   for (const g of groups) {
-    g.wave = wave[g.letter]
-    g.dependsOn = dependsOn[g.letter]
+    g.wave = frozen[g.letter]?.wave ?? wave[g.letter]
+    g.dependsOn = frozen[g.letter]?.dependsOn ?? dependsOn[g.letter]
     g.files = [...new Set([...g.writes])].sort()
   }
   return { groups, pairs, undecided, errors }
@@ -590,10 +600,13 @@ const compress = (numbers) => {
   return out.map(([a, b]) => (a === b ? `${a}` : b === a + 1 ? `${a}, ${b}` : `${a}-${b}`)).join(', ')
 }
 
+// One row of the group table.
+const groupRow = (g) => `| ${g.letter} | ${compress(g.tasks)} | ${g.files.length ? g.files.map((f) => `\`${f}\``).join(', ') : 'none'} | ${g.wave} |`
+
 // The tables in the template's format, the one apply reads.
 export function renderGraph({ groups, pairs }) {
   const out = ['| Group | Tasks | Files | Wave |', '|---|---|---|---|']
-  for (const g of groups) out.push(`| ${g.letter} | ${compress(g.tasks)} | ${g.files.length ? g.files.map((f) => `\`${f}\``).join(', ') : 'none'} | ${g.wave} |`)
+  for (const g of groups) out.push(groupRow(g))
   out.push('', '| Group A | Group B | Coupling | Reasoning (required if medium) |', '|---|---|---|---|')
   for (const p of pairs.filter((x) => x.coupling !== 'none')) out.push(`| ${p.a} | ${p.b} | ${p.coupling} | ${p.reason.replace(/\|/g, '\\|')} |`)
   const deps = groups.filter((g) => g.wave === 2)
@@ -635,7 +648,9 @@ export function writeGraph(planText, rendered) {
 }
 
 // The graph checks plan-lint runs and schedule refuses on: { severity, kind, line, message }.
-export function graphFindings(planText, tasks = parsePlan(planText).tasks) {
+// A pair with a group an apply round froze (`frozen`, letters) is no wave constraint and has no
+// floor to keep, and a dependency on one is met already.
+export function graphFindings(planText, tasks = parsePlan(planText).tasks, { frozen = [] } = {}) {
   const graph = parseGraph(planText)
   const findings = []
   const say = (severity, kind, line, message) => findings.push({ severity, kind, line, message })
@@ -666,12 +681,13 @@ export function graphFindings(planText, tasks = parsePlan(planText).tasks) {
     }
     if (!COUPLINGS.includes(p.coupling)) say('error', 'graph-coupling', p.line, `pair ${p.a}/${p.b}: "${p.coupling}" is not one of ${COUPLINGS.join(', ')}`)
     if (p.coupling === 'medium' && !/\b(?:high|low)\b/i.test(p.reason)) say('error', 'graph-criticality', p.line, `pair ${p.a}/${p.b} is medium and does not say high or low criticality`)
-    if (blocking(p) && wave[p.a] === wave[p.b]) say('error', 'graph-same-wave', p.line, `pair ${p.a}/${p.b} is ${p.coupling}${p.coupling === 'medium' ? ' high-criticality' : ''} and both are wave ${wave[p.a]}`)
+    if (blocking(p) && wave[p.a] === wave[p.b] && !frozen.includes(p.a) && !frozen.includes(p.b)) say('error', 'graph-same-wave', p.line, `pair ${p.a}/${p.b} is ${p.coupling}${p.coupling === 'medium' ? ' high-criticality' : ''} and both are wave ${wave[p.a]}`)
   }
   // The floor from the tasks' own files: a declared coupling below it is a lowered floor.
   const sets = Object.fromEntries(graph.groups.map((g) => [g.letter, fileSets(tasks, g.tasks)]))
-  for (const a of letters)
-    for (const b of letters.slice(letters.indexOf(a) + 1)) {
+  const live = letters.filter((l) => !frozen.includes(l))
+  for (const a of live)
+    for (const b of live.slice(live.indexOf(a) + 1)) {
       const { floor, shared } = couplingFloor(sets[a], sets[b])
       if (floor === 'none') continue
       const p = graph.pairs.find((x) => pairKey(x.a, x.b) === pairKey(a, b))
@@ -684,7 +700,7 @@ export function graphFindings(planText, tasks = parsePlan(planText).tasks) {
     else if (wave[g] !== 2) say('error', 'graph-dependency-wave', graph.line, `group ${g} has a dependency but is wave ${wave[g]}`)
     for (const d of deps) {
       if (!letters.includes(d)) say('error', 'graph-unknown-group', graph.line, `group ${g} depends on group ${d}, which the table does not have`)
-      else if (wave[d] === 2) say('error', 'graph-depends-on-wave-2', graph.line, `group ${g} depends on wave-2 group ${d}; there is no wave 3`)
+      else if (wave[d] === 2 && !frozen.includes(d)) say('error', 'graph-depends-on-wave-2', graph.line, `group ${g} depends on wave-2 group ${d}; there is no wave 3`)
     }
   }
   for (const g of graph.groups.filter((x) => x.wave === 2)) {
@@ -699,13 +715,16 @@ export function graphFindings(planText, tasks = parsePlan(planText).tasks) {
 
 // Which groups run now. `state(n, letter)` → { merged, kept } is injected (git). `ticked(item)`
 // says whether a tasks.md item is ticked. Groups are numbered by their row, the first row 1.
-export function schedule(planText, { state, ticked = () => false, cap = DEFAULT_CAP }) {
+// The groups an apply round froze (`frozen`, letters) are merged, or done in the single-group
+// case, and do not count toward it: a round whose one live wave-1 group is its own runs in the
+// change worktree.
+export function schedule(planText, { state, ticked = () => false, cap = DEFAULT_CAP, frozen = [] }) {
   const graph = parseGraph(planText)
   const { tasks } = parsePlan(planText)
-  const errors = graphFindings(planText, tasks).filter((f) => f.severity === 'error')
+  const errors = graphFindings(planText, tasks, { frozen }).filter((f) => f.severity === 'error')
   if (errors.length) return { ok: false, findings: errors }
   const rows = graph.groups.length ? graph.groups : [{ letter: 'A', tasks: tasks.map((t) => t.number), wave: 1 }]
-  const wave1 = rows.filter((g) => g.wave === 1).map((g) => g.letter)
+  const wave1 = rows.filter((g) => g.wave === 1 && !frozen.includes(g.letter)).map((g) => g.letter)
   const items = Object.fromEntries(tasks.map((t) => [t.number, t.implements]))
   const groups = rows.map((g, i) => {
     const explicit = graph.depends[g.letter] ?? []
@@ -722,7 +741,8 @@ export function schedule(planText, { state, ticked = () => false, cap = DEFAULT_
   const single = wave1.length === 1
   const byLetter = Object.fromEntries(groups.map((g) => [g.letter, g]))
   for (const g of groups) {
-    if (single) g.state = g.done ? 'done' : 'pending'
+    if (frozen.includes(g.letter)) g.state = single ? 'done' : 'merged'
+    else if (single) g.state = g.done ? 'done' : 'pending'
     else g.state = g.merged ? 'merged' : g.kept ? 'running' : 'pending'
   }
   const pending = groups.filter((g) => g.state === 'pending')
@@ -843,3 +863,56 @@ export function addDuringApply(planText, { task, path, why, verb = 'Modify', dat
   return { text: lines.join('\n'), added: true, task, line: last + 2, bullet }
 }
 
+// ---------------------------------------------------------------- an apply round
+
+// The groups an apply round freezes as its base (`plan.mjs reopen`): every task ticked, and
+// merged, or done in the single-group case; those an earlier round froze stay frozen. None when
+// the graph has no group table or is defective.
+export function frozenGroups(planText, { state, ticked, frozen = [] }) {
+  if (!parseGraph(planText)?.groups.length) return []
+  const s = schedule(planText, { state, ticked, frozen })
+  if (!s.ok) return []
+  return s.groups.filter((g) => g.done && (s.single || g.state === 'merged')).map((g) => g.letter)
+}
+
+// tasks.md and plan.md with one fix task of apply round `round` appended. The item goes under the
+// round's own tasks.md group (`## <n>. Apply round <round>`, new on the round's first task; `item`
+// names its number after that), the task after the plan's last with its back-reference, and, when
+// the Execution Graph has a group table, into the round's own row (`group`; a new wave-1 row with
+// the next free letter on the round's first task). `body` is the agent's text below the
+// back-reference: Files, Interfaces, Level, Behaviour and acceptance, the steps.
+// Returns { planText, tasksText, task, item, group }; `group` null without a group table.
+export function addRoundTask({ planText, tasksText, title, body, round, item = null, group = null }) {
+  if (typeof title !== 'string' || !title.trim() || title.includes('\n')) throw new Error('--title must be one non-empty line')
+  if (!String(body ?? '').trim()) throw new Error('the task file is empty')
+  if (/^###\s|^>\s*Implements\s/m.test(body)) throw new Error('the task file holds a "###" heading or an "> Implements" line; give only the text below them, the script writes both')
+  const items = parseTaskItems(tasksText)
+  const n = item ?? Math.max(0, ...items.map((i) => i.group)) + 1
+  const own = items.filter((i) => i.group === n)
+  if (item !== null && own.length === 0) throw new Error(`tasks.md has no item of group ${n}, the round's`)
+  const id = `${n}.${own.length + 1}`
+  const tasksLines = tasksText.replace(/\n+$/, '').split('\n')
+  if (own.length) tasksLines.splice(own.at(-1).line, 0, `- [ ] ${id} ${title.trim()}`)
+  else tasksLines.push('', `## ${n}. Apply round ${round}`, '', `- [ ] ${id} ${title.trim()}`)
+  const number = parsePlan(planText).tasks.length + 1
+  let text = `${planText.replace(/\n+$/, '')}\n\n### Task ${number}: ${title.trim()}\n\n> Implements \`tasks.md\` ${id}.\n\n${body.trim()}\n`
+  const graph = parseGraph(text)
+  let letter = null
+  if (graph?.groups.length) {
+    const added = parsePlan(text).tasks.at(-1).files.flatMap((f) => [f.path, f.to].filter(Boolean))
+    const lines = text.split('\n')
+    const row = group === null ? null : graph.groups.find((g) => g.letter === group)
+    if (group !== null && !row) throw new Error(`the Execution Graph has no group ${group}, the round's`)
+    if (row) {
+      letter = row.letter
+      lines[row.line - 1] = groupRow({ letter, tasks: [...row.tasks, number], files: [...new Set([...row.files, ...added])].sort(), wave: row.wave })
+    } else {
+      const code = Math.max(...graph.groups.map((g) => g.letter.charCodeAt(0))) + 1
+      if (code > 'Z'.charCodeAt(0)) throw new Error('the Execution Graph has no free group letter left')
+      letter = String.fromCharCode(code)
+      lines.splice(graph.groups.at(-1).line, 0, groupRow({ letter, tasks: [number], files: [...new Set(added)].sort(), wave: 1 }))
+    }
+    text = lines.join('\n')
+  }
+  return { planText: text, tasksText: `${tasksLines.join('\n')}\n`, task: number, item: id, group: letter }
+}

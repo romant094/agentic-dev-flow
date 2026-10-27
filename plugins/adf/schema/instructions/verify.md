@@ -317,4 +317,5 @@ archive removes it.
 
 **The next step follows the verdict.** `PASS` or `PASS WITH WARNINGS`: `/adf:review`, which reads
 the record's `Verdict:` line. `FAIL`: fix what the failing checks name (the artifact, the code
-through a new apply round, or the plan with the developer's approval) and run verify again.
+through an apply round, `plan.mjs reopen`, stated in full in the apply instruction, or the plan
+with the developer's approval) and run verify again.

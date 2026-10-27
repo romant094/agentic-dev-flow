@@ -14,8 +14,8 @@
 // The retry rule (apply.md, archive.md, review.md): a refused reply goes back once; a second
 // refused reply of one name stops it. The first invalid reply gives `retry`, the second `stop`,
 // and nothing more is recorded for that name; a valid reply between them ends the streak, and
-// the number of dispatches never stops one. Verify
-// and the review stage count only their current run's events (runSince). A retry resumes the same agent with the errors
+// the number of dispatches never stops one. Verify, the review stage and the roles an apply
+// round restarts count only their current run's events (runSince). A retry resumes the same agent with the errors
 // (`mode: resume`); a fresh dispatch carries the errors as its question only where the harness
 // cannot resume the agent (`mode: fresh`). The consequence of `stop` stays with each phase: apply
 // marks the dispatch BLOCKED, the review stage writes its stopped record, archive stops.
@@ -30,7 +30,7 @@ import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DispatchError, MAX_ATTEMPTS, parseName, sddDir, verifyDirOf } from './dispatch.mjs'
-import { appendAttemptReset, ATTEMPT_RESET, readRecords } from './ledger.mjs'
+import { appendAttemptReset, applyRound, ATTEMPT_RESET, readRecords } from './ledger.mjs'
 
 export const EVENTS = ['dispatch', 'invalid', 'valid']
 export const attemptsFile = (root, change) => join(sddDir(root, change), 'attempts.jsonl')
@@ -103,15 +103,21 @@ export function recordDispatchAt(file, name, { now = new Date().toISOString(), s
   return { name, attempt: dispatches, next, file }
 }
 
+// The apply roles an apply round runs again under their own names (`plan.mjs reopen`): the final
+// review, the reuse sweep and the fix loops after them.
+export const ROUND_ROLES = ['final-review', 'sweep', 'fix', 're-review']
+
 // Where the current run of the name's phase starts, the time its count restarts from: verify's
-// session (`started` in its run.json), the review stage's run (`at` in its start.json); null for
-// every other role, counted over the change's life. An apply round's start is not recorded yet.
+// session (`started` in its run.json), the review stage's run (`at` in its start.json), the
+// current apply round's first record for ROUND_ROLES (lib/ledger.mjs applyRound); null for every
+// other role, and for ROUND_ROLES before any round, counted over the change's life.
 export function runSince(root, change, role) {
   if (role === 'verify') {
     const run = readJsonOr(join(verifyDirOf(root, change), 'run.json'))
     return run ? (run.started ?? run.at ?? null) : null
   }
   if (role === 'ai-review' || role === 'ai-fix') return readJsonOr(join(sddDir(root, change), 'review', 'start.json'))?.at ?? null
+  if (ROUND_ROLES.includes(role)) return applyRound(readRecords(root, change))?.at ?? null
   return null
 }
 

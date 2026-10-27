@@ -31,12 +31,18 @@
 // dismissed. That record also clears a finding no later sweep has run on, where no marker fits. A later CLEAN with the file unchanged clears nothing: a second CLEAN on an
 // unchanged branch would launder the first finding. Locations are read relative to the
 // repository root (lib/dup.mjs relativeFindings), whatever a recorded reply wrote.
+//
+// An apply round (`plan.mjs reopen`) runs the final review and the sweep again: the subjects
+// `final` and `sweep` (ROUND_SUBJECTS) read only the events, rulings and consolidation records at
+// or after the current round's start (lib/ledger.mjs applyRound), so their ids, rounds and state
+// start anew; round 0, a change with no round record, reads them all. A task's or a group's loop
+// is its own and reads them all.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { attemptsFile, parseEvents, readLog } from './attempts.mjs'
 import { parseName, sddDir, SWEEP_SUBJECT } from './dispatch.mjs'
 import { coveringMarker, dismissalOf, findMarkers, locate, relativeFindings, relativeLocation } from './dup.mjs'
-import { readRecords } from './ledger.mjs'
+import { applyRound, readRecords } from './ledger.mjs'
 import { gitIn } from './workspace.mjs'
 
 export const REVIEW_ROLES = ['review', 'final-review', 'merge-review']
@@ -46,15 +52,22 @@ export const CLOSING = ['accepted', 'dismissed']
 
 const unique = (list) => [...new Set(list)]
 
+export const ROUND_SUBJECTS = ['final', SWEEP_SUBJECT]
+// The current apply round's start, null in round 0; the filter of what is at or after it.
+export const roundStart = (records) => applyRound(records)?.at ?? null
+export const atOrAfter = (since) => (x) => since === null || String(x.at ?? '') >= since
+export const subjectSince = (records, subject) => (ROUND_SUBJECTS.includes(subject) ? roundStart(records) : null)
+
 // The subject a review loop belongs to: T<n>, a group letter, `sweep` for a consolidation's fix
 // and re-review, or `final`.
 export const subjectOf = (parts) =>
   parts.subject !== undefined ? parts.subject : parts.task !== undefined ? `T${parts.task}` : parts.group !== undefined ? parts.group : 'final'
 
-// The computed results of the subject's accepted reviews and re-reviews, in log order.
-export function subjectHistory(eventsText, subject) {
+// The computed results of the subject's accepted reviews and re-reviews, in log order, from `since`.
+export function subjectHistory(eventsText, subject, since = null) {
   return parseEvents(eventsText)
     .filter((e) => e.event === 'valid' && e.result)
+    .filter(atOrAfter(since))
     .filter((e) => {
       const parts = parseName(e.name)
       return parts && LOOP_ROLES.includes(parts.role) && subjectOf(parts) === subject
@@ -62,9 +75,9 @@ export function subjectHistory(eventsText, subject) {
     .map((e) => e.result)
 }
 
-// The last ruling of each id of one subject: Map id -> ledger record.
-export function subjectRulings(records, subject) {
-  return new Map(records.filter((r) => r.kind === 'ruling' && r.subject === subject && typeof r.as === 'string').map((r) => [r.finding, r]))
+// The last ruling of each id of one subject, from `since`: Map id -> ledger record.
+export function subjectRulings(records, subject, since = null) {
+  return new Map(records.filter((r) => r.kind === 'ruling' && r.subject === subject && typeof r.as === 'string').filter(atOrAfter(since)).map((r) => [r.finding, r]))
 }
 
 export function loopState(history, rulings = new Map()) {
@@ -85,8 +98,10 @@ export function loopState(history, rulings = new Map()) {
 
 // One subject's loop state, read from the change worktree's events log and ledger.
 export function subjectState(root, change, subject) {
-  const rulings = subjectRulings(readRecords(root, change), subject)
-  return { subject, ...loopState(subjectHistory(readLog(attemptsFile(root, change)), subject), rulings), rulings }
+  const records = readRecords(root, change)
+  const since = subjectSince(records, subject)
+  const rulings = subjectRulings(records, subject, since)
+  return { subject, ...loopState(subjectHistory(readLog(attemptsFile(root, change)), subject, since), rulings), rulings }
 }
 
 export const rulingCommand = (change, subject, id = '<id>') =>
@@ -164,10 +179,11 @@ export function withProofFinding(result, proof, history = []) {
 export const deferredFile = (root, change) => join(sddDir(root, change), 'deferred.json')
 
 // What the reviews left for the final review: each deferred minor finding and each out-of-scope
-// item of a re-review, in log order, with its subject and the dispatch that reported it.
-export function deferredItems(eventsText) {
+// item of a re-review, in log order, with its subject and the dispatch that reported it; from
+// `since`, the current apply round's start.
+export function deferredItems(eventsText, since = null) {
   const items = []
-  for (const e of parseEvents(eventsText)) {
+  for (const e of parseEvents(eventsText).filter(atOrAfter(since))) {
     const parts = e.event === 'valid' && e.result ? parseName(e.name) : null
     if (!parts || !LOOP_ROLES.includes(parts.role)) continue
     const { subject, findings = [], deferred = [], outOfScope = [] } = e.result
@@ -184,7 +200,7 @@ export function deferredItems(eventsText) {
 // Writes `.superpowers/sdd/<change>/deferred.json` from the events log: { file, items }.
 export function writeDeferred(root, change) {
   const file = deferredFile(root, change)
-  const items = deferredItems(readLog(attemptsFile(root, change)))
+  const items = deferredItems(readLog(attemptsFile(root, change)), roundStart(readRecords(root, change)))
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, `${JSON.stringify(items, null, 2)}\n`)
   return { file, items }
@@ -207,10 +223,11 @@ function changedBetween(git, from, to, file) {
 }
 
 export function sweepState(root, change, { git = gitIn(root) } = {}) {
-  // The first sweep and every re-sweep (`sweep r<k>`), in log order.
-  const runs = parseEvents(readLog(attemptsFile(root, change))).filter((e) => e.event === 'valid' && parseName(e.name)?.role === 'sweep' && e.result)
-  if (runs.length === 0) return { ran: false, ids: [], open: [], cleared: [] }
   const records = readRecords(root, change)
+  const since = roundStart(records)
+  // The first sweep and every re-sweep (`sweep r<k>`) of the current apply round, in log order.
+  const runs = parseEvents(readLog(attemptsFile(root, change))).filter((e) => e.event === 'valid' && parseName(e.name)?.role === 'sweep' && e.result).filter(atOrAfter(since))
+  if (runs.length === 0) return { ran: false, ids: [], open: [], cleared: [] }
   const ids = new Map()
   const open = new Map()
   const cleared = []
@@ -231,7 +248,7 @@ export function sweepState(root, change, { git = gitIn(root) } = {}) {
       open.set(key, { id: ids.get(key), introduced: f.introduced, existing: f.existing, why: f.why, head: result.head ?? null })
     }
   }
-  const rulings = subjectRulings(records, SWEEP_SUBJECT)
+  const rulings = subjectRulings(records, SWEEP_SUBJECT, since)
   const markers = findMarkers(root)
   const still = []
   for (const f of open.values()) {
@@ -254,8 +271,10 @@ export function sweepState(root, change, { git = gitIn(root) } = {}) {
 // scope, each relative to the repository root.
 export function consolidationState(root, change, options = {}) {
   const sweep = sweepState(root, change, options)
-  const rulings = subjectRulings(readRecords(root, change), SWEEP_SUBJECT)
-  const loop = loopState(subjectHistory(readLog(attemptsFile(root, change)), SWEEP_SUBJECT), rulings)
+  const records = readRecords(root, change)
+  const since = roundStart(records)
+  const rulings = subjectRulings(records, SWEEP_SUBJECT, since)
+  const loop = loopState(subjectHistory(readLog(attemptsFile(root, change)), SWEEP_SUBJECT, since), rulings)
   const byId = new Map(loop.findings.map((f) => [f.id, f]))
   const rendered = [
     ...sweep.open.map((f) => `${f.id} ${f.introduced} repeats ${f.existing}: ${f.why}`),
