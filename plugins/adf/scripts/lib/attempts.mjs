@@ -13,7 +13,9 @@
 //
 // The retry rule (apply.md, archive.md, review.md): a refused reply goes back once; a second
 // refused reply of one name stops it. The first invalid reply gives `retry`, the second `stop`,
-// and nothing more is recorded for that name. A retry resumes the same agent with the errors
+// and nothing more is recorded for that name; a valid reply between them ends the streak, and
+// the number of dispatches never stops one. Verify
+// and the review stage count only their current run's events (runSince). A retry resumes the same agent with the errors
 // (`mode: resume`); a fresh dispatch carries the errors as its question only where the harness
 // cannot resume the agent (`mode: fresh`). The consequence of `stop` stays with each phase: apply
 // marks the dispatch BLOCKED, the review stage writes its stopped record, archive stops.
@@ -27,7 +29,7 @@
 import { createHash } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { countAttempts, DispatchError, MAX_ATTEMPTS, nextFor, parseName, sddDir } from './dispatch.mjs'
+import { DispatchError, MAX_ATTEMPTS, parseName, sddDir, verifyDirOf } from './dispatch.mjs'
 import { appendAttemptReset, ATTEMPT_RESET, readRecords } from './ledger.mjs'
 
 export const EVENTS = ['dispatch', 'invalid', 'valid']
@@ -58,13 +60,16 @@ export const readLog = (file) => (existsSync(file) ? readFileSync(file, 'utf8') 
 // (an ISO time) counts only the events at or after it: a phase that starts its run again (the
 // review stage's `start --fresh`) reuses its names, and the earlier run's events no longer count.
 // `skip` passes over the name's first events, those a developer reset covers (resetSkip).
+// `invalid` counts the refusal streak: only the invalid replies after the name's last valid one,
+// so a valid reply (a NEEDS_CONTEXT) starts the limit anew for the dispatch that answers it.
 export function standing(text, name, { since = null, skip = 0 } = {}) {
   const events = parseEvents(text)
     .filter((e) => e.name === name)
     .slice(skip)
     .filter((e) => since === null || String(e.at ?? '') >= since)
-  const count = (event) => events.filter((e) => e.event === event).length
-  const invalid = count('invalid')
+  const count = (event, list = events) => list.filter((e) => e.event === event).length
+  const lastValid = events.findLastIndex((e) => e.event === 'valid')
+  const invalid = count('invalid', events.slice(lastValid + 1))
   return { name, dispatches: count('dispatch'), invalid, valid: count('valid'), next: nextForInvalid(invalid) }
 }
 
@@ -81,19 +86,36 @@ const checkName = (name) => {
 }
 
 // `dispatch.mjs attempt`: records one dispatch of `name`. `attempt` counts the dispatches of the
-// name, legacy lines included: 1 dispatches, 2 retries, 3 stops.
-// Counted from the name's last developer reset. On a stop, `reset` names the developer reset.
+// name, legacy lines included, for the metrics; `next` follows its refused replies as `standing`
+// gives it, never the dispatch count: a valid reply (a NEEDS_CONTEXT) and its re-dispatch use up
+// nothing. Counted from the name's last developer reset and from its phase's run start
+// (runSince). On a stop, `reset` names the developer reset.
 export function recordDispatch(root, change, name, options = {}) {
-  return withReset(change, name, recordDispatchAt(attemptsFile(root, change), name, { ...options, skip: resetSkip(root, change, name) }))
+  const since = runSince(root, change, parseName(name)?.role)
+  return withReset(change, name, recordDispatchAt(attemptsFile(root, change), name, { ...options, since, skip: resetSkip(root, change, name) }))
 }
 
 // The same, into the log `file`: a dispatch that serves no change keeps its own (lib/retro.mjs).
-export function recordDispatchAt(file, name, { now = new Date().toISOString(), skip = 0 } = {}) {
+export function recordDispatchAt(file, name, { now = new Date().toISOString(), since = null, skip = 0 } = {}) {
   checkName(name)
   append(file, { name, at: now, event: 'dispatch' })
-  const attempt = countAttempts(readLog(file), name, { skip })
-  return { name, attempt, next: nextFor(attempt), file }
+  const { dispatches, next } = standing(readLog(file), name, { since, skip })
+  return { name, attempt: dispatches, next, file }
 }
+
+// Where the current run of the name's phase starts, the time its count restarts from: verify's
+// session (`started` in its run.json), the review stage's run (`at` in its start.json); null for
+// every other role, counted over the change's life. An apply round's start is not recorded yet.
+export function runSince(root, change, role) {
+  if (role === 'verify') {
+    const run = readJsonOr(join(verifyDirOf(root, change), 'run.json'))
+    return run ? (run.started ?? run.at ?? null) : null
+  }
+  if (role === 'ai-review' || role === 'ai-fix') return readJsonOr(join(sddDir(root, change), 'review', 'start.json'))?.at ?? null
+  return null
+}
+
+const readJsonOr = (file) => (existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null)
 
 // Records a checked reply of `name`: `invalid` when `errors` is not empty, else `valid` with the
 // computed `result` (when the checker gives one). Returns { ok, valid, errors, next, mode, invalid,
@@ -168,7 +190,7 @@ export function resetAttempts(root, change, name, { reason, yes = null, env, now
   const covered = all.slice(from)
   const count = (event) => covered.filter((e) => e.event === event).length
   const covers = { events: covered.length, dispatches: count('dispatch'), invalid: count('invalid'), valid: count('valid') }
-  if (!(covers.invalid >= MAX_ATTEMPTS || covers.dispatches > MAX_ATTEMPTS)) {
+  if (covers.invalid < MAX_ATTEMPTS) {
     refuseReset(`${name} has not stopped (${covers.dispatches} dispatches, ${covers.invalid} invalid replies since ${from ? 'its last reset' : 'its first dispatch'}); a reset is only for a stopped dispatch`)
   }
   const plan = `reset-${createHash('sha256').update(JSON.stringify({ change, name, reason, from, covered })).digest('hex').slice(0, 12)}`

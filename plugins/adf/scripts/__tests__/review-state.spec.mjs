@@ -475,6 +475,41 @@ test('assemble refuses a dirty tree and a commit no round reviewed; a marker-onl
   assert.match(R(change, 'round', '--change', 'add-x').error, /left nothing to re-review/)
 })
 
+// A tick of tasks.md, a verify record or a file the review's filter drops is nothing a round
+// reads: it never makes the review start again.
+test('a commit of the change record or of files the filter excludes after round 1 does not block assemble', () => {
+  const change = setup()
+  reviewed(change)
+  commitIn(change, 'openspec/changes/add-x/tasks.md', '- [x] 1.1 done\n', 'chore: tick')
+  commitIn(change, 'docs/guide.md', 'prose\n', 'docs: guide')
+  assert.equal(R(change, 'assemble', '--change', 'add-x').verdict, 'PASS')
+})
+
+test('re-entry after a PASS record: start reports the record stands while only record commits followed it', () => {
+  const change = setup()
+  reviewed(change)
+  const record = R(change, 'assemble', '--change', 'add-x', '--commit')
+  assert.equal(record.verdict, 'PASS')
+  const reviewedAt = git(change, 'rev-parse', 'HEAD~1')
+  commitIn(change, 'openspec/changes/add-x/tasks.md', '- [x] 1.1 done\n', 'chore: tick')
+  const startFile = join(reviewDir(change, 'add-x'), 'start.json')
+  const run = readFileSync(startFile, 'utf8')
+  const again = R(change, 'start', '--change', 'add-x')
+  assert.deepEqual([again.ok, again.recordStands, again.record], [true, true, { file: 'openspec/changes/add-x/review.md', verdict: 'PASS', commit: reviewedAt }])
+  assert.match(again.next, /the record stands/)
+  assert.equal(readFileSync(startFile, 'utf8'), run, 'the run is left as it was')
+  // --fresh is the developer's request for a new review: it overrides a standing record.
+  const forced = R(change, 'start', '--change', 'add-x', '--fresh')
+  assert.deepEqual([forced.ok, forced.recordStands, forced.counts.kept], [true, undefined, 1])
+  assert.notEqual(readFileSync(startFile, 'utf8'), run)
+  // New code after the PASS: the record no longer stands, and start --fresh starts again.
+  R(change, 'round', '--change', 'add-x')
+  commitIn(change, 'src/b.ts', 'new code\n', 'more work')
+  assert.match(R(change, 'start', '--change', 'add-x').error, /pass --fresh/)
+  const fresh = R(change, 'start', '--change', 'add-x', '--fresh')
+  assert.deepEqual([fresh.ok, fresh.recordStands], [true, undefined])
+})
+
 test('the suite after the fixes runs with the base check; a new failure blocks unless the developer rules on it', () => {
   const change = setup({ command: 'test ! -f src/a.test.ts' })
   reviewed(change, finding('F1', 'HIGH'))

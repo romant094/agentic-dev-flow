@@ -83,6 +83,11 @@ are `review-range`, `review-slices`, `review-suite`, `review-round-<k>` on a che
      written before the call, is `start` run again with `--range <A..B>`, the implementation
      commits they name; the record names the range and the ruling.
    - A run of an earlier session with rounds is kept; `--fresh` discards it and starts again.
+   - `recordStands: true`: the committed record reads PASS, and every commit after its reviewed
+     commit changes only the change's own directory or files the review's filter excludes.
+     Nothing is measured or dispatched; report `next` and go to `/adf:archive`. New code after
+     the record makes `start` measure again, `--fresh` over a kept run. `--fresh` is the
+     developer's request for a new review and starts one over a standing record too.
 
 4. **Open the round.**
 
@@ -216,8 +221,10 @@ are `review-range`, `review-slices`, `review-suite`, `review-round-<k>` on a che
     For an empty filtered diff, add `--not-reviewed "<reason>"`: the record is PASS with no
     round. The script reads HEAD itself, renders `openspec/changes/<change>/review.md` from the
     run's state and the rulings, computes `PASS` or `BLOCKED`, and commits the record alone. It
-    refuses a tree with changes outside the record; any other refusal carries `refusals`, each
-    naming the call that resolves it: run them and assemble again. Show the result's `report`;
+    refuses a tree with changes outside the record. A commit after the last round that no
+    round reviewed is refused, unless it is a recorded fix, adds ADF IGNORE markers only, or
+    changes only the change's own directory or files the filter excludes. Any other refusal
+    carries `refusals`, each naming the call that resolves it: run them and assemble again. Show the result's `report`;
     on BLOCKED its `outstanding` entries name what is left.
 
 **The verdict is computed, never typed.** BLOCKED while a finding whose severity is in the

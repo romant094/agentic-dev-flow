@@ -30,7 +30,8 @@
 // review (dispatch.mjs prompt for `T<n> review`): the commit and the test command come from the
 // task's accepted `T<n> impl` result (the last commit, the last covering run's command), the
 // shared paths from the planning guide's `## Test-first shares` section, one path per line. Its
-// record is `tdd/T<n>.json`, kept while the commit and the command stay the same. Without the
+// record is `tdd/T<n>.json`, kept while the commit, the command and the set of shared paths stay
+// the same. Without the
 // section nothing runs, and the reviewer runs tdd-proof itself.
 import { execFileSync } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -216,6 +217,8 @@ export function readTaskProof(root, change, task) {
   }
 }
 
+const sameSet = (a, b) => Array.isArray(a) && new Set(a).size === new Set(b).size && b.every((x) => a.includes(x))
+
 // { ran: false, reason } when nothing ran, else { ran: true, cached, ...the tddProof result,
 // task, test, share, file }. A refusal of tddProof itself (no test file in the commit, a leftover
 // worktree) is `ran: false` with its message: the reviewer then runs it by hand.
@@ -233,7 +236,7 @@ export function taskProof(root, change, task, { planText, main = mainCheckout(ro
   if (!commit || !test) return skip(`T${task} impl names no commit or no covering run`)
   const file = taskProofFile(root, change, task)
   const kept = readTaskProof(root, change, task)
-  if (kept?.commit === commit && kept.test === test) return { ran: true, cached: true, ...kept }
+  if (kept?.commit === commit && kept.test === test && sameSet(kept.share, share)) return { ran: true, cached: true, ...kept }
   const { worktree } = planDispatch({ change, role: 'impl', task }, { root, main, planText, exists: existsSync })
   let result
   try {

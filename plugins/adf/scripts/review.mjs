@@ -17,6 +17,10 @@
 //       { ok, change, range, counts: { changed, kept, excluded }, kept, excluded, bytes,
 //         maxBytes, empty, over, slices | null, proof | null, plan | null, warnings,
 //         rangeRuling? }
+//       With --change and no --range or --fresh, a committed PASS record that only commits
+//       under the change's directory or wholly excluded by the filter followed stands: nothing
+//       is measured or recorded. { ok, change, recordStands: true, record: { file, verdict,
+//       commit }, next }
 //   review.mjs round --change <name> [--root <dir>]
 //       open the next round: 1 after start; k + 1 when a fix landed after round k's review;
 //       past round 3 only with the developer's `review-round-<k>` ruling, which the record
@@ -86,7 +90,8 @@
 //       verdict BLOCKED while a blocking finding is open, a fix is not re-reviewed, or the suite
 //       after the fixes fails with no `review-suite` ruling. Refused: a dirty tree outside the
 //       record, a non-blocking finding with no disposition, a ruling not applied, a commit no
-//       round reviewed, a fix with no suite run at HEAD (suite.mjs run --section review).
+//       round reviewed (not one that changes only the change's directory or filtered files),
+//       a fix with no suite run at HEAD (suite.mjs run --section review).
 //       --not-reviewed: the empty-diff record, PASS. --commit commits the record alone.
 //       { ok, file, verdict, commit, counts, rounds, outstanding, report }
 //   review.mjs check --file <review.md> [--root <dir>]
@@ -127,6 +132,7 @@ import {
   Refusal,
   roundRange,
   slicesApproved,
+  standingRecord,
   storeReply
 } from './lib/review-state.mjs'
 
@@ -214,6 +220,18 @@ function readText(cwd, file) {
 function start(root, values) {
   if (!values.change && !values.range) throw new UsageError('name the range with --change, --range, or both')
   if (values.fresh && !values.change) throw new UsageError("--fresh discards a change's review run: it needs --change")
+  // Re-entry after a PASS record that only record commits followed: nothing to review, unless
+  // --fresh, the developer's request for a new review.
+  const stands = values.change && !values.range && !values.fresh ? standingRecord(root, values.change) : null
+  if (stands) {
+    return {
+      ok: true,
+      change: values.change,
+      recordStands: true,
+      record: stands,
+      next: `the record stands: ${stands.file} reads PASS at ${stands.commit.slice(0, 7)}, and every commit since changes only files no round reads; nothing is dispatched`
+    }
+  }
   const config = reviewConfig(root)
   const range = resolveRange(root, { change: values.change ?? null, range: values.range ?? null })
   const { changed, files, excluded, bytes } = collect(root, range, config)

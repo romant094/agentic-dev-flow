@@ -39,9 +39,11 @@
 //       conflict. The ingest prompt reads `ingest.mjs stale`'s input file and refuses while it
 //       is missing; its change may already be archived.
 //   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <change worktree>]
-//       records one attempt of the dispatch and returns { ok, name, attempt, next }, next one of
-//       dispatch (the first), retry (the one retry of a refused reply), stop (BLOCKED); counted
-//       from the name's last developer reset. A stop carries reset: { command, note }, the
+//       records one attempt of the dispatch and returns { ok, name, attempt, next }: attempt the
+//       count of its dispatches, for the metrics; next read from its refused replies since its
+//       last valid one, never from that count: dispatch (none refused), retry (one), stop (two:
+//       BLOCKED). Counted from the name's last developer reset, and for verify and the review
+//       stage from the current run's start, as reply counts them. A stop carries reset: { command, note }, the
 //       `dispatch.mjs reset` command and that the developer is asked first (none for ai-review,
 //       ai-fix and verify)
 //   dispatch.mjs reset   --change <name> --name "<dispatch name>" --reason "<text>" [--yes <plan>]
@@ -98,7 +100,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readArchiveState } from './lib/archive.mjs'
-import { attemptsFile, recordDispatch, recordReply, resetAttempts, standingOf } from './lib/attempts.mjs'
+import { attemptsFile, recordDispatch, recordReply, resetAttempts, runSince, standingOf } from './lib/attempts.mjs'
 import {
   ARCHIVE_ROLES,
   DispatchError,
@@ -120,7 +122,7 @@ import { checkReply, replyContext, ROLES as REPLY_ROLES } from './lib/reply.mjs'
 import { checkFindings, checkFix } from './lib/review.mjs'
 import { checkSpecMergeReply, writeConflictTexts } from './lib/spec-merge.mjs'
 import { mergePreview } from './lib/specs.mjs'
-import { fixTarget, Refusal, reviewSince } from './lib/review-state.mjs'
+import { fixTarget, Refusal } from './lib/review-state.mjs'
 import { recordDispositions, recordReSweep, sweepInputs } from './lib/sweep.mjs'
 import { readRecords } from './lib/ledger.mjs'
 import {
@@ -466,8 +468,8 @@ function recordReplyOf(values, { root, change, main }) {
   if (values.resume !== undefined && !['yes', 'no'].includes(values.resume)) throw new UsageError('--resume is yes or no')
   if (parts.role === 'verify') return recordVerifyReply(root, change, { name, file, resume: values.resume !== 'no' })
   const path = resolve(root, file)
-  // The review stage counts only its current run's events (lib/review-state.mjs).
-  const since = ['ai-review', 'ai-fix'].includes(parts.role) ? reviewSince(root, change) : null
+  // The review stage counts only its current run's events (lib/attempts.mjs runSince).
+  const since = runSince(root, change, parts.role)
   // A stopped dispatch's reply is not checked: recordReply refuses it.
   const stopped = standingOf(root, change, name, { since }).next === 'stop'
   const text = stopped ? null : readOr(path)
