@@ -18,6 +18,14 @@ import { CORE } from '../lib/roles.mjs'
 import { checkFields, FIELD_LIMITS, handoffFields } from '../lib/tracker.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
+
+// The frame's `## Tools` section as sent: from its heading to the next, comment lines dropped.
+const FRAME = readFileSync(join(here, '..', '..', 'schema', 'prompts', 'frame.md'), 'utf8')
+const FRAME_TOOLS = FRAME.slice(FRAME.indexOf('## Tools'), FRAME.indexOf('\n## ', FRAME.indexOf('## Tools')))
+  .split('\n')
+  .filter((l) => !/^\s*<!--.*-->\s*$/.test(l))
+  .join('\n')
+  .trim()
 const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
 const CHANGE = 'fix-pool'
@@ -252,6 +260,7 @@ test('with no forge, git ancestry decides merged; each step resumes; a partial i
   const prompt = readFileSync(input.dispatches[0].promptFile, 'utf8')
   assert.ok(prompt.startsWith('You are dispatched as `land-comment PROJ-1`, at the integration capability level'), prompt)
   assert.ok(!prompt.includes('{{') && !prompt.includes('<!--'))
+  assert.ok(prompt.includes(FRAME_TOOLS), 'the frame\'s Tools rule, verbatim')
   assert.equal(land(root, 'comment-input').already, true)
 
   const first = comment(root, 'PROJ-1', valid('PROJ-1', 'taken', TAKEN))

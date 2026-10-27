@@ -20,6 +20,14 @@ import { run } from '../scope.mjs'
 import { run as workspaceCli } from '../workspace.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
+
+// The frame's `## Tools` section as sent: from its heading to the next, comment lines dropped.
+const FRAME = readFileSync(join(here, '..', '..', 'schema', 'prompts', 'frame.md'), 'utf8')
+const FRAME_TOOLS = FRAME.slice(FRAME.indexOf('## Tools'), FRAME.indexOf('\n## ', FRAME.indexOf('## Tools')))
+  .split('\n')
+  .filter((l) => !/^\s*<!--.*-->\s*$/.test(l))
+  .join('\n')
+  .trim()
 const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
 const schema = loadSchema()
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
@@ -194,6 +202,26 @@ test('keys gather the tracker items, the debt holding a key, and a change in fli
   assert.equal(again.items[0].state, 'taken', 'a gather again keeps the selection')
 })
 
+test('keys and a phrase together: the tracker gets both, and the debt is gathered by key and by the phrase', () => {
+  const root = host()
+  const out = scope(root, 'gather', '--change', 'fix-pool', '--keys', 'PROJ-1', '--text', 'reconnect storm')
+  assert.deepEqual(calls(root)[1].input.keys, ['PROJ-1'])
+  assert.equal(calls(root)[1].input.text, 'reconnect storm')
+  assert.match(out.report, /Debt: snmp-01 \(tracker key PROJ-1\), snmp-03 \(phrase\)\./)
+})
+
+test('a debt id among the keys is matched in the debt, never sent to the tracker', () => {
+  const root = host()
+  const out = scope(root, 'gather', '--change', 'fix-pool', '--keys', 'PROJ-1,snmp-02')
+  assert.deepEqual(calls(root)[1].input.keys, ['PROJ-1'])
+  assert.ok(out.items.some((i) => i.key === 'snmp-02' && i.source === 'debt'))
+
+  const only = host()
+  const debtOnly = scope(only, 'gather', '--change', 'fix-pool', '--keys', 'snmp-02')
+  assert.deepEqual(calls(only).map((c) => c.op), ['check'])
+  assert.deepEqual(debtOnly.items.map((i) => i.key), ['snmp-02'])
+})
+
 test('a degraded tracker says so with its hint; select waits; --skip-tracker records the skip once and every tracker step skips', () => {
   const root = host({ config: { check: { state: 'degraded', tool: 'unauthenticated', hint: 'create a new token' } } })
   const out = scope(root, 'gather', '--change', 'fix-pool', '--text', 'session pool')
@@ -283,6 +311,7 @@ test('check-input writes one input and one prompt per taken or partial item, wit
   const prompt = readFileSync(out.dispatches[0].promptFile, 'utf8')
   assert.doesNotMatch(prompt, /\{\{|<!--/)
   assert.match(prompt, /You are dispatched as `scope-check PROJ-1`, at the integration capability level/)
+  assert.ok(prompt.includes(FRAME_TOOLS), 'the frame\'s Tools rule, verbatim')
   assert.ok(prompt.includes(out.dispatches[0].replyFile) && prompt.includes('scope-check.schema.json'))
   const debtInput = JSON.parse(readFileSync(out.dispatches[2].inputFile, 'utf8'))
   assert.deepEqual([debtInput.issueFile, debtInput.related.map((r) => r.key), debtInput.debt.map((d) => d.key), debtInput.bug], [null, ['PROJ-1'], ['snmp-01'], false])

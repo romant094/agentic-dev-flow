@@ -2,12 +2,16 @@
 // profile, the path solver, the plan and its two-phase apply.
 //
 //   check    the env, the config, the token (GET /rest/api/2/myself) and the profile
-//   gather   the named issues (or a text search in the allowlisted projects), their parent,
-//            sub-tasks and linked issues; one JSON file per issue under input.stateDir
+//   gather   the named issues and a text search in the allowlisted projects, either or both;
+//            their parent, sub-tasks and linked issues; one JSON file per issue under
+//            input.stateDir
 //   start    a held plan: each issue to the start status, assigned to the developer; an item
 //            with corrections also gets the templated correction comment (decision D7)
 //   handoff  a held plan: the templated comment; for taken and not-reproduced items also the
-//            hand-off status and the tester (JIRA_QA) as assignee
+//            hand-off status and the tester (JIRA_QA) as assignee; a partial item goes back to
+//            statuses.initial by a route that avoids the hand-off status, or, with no initial
+//            status configured or no such route, keeps its status (the plan's `unmoved` says
+//            why); it always gets its comment
 //
 // start and handoff without `apply` build the plan in input.stateDir and send nothing
 // (`held`); with `apply: <plan id>` they run that plan. Each write of an issue is its own row
@@ -184,7 +188,7 @@ async function readIssue(client, key, extraFields) {
 async function gather(ctx) {
   const { input, config, env, client, facts } = ctx
   const { keys, text, change, stateDir } = input
-  if ((keys === undefined) === (text === undefined)) throw new Refusal(`gather takes keys or text, one of them; ${NOTHING_SENT}.`)
+  if (keys === undefined && text === undefined) throw new Refusal(`gather takes keys, text or both; ${NOTHING_SENT}.`)
   if (keys !== undefined && !(Array.isArray(keys) && keys.length > 0 && keys.every((k) => ISSUE_KEY.test(k)))) throw new Refusal(`keys is not a list of issue keys; ${NOTHING_SENT}.`)
   if (text !== undefined && !(typeof text === 'string' && text.trim() !== '')) throw new Refusal(`text is empty; ${NOTHING_SENT}.`)
   if (typeof change !== 'string' || change === '') throw new Refusal(`change is missing; ${NOTHING_SENT}.`)
@@ -202,16 +206,19 @@ async function gather(ctx) {
     } else notes.push(`field "${name}" is not in the profile's field map; not read`)
   }
 
-  let named
-  if (keys !== undefined) {
-    named = [...new Set(keys)]
-  } else {
+  // With keys, `named` is the keys alone and the text search only adds issues; without, it is
+  // the search's hits.
+  const given = keys === undefined ? [] : [...new Set(keys)]
+  let found = []
+  if (text !== undefined) {
     const projects = env.allowedProjects.map((p) => `"${p}"`).join(', ')
     const jql = `project in (${projects}) AND text ~ "${text.replace(/["\\]/g, '\\$&')}" AND statusCategory != Done ORDER BY key ASC`
-    named = (await client.search(jql, ['key'], TEXT_SEARCH_LIMIT)).map((i) => i.key)
-    if (named.length === TEXT_SEARCH_LIMIT) notes.push(`the text search stopped at ${TEXT_SEARCH_LIMIT} issues; name keys to narrow it`)
-    if (named.length === 0) notes.push('the text search found no open issue')
+    found = (await client.search(jql, ['key'], TEXT_SEARCH_LIMIT)).map((i) => i.key)
+    if (found.length === TEXT_SEARCH_LIMIT) notes.push(`the text search stopped at ${TEXT_SEARCH_LIMIT} issues; name keys to narrow it`)
+    if (found.length === 0) notes.push('the text search found no open issue')
   }
+  const named = keys === undefined ? found : given
+  const primary = [...new Set([...given, ...found])]
 
   const issues = new Map()
   const via = new Map()
@@ -233,8 +240,8 @@ async function gather(ctx) {
     }
   }
 
-  for (const key of named) await read(key)
-  for (const key of named.filter((k) => issues.has(k))) {
+  for (const key of primary) await read(key)
+  for (const key of primary.filter((k) => issues.has(k))) {
     const f = issues.get(key).fields
     if (f.parent?.key) await read(f.parent.key, { key, relation: 'parent of' })
     for (const sub of f.subtasks ?? []) await read(sub.key, { key, relation: 'sub-task of' })
@@ -298,20 +305,22 @@ async function gather(ctx) {
       file
     })
   }
-  rankBranches(items)
+  rankBranches(items, given)
   return done({ change, items, notes })
 }
 
-// The branch key's priority: a named sub-task, then the lowest sub-task, then the lowest bug,
-// then a named task. Equal ranks are a tie the core asks about; an excluded item and an epic
-// are not ranked.
-export function rankBranches(items) {
+// The branch key's priority: a named sub-task, then the lowest sub-task, then the lowest bug (a
+// sub-bug too), then a named task. Among named items the first in `keys` wins; items named by a
+// text search alone (not in `keys`) tie, and the core asks about a tie. An excluded item and an
+// epic are not ranked.
+export function rankBranches(items, keys = []) {
+  const order = (item) => (keys.includes(item.key) ? keys.indexOf(item.key) : -1)
   const tier = (item) => {
     if (item.excluded || item.kind === 'epic') return null
-    if (item.subtask && item.named) return [1, 0]
-    if (item.subtask) return [2, keyNumber(item.key)]
     if (item.kind === 'bug') return [3, keyNumber(item.key)]
-    if (item.named) return [4, 0]
+    if (item.subtask && item.named) return [1, order(item)]
+    if (item.subtask) return [2, keyNumber(item.key)]
+    if (item.named) return [4, order(item)]
     return null
   }
   for (const item of items) item.branchRank = null
@@ -357,10 +366,11 @@ function assertKeysAllowed(keys, env) {
 }
 
 // The hops from the issue's status to `target`, or why there are none. A hop whose screen
-// requires a field is not taken: the plugin never fills a required field on its own.
-function route(facts, from, target) {
+// requires a field is not taken: the plugin never fills a required field on its own. The route
+// never passes through a status in `avoid`.
+function route(facts, from, target, avoid = []) {
   const unsampled = (facts.unsampledStatuses ?? []).map((u) => u.status)
-  const path = solvePath(facts.workflow, from, target, unsampled)
+  const path = solvePath(facts.workflow, from, target, unsampled, avoid)
   if (path.kind === 'unreachable') return { reason: `no route from "${from}" to "${target}" in the discovered workflow` }
   if (path.kind === 'unknown') return { reason: `the route from "${from}" to "${target}" crosses unsampled status ${path.unsampled.join(', ')}` }
   const demanding = path.transitions.find((t) => t.requiredFields.length > 0)
@@ -404,6 +414,7 @@ function previewOf(plan, values) {
     for (const comment of comments) for (const line of comment.split('\n')) lines.push(`    ${line}`)
   }
   for (const { key, reason } of plan.excluded ?? []) lines.push(`${key} skipped: ${reason}`)
+  for (const { key, reason } of plan.unmoved ?? []) lines.push(`${key} not moved, comment only: ${reason}`)
   return lines
 }
 
@@ -470,7 +481,7 @@ async function applyHeld(ctx, kind) {
 
 // One issue's rows: the transition from its status, the assignee and the comment, each checked
 // against the status it expects when it runs. A row without `from` (a partial hand-off's
-// comment) is not checked.
+// comment with no initial status configured) is not checked.
 function issueRows({ key, summary, from, hops, target, assignee, body }) {
   const rows = []
   const row = (step, steps, expected) => rows.push({ key, summary, step, ...(expected === undefined ? {} : { from: expected }), steps, state: 'pending' })
@@ -542,6 +553,7 @@ async function handoff(ctx) {
   assertKeysAllowed(keys, env)
   const moving = input.items.some((i) => i.state !== 'partial')
   const target = config.statuses.handoff
+  const initial = config.statuses.initial
   if (moving && !target) throw new Refusal(`config.statuses.handoff names no hand-off status; ${NOTHING_SENT}.`)
   if (moving && !env.qa) throw new Refusal(`JIRA_QA, the tester's login, is not set in the env file; ${NOTHING_SENT}.`)
   let template
@@ -553,23 +565,34 @@ async function handoff(ctx) {
 
   const rows = []
   const excluded = []
+  // A partial issue with no route back: commented, not moved, and the plan says why.
+  const unmoved = []
   for (const item of input.items) {
     const body = renderComment(template, item.state, item.fields, input.mr)
     const issue = await issueSummary(client, item.key)
     const summary = issue.fields.summary ?? ''
-    if (item.state === 'partial') {
+    const partial = item.state === 'partial'
+    if (partial && !initial) {
       rows.push(...issueRows({ key: item.key, summary, from: undefined, hops: [], target, assignee: null, body }))
       continue
     }
     const from = issue.fields.status?.name
-    const way = route(facts, from, target)
+    // A partial issue goes back to the initial status, never through the hand-off status: that
+    // would notify the tester.
+    const way = partial ? route(facts, from, initial, target ? [target] : []) : route(facts, from, target)
+    // What remains is always commented: a partial issue with no route keeps its status.
+    if (way.reason && partial) {
+      unmoved.push({ key: item.key, reason: way.reason })
+      rows.push(...issueRows({ key: item.key, summary, from: undefined, hops: [], target, assignee: null, body }))
+      continue
+    }
     if (way.reason) {
       excluded.push({ key: item.key, reason: way.reason })
       continue
     }
-    rows.push(...issueRows({ key: item.key, summary, from, hops: way.steps, target, assignee: '<JIRA_QA>', body }))
+    rows.push(...issueRows({ key: item.key, summary, from, hops: way.steps, target: partial ? initial : target, assignee: partial ? null : '<JIRA_QA>', body }))
   }
   const operation = rows.some((r) => r.steps.some((s) => s.transitionId)) ? 'transition' : 'comment'
-  const plan = { version: 1, operation, purpose: 'handoff', allowlist: env.allowedProjects, discoveredAt: facts.discoveredAt, rows, excluded }
+  const plan = { version: 1, operation, purpose: 'handoff', allowlist: env.allowedProjects, discoveredAt: facts.discoveredAt, rows, excluded, ...(unmoved.length > 0 ? { unmoved } : {}) }
   return held(ctx, 'handoff', plan)
 }

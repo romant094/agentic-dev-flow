@@ -6,7 +6,8 @@ effort: medium
 
 Land a change after its merge: each tracker issue the change took gets one comment, rendered by
 the tracker plugin from fields an agent writes and the script checks, and goes to its tester. A
-partial issue gets a comment of what remains and keeps its status. The issue that mirrors a
+partial issue gets a comment of what remains and, where the tracker plugin has an initial
+status, goes back to it, never past the tester. The issue that mirrors a
 group of debt entries the change took is handed off too, once no entry of its group remains in
 the debt tree; while some remain it is partial. Land runs after
 `/adf:archive`, once the merge request is merged, or with no forge once the branch is merged into

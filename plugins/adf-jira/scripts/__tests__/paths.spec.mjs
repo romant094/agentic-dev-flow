@@ -94,4 +94,26 @@ describe('solvePath', () => {
   it('behaves exactly as before for the unreachable case when unsampledStatuses is omitted', () => {
     assert.deepEqual(solvePath(graph, 'Opened', 'Nirvana'), { kind: 'unreachable' })
   })
+
+  it('never passes through an avoided status, whichever route the graph lists first', () => {
+    const reviewFirst = { ...graph, 'In Progress': [t('821', 'Review Issue', 'Review'), t('811', 'Suspend', 'Suspended')] }
+    for (const g of [graph, reviewFirst]) {
+      assert.deepEqual(
+        path(solvePath(g, 'In Progress', 'Opened', [], ['Review'])).map((x) => x.id),
+        ['811', '791']
+      )
+    }
+    assert.deepEqual(
+      path(solvePath(reviewFirst, 'In Progress', 'Opened')).map((x) => x.id),
+      ['821', '741']
+    )
+  })
+
+  it('still ends at an avoided status when it is the target, and is unreachable when only an avoided status leads there', () => {
+    assert.deepEqual(
+      path(solvePath(graph, 'In Progress', 'Review', [], ['Review'])).map((x) => x.id),
+      ['821']
+    )
+    assert.deepEqual(solvePath(graph, 'In Progress', 'Resolved', [], ['Review', 'Opened']), { kind: 'unreachable' })
+  })
 })
