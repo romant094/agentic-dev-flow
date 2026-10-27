@@ -11,7 +11,7 @@ You are dispatched as `{{name}}`, at the {{level}} capability level, for {{subje
 
 ## Tools
 
-<!-- Stated in full here; every command points here for its own script calls. -->
+<!-- Stated in full here; every command points here for its own script calls, and scripts/lib/scope.mjs renderSkeleton appends this section, heading to the next, to a skeleton not wrapped in the frame (scope-check, land-comment). -->
 - Read files with Read, Grep and Glob, and write them with Write and Edit, never through the
   shell.
 - Run each command as one plain command per Bash call: no `;`, `|`, `&&` or `||` chain, no

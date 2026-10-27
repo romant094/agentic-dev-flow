@@ -29,7 +29,7 @@ holds nothing secret.
 | `profileDir` | `.claude/jira/profile` | Where the profile lives: `discovered.json` and `local.md` (personal, gitignored) and `conventions.md` (the team's, committed). |
 | `debtEpic` | none | The epic the debt tree is mirrored into (`/adf-jira:sync-debt`): one child per group of related entries. |
 | `fields` | `[]` | Field names, as the profile's field map spells them, that `gather` reads for each issue, for example `["Reproduce steps", "Expected result"]`. |
-| `statuses` | `{ "initial": null, "start": "In Progress", "handoff": null, "excluded": [] }` | `initial`: the status a new issue starts in; `/adf-jira:sync-debt` edits a group's issue only while it is in it, and refuses to plan an edit without it. `start`: the status `start` moves an issue to. `handoff`: the status `handoff` moves a taken issue to; required for a hand-off. `excluded`: statuses that keep an issue out of a change's scope besides the closed ones (for example a suspended status). |
+| `statuses` | `{ "initial": null, "start": "In Progress", "handoff": null, "excluded": [] }` | `initial`: the status a new issue starts in; `/adf-jira:sync-debt` edits a group's issue only while it is in it, and refuses to plan an edit without it; `handoff` routes a partial issue back to it. `start`: the status `start` moves an issue to. `handoff`: the status `handoff` moves a taken issue to; required for a hand-off. `excluded`: statuses that keep an issue out of a change's scope besides the closed ones (for example a suspended status). |
 | `commentTemplate` | the plugin's `templates/handoff.md` | A host file that replaces the hand-off comment template. |
 | `correctionTemplate` | the plugin's `templates/corrections.md` | A host file that replaces the correction comment template of `start`. |
 | `debtTemplate` | the plugin's `templates/debt.md` | A host file that replaces the description template of a debt group's issue (`/adf-jira:sync-debt`). |
@@ -74,7 +74,7 @@ exit code is 0 for `done` and `degraded`, 1 for `refused`.
 | Operation | Input | Result when `done` |
 |---|---|---|
 | `check` | `{}` | `tool: "ready"`, `account` (the token's login from `/rest/api/2/myself`), `sources` (each env value's name, layer and length), `profile.discoveredAt` |
-| `gather` | `keys` (issue keys) or `text`; `change`; `stateDir` (absolute) | `items` and `notes`, below; one JSON file per issue in `stateDir` |
+| `gather` | `keys` (issue keys), `text` or both; `change`; `stateDir` (absolute) | `items` and `notes`, below; one JSON file per issue in `stateDir` |
 | `start` | `items: [{ key, corrections, answers }]`, `stateDir`; `apply` (a plan id) | without `apply`: `held: true`, `plan`, `file`, `preview`; with it: `applied` (keys), `skipped` and `failed` (`{ key, reason }`), `aborted` |
 | `handoff` | `items: [{ key, state, fields }]`, `mr: { url } \| null`, `stateDir`; `apply` | as `start` |
 
@@ -89,8 +89,8 @@ exit code is 0 for `done` and `degraded`, 1 for `refused`.
 An input field the plugin does not use (`change`; an item's `state` at `start`) is accepted and
 ignored.
 
-**`gather`** reads each named issue (or, for a `text`, the open issues of the allowlisted
-projects whose text matches, at most 20), and one level of related issues: its parent, its
+**`gather`** reads each named issue and, for a `text`, the open issues of the allowlisted
+projects whose text matches, at most 20 (`keys`, `text` or both), and one level of related issues: its parent, its
 sub-tasks and its linked issues. A key outside the allowlist is named in `notes` and never
 fetched. Each issue's file holds its description, all its comments, the `config.fields`
 values, its parent, sub-tasks and links. Each item is `{ key, url, kind, subtask, title, status,
@@ -102,9 +102,11 @@ excluded, flags, file }`:
 - `excluded` is the reason an issue is out of scope (a closed status, or one of
   `statuses.excluded`), else `null`; `flags` holds one line when an excluded issue's latest
   comment is newer than its move into its status, which may mean the status is stale;
+- `named` is true for a key in `keys`; with no `keys`, for a text search hit;
 - `branchToken` is the key; `branchRank` orders the branch key: a named sub-task first, then
-  the lowest sub-task, then the lowest bug, then a named task. Equal ranks are a tie for the
-  developer; an excluded issue and an epic have `null`.
+  the lowest sub-task, then the lowest bug (a sub-bug too), then a named task. Among named
+  issues the first in `keys` wins; only text search hits tie, a tie for the developer; an
+  excluded issue and an epic have `null`.
 
 **`start`** without `apply` builds a plan in `stateDir` and sends nothing: per issue, the
 shortest route from its status to `statuses.start`, then the developer as assignee when the
@@ -120,7 +122,7 @@ do is skipped with its reason. With `apply: <plan id>` the plan runs.
 | State | Fields | The rows |
 |---|---|---|
 | `taken` | `done`, `test` (lists); `commit` | the route to `statuses.handoff`, the tester (`JIRA_QA`) as assignee, the comment |
-| `partial` | `done`, `test`, `remains` (lists); `commit` | the comment only; the status stays |
+| `partial` | `done`, `test`, `remains` (lists); `commit` | the route back to `statuses.initial`, never through `statuses.handoff`, then the comment; with no `statuses.initial`, or no such route, the comment only and the status stays, the plan's `unmoved` naming why |
 | `not-reproduced` | `tried`, `commit`; `test` | as `taken`: the comment says the issue does not reproduce on that commit, and the tester retests it |
 
 The required fields are the core's, and the core sends every text field as a list of one-line

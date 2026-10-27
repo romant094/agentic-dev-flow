@@ -137,9 +137,9 @@ plans, so they outlive the worktree.
 | Operation | Caller and moment | Input | Result when `done` |
 |---|---|---|---|
 | `check` | `scope.mjs gather`, and the hand-off after the merge, before any other tracker call | `{}` | `tool: "ready"`, `account`; degraded: `tool` is `missing`, `unauthenticated` or `unconfigured`, with `hint`; never a secret value |
-| `gather` | propose, in the main checkout, before the branch | `keys` (a list) or `text`, `change`, `stateDir` | `items`: `[{ key, url, kind, title, status, open, parent, links: [{ key, relation }], branchToken, branchRank, excluded, flags, file }]`, `file` a file under `stateDir` holding the issue's description, comments and fields; `notes` |
+| `gather` | propose, in the main checkout, before the branch | `keys` (a list), `text` or both, `change`, `stateDir` | `items`: `[{ key, url, kind, title, status, open, parent, links: [{ key, relation }], branchToken, branchRank, excluded, flags, file }]`, `file` a file under `stateDir` holding the issue's description, comments and fields; `notes` |
 | `start` | propose, after the branch and the worktree exist; held | `items: [{ key, state, verdict, corrections, answers }]`, `change`, `stateDir`, `apply` | without `apply`: `held: true`, `plan` (its id), `preview` (lines); with `apply: <plan id>`: `applied`, `skipped`, `failed`, each a list of keys or of `{ key, reason }` |
-| `handoff` | the hand-off after the merge, and `scope.mjs retest`; held | `items: [{ key, state, fields }]`, `state` `taken`, `partial` or `not-reproduced`; `mr: { url } \| null`; `change`, `stateDir`, `apply` | as `start`. `taken` and `not-reproduced`: the comment, the hand-off status and the tester; `partial`: the comment only |
+| `handoff` | the hand-off after the merge, and `scope.mjs retest`; held | `items: [{ key, state, fields }]`, `state` `taken`, `partial` or `not-reproduced`; `mr: { url } \| null`; `change`, `stateDir`, `apply` | as `start`. `taken` and `not-reproduced`: the comment, the hand-off status and the tester; `partial`: the comment, and the provider may move the issue back to its initial status, never through the hand-off status |
 
 `kind` is one of `bug`, `sub-task`, `epic`, `story` or `task`, the provider's mapping of the
 issue type; `bug` triggers the core's bug check, which needs a reproduction and the expected

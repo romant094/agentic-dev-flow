@@ -28,8 +28,8 @@ back into it, and merges only on the developer's yes.
 
 Whatever the start, `scope.mjs gather` in the main checkout collects what fits the same change:
 the technical debt store always, the tracker when a tracker plugin is enabled, and the changes in
-flight whose scope already takes a gathered key. The start is the tracker keys the developer
-named and the description as the phrase. With a tracker enabled (`tracker.state` is `done`) and
+flight whose scope already takes a gathered key. The start is the keys the developer named,
+tracker keys or debt ids, and the description as the phrase, passed together. With a tracker enabled (`tracker.state` is `done`) and
 neither a key nor a phrase, ask once for the keys, or none, and gather again with them. With no
 tracker plugin and no debt match the result is `empty`: show its one-line `report`, and the
 proposal goes on to the branch with no scope, as it did before scopes existed. Resolved debt the

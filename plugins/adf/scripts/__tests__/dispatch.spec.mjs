@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { schedule } from '../lib/plan.mjs'
-import { dispatchName, MAX_ROUNDS, normalize, parseGraph, parseName, planDispatch, renderPrompt, roundOf, verbatimBlocks } from '../lib/dispatch.mjs'
+import { dispatchName, MAX_ROUNDS, normalize, parseGraph, parseName, planDispatch, renderPrompt, ROLES, roundOf, ruleSkeletons, verbatimBlocks } from '../lib/dispatch.mjs'
+import { frameTools, renderSkeleton } from '../lib/scope.mjs'
 import { PLUGIN_ROOT, PROMPTS_DIR, run } from '../dispatch.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
 import { recordReply } from '../lib/attempts.mjs'
@@ -522,6 +523,27 @@ test('every verbatim block of a prompt skeleton is in its instruction, word for 
       assert.ok(instruction.includes(normalize(text)), `${f}: a verbatim block is not in ${source}: ${text.slice(0, 80)}`)
     }
   }
+})
+
+// The frame's `## Tools` is the one statement of the tool rules: every prompt skeleton is either
+// a rule skeleton renderPrompt wraps in the frame, or rendered by renderSkeleton, which appends
+// that section. A skeleton rendered neither way would reach its agent without the rules.
+test('every prompt skeleton reaches its agent through the frame or renderSkeleton, so with the Tools rule', () => {
+  const plans = ROLES.flatMap((role) => [{ role, check: 'c4', round: 1 }, { role, check: 'c8', round: 2 }])
+  const options = [{}, { testFirst: true }, { testFirst: true, proof: true }, { dispositions: true }]
+  const framed = new Set(['frame', ...plans.flatMap((p) => options.flatMap((o) => ruleSkeletons(p, o)))])
+  const libDir = join(PLUGIN_ROOT, 'scripts', 'lib')
+  const skeletal = new Set()
+  for (const f of readdirSync(libDir).filter((n) => n.endsWith('.mjs'))) {
+    const source = readFileSync(join(libDir, f), 'utf8')
+    if (!/renderSkeleton\(/.test(source)) continue
+    for (const [, name] of source.matchAll(/'prompts', '([\w-]+)\.md'/g)) if (name !== 'frame') skeletal.add(name)
+  }
+  const prompts = readdirSync(PROMPTS_DIR).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3))
+  assert.deepEqual(prompts.filter((p) => !framed.has(p) && !skeletal.has(p)), [])
+  assert.deepEqual([...skeletal].sort(), ['land-comment', 'scope-check'])
+  for (const name of skeletal) assert.ok(renderSkeleton(join(PROMPTS_DIR, `${name}.md`), {}).includes(frameTools()), name)
+  assert.ok(frameTools().startsWith('## Tools\n') && !frameTools().includes('\n## ') && !frameTools().includes('<!--'), frameTools())
 })
 
 // The apply skeletons carry no verbatim block, and the apply instruction and command restate

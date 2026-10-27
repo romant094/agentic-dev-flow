@@ -7,7 +7,8 @@
 // --home names the Claude Code home where the plugins are found.
 //
 //   scope.mjs gather --change <name> [--keys K1,K2] [--text "<phrase>"] [--skip-tracker "<reason>"]
-//       the tracker's check, then its gather of the keys or the phrase (none with no tracker
+//       the tracker's check, then its gather of the keys and the phrase, a debt id among the
+//       keys left out (none with no tracker
 //       plugin; degraded says so with its hint, and --skip-tracker records working without it
 //       for this change); the debt entries whose Tracker cell or id is a gathered key, or whose
 //       title matches the phrase's words (with neither, the change name's); the in-flight

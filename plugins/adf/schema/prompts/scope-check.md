@@ -1,4 +1,4 @@
-<!-- Propose's issue check: one dispatch per taken or partial scope item, named `scope-check <KEY>`. scripts/scope.mjs check-input fills each {{field}}, drops these comment lines and writes the prompt beside the input file. -->
+<!-- Propose's issue check: one dispatch per taken or partial scope item, named `scope-check <KEY>`. scripts/scope.mjs check-input fills each {{field}}, drops these comment lines, appends the frame's `## Tools` section and writes the prompt beside the input file. -->
 You are dispatched as `{{name}}`, at the {{level}} capability level, to check the scope item
 `{{key}}` of the change `{{change}}` before its branch is made.
 

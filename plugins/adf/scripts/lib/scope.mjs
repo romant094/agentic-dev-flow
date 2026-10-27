@@ -54,6 +54,7 @@ import { worktreePath } from './workspace.mjs'
 const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 export const SCOPE_SCHEMA = join(PLUGIN_ROOT, 'schema', SCOPE_ROLES['scope-check'].schema)
 const PROMPT = join(PLUGIN_ROOT, 'schema', 'prompts', 'scope-check.md')
+const FRAME = join(PLUGIN_ROOT, 'schema', 'prompts', 'frame.md')
 export const SCOPE_FILE = 'scope.json'
 export const SECTION = 'Scope sources'
 export const RETEST_REASON = 'does not reproduce; sent to retest'
@@ -219,6 +220,14 @@ function trackerItem(main, change, raw) {
   }
 }
 
+// Every id of the debt tree, open and resolved.
+function debtIds(main) {
+  const root = readDebtRoot(main)
+  if (!root) return new Set()
+  const { entries, resolved } = listTree(join(main, root))
+  return new Set([...entries, ...resolved].map((e) => e.id))
+}
+
 function debtItems(main, { keys, words }) {
   const root = readDebtRoot(main)
   if (!root) return { store: null, items: [], precedents: [] }
@@ -306,6 +315,8 @@ export function gather(root, change, { keys = [], text: phrase = null, skipTrack
   const { main, scope: previous } = load(root, change)
   for (const k of keys) if (!SCOPE_KEY.test(k)) refuse(`"${k}" is not a key: a key holds no space, colon, pipe or backtick`)
   const stateDir = trackerDir(main, change)
+  // A debt id among the keys is matched in the debt store only; the tracker gets the rest.
+  const trackerKeys = keys.filter((k) => !debtIds(main).has(k))
   let t
   let raw = []
   if (skipTracker !== null) {
@@ -317,10 +328,10 @@ export function gather(root, change, { keys = [], text: phrase = null, skipTrack
     if (check.state === 'refused') refuse(trackerReport('check', check), { tracker: check })
     if (check.state === 'none') t = { state: 'none', plugin: null, notes: [], ...(check.absent ? { absent: check.absent } : {}), report: trackerReport('gather', check) }
     else if (check.state === 'degraded') t = { state: 'degraded', plugin, tool: check.tool ?? null, hint: check.hint ?? null, notes: [], report: trackerReport('check', check) }
-    else if (keys.length === 0 && !phrase) t = { state: 'done', plugin, account: check.account ?? null, notes: ['no key and no phrase; the tracker was not searched'], report: trackerReport('check', check) }
+    else if (trackerKeys.length === 0 && !phrase) t = { state: 'done', plugin, account: check.account ?? null, notes: ['no tracker key and no phrase; the tracker was not searched'], report: trackerReport('check', check) }
     else {
       mkdirSync(stateDir, { recursive: true })
-      const got = tracker(main, 'gather', { ...(keys.length ? { keys } : {}), ...(phrase ? { text: phrase } : {}), change, stateDir }, core)
+      const got = tracker(main, 'gather', { ...(trackerKeys.length ? { keys: trackerKeys } : {}), ...(phrase ? { text: phrase } : {}), change, stateDir }, core)
       if (got.state === 'refused') refuse(trackerReport('gather', got), { tracker: got })
       if (got.state === 'degraded') t = { state: 'degraded', plugin, tool: got.tool ?? null, hint: got.hint ?? null, notes: [], report: trackerReport('gather', got) }
       else if (got.state === 'none') t = { state: 'none', plugin, notes: [], report: trackerReport('gather', got) }
@@ -510,14 +521,26 @@ function matchedSpecs(main, item, names) {
   return names.filter((name) => name.split('-').every((w) => own.has(w)))
 }
 
-// A prompt skeleton under schema/prompts/ filled: its comment lines dropped, each {{field}}
-// replaced (an unknown field by nothing).
-export function renderSkeleton(file, fields) {
-  return readFileSync(file, 'utf8')
+const dropComments = (text) =>
+  text
     .split('\n')
     .filter((l) => !/^\s*<!--.*-->\s*$/.test(l))
     .join('\n')
-    .replace(/\{\{(\w+)\}\}/g, (_, k) => fields[k] ?? '')
+
+// The frame's `## Tools` section, from its heading to the next: the one statement of the tool
+// rules, which a prompt not wrapped in the frame carries too.
+export function frameTools() {
+  const frame = dropComments(readFileSync(FRAME, 'utf8'))
+  const start = frame.indexOf('## Tools')
+  const end = frame.indexOf('\n## ', start)
+  return frame.slice(start, end === -1 ? undefined : end).trim()
+}
+
+// A prompt skeleton under schema/prompts/ filled: its comment lines dropped, each {{field}}
+// replaced (an unknown field by nothing), and the frame's Tools section appended.
+export function renderSkeleton(file, fields) {
+  const body = dropComments(readFileSync(file, 'utf8')).replace(/\{\{(\w+)\}\}/g, (_, k) => fields[k] ?? '')
+  return `${body.trimEnd()}\n\n${frameTools()}\n`
 }
 
 // The precedents of an item: the resolved debt its Precedent cell names, that held its key or its

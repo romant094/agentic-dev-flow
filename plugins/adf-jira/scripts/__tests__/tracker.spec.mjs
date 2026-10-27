@@ -12,7 +12,7 @@ const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const NOW = new Date('2026-10-21T10:00:00.000Z')
 const CONFIG = { baseUrl: 'https://jira.example.com', allowlist: ['PROJ'], statuses: { handoff: 'Review', excluded: ['Suspended'] }, fields: ['Reproduce steps'] }
 
-function project({ env = 'JIRA_PAT=token-value\nJIRA_QA=qa.login\n', discoveredAt = '2026-10-20T10:00:00.000Z', profile = true } = {}) {
+function project({ env = 'JIRA_PAT=token-value\nJIRA_QA=qa.login\n', discoveredAt = '2026-10-20T10:00:00.000Z', profile = true, workflow = WORKFLOW } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'adf-jira-'))
   const home = mkdtempSync(join(tmpdir(), 'adf-jira-home-'))
   if (env !== null) {
@@ -24,7 +24,7 @@ function project({ env = 'JIRA_PAT=token-value\nJIRA_QA=qa.login\n', discoveredA
     mkdirSync(dir, { recursive: true })
     writeFileSync(
       join(dir, 'discovered.json'),
-      JSON.stringify({ discoveredAt, instance: {}, project: { key: 'PROJ' }, issueTypes: [], fieldMap: { 'Reproduce steps': 'customfield_1' }, workflow: WORKFLOW, unsampledStatuses: [], permissions: {} })
+      JSON.stringify({ discoveredAt, instance: {}, project: { key: 'PROJ' }, issueTypes: [], fieldMap: { 'Reproduce steps': 'customfield_1' }, workflow, unsampledStatuses: [], permissions: {} })
     )
   }
   return { root, home, stateDir: join(root, '.superpowers', 'sdd', 'my-change', 'tracker') }
@@ -181,6 +181,19 @@ describe('tracker gather', () => {
     assert.equal(result.items.find((i) => i.key === 'PROJ-1').branchToken, 'PROJ-1')
   })
 
+  it('ranks the first named of several named sub-tasks alone, by the order of the keys', async () => {
+    const where = project()
+    const jira = fakeJira({
+      issues: {
+        'PROJ-2': issue('PROJ-2', { type: 'Sub-task', subtask: true }),
+        'PROJ-3': issue('PROJ-3', { type: 'Sub-task', subtask: true })
+      }
+    })
+    const { result } = await call(jira, where, 'gather', { keys: ['PROJ-3', 'PROJ-2'], change: 'c', stateDir: where.stateDir })
+    const rank = Object.fromEntries(result.items.map((i) => [i.key, i.branchRank]))
+    assert.deepEqual(rank, { 'PROJ-3': 1, 'PROJ-2': 2 })
+  })
+
   it('excludes a closed and a suspended issue, and flags a stale status once', async () => {
     const where = project()
     const jira = fakeJira({
@@ -228,17 +241,31 @@ describe('tracker gather', () => {
     assert.ok(result.notes.some((n) => n.startsWith('PROJ-404')))
   })
 
-  it('refuses keys and text together, and a relative stateDir, before any call', async () => {
+  it('takes keys and text together: the union is read, and only the keys are named', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: { 'PROJ-1': issue('PROJ-1', { summary: 'Port form' }), 'PROJ-7': issue('PROJ-7', { summary: 'Login page fails' }) } })
+    const { code, result } = await call(jira, where, 'gather', { keys: ['PROJ-1'], text: 'login', change: 'c', stateDir: where.stateDir })
+    assert.equal(code, 0, JSON.stringify(result))
+    assert.deepEqual(
+      result.items.map((i) => [i.key, i.named]),
+      [
+        ['PROJ-1', true],
+        ['PROJ-7', false]
+      ]
+    )
+  })
+
+  it('refuses neither keys nor text, and a relative stateDir, before any call', async () => {
     const where = project()
     const jira = fakeJira()
-    assert.equal((await call(jira, where, 'gather', { keys: ['PROJ-1'], text: 'x', change: 'c', stateDir: where.stateDir })).result.state, 'refused')
+    assert.equal((await call(jira, where, 'gather', { change: 'c', stateDir: where.stateDir })).result.state, 'refused')
     assert.equal((await call(jira, where, 'gather', { keys: ['PROJ-1'], change: 'c', stateDir: 'rel' })).result.state, 'refused')
     assert.equal(jira.calls.length, 0)
   })
 })
 
 describe('rankBranches', () => {
-  it('ranks a named sub-task first and ties two named tasks', () => {
+  it('ranks a named sub-task first and ties two tasks named by a text search', () => {
     const items = rankBranches([
       { key: 'P-9', kind: 'task', named: true, subtask: false, excluded: null },
       { key: 'P-8', kind: 'task', named: true, subtask: false, excluded: null },
@@ -249,6 +276,37 @@ describe('rankBranches', () => {
     assert.deepEqual(
       items.map((i) => i.branchRank),
       [3, 3, 1, 2, null]
+    )
+  })
+
+  it('ranks the first of several named sub-tasks by the order of the keys, without a tie', () => {
+    const items = rankBranches(
+      [
+        { key: 'P-3', kind: 'sub-task', named: true, subtask: true, excluded: null },
+        { key: 'P-7', kind: 'sub-task', named: true, subtask: true, excluded: null },
+        { key: 'P-9', kind: 'task', named: true, subtask: false, excluded: null },
+        { key: 'P-8', kind: 'task', named: true, subtask: false, excluded: null }
+      ],
+      ['P-7', 'P-3', 'P-9', 'P-8']
+    )
+    assert.deepEqual(
+      items.map((i) => i.branchRank),
+      [2, 1, 3, 4]
+    )
+  })
+
+  it('ranks a sub-bug as a bug, after a sub-task, even when named', () => {
+    const items = rankBranches(
+      [
+        { key: 'P-2', kind: 'bug', named: true, subtask: true, excluded: null },
+        { key: 'P-5', kind: 'sub-task', named: false, subtask: true, excluded: null },
+        { key: 'P-6', kind: 'bug', named: false, subtask: false, excluded: null }
+      ],
+      ['P-2']
+    )
+    assert.deepEqual(
+      items.map((i) => i.branchRank),
+      [2, 1, 3]
     )
   })
 })
@@ -462,6 +520,73 @@ describe('tracker handoff', () => {
       'h3. Done\n# The form validates the port.\n\nh3. How to test\n# Open the port page.\n# Enter 70000 and save.\n\nMerge request: https://git.example.com/group/repo/-/merge_requests/7'
     )
     assert.match(jira.comments['PROJ-2'][0].body, /h3\. How to test\n# Edit one port and save 70000\.\n\nh3\. Remains\n# The bulk edit is not covered\./)
+  })
+
+  const withInitial = { ...CONFIG, statuses: { ...CONFIG.statuses, initial: 'Opened' } }
+
+  it('routes a partial issue back to the initial status in two hops, with its comment, when statuses.initial is set', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: issues() })
+    const { result: held } = await call(jira, where, 'handoff', { items: [taken, partial], mr, stateDir: where.stateDir }, withInitial)
+    const plan = JSON.parse(readFileSync(held.file, 'utf8'))
+    assert.deepEqual(
+      plan.rows.filter((r) => r.key === 'PROJ-2').map((r) => `${r.step} ${r.from}`),
+      ['transition In Progress', 'comment Opened']
+    )
+    assert.deepEqual(
+      rowOf(plan, 'PROJ-2', 'transition').steps.map((s) => s.to),
+      ['Suspended', 'Opened']
+    )
+    assert.ok(held.preview.includes('PROJ-2 Summary of PROJ-2: In Progress → Suspended → Opened; comment:'))
+    const { result } = await call(jira, where, 'handoff', { stateDir: where.stateDir, apply: held.plan }, withInitial)
+    assert.deepEqual(result.applied, ['PROJ-1', 'PROJ-2'])
+    assert.equal(jira.store['PROJ-2'].fields.status, 'Opened')
+    assert.deepEqual(jira.store['PROJ-2'].fields.assignee, { name: 'dev.login' })
+    assert.equal(jira.comments['PROJ-2'].length, 1)
+  })
+
+  it('routes a partial issue around the hand-off status even when the workflow lists that route first', async () => {
+    const reviewFirst = {
+      ...WORKFLOW,
+      'In Progress': [...WORKFLOW['In Progress']].reverse(),
+      Review: [{ id: '741', name: 'Open Issue', to: 'Opened', requiredFields: [], allowedValues: {} }, ...WORKFLOW.Review]
+    }
+    const where = project({ workflow: reviewFirst })
+    const { result } = await call(fakeJira({ issues: issues() }), where, 'handoff', { items: [partial], mr, stateDir: where.stateDir }, withInitial)
+    const plan = JSON.parse(readFileSync(result.file, 'utf8'))
+    assert.deepEqual(
+      rowOf(plan, 'PROJ-2', 'transition').steps.map((s) => s.to),
+      ['Suspended', 'Opened']
+    )
+  })
+
+  it('comments a partial issue with no route back that avoids the hand-off status, and the plan says why it stays', async () => {
+    const reviewOnly = {
+      ...WORKFLOW,
+      'In Progress': WORKFLOW['In Progress'].filter((t) => t.to === 'Review'),
+      Review: [{ id: '741', name: 'Open Issue', to: 'Opened', requiredFields: [], allowedValues: {} }, ...WORKFLOW.Review]
+    }
+    const where = project({ workflow: reviewOnly })
+    const { result } = await call(fakeJira({ issues: issues() }), where, 'handoff', { items: [partial], mr, stateDir: where.stateDir }, withInitial)
+    const plan = JSON.parse(readFileSync(result.file, 'utf8'))
+    assert.deepEqual(
+      plan.rows.map((r) => `${r.key} ${r.step} ${r.from ?? '-'}`),
+      ['PROJ-2 comment -']
+    )
+    assert.deepEqual(plan.excluded, [])
+    assert.deepEqual(plan.unmoved, [{ key: 'PROJ-2', reason: 'no route from "In Progress" to "Opened" in the discovered workflow' }])
+    assert.ok(result.preview.includes('PROJ-2 not moved, comment only: no route from "In Progress" to "Opened" in the discovered workflow'))
+  })
+
+  it('keeps a partial issue at its status with the comment only when statuses.initial is unset', async () => {
+    const where = project()
+    const { result } = await call(fakeJira({ issues: issues() }), where, 'handoff', { items: [partial], mr, stateDir: where.stateDir })
+    const plan = JSON.parse(readFileSync(result.file, 'utf8'))
+    assert.deepEqual(
+      plan.rows.map((r) => `${r.key} ${r.step} ${r.from ?? '-'}`),
+      ['PROJ-2 comment -']
+    )
+    assert.equal(plan.operation, 'comment')
   })
 
   it('resumes a hand-off that failed after the transition: the rerun posts only the comment', async () => {

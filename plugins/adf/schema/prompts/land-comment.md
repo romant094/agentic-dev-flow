@@ -1,4 +1,4 @@
-<!-- The hand-off after the merge: one dispatch per taken or partial tracker issue, named `land-comment <KEY>`. scripts/land.mjs comment-input fills each {{field}}, drops these comment lines and writes the prompt beside the input file. -->
+<!-- The hand-off after the merge: one dispatch per taken or partial tracker issue, named `land-comment <KEY>`. scripts/land.mjs comment-input fills each {{field}}, drops these comment lines, appends the frame's `## Tools` section and writes the prompt beside the input file. -->
 You are dispatched as `{{name}}`, at the {{level}} capability level, to write the fields of the
 hand-off comment of the tracker issue `{{key}}`, which the change `{{change}}` took as
 `{{state}}` and which is now merged.
