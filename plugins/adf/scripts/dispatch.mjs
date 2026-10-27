@@ -95,7 +95,7 @@
 // the files that range touched which no task of the plan names, each with its owning task
 // (the task itself for a task's round), the files to record with `plan.mjs added`.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readArchiveState } from './lib/archive.mjs'
 import { attemptsFile, recordDispatch, recordReply, resetAttempts, standingOf } from './lib/attempts.mjs'
@@ -329,7 +329,7 @@ function promptFor(inputs, plan, values, root, planText, main) {
       }
       const state = consolidationState(root, change)
       if (state.open.length === 0) throw new DispatchError('the sweep has no open finding and its consolidation none: there is nothing to consolidate')
-      fields.push(['Files in scope', state.files.map((f) => join(plan.worktree, f))], ['Open findings', state.rendered])
+      fields.push(['Files in scope', state.files.map((f) => (isAbsolute(f) ? f : join(plan.worktree, f)))], ['Open findings', state.rendered])
       questionOptional = true
     } else if (inputs.role === 'fix' || inputs.role === 're-review') {
       const state = subjectState(root, change, subjectOf(inputs))

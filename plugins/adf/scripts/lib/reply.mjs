@@ -78,6 +78,7 @@ import { readRegistry } from './registry.mjs'
 import { check as checkRetro, compute as computeRetro } from './retro.mjs'
 import { readTestRecord, recordName, TESTS_DIR } from './suite.mjs'
 import { dupFilter, locationErrors, sweepInputs } from './sweep.mjs'
+import { relativeFindings } from './dup.mjs'
 import { gitIn } from './workspace.mjs'
 
 export const SCHEMA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema')
@@ -298,7 +299,7 @@ const sweep = {
   check(reply, ctx) {
     const listed = ctx.sweep.removedOrRenamed.map((r) => r.requirement ?? r.from)
     const given = reply.dispositions ?? []
-    const located = locationErrors(reply.findings)
+    const located = locationErrors(reply.findings, ctx.root)
     if (!ctx.sweep.secondQuestion) return [...located, ...(given.length ? ['$.dispositions: the change lists no REMOVED or RENAMED requirement, so the reply gives no disposition'] : [])]
     if (reply.dispositions === undefined) return [...located, `$.dispositions: required, one for each REMOVED or RENAMED requirement: ${listed.join(', ')}`]
     const errors = [...located]
@@ -311,7 +312,7 @@ const sweep = {
     for (const requirement of listed) if (!seen.has(requirement)) errors.push(`$.dispositions: ${requirement} has no disposition`)
     return errors
   },
-  compute: (reply, ctx) => ({ ...dupFilter(ctx.root, reply.findings), ...(reply.dispositions ? { dispositions: reply.dispositions } : {}) })
+  compute: (reply, ctx) => ({ ...dupFilter(ctx.root, relativeFindings(ctx.root, reply.findings)), ...(reply.dispositions ? { dispositions: reply.dispositions } : {}) })
 }
 
 // ---------------------------------------------------------------- the table

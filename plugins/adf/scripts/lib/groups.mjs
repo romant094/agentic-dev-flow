@@ -139,23 +139,30 @@ export function removeGroup(changeRoot, { change, group }, { core } = {}) {
 // Each group's state on disk, for the schedule: merged when the change branch holds the merge
 // commit of its branch (the branch itself is deleted once its worktree is removed, so the merge
 // subject is what remains), kept while its worktree exists. Returns `(n) => { merged, kept }`.
-// After the merge review passed: remove the group's worktree and branch, then push the change
-// branch through the forge role with the branch and the protected list read here, never typed.
-// With no forge plugin the push state is `none`, which is not an error. The push result is kept
-// in .superpowers/sdd/<change>/push.json for apply's report. `core` is callRole's.
+// Push the change branch through the forge role with the branch and the protected list read
+// here, never typed. With no forge plugin the push state is `none`, which is not an error. The
+// push result is kept in .superpowers/sdd/<change>/push.json for apply's report, with `extra`
+// (the group a group-finish pushed). `core` is callRole's. Returns { state, plugin?, hint?, error? }.
 export const PUSH_FILE = 'push.json'
 export const pushPath = (changeRoot, change) => join(changeRoot, '.superpowers', 'sdd', change, PUSH_FILE)
 
-export function finishGroup(changeRoot, { change, group }, core) {
+export function pushChange(changeRoot, change, core, extra = {}) {
   const branches = requireBranches(changeRoot)
-  const removed = removeGroup(changeRoot, { change, group }, { core })
   const branch = changeBranch(gitIn(changeRoot))
   const result = callRole(changeRoot, 'forge', 'push', { change, branch, protected: branches.protected }, core)
   const push = { state: result.state, ...(result.plugin ? { plugin: result.plugin } : {}), ...(result.hint ? { hint: result.hint } : {}), ...(result.error ? { error: result.error } : {}) }
   const file = pushPath(changeRoot, change)
   mkdirSync(dirname(file), { recursive: true })
-  writeFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), group: Number(group), branch, ...push }, null, 2)}\n`, 'utf8')
-  return { removed, push }
+  writeFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), ...extra, branch, ...push }, null, 2)}\n`, 'utf8')
+  return push
+}
+
+// After the merge review passed: remove the group's worktree and branch, then push the change
+// branch (pushChange).
+export function finishGroup(changeRoot, { change, group }, core) {
+  requireBranches(changeRoot)
+  const removed = removeGroup(changeRoot, { change, group }, { core })
+  return { removed, push: pushChange(changeRoot, change, core, { group: Number(group) }) }
 }
 
 export function groupState(changeRoot, change) {

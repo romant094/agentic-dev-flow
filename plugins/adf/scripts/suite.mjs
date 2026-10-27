@@ -19,7 +19,10 @@
 //       removes that worktree (never forced) to tell a pre-existing failure from a new one
 //       --record writes openspec/changes/<change>/.apply-test-record.md, apply's final commit;
 //       --commit then commits that record alone through lib/commit.mjs with the message
-//       recordMessage(<change>), whatever the run's status: { ..., commit }
+//       recordMessage(<change>), whatever the run's status, and pushes the change branch once
+//       through the forge role as group-finish does (lib/groups.mjs pushChange): { ..., commit,
+//       push: { state, hint?, error? } }; state `none` means no forge plugin is enabled. With no
+//       branch policy the commit refuses, so nothing is committed and nothing pushed
 //       --section test-record writes verify/test-record.json and its output file, the re-run
 //       of a stale record; --section review writes .superpowers/sdd/<change>/review/suite.json,
 //       the run after the review stage's last fix, always with the base check (as if
@@ -34,14 +37,26 @@
 //       worktree, sha, timedOut?, error? }. Exit 0 whenever the run happened, failing tests and
 //       a timeout included: the record says so. Exit 1 on a refusal (no change, no worktree)
 //   With no command in the guide, run reports `status: "not-run"` with the reason; never a pass.
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { commitPaths } from './lib/commit.mjs'
+import { pushChange } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
+import { claudeHome } from './lib/superpowers.mjs'
 import { DEFAULT_TIMEOUT_MINUTES, readCommand, recordMessage, recordName, runCovering, runSuite, SECTIONS, SET_MESSAGE, writeCommand } from './lib/suite.mjs'
 
 export const USAGE =
   'usage: suite.mjs command [--root <dir>] | suite.mjs set --command "<cmd>" [--root <dir>] [--commit] | suite.mjs run --change <name> [--root <dir>] [--base-check] [--record [--commit]] [--section test-record|review] [--timeout <minutes>] | suite.mjs covering --change <name> --name <dispatch name> --command "<cmd>" --worktree <dir> [--root <dir>] [--timeout <minutes>]'
 
 export class UsageError extends Error {}
+
+// The contract and home the forge role is called with, as workspace.mjs builds them.
+const here = dirname(fileURLToPath(import.meta.url))
+function core() {
+  const c = JSON.parse(readFileSync(join(here, '..', 'contract', 'contract.json'), 'utf8'))
+  return { coreContract: c.version, points: c.points, home: claudeHome() }
+}
 
 const VALUED = ['--change', '--root', '--command', '--section', '--timeout', '--name', '--worktree']
 const FLAGS = ['--base-check', '--record', '--commit']
@@ -103,7 +118,10 @@ export function run(argv, { cwd = process.cwd() } = {}) {
       const timeoutMinutes = timeoutOf(values)
       const out = runSuite(root, { change: values.change, baseCheck: Boolean(values['base-check']), record: Boolean(values.record), section: values.section ?? null, timeoutMinutes })
       if (!values.commit) return out
-      return { ...out, commit: commitPaths(root, { only: [out.record], message: recordMessage(values.change) }).commit }
+      const commit = commitPaths(root, { only: [out.record], message: recordMessage(values.change) }).commit
+      // The commit checks what the push needs (a named branch, the branch policy), so a push
+      // that could not start has already stopped the commit.
+      return { ...out, commit, push: pushChange(root, values.change, core()) }
     }
     case 'covering': {
       only(['change', 'name', 'command', 'worktree', 'timeout'])

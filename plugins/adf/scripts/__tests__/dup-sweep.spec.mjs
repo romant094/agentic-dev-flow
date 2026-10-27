@@ -228,3 +228,78 @@ test('a sweep reply with text after the line of a location is refused, with the 
   writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', findings: [finding('src/b.ts:16', 'src/a.ts:33-40'), finding('src/c.ts', 'src/a.ts')] }))
   assert.equal(dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/s.json', '--root', change], { main: change }).valid, true)
 })
+
+test('a sweep location absolute under the root is recorded relative; one outside the root refuses the reply', () => {
+  const { change } = host()
+  commitIn(change, 'src/b.ts', 'export const b = 1\n')
+  mkdirSync(join(change, 'r'), { recursive: true })
+  const reply = (introduced, existing) => JSON.stringify({ role: 'sweep', findings: [{ introduced, existing, why: 'Same constant.' }] })
+  writeFileSync(join(change, 'r/abs.json'), reply(join(change, 'src/b.ts:1'), join(change, 'src/a.ts')))
+  assert.deepEqual(sweep(['filter', 'r/abs.json', '--root', change]).findings, [{ introduced: 'src/b.ts:1', existing: 'src/a.ts', why: 'Same constant.' }])
+  const out = dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/abs.json', '--root', change], { main: change })
+  assert.equal(out.valid, true)
+  assert.deepEqual(sweepState(change, 'add-x').open.map((f) => [f.introduced, f.existing]), [['src/b.ts:1', 'src/a.ts']])
+  writeFileSync(join(change, 'r/out.json'), reply('/elsewhere/src/b.ts:1', 'src/a.ts:2'))
+  const expected = ['$.findings[0].introduced: "/elsewhere/src/b.ts:1" is outside the repository; write the path relative to the repository root']
+  assert.deepEqual(sweep(['filter', 'r/out.json', '--root', change]).reasons, expected)
+  assert.deepEqual(dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/out.json', '--root', change], { main: change }).errors, expected)
+})
+
+test('mark writes an absolute existing location relative, in the marker and in the debt', () => {
+  const { change } = host()
+  commitIn(change, 'src/b.ts', 'x\n\nexport function parse() {}\n')
+  const out = dup(['mark', '--change', 'add-x', '--file', join(change, 'src/b.ts'), '--line', '3', '--existing', join(change, 'src/a.ts:12'), '--why', 'same', '--reason', 'kept', '--root', change])
+  assert.equal(out.marker, '// ADF DUP src/a.ts:12 -- kept')
+  assert.equal(listRecords(change, 'add-x')[0].what, 'duplicate: src/b.ts:3 repeats src/a.ts:12')
+})
+
+test('a marker covers a finding recorded with absolute locations', () => {
+  const { change } = host()
+  commitIn(change, 'src/c.ts', 'x\n// ADF DUP src/a.ts:12 -- kept\nexport const c = 1\n')
+  swept(change, [{ introduced: join(change, 'src/c.ts:3'), existing: join(change, 'src/a.ts:12'), why: 'Same constant.' }])
+  const state = sweepState(change, 'add-x')
+  assert.deepEqual([state.open, state.cleared], [[], [{ id: 'S1', by: 'marker', marker: 'src/c.ts:2' }]])
+})
+
+test('a finding dismissed with mark --commit is cleared as dismissed, not consolidated, though its marker shifted the line', () => {
+  const { change } = host()
+  commitIn(change, 'src/b.ts', 'x\n\nexport function parse() {}\n')
+  swept(change, [{ introduced: 'src/b.ts:3', existing: 'src/a.ts:12', why: 'both parse the header' }])
+  mark(change, ['--file', 'src/b.ts', '--line', '3', '--commit'])
+  // The re-sweep reports the duplicate at line 4, which the marker accepts, so it is silent.
+  swept(change, [])
+  assert.deepEqual(sweepState(change, 'add-x').cleared, [{ id: 'S1', by: 'dismissed', debt: 'debt-1' }])
+})
+
+test('mark --finding reads existing and why from the sweep reply, so no prose passes through the shell', () => {
+  const { change } = host()
+  commitIn(change, 'src/b.ts', 'x\n\nexport function parse() {}\n')
+  mkdirSync(join(change, 'r'), { recursive: true })
+  const why = 'both map the `columns` of the header'
+  writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', findings: [{ introduced: 'src/b.ts:3', existing: 'src/a.ts:12', why }] }))
+  assert.equal(dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/s.json', '--root', change], { main: change }).valid, true)
+  const byId = (id) => dup(['mark', '--change', 'add-x', '--finding', 'r/s.json', '--id', id, '--reason', 'the wire format differs', '--root', change])
+  assert.throws(() => byId('S9'), /S9 is no open sweep finding/)
+  const out = byId('S1')
+  assert.deepEqual([out.file, out.line, out.marker], ['src/b.ts', 3, '// ADF DUP src/a.ts:12 -- the wire format differs'])
+  const [debt] = listRecords(change, 'add-x')
+  assert.deepEqual([debt.what, debt.reason, debt.accepted], ['duplicate: src/b.ts:3 repeats src/a.ts:12', why, 'the wire format differs'])
+  assert.throws(() => dup(['mark', '--change', 'add-x', '--finding', 'r/s.json', '--id', 'S1', '--existing', 'x', '--reason', 'r', '--root', change]), /usage/)
+})
+
+test('a marker placed on a recorded finding covers it without a re-sweep, though the code moved below it', () => {
+  const { change } = host()
+  commitIn(change, 'src/b.ts', 'x\n\nexport function parse() {}\n')
+  swept(change, [{ introduced: 'src/b.ts:3', existing: 'src/a.ts:12', why: 'both parse the header' }])
+  mark(change, ['--file', 'src/b.ts', '--line', '3'])
+  assert.deepEqual(sweepState(change, 'add-x').cleared, [{ id: 'S1', by: 'marker', marker: 'src/b.ts:3' }])
+})
+
+test('an accepted dismissal debt clears a finding without a re-sweep where no marker fits', () => {
+  const { change } = host()
+  commitIn(change, 'data.json', '{}\n')
+  swept(change, [{ introduced: 'data.json', existing: 'src/a.json', why: 'Same defaults.' }])
+  appendRecord(change, 'add-x', 'debt', { what: 'duplicate: data.json repeats src/a.json', reason: 'Same defaults.', accepted: 'kept per environment' })
+  const state = sweepState(change, 'add-x')
+  assert.deepEqual([state.open, state.cleared], [[], [{ id: 'S1', by: 'dismissed', debt: 'debt-1' }]])
+})

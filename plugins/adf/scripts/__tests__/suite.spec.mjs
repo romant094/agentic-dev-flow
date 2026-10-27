@@ -449,6 +449,27 @@ test('--commit commits the test record, or the planning guide, alone with the fi
   assert.equal(git(root, 'status', '--porcelain', '--', 'stray.txt'), '?? stray.txt')
 })
 
+test('run --record --commit pushes the change branch once through the forge role, none with no provider', () => {
+  const { root } = host()
+  const out = cli(['run', '--change', CHANGE, '--root', root, '--record', '--commit'])
+  assert.deepEqual(out.json.push, { state: 'none' })
+  const kept = JSON.parse(readFileSync(join(root, `.superpowers/sdd/${CHANGE}/push.json`), 'utf8'))
+  assert.deepEqual([kept.state, kept.branch, kept.group], ['none', `feat/${CHANGE}`, undefined])
+  assert.equal(cli(['run', '--change', CHANGE, '--root', root, '--record']).json.push, undefined)
+})
+
+test('run --record --commit with no branch policy refuses at the commit, before any push: nothing is committed', () => {
+  const { root } = host()
+  const registry = join(root, '.claude/adf-extensions.json')
+  const text = readFileSync(registry, 'utf8')
+  writeFileSync(registry, JSON.stringify({ ...JSON.parse(text), branches: undefined }))
+  const head = git(root, 'rev-parse', 'HEAD')
+  const out = cli(['run', '--change', CHANGE, '--root', root, '--record', '--commit'])
+  assert.deepEqual([out.code, out.json.ok, out.json.push], [1, false, undefined])
+  assert.match(out.json.error, /no branch policy/)
+  assert.equal(git(root, 'rev-parse', 'HEAD'), head)
+})
+
 // ---------------------------------------------------------------- covering tests
 
 // What each runner prints at its end, as a fake runner replays it.

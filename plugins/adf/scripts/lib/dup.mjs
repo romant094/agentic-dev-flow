@@ -5,11 +5,12 @@
 //
 //   ADF DUP <existing> -- <reason>
 //
-// `<existing>` is the finding's `existing` value verbatim, `<reason>` the developer's, one line.
+// `<existing>` is the finding's `existing` value, relative to the repository root (an absolute
+// one under the root is made relative), `<reason>` the developer's, one line.
 // A file whose format has no comment syntax (JSON, for one) cannot carry a marker: markFile
 // refuses it, and the debt record alone carries the acceptance.
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, relative } from 'node:path'
 import { commentFor, dupText, parseMarker as parseAny, placeMarker } from './marker.mjs'
 
@@ -29,12 +30,39 @@ export function parseMarker(line) {
 
 const toRelative = (root, file) => (isAbsolute(file) ? relative(root, file) : file).split('\\').join('/')
 
+// A location (`path`, `path:line`, `path:line-line`) relative to the repository root: an absolute
+// one under `root` (or under its real path) is made relative, a relative one is kept; null for an
+// absolute one outside `root`. Sweep replies and the records of older ones wrote absolute paths,
+// which no marker matched and a worktree join doubled.
+export function relativeLocation(root, location) {
+  const text = String(location ?? '').trim()
+  if (!isAbsolute(text)) return text
+  let real = root
+  try {
+    real = realpathSync(root)
+  } catch {
+    // unreadable root: the given path alone
+  }
+  for (const base of [root, real]) {
+    const rel = relative(base, text)
+    if (rel && !rel.startsWith('..') && !isAbsolute(rel)) return rel.split('\\').join('/')
+  }
+  return null
+}
+
+// Findings with `introduced` and `existing` relative (relativeLocation); a location outside the
+// root, which only a record written before the check carries, is kept as written.
+export const relativeFindings = (root, findings) =>
+  (findings ?? []).map((f) => ({ ...f, introduced: relativeLocation(root, f.introduced) ?? f.introduced, existing: relativeLocation(root, f.existing) ?? f.existing }))
+
 // Writes the marker. `line` is the introduced location's 1-based line; without it the whole file
 // is the duplicate and the marker goes on the first line (after a `#!` line, which must stay
 // first). The marker takes the indentation of the line it sits above, and the file's line ending.
 // A marker naming the same `existing` already there is left alone (`already` true).
-export function markFile(root, { file, line, existing, reason }) {
+export function markFile(root, { file, line, existing: given, reason }) {
   const rel = toRelative(root, file)
+  const existing = typeof given === 'string' ? relativeLocation(root, given) : given
+  if (existing === null) throw new Error(`--existing ${given} is outside the repository; name it relative to the repository root`)
   const syntax = commentFor(rel)
   if (!syntax) throw new Error(`${rel} has no comment syntax this script knows; it cannot carry a DUP marker. Consolidate instead, or let the debt record alone carry the acceptance`)
   for (const [name, value] of [['existing', existing], ['reason', reason]]) {
@@ -98,7 +126,9 @@ export function locate(introduced) {
 }
 
 // Whether a marker already accepts the finding: on its introduced file, naming its `existing`
-// verbatim, on the line directly above the introduced line or marking the whole file.
+// verbatim, on the line directly above the introduced line or marking the whole file. A marker
+// on the introduced line itself also accepts it: `dup.mjs mark` inserts the marker there, so a
+// finding recorded before its marker names the line the marker took, the code one below.
 export function coveringMarker(markers, finding) {
   const at = locate(finding.introduced)
   if (!at) return null
@@ -108,7 +138,22 @@ export function coveringMarker(markers, finding) {
       (m) =>
         m.file === file &&
         m.existing === String(finding.existing ?? '').trim() &&
-        (at.line === null || m.wholeFile || m.line === at.line - 1)
+        (at.line === null || m.wholeFile || m.line === at.line - 1 || m.line === at.line)
     ) ?? null
+  )
+}
+
+// The accepted debt record `dup.mjs mark` wrote for a finding: `duplicate: <introduced
+// file>[:<line>] repeats <existing>`, at any line of the file, since the marker shifts it.
+// Locations in the record are compared relative to `root`. null when there is none.
+export function dismissalOf(root, records, finding) {
+  const file = locate(finding.introduced)?.file
+  const existing = relativeLocation(root, finding.existing) ?? String(finding.existing ?? '').trim()
+  if (!file) return null
+  return (
+    records.find((r) => {
+      const m = r.kind === 'debt' && r.accepted ? /^duplicate: (.+?) repeats (.+)$/.exec(r.what ?? '') : null
+      return m && locate(relativeLocation(root, m[1]) ?? m[1])?.file === file && (relativeLocation(root, m[2]) ?? m[2]) === existing
+    }) ?? null
   )
 }

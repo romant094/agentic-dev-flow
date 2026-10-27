@@ -480,7 +480,7 @@ export function fill(skeleton, values, tokens) {
 
 // Which skeletons, in order, make up the rules of a dispatch. `proof`: the flow ran the test-first
 // proof before the review, so the review reads its result instead of running it.
-export function ruleSkeletons({ role, check, round }, { testFirst = false, dispositions = false, proof = false } = {}) {
+export function ruleSkeletons({ role, check, round, subject }, { testFirst = false, dispositions = false, proof = false } = {}) {
   if (role === 'verify') return ['verify', `verify-${check}`]
   // The review stage's replies are the JSON its skeletons name, so `reply` is not among them.
   if (role === 'ai-review') return round >= 2 ? ['ai-review', 'ai-review-round'] : ['ai-review']
@@ -490,6 +490,7 @@ export function ruleSkeletons({ role, check, round }, { testFirst = false, dispo
   if (role === 'retro') return ['retro', 'read-only', 'reply']
   const parts = []
   if (role === 'impl' || role === 'fix') parts.push('implementer')
+  if (role === 'fix' && subject === SWEEP_SUBJECT) parts.push('consolidation')
   if (['review', 're-review', 'final-review', 'merge-review'].includes(role)) parts.push('reviewer')
   if (role === 'merge-review') parts.push('merge-review')
   if (role === 're-review') parts.push('re-review')

@@ -26,13 +26,16 @@
 // A finding stays open across sweep runs until one of: a DUP marker in the tree now accepts it
 // (`dup.mjs mark`, the developer's dismissal); a ruling accepts or dismisses it; or a later sweep
 // no longer reports it and its introduced file changed between the sweep that last reported it
-// and that later one (a consolidation). A later CLEAN with the file unchanged clears nothing: a
-// second CLEAN on an unchanged branch would launder the first finding.
+// and that later one (a consolidation), unless an accepted `debt` record of `dup.mjs mark` names
+// the pair (lib/dup.mjs dismissalOf): its marker commit changed the file, and the finding was
+// dismissed. That record also clears a finding no later sweep has run on, where no marker fits. A later CLEAN with the file unchanged clears nothing: a second CLEAN on an
+// unchanged branch would launder the first finding. Locations are read relative to the
+// repository root (lib/dup.mjs relativeFindings), whatever a recorded reply wrote.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { attemptsFile, parseEvents, readLog } from './attempts.mjs'
 import { parseName, sddDir, SWEEP_SUBJECT } from './dispatch.mjs'
-import { coveringMarker, findMarkers, locate } from './dup.mjs'
+import { coveringMarker, dismissalOf, findMarkers, locate, relativeFindings, relativeLocation } from './dup.mjs'
 import { readRecords } from './ledger.mjs'
 import { gitIn } from './workspace.mjs'
 
@@ -207,31 +210,35 @@ export function sweepState(root, change, { git = gitIn(root) } = {}) {
   // The first sweep and every re-sweep (`sweep r<k>`), in log order.
   const runs = parseEvents(readLog(attemptsFile(root, change))).filter((e) => e.event === 'valid' && parseName(e.name)?.role === 'sweep' && e.result)
   if (runs.length === 0) return { ran: false, ids: [], open: [], cleared: [] }
+  const records = readRecords(root, change)
   const ids = new Map()
   const open = new Map()
   const cleared = []
   for (const { result } of runs) {
-    const reported = new Set(result.findings.map(sweepKey))
+    const findings = relativeFindings(root, result.findings)
+    const reported = new Set(findings.map(sweepKey))
     for (const [key, f] of open) {
       if (reported.has(key)) continue
       if (changedBetween(git, f.head, result.head, locate(f.introduced)?.file)) {
         open.delete(key)
-        cleared.push({ id: f.id, by: 'consolidated' })
+        const debt = dismissalOf(root, records, f)
+        cleared.push(debt ? { id: f.id, by: 'dismissed', debt: debt.id } : { id: f.id, by: 'consolidated' })
       }
     }
-    for (const f of result.findings) {
+    for (const f of findings) {
       const key = sweepKey(f)
       if (!ids.has(key)) ids.set(key, `S${ids.size + 1}`)
       open.set(key, { id: ids.get(key), introduced: f.introduced, existing: f.existing, why: f.why, head: result.head ?? null })
     }
   }
-  const rulings = subjectRulings(readRecords(root, change), SWEEP_SUBJECT)
+  const rulings = subjectRulings(records, SWEEP_SUBJECT)
   const markers = findMarkers(root)
   const still = []
   for (const f of open.values()) {
     const marker = coveringMarker(markers, f)
     if (marker) cleared.push({ id: f.id, by: 'marker', marker: `${marker.file}:${marker.line}` })
     else if (CLOSING.includes(rulings.get(f.id)?.as)) cleared.push({ id: f.id, by: 'ruling', ruling: rulings.get(f.id).id })
+    else if (dismissalOf(root, records, f)) cleared.push({ id: f.id, by: 'dismissed', debt: dismissalOf(root, records, f).id })
     else still.push(f)
   }
   return { ran: true, ids: [...ids.values()], open: still, cleared }
@@ -244,7 +251,7 @@ export function sweepState(root, change, { git = gitIn(root) } = {}) {
 // the re-review, clears a sweep finding, so a re-review's not-addressed S<n> never enters the
 // loop's open set. { subject, sweep, loop, open, rendered, files }: `files` the introduced and
 // existing files of the open sweep findings and the files of the open loop findings, the fix's
-// scope.
+// scope, each relative to the repository root.
 export function consolidationState(root, change, options = {}) {
   const sweep = sweepState(root, change, options)
   const rulings = subjectRulings(readRecords(root, change), SWEEP_SUBJECT)
@@ -257,6 +264,6 @@ export function consolidationState(root, change, options = {}) {
   const files = unique([
     ...sweep.open.flatMap((f) => [locate(f.introduced)?.file, locate(f.existing)?.file]),
     ...loop.open.map((id) => byId.get(id)?.file)
-  ].filter(Boolean).map((f) => f.replace(/^\.\//, '')))
+  ].filter(Boolean).map((f) => (relativeLocation(root, f) ?? f).replace(/^\.\//, '')))
   return { subject: SWEEP_SUBJECT, sweep, loop, open: [...sweep.open.map((f) => f.id), ...loop.open], rendered, files }
 }
