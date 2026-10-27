@@ -83,7 +83,9 @@ Settled by the developer on 2026-10-21. Analysis: the iteration 13 analysis of 2
 - D16 Every trigger is written in English with the note that it may come in any language; the
   rule holds for every plugin and every future trigger.
 - D17 The comment's content is fields; the template and the markup are the plugin's.
-- D18 A partial issue at land gets a comment of what remains and keeps its status.
+- D18 A partial issue at land gets a comment of what remains and keeps its status. Superseded
+  by iteration 14 D39 (2026-10-27): the partial issue goes back to the tracker's initial status,
+  never through the hand-off status, with the comment only when there is no such status or route.
 - D19 Land with no forge decides "merged" from git ancestry.
 - D20 Skipping the tracker for one change is recorded once in `scope.json`.
 

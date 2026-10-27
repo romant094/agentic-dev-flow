@@ -1,7 +1,7 @@
 {
   "name": "adf-jira",
   "description": "Jira tracker for the Agentic Dev Flow: gathers issues at propose, starts them and hands them to the tester after the merge, plus guarded two-phase Jira skills for bulk changes, comments, epics, tasks, worklogs and the debt mirror",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": { "name": "Anton Romankov" },
   "license": "MIT",
   "keywords": ["jira", "tracker", "worklog", "workflow"]

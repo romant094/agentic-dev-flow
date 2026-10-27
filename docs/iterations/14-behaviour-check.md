@@ -92,6 +92,43 @@ Settled by the developer on 2026-10-26, all as recommended, from the agent pass 
 - D26 The bench is simulated in the replay; bench testing becomes a plugin of its own later,
   tuned on real changes.
 
+Settled by the developer on 2026-10-27, all as recommended, from the second agent pass:
+
+- D27 The attempt limit counts refused replies, not dispatches, from the latest of the phase
+  run's start, the developer's last reset and the name's last valid reply; one helper gives
+  the run start (verify's session, the review run's start, the apply round's start).
+- D28 Verify opens a new session itself when code commits moved HEAD; a commit of only the
+  change directory or of filtered paths, verify's own record commit among them, does not.
+- D29 After a verify `FAIL`, `plan.mjs reopen` opens an apply round: it appends the fix task to
+  `tasks.md` and `plan.md`, commits them and writes an `apply-round` ledger record naming the
+  failing checks; preflight names the round. `PASS WITH WARNINGS` opens none: its warnings go
+  to the review.
+- D30 In a round, the groups merged before it are frozen out of the graph; the final
+  whole-branch review and the reuse sweep run once more per round on the round's diff, the
+  sweep against the whole tree; their counts start at the round.
+- D31 A commit that changes only the change directory or filtered paths is not unreviewed;
+  after a PASS followed only by such commits, `review.mjs start` reports that the record
+  stands; `--fresh` overrides.
+- D32 The test-first proof cache keys on its share list.
+- D33 Sweep locations are recorded repository-relative when the reply is recorded; an absolute
+  path outside the repository refuses the reply. `dup.mjs mark --finding <reply> --id S<n>`
+  takes the location and the reason from the reply. A dismissal is recognised by its accepted
+  debt ledger record, not only by the marker line, and a marker on the finding's own line
+  covers it.
+- D34 Apply pushes the change branch after the whole-suite record commit.
+- D35 The consolidation's fix prompt asks the fixer to reuse an existing helper before writing
+  a replacement; re-sweeps stay over the full range.
+- D36 The tracker gather takes keys and a phrase together; debt ids are not sent to the
+  tracker.
+- D37 Prompts rendered from a skeleton (the scope check, the land comment) carry the frame's
+  single Tools rule.
+- D38 The branch key: among named issues the first named wins; a sub-bug ranks as a bug; a tie
+  remains only among phrase-search hits.
+- D39 At hand-off a partial issue gets its comment and is routed back to the tracker's initial
+  status, never through the hand-off status; with no initial status, or no such route, the
+  comment only, and the plan says why. Supersedes iteration 13 D18.
+- D40 The replay host runs init's worktree preparation step, every candidate confirmed.
+
 ## Inputs for iteration 15
 
 The host setup driver (step 3) ran the port's own init path on the origin at each candidate's
@@ -125,7 +162,9 @@ port check demanded. The switch makes the same edits; none is committed here.
   port's (`plugins/adf/contract/debt-format.md`).
 - The tracker profile: `/adf-jira:setup` once after the switch, with the env keys and the
   profile location recorded in iteration 13's inputs; until then the tracker check is
-  `degraded` and propose offers to skip it.
+  `degraded` and propose offers to skip it. The `adf-jira` entry's `statuses.initial` names the
+  status a partial issue goes back to at hand-off (D39); without it a partial issue keeps its
+  status. The developer confirms the value at the switch.
 
 The changes in flight at the switch (eight change directories on the origin's `develop` on
 2026-10-26, more in its worktrees; each with a Draft opened by the origin's merge request
@@ -299,10 +338,28 @@ By step:
     (D18).
   - Open: ledger records written after `commit-metrics` (a land run's, a later resume's) do not
     reach the archived copy; accepted by the developer as port debt (D23, left for later).
+  - The second agent pass (2026-10-26/27, adf 0.15.0): the same small change, with an emulated
+    tracker seeded from the change's real issues. It ran propose and apply through verify and
+    was stopped at the third verify run, at about $122; review, archive and land were not
+    reached. Port defects found and fixed (D27–D40): the attempt limit counting dispatches and
+    not refusals, verify keeping an old session after code moved HEAD, no scripted way from a
+    verify `FAIL` back into apply, review re-entry after a record-only commit, the test-first
+    proof cache ignoring its shares, absolute sweep locations and a dismissal known only by its
+    marker line, no push after the whole-suite record, the tracker gather taking keys or a
+    phrase but not both, the branch key ranking, a partial issue kept at its status, skeleton
+    prompts without the Tools rule, and the replay host skipping init's worktree preparation
+    (5e26a89, 675bcb5, 942c65b, 0edc685, 8b6bffc, b2bc731). Not port defects: the replay
+    harness copied only the root dependencies (fixed in the harness, outside this repository);
+    the answerer returned `none` on questions a standing rule covered; the executor tried to
+    move the partial issue during apply. Agent judgement: the first sweep missed a duplicate
+    that a re-sweep found (D35). A third pass follows on adf 0.16.0, before iteration 15.
 - 11 (this step): `## Result`, the inputs for iteration 15, the decisions D12–D26,
   `adf-npm-workspaces` `config.build` deprecated in its README (D21), versions, marketplace,
   README and roadmap row 14. No lessons row was added: every row this iteration changed
-  carries its "since iteration 14" note, and none is pending on 14.
+  carries its "since iteration 14" note, and none is pending on 14. After the second agent
+  pass (2026-10-27): the decisions D27–D40, versions, marketplace and roadmap row 14; the
+  lessons rows the decisions changed carry a "since iteration 14 (developer decision,
+  2026-10-27)" note (`apply.md`, `verify.md`, `review.md`, `propose.md`, `forge-gitlab.md`).
 
 Checks, on 2026-10-26:
 
@@ -310,6 +367,9 @@ Checks, on 2026-10-26:
 - `npm run parity -- <origin>` with the four fresh candidates and the mid-flight one (the
   author, `ADF_REPLAY_FRESH`, `ADF_REPLAY_MID`): 23 of 23 PASS, `origin-replay.mjs` among them with no `defect`, the origin unchanged.
 - `claude plugin validate .`: passed.
+- On 2026-10-27, after the second pass's fixes: `npm test`: 1485 tests, 1480 pass, 0
+  failures, 5 skipped (the same five); `check-lessons.mjs`: ok, 770 rows, 19 pending, none on
+  14.
 - Not run: a real database create and drop, a real `prisma generate` (fakes, D4); a live
   `glab`, Jira or bench; the agent pass on the larger candidates (D1; row 18 repeats it on
   real systems after the switch).
@@ -324,6 +384,7 @@ Left for later:
 - The comparison's ledger rules suit injected replies; an agent pass needs a rule of its own
   that pairs rulings by meaning rather than by text.
 
-Versions: adf 0.15.0, contract 1.7 unchanged; adf-gitlab 0.6.0; adf-npm-workspaces 0.1.1;
-adf-memory 0.2.1 (bumped during the iteration); adf-english-check 0.6.0, adf-jira 0.2.0,
-adf-maintainer 0.1.0, adf-postgres 0.1.0 and adf-prisma 0.1.0 unchanged.
+Versions: adf 0.16.0 (0.15.0 at the first release of this iteration), contract 1.7
+unchanged; adf-jira 0.3.0 (the second pass's tracker fixes); adf-gitlab 0.6.0;
+adf-npm-workspaces 0.1.1; adf-memory 0.2.1 (bumped during the iteration); adf-english-check
+0.6.0, adf-maintainer 0.1.0, adf-postgres 0.1.0 and adf-prisma 0.1.0 unchanged.
