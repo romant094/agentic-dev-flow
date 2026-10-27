@@ -529,7 +529,7 @@ test('every verbatim block of a prompt skeleton is in its instruction, word for 
 // a rule skeleton renderPrompt wraps in the frame, or rendered by renderSkeleton, which appends
 // that section. A skeleton rendered neither way would reach its agent without the rules.
 test('every prompt skeleton reaches its agent through the frame or renderSkeleton, so with the Tools rule', () => {
-  const plans = ROLES.flatMap((role) => [{ role, check: 'c4', round: 1 }, { role, check: 'c8', round: 2 }])
+  const plans = ROLES.flatMap((role) => [{ role, check: 'c4', round: 1 }, { role, check: 'c8', round: 2, subject: 'sweep' }])
   const options = [{}, { testFirst: true }, { testFirst: true, proof: true }, { dispositions: true }]
   const framed = new Set(['frame', ...plans.flatMap((p) => options.flatMap((o) => ruleSkeletons(p, o)))])
   const libDir = join(PLUGIN_ROOT, 'scripts', 'lib')
