@@ -154,10 +154,22 @@ test('a done test-first task is proved before its review, and the review prompt 
   assert.match(text, /its proof has already run/)
   assert.doesNotMatch(text, /scripts\/tdd-proof\.mjs" --worktree/)
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).proof, true)
-  // Kept while the commit and the command stay the same.
+  // Kept while the commit, the command and the shares stay the same.
   assert.equal(taskProof(change, 'add-x', 1, { planText: PLAN, main: root, prove: () => assert.fail('ran again') }).cached, true)
   const result = review()
   assert.deepEqual([result.open, result.result, result.tddProof.proof], [[], 'clean', true])
+})
+
+test('a proof kept under other shares runs again; the same shares in another order keep it', () => {
+  const { root, change } = doneTask(TEST, '- `node_modules`\n- `.venv`\n')
+  const proof = () => taskProof(change, 'add-x', 1, { planText: PLAN, main: root, prove: (worktree, { commit }) => ({ proof: true, commit }) })
+  assert.equal(proof().cached, false)
+  const planning = join(change, 'openspec', 'planning.md')
+  writeFileSync(planning, readFileSync(planning, 'utf8').replace('- `node_modules`\n- `.venv`\n', '- `.venv`\n- `node_modules`\n'))
+  assert.equal(proof().cached, true)
+  writeFileSync(planning, readFileSync(planning, 'utf8').replace('- `.venv`\n', ''))
+  const again = proof()
+  assert.deepEqual([again.cached, again.share], [false, ['node_modules']])
 })
 
 test('a test that passes without the code adds the critical tests finding to the review result', () => {

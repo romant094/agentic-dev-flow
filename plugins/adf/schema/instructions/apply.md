@@ -267,7 +267,9 @@ the limit counts from the reset. The review stage and verify restart their own c
 no reset.
 
 A missing reply file is a refusal: a reply that is prose and no file is one. Record an attempt
-before every dispatch and every retry; `round` counts the rounds from those records. To show a
+before every dispatch and every retry; `round` counts the rounds from those records. Only refused
+replies in a row use up the limit: the `next` of `attempt` follows the refusals since the name's
+last valid reply, so a re-dispatch that answers a `NEEDS_CONTEXT` is a `dispatch` again. To show a
 reply to the developer, at an escalation or with the sweep's findings, render it rather than
 retelling it:
 

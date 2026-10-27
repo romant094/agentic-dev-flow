@@ -22,6 +22,7 @@ import { commitPaths } from './commit.mjs'
 import { appendRecord, readRecords, SESSION_ENV, skillEditShas } from './ledger.mjs'
 import { baseRef, EXTENSIONS } from './plan-symbols.mjs'
 import { readRegistry } from './registry.mjs'
+import { onlyOutsideReview } from './review-state.mjs'
 import { c4Lines, c8Lines, fence as fenceText } from './reply-render.mjs'
 import { callHook, CORE, hookProviders, knowledgePaths } from './roles.mjs'
 import { scopeNaming } from './scope.mjs'
@@ -502,8 +503,11 @@ export function extensionChecks(root, change, git, base, core) {
 // A verify session starts fresh: sections left by an earlier session describe a HEAD that may
 // have moved, so they are deleted before its first run. The session is the harness's
 // (CLAUDE_CODE_SESSION_ID), kept in run.json: a run whose session differs from the one that
-// wrote run.json clears the directory itself. `fresh` forces the clearing. With no session id in
-// the environment nothing is cleared unless `fresh` asks.
+// wrote run.json clears the directory itself, and so does a run at a HEAD other than the one
+// run.json names, unless every commit between changes only what no review reads (the change's
+// own directory, files the review filter excludes: lib/review-state.mjs onlyOutsideReview), as
+// verify's own record commit does. `fresh` forces the clearing. With no session id in the
+// environment and HEAD unmoved nothing is cleared unless `fresh` asks.
 //
 // The approved skill edits are the ledger's `skill-edit` records, read on every run, plus any
 // `skillEdits` the caller names.
@@ -515,7 +519,14 @@ export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md
   const outDir = verifyDir(root, change)
   const session = env[SESSION_ENV] || null
   const previous = attempt(() => JSON.parse(readFileSync(join(outDir, 'run.json'), 'utf8')))
-  const cleared = fresh ? 'fresh' : previous && session && previous.session !== session ? 'new session' : null
+  const head = attempt(() => git('rev-parse', 'HEAD'))
+  const cleared = fresh
+    ? 'fresh'
+    : previous && session && previous.session !== session
+      ? 'new session'
+      : previous?.head && head && previous.head !== head && !onlyOutsideReview(root, change, previous.head)
+        ? 'head moved'
+        : null
   if (cleared) rmSync(outDir, { recursive: true, force: true })
   mkdirSync(outDir, { recursive: true })
   const ledgerShas = skillEditShas(readRecords(root, change))
@@ -556,7 +567,7 @@ export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md
     session,
     cleared,
     base: base.ref ?? null,
-    head: attempt(() => git('rev-parse', 'HEAD')),
+    head,
     skillEdits: edits.map((e) => e.sha),
     checks
   }

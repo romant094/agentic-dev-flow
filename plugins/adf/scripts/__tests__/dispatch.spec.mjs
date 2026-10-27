@@ -11,7 +11,7 @@ import { schedule } from '../lib/plan.mjs'
 import { dispatchName, MAX_ROUNDS, normalize, parseGraph, parseName, planDispatch, renderPrompt, roundOf, verbatimBlocks } from '../lib/dispatch.mjs'
 import { PLUGIN_ROOT, PROMPTS_DIR, run } from '../dispatch.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
-import { recordReply } from '../lib/attempts.mjs'
+import { recordDispatch, recordReply } from '../lib/attempts.mjs'
 import { readLedger as readMetricsLedger, readReplies } from '../lib/metrics-records.mjs'
 import { ROLES as REPLY_ROLES } from '../lib/reply.mjs'
 
@@ -307,10 +307,14 @@ test('a verify prompt reads base and range from run.json and names its reply fil
   for (const p of [c4, c8]) assert.doesNotMatch(p, /\{\{\w+\}\}|<verify>|<id>|<root>|<change>/)
 })
 
-test('attempts per name: the first dispatches, the second retries, the third stops', () => {
+test('attempts per name: each dispatch is counted; next follows the refused replies, not the count', () => {
   const root = host()
   const attempt = (name) => call(root, 'attempt', '--name', name)
-  assert.deepEqual([1, 2, 3, 4].map(() => attempt('T3 impl').next), ['dispatch', 'retry', 'stop', 'stop'])
+  assert.deepEqual([1, 2, 3].map(() => attempt('T3 impl')).map((a) => [a.attempt, a.next]), [[1, 'dispatch'], [2, 'dispatch'], [3, 'dispatch']])
+  recordReply(root, CHANGE, { name: 'T3 impl', file: join(root, 'r.json'), errors: ['bad'] })
+  assert.deepEqual([attempt('T3 impl').attempt, attempt('T3 impl').next], [4, 'retry'])
+  recordReply(root, CHANGE, { name: 'T3 impl', file: join(root, 'r.json'), errors: ['bad'] })
+  assert.equal(attempt('T3 impl').next, 'stop')
   assert.deepEqual(attempt('T3 fix r1'), { ok: true, name: 'T3 fix r1', attempt: 1, next: 'dispatch', file: join(root, '.superpowers', 'sdd', CHANGE, 'attempts.jsonl') })
   const bad = cli(root, 'attempt', '--change', CHANGE, '--name', 'T3 implement')
   assert.equal(bad.status, 1)
@@ -334,7 +338,11 @@ test('a stop on the limit names the developer reset and says the developer is as
   assert.deepEqual([third.next, third.reset.command], ['stop', command])
   assert.match(third.reset.note, /ask the developer first/)
   for (const name of ['ai-fix F1 r1', 'verify c4']) {
-    const out = [1, 2, 3].map(() => attempt(name)).at(-1)
+    for (const n of [1, 2]) {
+      attempt(name)
+      assert.equal(reply(name).reset, undefined, `${name} ${n}`)
+    }
+    const out = attempt(name)
     assert.deepEqual([out.next, out.reset], ['stop', undefined], name)
   }
 })
@@ -619,12 +627,16 @@ test('the reviewer runs at architecture every round; the fixer at integration, o
 
 test('a retry counts only for the same review dispatch name', () => {
   const root = host()
+  const refuse = (name) => recordReply(root, CHANGE, { name, file: join(root, 'r.json'), errors: ['bad'] })
   assert.equal(call(root, 'attempt', '--name', 'ai-fix F1 r1').next, 'dispatch')
   assert.equal(call(root, 'attempt', '--name', 'ai-fix F2 r1').next, 'dispatch')
   assert.equal(call(root, 'attempt', '--name', 'ai-review r1 s1').next, 'dispatch')
   assert.equal(call(root, 'attempt', '--name', 'ai-review r1 s2').next, 'dispatch')
+  refuse('ai-fix F1 r1')
   assert.equal(call(root, 'attempt', '--name', 'ai-fix F1 r1').next, 'retry')
   assert.equal(call(root, 'attempt', '--name', 'ai-fix F1 r2').next, 'dispatch')
+  assert.equal(call(root, 'attempt', '--name', 'ai-fix F2 r1').next, 'dispatch')
+  refuse('ai-fix F1 r1')
   assert.equal(call(root, 'attempt', '--name', 'ai-fix F1 r1').next, 'stop')
   // A review dispatch closes no apply fix round.
   assert.equal(call(root, 'round').completed, 0)
@@ -672,6 +684,57 @@ test('two invalid replies of one dispatch give retry, then stop; a stopped dispa
   assert.throws(() => call(root, 'reply', '--name', 'T3 implement', '--file', bad), /fixed form/)
 })
 
+// A valid NEEDS_CONTEXT reply after one schema retry once used up the limit by dispatch count, so
+// the re-dispatch carrying the answer stopped.
+test('a re-dispatch with the answer to NEEDS_CONTEXT after a schema retry is not stopped', () => {
+  const root = host()
+  assert.equal(call(root, 'attempt', '--name', 'T3 impl').next, 'dispatch')
+  assert.equal(call(root, 'reply', '--name', 'T3 impl', '--file', writeReply(root, 'bad', { role: 'impl', status: 'DONE' })).next, 'retry')
+  assert.equal(call(root, 'attempt', '--name', 'T3 impl').next, 'retry')
+  assert.equal(call(root, 'reply', '--name', 'T3 impl', '--file', writeReply(root, 'good', IMPL_OK)).result.status, 'NEEDS_CONTEXT')
+  // The valid reply ends the refusal streak: the answer is a dispatch, and the limit counts anew.
+  const answer = call(root, 'attempt', '--name', 'T3 impl')
+  assert.deepEqual([answer.attempt, answer.next], [3, 'dispatch'])
+  assert.equal(call(root, 'reply', '--name', 'T3 impl', '--file', join(root, 'replies', 'bad.json')).next, 'retry')
+  assert.equal(call(root, 'attempt', '--name', 'T3 impl').next, 'retry')
+  assert.equal(call(root, 'reply', '--name', 'T3 impl', '--file', join(root, 'replies', 'bad.json')).next, 'stop')
+  assert.equal(call(root, 'attempt', '--name', 'T3 impl').next, 'stop')
+})
+
+// Verify and the review stage restart their own count; `attempt` counts from the run's start as
+// `reply` does.
+test('a third verify session dispatches verify c4 again', () => {
+  const root = host()
+  const verify = join(root, '.superpowers', 'sdd', CHANGE, 'verify')
+  mkdirSync(verify, { recursive: true })
+  for (const day of ['01', '02']) {
+    const started = `2020-01-${day}T00:00:00.000Z`
+    writeFileSync(join(verify, 'run.json'), JSON.stringify({ at: started, started }))
+    for (const minute of ['01', '02']) {
+      const now = `2020-01-${day}T00:${minute}:00.000Z`
+      recordDispatch(root, CHANGE, 'verify c4', { now })
+      recordReply(root, CHANGE, { name: 'verify c4', file: join(root, 'r.json'), errors: ['bad'], since: started, now })
+    }
+    assert.equal(recordDispatch(root, CHANGE, 'verify c4', { now: `2020-01-${day}T00:03:00.000Z` }).next, 'stop', day)
+  }
+  writeFileSync(join(verify, 'run.json'), JSON.stringify({ at: '2020-01-03T00:00:00.000Z', started: '2020-01-03T00:00:00.000Z' }))
+  assert.equal(call(root, 'attempt', '--name', 'verify c4').next, 'dispatch')
+})
+
+test('a review dispatch counts from the review run\'s start', () => {
+  const root = host()
+  const now = '2020-01-01T00:00:00.000Z'
+  for (const n of [1, 2]) {
+    recordDispatch(root, CHANGE, 'ai-review r1', { now })
+    recordReply(root, CHANGE, { name: 'ai-review r1', file: join(root, 'r.json'), errors: [`bad ${n}`], now })
+  }
+  assert.equal(call(root, 'attempt', '--name', 'ai-review r1').next, 'stop')
+  const review = join(root, '.superpowers', 'sdd', CHANGE, 'review')
+  mkdirSync(review, { recursive: true })
+  writeFileSync(join(review, 'start.json'), JSON.stringify({ at: '2020-01-02T00:00:00.000Z' }))
+  assert.equal(call(root, 'attempt', '--name', 'ai-review r1').next, 'dispatch')
+})
+
 test('a legacy attempts log gives the same rounds as the events log', () => {
   const names = ['T3 impl', 'T3 review', 'T3 fix r1', 'T3 re-review r1', 'T3 fix r2', 'T3 re-review r2', 'fix B r1', 're-review B r1', 'fix r1']
   const legacy = names.map((name) => JSON.stringify({ name, at: '2026-10-01T00:00:00.000Z' })).join('\n')
@@ -688,7 +751,8 @@ test('a legacy attempts log gives the same rounds as the events log', () => {
   const old = host()
   mkdirSync(join(old, '.superpowers', 'sdd', CHANGE), { recursive: true })
   writeFileSync(join(old, '.superpowers', 'sdd', CHANGE, 'attempts.jsonl'), `${legacy}\n`)
-  assert.equal(call(old, 'attempt', '--name', 'T3 impl').next, 'retry')
+  const legacyAttempt = call(old, 'attempt', '--name', 'T3 impl')
+  assert.deepEqual([legacyAttempt.attempt, legacyAttempt.next], [2, 'dispatch'])
   assert.equal(call(old, 'round', '--task', '3').round, 3)
 })
 
@@ -867,9 +931,8 @@ test('the ingest prompt reads its input file and runs on the archived change; wi
     join(PLUGIN_ROOT, 'schema', 'ingest.schema.json'),
     out.replyFile
   ]) assert.ok(out.prompt.includes(text), text)
-  assert.equal(run(['attempt', '--change', CHANGE, '--name', 'ingest', '--root', root], { main: MAIN }).next, 'dispatch')
-  assert.equal(run(['attempt', '--change', CHANGE, '--name', 'ingest', '--root', root], { main: MAIN }).next, 'retry')
-  assert.equal(run(['attempt', '--change', CHANGE, '--name', 'ingest', '--root', root], { main: MAIN }).next, 'stop')
+  const attempt = () => run(['attempt', '--change', CHANGE, '--name', 'ingest', '--root', root], { main: MAIN })
+  assert.deepEqual([attempt(), attempt()].map((a) => [a.attempt, a.next]), [[1, 'dispatch'], [2, 'dispatch']])
 })
 
 // ---------------------------------------------------------------- the retrospective

@@ -34,9 +34,11 @@ branch.
 node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" run --change <change> --root <root> --suite
 ```
 
-A run in a session other than the one that wrote `<verify>run.json` clears `<verify>` first:
-a section left by an earlier session describes a HEAD that may have moved. `--fresh` forces the
-clearing. The approved skill edits are read from the ledger. It prints one result per check
+A run in a session other than the one that wrote `<verify>run.json`, or at a HEAD other than
+the one it names, clears `<verify>` first and starts a new verify session: a section left by an
+earlier session describes a HEAD that may have moved. HEAD moved only by commits under the
+change's own directory or of files the review filter excludes, verify's own record among them,
+keeps the session. `--fresh` forces the clearing. The approved skill edits are read from the ledger. It prints one result per check
 (`id`, `title`, `verdict`, `summary`, `output`); read the summaries, and leave the files to the
 dispatches. Exit 1 means a check failed or the run was refused; an `error` field is the refusal.
 The verdicts: `pass`; `warn`, which never blocks; `fail`, which blocks; `not-run`, which is not a

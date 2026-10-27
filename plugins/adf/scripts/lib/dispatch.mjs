@@ -530,30 +530,6 @@ export function renderPrompt({ plan, change, skeletons, fields, question, tokens
   )
 }
 
-// ---------------------------------------------------------------- attempts
-
-// apply.md: a refused reply goes back once, to the same agent, resumed; a second refusal is
-// BLOCKED. The n-th recorded attempt of one dispatch name: 1 dispatches, 2 retries, 3 stops.
-export const nextFor = (attempt) => (attempt === 1 ? 'dispatch' : attempt <= MAX_ATTEMPTS ? 'retry' : 'stop')
-
-// The `dispatch` events of one name (lib/attempts.mjs); a line with no `event` is one. `skip`
-// passes over the name's first events of any kind: those a developer reset covers.
-export function countAttempts(text, name, { skip = 0 } = {}) {
-  return text
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line)
-      } catch {
-        return null
-      }
-    })
-    .filter((event) => event?.name === name)
-    .slice(skip)
-    .filter((event) => (event.event ?? 'dispatch') === 'dispatch').length
-}
-
 // ---------------------------------------------------------------- fix rounds
 
 // apply.md: a fix round is one `fix` dispatch and one scoped `re-review`; the loop has at most

@@ -30,7 +30,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
-import { attemptsFile, readLog, recordReply, standing } from './attempts.mjs'
+import { attemptsFile, readLog, recordReply, runSince, standing } from './attempts.mjs'
 import { changeDir } from './changes.mjs'
 import { DispatchError, parseName, VERIFY_CHECKS } from './dispatch.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
@@ -288,8 +288,7 @@ export function checkVerifyReply(check, text, context) {
 export function sessionStart(root, change) {
   const text = readOr(join(verifyDir(root, change), 'run.json'))
   if (text === null) throw new DispatchError(`no ${join(verifyDir(root, change), 'run.json')}: run verify.mjs run first`)
-  const run = JSON.parse(text)
-  return run.started ?? run.at ?? null
+  return runSince(root, change, 'verify')
 }
 
 const rel = (root, path) => relative(root, path).split('\\').join('/')

@@ -38,7 +38,7 @@ import { commitPaths } from './commit.mjs'
 import { MAX_ATTEMPTS, parseName } from './dispatch.mjs'
 import { readRecords } from './ledger.mjs'
 import { commentFor, coveringIgnore, parseMarker } from './marker.mjs'
-import { cell, checkFindings, checkFix, CLOSED, computeVerdict, reviewConfig, SEVERITIES, where } from './review.mjs'
+import { cell, checkFindings, checkFix, CLOSED, computeVerdict, filterPaths, reviewConfig, SEVERITIES, where } from './review.mjs'
 import { isTestFile } from './tdd-proof.mjs'
 
 export const ROUND_CAP = 3
@@ -115,8 +115,6 @@ export function loadState(root, change) {
 }
 
 const REVIEW_ROLES = ['ai-review', 'ai-fix']
-// The time this run's events count from: its start, or null before any start.
-export const reviewSince = (root, change) => readJson(join(reviewDir(root, change), 'start.json'))?.at ?? null
 
 // The first name of this run, a reviewer's or a fixer's, whose second invalid reply stopped the
 // stage, read from the shared events log; null while none has.
@@ -560,12 +558,46 @@ function stamp(iso) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
+// Whether a commit is nothing a round reads: every path it changes is under the change's own
+// directory, or every one is excluded by the review's filter (lib/review.mjs filterPaths).
+function outsideReview(git, sha, change, config) {
+  const paths = git('-c', 'core.quotePath=false', 'show', '--name-only', '-z', '--no-renames', '--format=', sha)
+    .split('\0')
+    .map((p) => p.replace(/^\n+/, ''))
+    .filter(Boolean)
+  return paths.length > 0 && (paths.every((p) => p.startsWith(`openspec/changes/${change}/`)) || filterPaths(paths, config).kept.length === 0)
+}
+
+// The committed PASS record of `change` that still stands: { file, verdict, commit } when
+// review.md at HEAD reads PASS and every commit after its reviewed commit, the record's own
+// among them, is nothing a round reads; null otherwise.
+export function standingRecord(root, change) {
+  const git = gitAt(root)
+  const file = recordPath(change)
+  const text = tryGit(git, 'show', `HEAD:${file}`)
+  if (text === null) return null
+  const parsed = checkRecord(text)
+  if (!parsed.ok || parsed.verdict !== 'PASS') return null
+  const commit = tryGit(git, 'rev-parse', '--verify', '--quiet', `${parsed.commit}^{commit}`)
+  return commit && onlyOutsideReview(root, change, commit) ? { file, verdict: 'PASS', commit } : null
+}
+
+// Whether HEAD moved from `from` only by commits no round reads (outsideReview); false when
+// `from` is not an ancestor of HEAD. Verify reads it too: such a move opens no new session.
+export function onlyOutsideReview(root, change, from) {
+  const git = gitAt(root)
+  if (!isAncestor(git, from, 'HEAD')) return false
+  const config = reviewConfig(root)
+  return git('rev-list', `${from}..HEAD`).split('\n').filter(Boolean).every((sha) => outsideReview(git, sha, change, config))
+}
+
 // The commits after the last round's fix base that no round reviewed and that are neither a
-// recorded fix nor a commit adding ADF IGNORE marker lines only.
-function unreviewedCommits(git, from, fixShas) {
+// recorded fix, nor a commit adding ADF IGNORE marker lines only, nor one no round reads
+// (outsideReview).
+function unreviewedCommits(git, from, fixShas, { change, config }) {
   const shas = git('rev-list', '--reverse', `${from}..HEAD`).split('\n').filter(Boolean)
   return shas.filter((sha) => {
-    if (fixShas.has(sha)) return false
+    if (fixShas.has(sha) || outsideReview(git, sha, change, config)) return false
     const diff = git('show', '--format=', '-U0', '--no-color', '--no-ext-diff', sha)
     const changed = diff.split('\n').filter((l) => /^[+-]/.test(l) && !/^(\+\+\+|---) /.test(l))
     return !(changed.length > 0 && changed.every((l) => l.startsWith('+') && parseMarker(l.slice(1)) && !parseMarker(l.slice(1)).error))
@@ -591,7 +623,8 @@ export function assemble(rootArg, { change, notReviewed = null, commit = false, 
   const dirty = dirtyOutside(git, file)
   if (dirty.length > 0) refuse(`the tree has changes outside ${file}: ${dirty.join(', ')}; commit each fix or marker first, or let the developer deal with them`)
   const head = git('rev-parse', 'HEAD')
-  const { blockOn } = reviewConfig(root)
+  const config = reviewConfig(root)
+  const { blockOn } = config
   const records = rulings(root, change, state)
   const start = state.start
   const lines = ['# AI Code Review Record', '', `**Change**: \`${change}\``, `**Reviewed at**: \`${stamp(now)}\``, `**Reviewed commit**: \`${head}\``]
@@ -625,7 +658,7 @@ export function assemble(rootArg, { change, notReviewed = null, commit = false, 
   }
   const last = state.rounds.at(-1)
   const fixes = Object.entries(dispositions).filter(([, d]) => d.as === 'fixed')
-  const stray = unreviewedCommits(git, last.findings.fixBase, new Set(fixes.map(([, d]) => d.sha)))
+  const stray = unreviewedCommits(git, last.findings.fixBase, new Set(fixes.map(([, d]) => d.sha)), { change, config })
   if (stray.length > 0) refusals.push(`commit(s) after round ${last.round} that no round reviewed and that are not a recorded fix: ${stray.map((s) => s.slice(0, 7)).join(', ')}; review them in another round or start again`)
   const suite = state.suite
   if (fixes.length > 0 && !suite) refusals.push(`a fix landed and the suite has not run after it: suite.mjs run --change ${change} --section review`)

@@ -35,7 +35,8 @@ names is passed as the name; otherwise the active change answers in step 1.
 2. **Check that a new tool ran on a real input,** as the instruction states, before any
    reviewer is dispatched.
 
-3. **Start the run.** `review.mjs start`. An empty filtered diff goes to step 8 with
+3. **Start the run.** `review.mjs start`. `recordStands: true`: the PASS record stands; report
+   `next` and stop. An empty filtered diff goes to step 8 with
    `--not-reviewed`. A diff over the size one reviewer takes: show the slices and their proof
    to the developer and record their approval as the `review-slices` ruling.
 

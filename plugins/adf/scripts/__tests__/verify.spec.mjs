@@ -628,6 +628,28 @@ test('run clears the sections of another session by itself; --fresh still forces
   assert.equal(existsSync(join(dir, 'c4.json')), false)
 })
 
+// A section describes the HEAD it was written at, and the verify replies' count restarts with the
+// session: HEAD moved by code opens a new one in the same harness session; a commit no review
+// reads (the change's own directory, filtered files) does not.
+test('run opens a new session by itself when HEAD moved by code, not by the change record', () => {
+  const { root } = host()
+  const dir = verifyDir(root, CHANGE)
+  const env = { CLAUDE_CODE_SESSION_ID: 's1' }
+  runChecks(root, { change: CHANGE, env, now: '2020-01-01T00:00:00.000Z' })
+  section(root, 'c4', 'pass')
+  let run = runChecks(root, { change: CHANGE, env, now: '2020-01-02T00:00:00.000Z' })
+  assert.deepEqual([run.cleared, run.started], [null, '2020-01-01T00:00:00.000Z'], 'the same HEAD keeps the session')
+  commit(root, { [changeFile('verify.md')]: '# Verification\n' })
+  commit(root, { 'docs/notes.md': 'notes\n' })
+  run = runChecks(root, { change: CHANGE, env, now: '2020-01-02T12:00:00.000Z' })
+  assert.deepEqual([run.cleared, run.started], [null, '2020-01-01T00:00:00.000Z'], 'record and filtered commits keep the session')
+  assert.equal(existsSync(join(dir, 'c4.json')), true)
+  commit(root, { 'src/a.mjs': 'export const a = 2\n' })
+  run = runChecks(root, { change: CHANGE, env, now: '2020-01-03T00:00:00.000Z' })
+  assert.deepEqual([run.cleared, run.started], ['head moved', '2020-01-03T00:00:00.000Z'])
+  assert.equal(existsSync(join(dir, 'c4.json')), false)
+})
+
 test('run reads the approved skill edits from the ledger', () => {
   const { root } = host()
   const sha = commit(root, { '.claude/skills/s/SKILL.md': 'skill\n' })

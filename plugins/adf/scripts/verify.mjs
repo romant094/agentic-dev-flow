@@ -7,7 +7,9 @@
 //       run the mechanical checks; each writes its raw output under
 //       .superpowers/sdd/<change>/verify/ and the list is kept in verify/run.json with the
 //       session id. A run in another session than the one that wrote run.json (read from
-//       CLAUDE_CODE_SESSION_ID) clears that directory first; --fresh forces the clearing.
+//       CLAUDE_CODE_SESSION_ID), or at a HEAD other than run.json's moved by a commit the review
+//       reads (not one only under the change's directory or of filtered files), clears that
+//       directory first and starts a new verify session; --fresh forces the clearing.
 //       The approved skill edits are the ledger's skill-edit records; --skill-edit names more.
 //       --suite: when the test-record check fails (no record, or a stale one), the whole suite
 //       runs in the same call with the base check and writes verify/test-record.json
