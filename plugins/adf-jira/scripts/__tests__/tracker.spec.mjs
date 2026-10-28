@@ -71,6 +71,16 @@ describe('tracker check', () => {
     )
   })
 
+  it('is ready with a note when statuses.initial is unset, and without one when it is set', async () => {
+    const where = project()
+    const { result } = await call(fakeJira(), where, 'check')
+    assert.equal(result.tool, 'ready')
+    assert.deepEqual(result.notes, ['config.statuses.initial is unset: a partial issue keeps its status at hand-off and sync-debt cannot plan an edit; run /adf-jira:setup'])
+    const set = await call(fakeJira(), where, 'check', {}, { ...CONFIG, statuses: { ...CONFIG.statuses, initial: 'Opened' } })
+    assert.equal(set.result.tool, 'ready')
+    assert.equal(set.result.notes, undefined)
+  })
+
   it('is degraded missing, with the template to copy, when there is no env file', async () => {
     const where = project({ env: null })
     const jira = fakeJira()

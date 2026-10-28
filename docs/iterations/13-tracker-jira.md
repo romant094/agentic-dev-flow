@@ -104,7 +104,7 @@ The registry entry, `.claude/adf-extensions.json`:
     "allowlist": ["DESTELENG"],
     "profileDir": ".claude/jira/profile",
     "debtEpic": "DESTELENG-399",
-    "statuses": { "start": "In Progress", "handoff": "Review", "excluded": ["Suspended"] },
+    "statuses": { "initial": "Opened", "start": "In Progress", "handoff": "Review", "excluded": ["Suspended"] },
     "fields": ["Reproduce steps", "Expected result"]
   }
 }

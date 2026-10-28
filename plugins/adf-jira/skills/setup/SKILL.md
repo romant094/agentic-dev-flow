@@ -87,9 +87,13 @@ Ask about:
 4. **Conventional fields.** Which fields the team always fills even where Jira treats
    them as optional.
 5. **Start of work and hand-off.** Which status an issue takes when work starts, which
-   status hands it to the tester, and which statuses keep an issue out of a change's scope.
-   These are also the registry config's `statuses` (`start`, `handoff`, `excluded`), which the
-   flow's tracker steps read: set them there too.
+   status hands it to the tester, which statuses keep an issue out of a change's scope, and
+   which status a partially addressed issue goes back to at hand-off (`initial`). Offer as
+   candidates only the status names in `discovered.json`; do not guess one. These are also the
+   registry config's `statuses` (`initial`, `start`, `handoff`, `excluded`), which the flow's
+   tracker steps read: when the developer confirms them, set them there too. Without
+   `initial`, a partial issue keeps its status at hand-off and `/adf-jira:sync-debt` refuses to
+   plan an edit.
 
 Write the answers to `conventions.md` as prose with a short table for the field and status
 decisions. Never overwrite an existing answer without showing it and asking.

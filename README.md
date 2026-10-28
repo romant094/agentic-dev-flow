@@ -108,7 +108,7 @@ A project on Jira enables the tracker with its non-secret values in `config`, th
 profile once:
 
 ```
-/adf:add adf-jira@agentic-dev-flow '{"baseUrl":"https://jira.example.com","allowlist":["PROJ"],"statuses":{"start":"In Progress","handoff":"Review"}}'
+/adf:add adf-jira@agentic-dev-flow '{"baseUrl":"https://jira.example.com","allowlist":["PROJ"],"statuses":{"initial":"Opened","start":"In Progress","handoff":"Review"}}'
 /adf-jira:setup
 ```
 

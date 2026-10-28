@@ -220,6 +220,15 @@ test('a debt id among the keys is matched in the debt, never sent to the tracker
   const debtOnly = scope(only, 'gather', '--change', 'fix-pool', '--keys', 'snmp-02')
   assert.deepEqual(calls(only).map((c) => c.op), ['check'])
   assert.deepEqual(debtOnly.items.map((i) => i.key), ['snmp-02'])
+  assert.match(debtOnly.report, /Debt: snmp-02 \(debt id\)\./)
+})
+
+test('a ready check with notes shows them with the gather report', () => {
+  const root = host({ config: { check: { state: 'done', tool: 'ready', account: 'dev', notes: ['config.statuses.initial is unset'] } } })
+  const out = scope(root, 'gather', '--change', 'fix-pool', '--keys', 'PROJ-1')
+  assert.match(out.report, /\n {2}note: config\.statuses\.initial is unset/)
+  const bare = scope(root, 'gather', '--change', 'fix-pool')
+  assert.ok(bare.report.includes('note: config.statuses.initial is unset'))
 })
 
 test('a degraded tracker says so with its hint; select waits; --skip-tracker records the skip once and every tracker step skips', () => {

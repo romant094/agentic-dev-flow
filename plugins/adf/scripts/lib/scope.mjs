@@ -24,8 +24,8 @@
 //   item     { source: tracker | debt, key, title, kind, state: candidate | taken | partial |
 //              excluded, reason, verdict, check, flags, ... }
 //            tracker: url, status, open, parent, links, branchToken, branchRank, file
-//            debt:    block, class, anchors, tracker, files, matched (key | text), precedent?
-//   precedent { key, title, class, block, anchors, tracker, resolvedBy, date, matched (key | text
+//            debt:    block, class, anchors, tracker, files, matched (key | id | text), precedent?
+//   precedent { key, title, class, block, anchors, tracker, resolvedBy, date, matched (key | id | text
 //              | precedent) }: resolved debt, a row of a block's resolved.md, never an item; the
 //              past fix its archived change (resolvedBy) holds, for the issue check to read
 //   paths are relative to the main checkout, so the committed record names no machine path.
@@ -233,7 +233,7 @@ function debtItems(main, { keys, words }) {
   if (!root) return { store: null, items: [], precedents: [] }
   const tree = join(main, root)
   const { blocks, entries, resolved } = listTree(tree, { kind: 'debt' })
-  const match = (e) => (e.tracker && keys.has(e.tracker) ? 'key' : keys.has(e.id) ? 'key' : matchesPhrase(e.title, words) ? 'text' : null)
+  const match = (e) => (e.tracker && keys.has(e.tracker) ? 'key' : keys.has(e.id) ? 'id' : matchesPhrase(e.title, words) ? 'text' : null)
   const items = []
   for (const e of entries) {
     const matched = match(e)
@@ -304,7 +304,7 @@ function trackerLine(t) {
 function debtLine(store, items) {
   if (!store) return 'Debt: none; the registry sets no debt.root.'
   if (items.length === 0) return 'Debt: no entry matches.'
-  return `Debt: ${items.map((i) => `${i.key} (${i.matched === 'key' ? `tracker key ${i.tracker ?? i.key}` : 'phrase'})`).join(', ')}.`
+  return `Debt: ${items.map((i) => `${i.key} (${i.matched === 'key' ? `tracker key ${i.tracker}` : i.matched === 'id' ? 'debt id' : 'phrase'})`).join(', ')}.`
 }
 
 const precedentLine = (p) => `Precedent: ${p.key}, ${p.title}, resolved by \`${p.resolvedBy}\` on ${p.date}.`
@@ -337,7 +337,9 @@ export function gather(root, change, { keys = [], text: phrase = null, skipTrack
       else if (got.state === 'none') t = { state: 'none', plugin, notes: [], report: trackerReport('gather', got) }
       else {
         raw = Array.isArray(got.items) ? got.items : []
-        t = { state: 'done', plugin, account: check.account ?? null, notes: (got.notes ?? []).map(text), report: trackerReport('gather', got) }
+        // The check's notes go with the gather's: a ready check says them only here.
+        const notes = [...(check.notes ?? []), ...(got.notes ?? [])]
+        t = { state: 'done', plugin, account: check.account ?? null, notes: notes.map(text), report: trackerReport('gather', { ...got, notes }) }
       }
     }
   }
