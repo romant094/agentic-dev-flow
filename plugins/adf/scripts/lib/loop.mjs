@@ -23,10 +23,16 @@
 //                 | clean.
 //
 // sweepState(root, change): the reuse sweep's findings, S<k> by first report, and the open ones.
+// The first sweep is two passes, `sweep p1` and `sweep p2`, read as one run once both are
+// accepted on one HEAD (`ran` false until then, with `missing` naming the pass not yet accepted,
+// or `error` when the HEADs differ); the re-sweeps `sweep r<k>` follow. One duplicate keeps one
+// S<k> across passes and runs: a finding whose `introduced` and `existing` name the same files
+// with overlapping lines as an earlier report is that report (lib/dup.mjs sameDuplicate).
 // A finding stays open across sweep runs until one of: a DUP marker in the tree now accepts it
-// (`dup.mjs mark`, the developer's dismissal); a ruling accepts or dismisses it; or a later sweep
+// (`dup.mjs mark`, the developer's dismissal, at any location it was reported at); a ruling accepts or dismisses it; or a later sweep
 // no longer reports it and its introduced file changed between the sweep that last reported it
-// and that later one (a consolidation), unless an accepted `debt` record of `dup.mjs mark` names
+// and that later one (a consolidation), unless the round's `re-review sweep r<k>` listed it in
+// `notConsolidated`, or an accepted `debt` record of `dup.mjs mark` names
 // the pair (lib/dup.mjs dismissalOf): its marker commit changed the file, and the finding was
 // dismissed. That record also clears a finding no later sweep has run on, where no marker fits. A later CLEAN with the file unchanged clears nothing: a second CLEAN on an
 // unchanged branch would launder the first finding. Locations are read relative to the
@@ -41,7 +47,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { attemptsFile, parseEvents, readLog } from './attempts.mjs'
 import { parseName, sddDir, SWEEP_SUBJECT } from './dispatch.mjs'
-import { coveringMarker, dismissalOf, findMarkers, locate, relativeFindings, relativeLocation } from './dup.mjs'
+import { coveringMarker, dismissalOf, findMarkers, locate, relativeFindings, relativeLocation, sameDuplicate } from './dup.mjs'
 import { applyRound, readRecords } from './ledger.mjs'
 import { gitIn } from './workspace.mjs'
 
@@ -211,8 +217,6 @@ export const renderDeferred = (item) =>
 
 // ---------------------------------------------------------------- the reuse sweep
 
-const sweepKey = (f) => `${String(f.introduced).trim()}\u0000${String(f.existing).trim()}`
-
 function changedBetween(git, from, to, file) {
   if (!from || !to || !file) return false
   try {
@@ -222,43 +226,84 @@ function changedBetween(git, from, to, file) {
   }
 }
 
+// The first sweep of the current apply round: the accepted `sweep p1` and `sweep p2`, read as
+// one run, p1's findings first and then each p2 finding no p1 finding matches (lib/dup.mjs
+// sameDuplicate). { run } once both are accepted on one HEAD; { missing } while a pass has no
+// accepted reply; { error } when the two ran on different HEADs. A change whose log holds the
+// single `sweep` of before the two passes reads that one as its first sweep.
+function firstPass(root, events) {
+  const last = (name) => events.findLast((e) => e.name === name)
+  const [p1, p2] = [last('sweep p1'), last('sweep p2')]
+  if (!p1 && !p2) {
+    const single = last('sweep')
+    return single ? { run: { findings: relativeFindings(root, single.result.findings), head: single.result.head ?? null } } : {}
+  }
+  if (!p1 || !p2) return { missing: [p1 ? 'sweep p2' : 'sweep p1'] }
+  if (p1.result.head !== p2.result.head) {
+    return { error: `sweep p1 ran on ${p1.result.head} and sweep p2 on ${p2.result.head}: the two passes read one HEAD; dispatch the pass that ran on the older one again` }
+  }
+  const one = relativeFindings(root, p1.result.findings)
+  const two = relativeFindings(root, p2.result.findings).filter((f) => !one.some((g) => sameDuplicate(f, g)))
+  return { run: { findings: [...one, ...two], head: p1.result.head ?? null } }
+}
+
+// The S<n> a consolidation's re-review of round k found not consolidated: its last accepted result.
+const notConsolidatedOf = (events, round) => events.findLast((e) => e.name === `re-review sweep r${round}`)?.result.notConsolidated ?? []
+
+export const renderSweepFinding = (f) => `${f.id} ${f.introduced} repeats ${f.existing}: ${f.why}`
+
 export function sweepState(root, change, { git = gitIn(root) } = {}) {
   const records = readRecords(root, change)
   const since = roundStart(records)
-  // The first sweep and every re-sweep (`sweep r<k>`) of the current apply round, in log order.
-  const runs = parseEvents(readLog(attemptsFile(root, change))).filter((e) => e.event === 'valid' && parseName(e.name)?.role === 'sweep' && e.result).filter(atOrAfter(since))
-  if (runs.length === 0) return { ran: false, ids: [], open: [], cleared: [] }
-  const ids = new Map()
+  const events = parseEvents(readLog(attemptsFile(root, change))).filter((e) => e.event === 'valid' && e.result).filter(atOrAfter(since))
+  const sweeps = events.filter((e) => parseName(e.name)?.role === 'sweep')
+  const first = firstPass(root, sweeps)
+  if (!first.run) return { ran: false, ids: [], open: [], cleared: [], ...(first.missing ? { missing: first.missing } : {}), ...(first.error ? { error: first.error } : {}) }
+  // The first sweep, then every re-sweep (`sweep r<k>`) of the current apply round, in log order.
+  const runs = [
+    first.run,
+    ...sweeps
+      .filter((e) => parseName(e.name).round !== undefined)
+      .map((e) => ({ round: parseName(e.name).round, findings: relativeFindings(root, e.result.findings), head: e.result.head ?? null }))
+  ]
+  // Each S<n> with every location it was reported at; its open entry keeps the first report's text.
+  const known = new Map()
   const open = new Map()
   const cleared = []
-  for (const { result } of runs) {
-    const findings = relativeFindings(root, result.findings)
-    const reported = new Set(findings.map(sweepKey))
-    for (const [key, f] of open) {
-      if (reported.has(key)) continue
-      if (changedBetween(git, f.head, result.head, locate(f.introduced)?.file)) {
-        open.delete(key)
+  for (const run of runs) {
+    const kept = new Set(run.round === undefined ? [] : notConsolidatedOf(events, run.round))
+    for (const [id, f] of open) {
+      if (run.findings.some((g) => known.get(id).seen.some((s) => sameDuplicate(s, g)))) continue
+      // The consolidation's re-review found it not consolidated: the re-sweep's silence clears nothing.
+      if (kept.has(id)) continue
+      if (changedBetween(git, f.head, run.head, locate(f.introduced)?.file)) {
+        open.delete(id)
         const debt = dismissalOf(root, records, f)
-        cleared.push(debt ? { id: f.id, by: 'dismissed', debt: debt.id } : { id: f.id, by: 'consolidated' })
+        cleared.push(debt ? { id, by: 'dismissed', debt: debt.id } : { id, by: 'consolidated' })
       }
     }
-    for (const f of findings) {
-      const key = sweepKey(f)
-      if (!ids.has(key)) ids.set(key, `S${ids.size + 1}`)
-      open.set(key, { id: ids.get(key), introduced: f.introduced, existing: f.existing, why: f.why, head: result.head ?? null })
+    for (const f of run.findings) {
+      let entry = [...known.values()].find((k) => k.seen.some((s) => sameDuplicate(s, f)))
+      if (!entry) {
+        entry = { id: `S${known.size + 1}`, first: f, seen: [] }
+        known.set(entry.id, entry)
+      }
+      entry.seen.push(f)
+      open.set(entry.id, { id: entry.id, introduced: entry.first.introduced, existing: entry.first.existing, why: entry.first.why, head: run.head })
     }
   }
   const rulings = subjectRulings(records, SWEEP_SUBJECT, since)
   const markers = findMarkers(root)
   const still = []
   for (const f of open.values()) {
-    const marker = coveringMarker(markers, f)
+    // A marker may sit at any location the finding was reported at.
+    const marker = known.get(f.id).seen.map((s) => coveringMarker(markers, s)).find(Boolean)
     if (marker) cleared.push({ id: f.id, by: 'marker', marker: `${marker.file}:${marker.line}` })
     else if (CLOSING.includes(rulings.get(f.id)?.as)) cleared.push({ id: f.id, by: 'ruling', ruling: rulings.get(f.id).id })
     else if (dismissalOf(root, records, f)) cleared.push({ id: f.id, by: 'dismissed', debt: dismissalOf(root, records, f).id })
     else still.push(f)
   }
-  return { ran: true, ids: [...ids.values()], open: still, cleared }
+  return { ran: true, ids: [...known.keys()], open: still, cleared }
 }
 
 // ---------------------------------------------------------------- the consolidation
@@ -277,7 +322,7 @@ export function consolidationState(root, change, options = {}) {
   const loop = loopState(subjectHistory(readLog(attemptsFile(root, change)), SWEEP_SUBJECT, since), rulings)
   const byId = new Map(loop.findings.map((f) => [f.id, f]))
   const rendered = [
-    ...sweep.open.map((f) => `${f.id} ${f.introduced} repeats ${f.existing}: ${f.why}`),
+    ...sweep.open.map(renderSweepFinding),
     ...loop.open.map((id) => renderFinding(byId.get(id), rulings.get(id)))
   ]
   const files = unique([

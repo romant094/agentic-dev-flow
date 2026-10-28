@@ -4,7 +4,7 @@ import { strict as assert } from 'node:assert'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { commentFor, coveringMarker, locate, parseMarker } from '../lib/dup.mjs'
+import { commentFor, coveringMarker, locate, parseMarker, sameDuplicate } from '../lib/dup.mjs'
 import { recordReply } from '../lib/attempts.mjs'
 import { appendRecord, listRecords } from '../lib/ledger.mjs'
 import { sweepState } from '../lib/loop.mjs'
@@ -135,9 +135,9 @@ test('dispatch.mjs reply records an accepted sweep and its dispositions as debt 
   const spec = '## REMOVED Requirements\n\n### Requirement: Old thing\n\n**Reason**: gone\n\n**Code Disposition:** deleted\n'
   const { change } = host({ 'specs/cap/spec.md': spec })
   mkdirSync(join(change, 'r'), { recursive: true })
-  const reply = (body) => {
+  const reply = (body, name = 'sweep p1') => {
     writeFileSync(join(change, 'r/s.json'), JSON.stringify(body))
-    return dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/s.json', '--root', change], { main: change })
+    return dispatch(['reply', '--change', 'add-x', '--name', name, '--file', 'r/s.json', '--root', change], { main: change })
   }
   // A refused reply records no debt.
   const refused = reply({ role: 'sweep', findings: [] })
@@ -147,6 +147,10 @@ test('dispatch.mjs reply records an accepted sweep and its dispositions as debt 
   const out = reply({ role: 'sweep', findings: [], dispositions: [{ requirement: 'Old thing', disposition }] })
   assert.deepEqual([out.valid, out.result.verdict, out.debt], [true, 'CLEAN', [{ requirement: 'Old thing', id: 'debt-1' }]])
   assert.deepEqual(listRecords(change, 'add-x').map((d) => [d.kind, d.what, d.reason]), [['debt', 'the Code Disposition of the removed or renamed requirement "Old thing"', disposition]])
+  // The second pass answers the same requirement in its own words: it is recorded once.
+  const second = reply({ role: 'sweep', findings: [], dispositions: [{ requirement: 'Old thing', disposition: 'removed; nothing reaches the old path' }] }, 'sweep p2')
+  assert.deepEqual([second.valid, second.debt[0].skipped], [true, 'debt-1 already records it'])
+  assert.equal(listRecords(change, 'add-x').length, 1)
 })
 
 test('dup mark --commit commits the marked file alone, with the fixed message', () => {
@@ -161,9 +165,19 @@ test('dup mark --commit commits the marked file alone, with the fixed message', 
   assert.equal(mark(change, ['--file', 'src/b.ts', '--line', '2', '--commit']).commit, null)
 })
 
-// A sweep's accepted reply in the events log, with the HEAD it ran on.
-const swept = (change, findings) =>
-  recordReply(change, 'add-x', { name: 'sweep', file: 'sweep.json', result: { verdict: findings.length ? 'FINDINGS' : 'CLEAN', findings, dropped: [], head: git(change, 'rev-parse', 'HEAD') } })
+// Accepted sweep replies in the events log, each with the HEAD it ran on: the first call records
+// the first sweep's two passes, `sweep p1` with `findings` and `sweep p2` with `p2` (the same by
+// default); every later call a re-sweep `sweep r<k>`.
+const sweeps = new Map()
+function swept(change, findings, p2 = findings) {
+  const head = git(change, 'rev-parse', 'HEAD')
+  const result = (list) => ({ verdict: list.length ? 'FINDINGS' : 'CLEAN', findings: list, dropped: [], head })
+  const k = sweeps.get(change) ?? 0
+  sweeps.set(change, k + 1)
+  if (k > 0) return recordReply(change, 'add-x', { name: `sweep r${k}`, file: `sweep-r${k}.json`, result: result(findings) })
+  recordReply(change, 'add-x', { name: 'sweep p1', file: 'sweep-p1.json', result: result(findings) })
+  return recordReply(change, 'add-x', { name: 'sweep p2', file: 'sweep-p2.json', result: result(p2) })
+}
 
 test('a sweep finding stays open across sweeps until consolidated, marked or dismissed by a ruling', () => {
   const { change } = host()
@@ -194,11 +208,11 @@ test('a sweep finding stays open across sweeps until consolidated, marked or dis
 })
 
 test('locate reads path:line and path:line-line, and drops text after the line that older records carry', () => {
-  assert.deepEqual(locate('src/b.ts:16'), { file: 'src/b.ts', line: 16 })
-  assert.deepEqual(locate('src/b.ts:12-30'), { file: 'src/b.ts', line: 12 })
-  assert.deepEqual(locate('src/b.ts:16 toChanges'), { file: 'src/b.ts', line: 16 })
-  assert.deepEqual(locate('src/b.ts:12-30 projectRow()'), { file: 'src/b.ts', line: 12 })
-  assert.deepEqual(locate('src/b.ts'), { file: 'src/b.ts', line: null })
+  assert.deepEqual(locate('src/b.ts:16'), { file: 'src/b.ts', line: 16, end: 16 })
+  assert.deepEqual(locate('src/b.ts:12-30'), { file: 'src/b.ts', line: 12, end: 30 })
+  assert.deepEqual(locate('src/b.ts:16 toChanges'), { file: 'src/b.ts', line: 16, end: 16 })
+  assert.deepEqual(locate('src/b.ts:12-30 projectRow()'), { file: 'src/b.ts', line: 12, end: 30 })
+  assert.deepEqual(locate('src/b.ts'), { file: 'src/b.ts', line: null, end: null })
   assert.equal(locate('toChanges'), null)
 })
 
@@ -223,10 +237,10 @@ test('a sweep reply with text after the line of a location is refused, with the 
     '$.findings[1].existing: "src/a.ts:4-8 pickKeys()" has text after its line; write path, path:line or path:line-line, with nothing after the line'
   ]
   assert.deepEqual(sweep(['filter', 'r/s.json', '--root', change]).reasons, expected)
-  const out = dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/s.json', '--root', change], { main: change })
+  const out = dispatch(['reply', '--change', 'add-x', '--name', 'sweep p1', '--file', 'r/s.json', '--root', change], { main: change })
   assert.deepEqual([out.valid, out.next, out.errors], [false, 'retry', expected])
   writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', findings: [finding('src/b.ts:16', 'src/a.ts:33-40'), finding('src/c.ts', 'src/a.ts')] }))
-  assert.equal(dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/s.json', '--root', change], { main: change }).valid, true)
+  assert.equal(dispatch(['reply', '--change', 'add-x', '--name', 'sweep p1', '--file', 'r/s.json', '--root', change], { main: change }).valid, true)
 })
 
 test('a sweep location absolute under the root is recorded relative; one outside the root refuses the reply', () => {
@@ -236,13 +250,14 @@ test('a sweep location absolute under the root is recorded relative; one outside
   const reply = (introduced, existing) => JSON.stringify({ role: 'sweep', findings: [{ introduced, existing, why: 'Same constant.' }] })
   writeFileSync(join(change, 'r/abs.json'), reply(join(change, 'src/b.ts:1'), join(change, 'src/a.ts')))
   assert.deepEqual(sweep(['filter', 'r/abs.json', '--root', change]).findings, [{ introduced: 'src/b.ts:1', existing: 'src/a.ts', why: 'Same constant.' }])
-  const out = dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/abs.json', '--root', change], { main: change })
+  const out = dispatch(['reply', '--change', 'add-x', '--name', 'sweep p1', '--file', 'r/abs.json', '--root', change], { main: change })
   assert.equal(out.valid, true)
+  assert.equal(dispatch(['reply', '--change', 'add-x', '--name', 'sweep p2', '--file', 'r/abs.json', '--root', change], { main: change }).valid, true)
   assert.deepEqual(sweepState(change, 'add-x').open.map((f) => [f.introduced, f.existing]), [['src/b.ts:1', 'src/a.ts']])
   writeFileSync(join(change, 'r/out.json'), reply('/elsewhere/src/b.ts:1', 'src/a.ts:2'))
   const expected = ['$.findings[0].introduced: "/elsewhere/src/b.ts:1" is outside the repository; write the path relative to the repository root']
   assert.deepEqual(sweep(['filter', 'r/out.json', '--root', change]).reasons, expected)
-  assert.deepEqual(dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/out.json', '--root', change], { main: change }).errors, expected)
+  assert.deepEqual(dispatch(['reply', '--change', 'add-x', '--name', 'sweep p1', '--file', 'r/out.json', '--root', change], { main: change }).errors, expected)
 })
 
 test('mark writes an absolute existing location relative, in the marker and in the debt', () => {
@@ -277,7 +292,7 @@ test('mark --finding reads existing and why from the sweep reply, so no prose pa
   mkdirSync(join(change, 'r'), { recursive: true })
   const why = 'both map the `columns` of the header'
   writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', findings: [{ introduced: 'src/b.ts:3', existing: 'src/a.ts:12', why }] }))
-  assert.equal(dispatch(['reply', '--change', 'add-x', '--name', 'sweep', '--file', 'r/s.json', '--root', change], { main: change }).valid, true)
+  for (const name of ['sweep p1', 'sweep p2']) assert.equal(dispatch(['reply', '--change', 'add-x', '--name', name, '--file', 'r/s.json', '--root', change], { main: change }).valid, true)
   const byId = (id) => dup(['mark', '--change', 'add-x', '--finding', 'r/s.json', '--id', id, '--reason', 'the wire format differs', '--root', change])
   assert.throws(() => byId('S9'), /S9 is no open sweep finding/)
   const out = byId('S1')
@@ -302,4 +317,42 @@ test('an accepted dismissal debt clears a finding without a re-sweep where no ma
   appendRecord(change, 'add-x', 'debt', { what: 'duplicate: data.json repeats src/a.json', reason: 'Same defaults.', accepted: 'kept per environment' })
   const state = sweepState(change, 'add-x')
   assert.deepEqual([state.open, state.cleared], [[], [{ id: 'S1', by: 'dismissed', debt: 'debt-1' }]])
+})
+
+test('the two passes of the first sweep are one run: a p2 finding matching a p1 finding by overlapping lines is dropped', () => {
+  const { change } = host()
+  commitIn(change, 'src/b.ts', 'export const b = 1\n'.repeat(12))
+  const head = git(change, 'rev-parse', 'HEAD')
+  const pass = (n, findings) => recordReply(change, 'add-x', { name: `sweep p${n}`, file: `p${n}.json`, result: { verdict: 'FINDINGS', findings, dropped: [], head } })
+  const b = { introduced: 'src/b.ts:2-5', existing: 'src/a.ts:10-20', why: 'Same mapper.' }
+  const c = { introduced: 'src/c.ts:1', existing: 'src/a.ts:1', why: 'Same constant.' }
+  pass(1, [b, c])
+  // One pass alone is no sweep yet.
+  assert.deepEqual(sweepState(change, 'add-x'), { ran: false, ids: [], open: [], cleared: [], missing: ['sweep p2'] })
+  const again = { introduced: 'src/b.ts:4-8', existing: 'src/a.ts:15', why: 'The same mapper, worded otherwise.' }
+  const d = { introduced: 'src/d.ts:1-3', existing: 'src/a.ts:30', why: 'Same guard.' }
+  const below = { introduced: 'src/b.ts:9-12', existing: 'src/a.ts:10', why: 'Same parser.' }
+  pass(2, [d, again, below])
+  const state = sweepState(change, 'add-x')
+  assert.deepEqual(state.ids, ['S1', 'S2', 'S3', 'S4'])
+  assert.deepEqual(state.open.map((f) => [f.id, f.introduced, f.why]), [
+    ['S1', 'src/b.ts:2-5', 'Same mapper.'],
+    ['S2', 'src/c.ts:1', 'Same constant.'],
+    ['S3', 'src/d.ts:1-3', 'Same guard.'],
+    ['S4', 'src/b.ts:9-12', 'Same parser.']
+  ])
+  // A bare path overlaps every range; another file never matches.
+  assert.equal(sameDuplicate({ introduced: 'src/b.ts', existing: 'src/a.ts:3' }, { introduced: 'src/b.ts:7', existing: 'src/a.ts:1-4' }), true)
+  assert.equal(sameDuplicate({ introduced: 'src/b.ts:1', existing: 'src/a.ts:3' }, { introduced: 'src/b.ts:1', existing: 'src/e.ts:3' }), false)
+})
+
+test('a duplicate reported again at shifted lines keeps its S id', () => {
+  const { change } = host()
+  commitIn(change, 'src/b.ts', 'one\ntwo\nthree\nfour\nfive\nsix\n')
+  swept(change, [{ introduced: 'src/b.ts:3-6', existing: 'src/a.ts:12-20', why: 'Same parser.' }])
+  // An edit above it moves the duplicate two lines down; the re-sweep reports it there.
+  commitIn(change, 'src/b.ts', 'zero\nzero\none\ntwo\nthree\nfour\nfive\nsix\n')
+  swept(change, [{ introduced: 'src/b.ts:5-8', existing: 'src/a.ts:12-20', why: 'The parser again.' }])
+  const state = sweepState(change, 'add-x')
+  assert.deepEqual([state.ids, state.open.map((f) => [f.id, f.introduced, f.why]), state.cleared], [['S1'], [['S1', 'src/b.ts:3-6', 'Same parser.']], []])
 })

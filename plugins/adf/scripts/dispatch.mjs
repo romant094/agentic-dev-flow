@@ -4,17 +4,21 @@
 // refusal, exit 2 on a usage error.
 //
 //   dispatch.mjs plan    --change <name> --role <role> [--task <N>] [--group <G>] [--subject sweep]
-//                        [--round <k>] [--topic <word>] [--check c4|c8] [--root <change worktree>]
+//                        [--round <k>] [--pass 1|2] [--topic <word>] [--check c4|c8]
+//                        [--root <change worktree>]
 //       { ok, name, role, agent, worktree, replyFile, ... }; a verify dispatch also names the
 //       sectionFile its recorded reply becomes
 //       --round names a task's fix round, or a fix or re-review round after a merge review or
 //       the final review (fix B r2); with --subject sweep, a fix or re-review of a sweep
 //       finding's consolidation round (fix sweep r1), and on sweep the round's re-sweep
-//       (sweep r1). A consolidation's fix and re-review are refused before `sweep.mjs
-//       consolidate` recorded their round; their prompt carries the open sweep findings and the
-//       consolidation's own (lib/loop.mjs consolidationState), and the fix's files in scope are
-//       the duplicates' files. An accepted re-sweep writes the round's `re-sweep` ledger record,
-//       returned as `reSweep`
+//       (sweep r1). --pass names one of the first sweep's two passes, dispatched in parallel
+//       with one prompt (sweep p1, sweep p2); sweep takes --pass or --round. A consolidation's
+//       fix and re-review are refused before `sweep.mjs consolidate` recorded their round; their
+//       prompt carries the open sweep findings and the consolidation's own (lib/loop.mjs
+//       consolidationState), and the fix's files in scope are the duplicates' files. A re-sweep's
+//       range is the consolidation's diff, its prompt carries the open sweep findings to report
+//       again where they stand, and it has no dispositions question. An accepted re-sweep writes
+//       the round's `re-sweep` ledger record, returned as `reSweep`
 //   dispatch.mjs plan    --change <name> --role ai-review --round <k> [--slice <n>] [--root <dir>]
 //   dispatch.mjs plan    --change <name> --role ai-fix --finding F<n> --round <k> [--root <dir>]
 //       the review stage: `ai-review r<k>` (`ai-review r<k> s<n>` for one slice of a diff over
@@ -81,9 +85,9 @@
 //       ingest.mjs checkIngestFile against the ingest input; lib/verify-reply.mjs for `verify c4`
 //       and `verify c8`, which on a valid reply also writes the section verify.mjs verdict reads
 //       (and, for c8, verify/c8.diff), returned as `section`; their retries count from the verify
-//       session's start. A valid `sweep` reply's dispositions are written as `debt` records in
-//       the same call (lib/sweep.mjs recordDispositions), listed as `debt`: each id, or why it
-//       was skipped
+//       session's start. A valid `sweep p1` or `sweep p2` reply's dispositions are written as
+//       `debt` records in the same call, once per requirement over both passes (lib/sweep.mjs
+//       recordDispositions), listed as `debt`: each id, or why it was skipped
 //
 // prompt reads the loop state by script (lib/loop.mjs). A `fix` or `re-review` whose subject (the
 // task, the group, or the final review) has an accepted review carries `Open findings`, rendered
@@ -134,10 +138,12 @@ import {
   LOOP_ROLES,
   openFindings,
   renderDeferred,
+  renderSweepFinding,
   roundStart,
   subjectHistory,
   subjectOf,
   subjectState,
+  sweepState,
   SWEEP_SUBJECT,
   withProofFinding,
   writeDeferred
@@ -151,7 +157,7 @@ export const PLUGIN_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..'
 export const PROMPTS_DIR = join(PLUGIN_ROOT, 'schema', 'prompts')
 
 export const USAGE = `usage:
-  dispatch.mjs plan --change <name> --role <role> [--task <N>] [--group <G>] [--subject sweep] [--round <k>] [--topic <word>] [--check c4|c8] [--slice <n>] [--finding F<n>] [--capability <capability>] [--root <dir>]
+  dispatch.mjs plan --change <name> --role <role> [--task <N>] [--group <G>] [--subject sweep] [--round <k>] [--pass 1|2] [--topic <word>] [--check c4|c8] [--slice <n>] [--finding F<n>] [--capability <capability>] [--root <dir>]
   dispatch.mjs prompt (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>]
   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <dir>]
   dispatch.mjs reset --change <name> --name "<dispatch name>" --reason "<text>" [--yes <plan>] [--root <dir>]
@@ -160,7 +166,7 @@ export const USAGE = `usage:
 
 export class UsageError extends Error {}
 
-const FLAGS = ['--change', '--role', '--task', '--group', '--subject', '--round', '--topic', '--check', '--slice', '--finding', '--capability', '--root', '--question-file', '--base', '--head', '--name', '--file', '--resume', '--reason', '--yes']
+const FLAGS = ['--change', '--role', '--task', '--group', '--subject', '--round', '--pass', '--topic', '--check', '--slice', '--finding', '--capability', '--root', '--question-file', '--base', '--head', '--name', '--file', '--resume', '--reason', '--yes']
 
 function parse(argv) {
   const values = {}
@@ -363,17 +369,23 @@ function promptFor(inputs, plan, values, root, planText, main) {
     if (inputs.role === 'sweep') {
       let sweep
       try {
-        sweep = sweepInputs(root, change)
+        sweep = sweepInputs(root, change, { reSweep: inputs.round })
       } catch (error) {
         throw new DispatchError(error.message)
       }
       tokens['<base>'] = sweep.base
       dispositions = sweep.secondQuestion
       fields.push(['Base', sweep.base], ['Range', sweep.range], ['Planning guide', join(root, 'openspec', 'planning.md')])
-      fields.push([
-        'Removed or renamed',
-        sweep.removedOrRenamed.map((r) => `${r.op} ${r.from ? `${r.from} -> ${r.requirement ?? '(no TO)'}` : r.requirement} (${r.spec}): ${r.codeDisposition ?? 'no Code Disposition'}`)
-      ])
+      // A re-sweep reads the consolidation's diff and re-reports the open findings that still stand.
+      if (inputs.round !== undefined) {
+        const open = sweepState(root, change).open
+        fields.push(['Open sweep findings', open.length ? open.map(renderSweepFinding) : 'none'])
+      } else {
+        fields.push([
+          'Removed or renamed',
+          sweep.removedOrRenamed.map((r) => `${r.op} ${r.from ? `${r.from} -> ${r.requirement ?? '(no TO)'}` : r.requirement} (${r.spec}): ${r.codeDisposition ?? 'no Code Disposition'}`)
+        ])
+      }
     }
     fields.push(['Reply role', plan.role], ['Reply file', plan.replyFile])
   } else {
@@ -561,7 +573,8 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
     check: values.check,
     slice: number(values.slice),
     finding: values.finding,
-    capability: values.capability
+    capability: values.capability,
+    pass: number(values.pass)
   }
   const planText = readOr(join(root, 'openspec', 'changes', change, 'plan.md'))
   const checkout = main ?? mainCheckout(root)

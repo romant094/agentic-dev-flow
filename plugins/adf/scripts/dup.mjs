@@ -27,7 +27,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { commitPaths } from './lib/commit.mjs'
 import { isMain } from './lib/main.mjs'
-import { locate, markFile, markMessage, relativeFindings, relativeLocation } from './lib/dup.mjs'
+import { locate, markFile, markMessage, relativeFindings, relativeLocation, sameDuplicate } from './lib/dup.mjs'
 import { sweepState } from './lib/loop.mjs'
 import { gitIn } from './lib/workspace.mjs'
 import { appendRecord, buildRecord, readRecords } from './lib/ledger.mjs'
@@ -71,7 +71,8 @@ function fromReply(root, change, replyFile, id) {
   } catch (error) {
     throw new Error(`cannot read the sweep reply ${replyFile}: ${error.message}`)
   }
-  const found = findings.find((f) => f.introduced === open.introduced && f.existing === open.existing)
+  // The reply may report it at lines shifted since its first report (lib/dup.mjs sameDuplicate).
+  const found = findings.find((f) => sameDuplicate(f, open))
   if (!found) throw new Error(`${replyFile} holds no finding ${open.introduced} repeats ${open.existing}, which is ${id}`)
   const at = locate(found.introduced)
   if (!at) throw new Error(`${id}'s introduced location ${found.introduced} names no file`)

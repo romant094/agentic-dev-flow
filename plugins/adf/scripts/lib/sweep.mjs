@@ -5,7 +5,9 @@
 // - the range: the change's base from its metadata, `origin/<base>` when that remote-tracking
 //   ref exists, else `<base>`, through `git merge-base` with HEAD (as plan-symbols resolves it);
 //   in an apply round (lib/ledger.mjs applyRound) from the round's base instead: the round's diff
-//   alone, still compared against the whole tree;
+//   alone, still compared against the whole tree; for consolidation k's re-sweep (`sweep r<k>`)
+//   from the HEAD the last accepted sweep before that consolidation ran on: the consolidation's
+//   diff alone, with no second question;
 // - the second question's input: every REMOVED or RENAMED requirement of the change's delta
 //   specs, with its `**Code Disposition:**` text, or null when it has none (itself a finding);
 // - the DUP markers already in the tree, and the filter that drops a finding a marker accepts;
@@ -22,7 +24,7 @@ import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { baseRef } from './plan-symbols.mjs'
 import { appendRecord, appendScripted, applyRound, readRecords } from './ledger.mjs'
 import { attemptsFile, parseEvents, readLog } from './attempts.mjs'
-import { MAX_ROUNDS } from './dispatch.mjs'
+import { MAX_ROUNDS, parseName } from './dispatch.mjs'
 import { atOrAfter, consolidationState, roundStart, sweepState } from './loop.mjs'
 import { findSection, parseSections } from './specs.mjs'
 
@@ -84,7 +86,21 @@ function specFiles(dir) {
   return out.sort()
 }
 
-export function sweepInputs(root, change) {
+// The HEAD consolidation k's diff starts from: the `head` of the last accepted sweep run, a pass
+// or a re-sweep, recorded before the round's `consolidation` record, in the current apply round.
+function consolidationBase(root, change, records, k) {
+  const since = roundStart(records)
+  const record = records.filter(atOrAfter(since)).find((r) => r.kind === 'consolidation' && r.round === String(k))
+  if (!record) throw new Error(`no consolidation of round ${k} is recorded: run sweep.mjs consolidate --change ${change} --reason "<why>" first`)
+  const before = parseEvents(readLog(attemptsFile(root, change)))
+    .filter(atOrAfter(since))
+    .filter((e) => e.event === 'valid' && parseName(e.name)?.role === 'sweep' && e.result?.head && String(e.at ?? '') <= String(record.at ?? ''))
+  if (before.length === 0) throw new Error(`no accepted sweep before consolidation ${k} recorded the HEAD it ran on`)
+  return before.at(-1).result.head
+}
+
+// `reSweep`: the round k of a consolidation's re-sweep, whose range is that consolidation's diff.
+export function sweepInputs(root, change, { reSweep } = {}) {
   const dir = changeDir(root, change)
   if (!existsSync(dir)) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
@@ -104,7 +120,9 @@ export function sweepInputs(root, change) {
     throw new Error(`git merge-base ${ref} HEAD failed in ${root}; the base does not resolve`)
   }
   const head = git('rev-parse', 'HEAD')
-  const round = applyRound(readRecords(root, change))
+  const records = readRecords(root, change)
+  const round = applyRound(records)
+  const from = reSweep === undefined ? (round?.base ?? mergeBase) : consolidationBase(root, change, records, reSweep)
   const removedOrRenamed = specFiles(join(dir, 'specs')).flatMap((file) =>
     removalsIn(readFileSync(file, 'utf8')).map((r) => ({ ...r, spec: file.slice(dir.length + 1).split('\\').join('/') }))
   )
@@ -115,8 +133,9 @@ export function sweepInputs(root, change) {
     mergeBase,
     head,
     round: round?.round ?? 0,
-    range: `${round?.base ?? mergeBase}..${head}`,
-    secondQuestion: removedOrRenamed.length > 0,
+    ...(reSweep === undefined ? {} : { reSweep }),
+    range: `${from}..${head}`,
+    secondQuestion: reSweep === undefined && removedOrRenamed.length > 0,
     removedOrRenamed,
     missingDisposition: removedOrRenamed.filter((r) => r.codeDisposition === null).map((r) => r.requirement ?? r.from),
     dupMarkers: findMarkers(root)
@@ -170,7 +189,7 @@ export function filterReply(root, text) {
 export const roundNames = (k) => ({ fix: `fix sweep r${k}`, reReview: `re-review sweep r${k}`, sweep: `sweep r${k}` })
 
 // Opens a consolidation round on what is open (lib/loop.mjs consolidationState): the sweep's
-// findings and its review loop's, recorded as a `consolidation` ledger record with the reason
+// findings and its review loop's, refused until both passes of the first sweep are accepted, recorded as a `consolidation` ledger record with the reason
 // before the fix is dispatched; `dispatch.mjs prompt --role fix --subject sweep` refuses a round
 // with no record. A round whose re-sweep has no accepted reply yet is in flight: it is returned
 // again (`already`), nothing recorded. At MAX_ROUNDS the developer decides. Rounds count within
@@ -188,6 +207,9 @@ export function consolidate(root, change, { reason, env = process.env } = {}) {
     if (!reswept) return { ok: true, round: k, findings: last.findings.split(','), ...roundNames(k), record: last, already: true }
   }
   const state = consolidationState(root, change)
+  // The first consolidation waits for both passes of the first sweep (lib/loop.mjs sweepState).
+  if (state.sweep.error) throw new Error(state.sweep.error)
+  if (state.sweep.missing) throw new Error(`the first sweep is two passes and ${state.sweep.missing.join(', ')} has no accepted reply: consolidate once both are recorded`)
   if (state.open.length === 0) throw new Error('nothing to consolidate: no sweep finding and no finding of a consolidation is open')
   const k = rounds.length + 1
   if (k > MAX_ROUNDS) throw new Error(`the consolidation has run ${MAX_ROUNDS} rounds; escalate to the developer with what is open: ${state.open.join(', ')}`)
@@ -205,14 +227,15 @@ export function recordReSweep(root, change, round, { env = process.env } = {}) {
 }
 
 // One `debt` record per disposition of an accepted sweep reply, carrying the sweep's answer as
-// its reason; it never blocks apply, and archive places it. A disposition already recorded with
-// the same text is skipped, so a repeated call records nothing twice.
+// its reason; it never blocks apply, and archive places it. A requirement whose disposition is
+// already recorded is skipped, whatever its text: the two passes of the first sweep each answer
+// it, and a repeated call records nothing twice.
 // Returns [{ requirement, id } | { requirement, skipped }].
 export function recordDispositions(root, change, dispositions, { env = process.env } = {}) {
   const out = []
   for (const { requirement, disposition } of dispositions ?? []) {
     const what = `the Code Disposition of the removed or renamed requirement "${requirement}"`
-    const same = readRecords(root, change).find((r) => r.kind === 'debt' && r.what === what && r.reason === disposition)
+    const same = readRecords(root, change).find((r) => r.kind === 'debt' && r.what === what)
     if (same) out.push({ requirement, skipped: `${same.id} already records it` })
     else out.push({ requirement, id: appendRecord(root, change, 'debt', { what, reason: disposition }, { env }).record.id })
   }
