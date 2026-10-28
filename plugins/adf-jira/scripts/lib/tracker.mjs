@@ -109,6 +109,8 @@ async function myself(client) {
   return client.get('/rest/api/2/myself')
 }
 
+const UNSET_INITIAL = 'config.statuses.initial is unset: a partial issue keeps its status at hand-off and sync-debt cannot plan an edit; run /adf-jira:setup'
+
 async function check(ctx) {
   const env = prepare(ctx, { profile: false })
   if (env.code !== undefined) return env
@@ -124,7 +126,9 @@ async function check(ctx) {
   }
   const profile = prepare(ctx, { profile: true })
   if (profile.code !== undefined) return { code: 0, result: { ...profile.result, sources } }
-  return done({ tool: 'ready', account: me?.name ?? me?.key ?? null, sources, profile: { discoveredAt: profile.facts.discoveredAt } })
+  // Without an initial status a partial issue keeps its status at hand-off; nothing else says so.
+  const notes = ctx.config.statuses.initial ? [] : [UNSET_INITIAL]
+  return done({ tool: 'ready', account: me?.name ?? me?.key ?? null, sources, profile: { discoveredAt: profile.facts.discoveredAt }, ...(notes.length ? { notes } : {}) })
 }
 
 // ---------------------------------------------------------------- gather

@@ -189,6 +189,16 @@ Bench testing: the replay simulated the hardware pass the origin's plans hold (t
 bench answer was simulated, D26). A bench plugin is future work; tune it on real changes after
 the switch, not on the replay.
 
+## Harness debt
+
+1. The fake forge has no merge emulation. Land waits for a merge, and the developer must
+   emulate it by hand: edit `forge.json`, then fast-forward `develop` on the sandbox remote.
+   Proposed: an `autoMerge` option in the fake `glab`. On the first poll of land after the
+   undraft, it marks the merge request merged and fast-forwards the sandbox remote.
+2. The fake Jira ignores JQL. A propose with a phrase and no key gets every issue. Proposed:
+   a minimal JQL subset (`key in`, `text ~`, `status`), before a pass that starts without a
+   key.
+
 ## Result
 
 Commits (`git log --oneline bbee130..HEAD`, before this release step; the version-only patch

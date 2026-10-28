@@ -384,6 +384,7 @@ test('tracker: the held shape and the applied shape are rendered for the develop
   })
   const core = { ...CORE, home }
   assert.equal(trackerReport('check', callRole(root, 'tracker', 'check', {}, core)), 'Tracker: ready as dev')
+  assert.equal(trackerReport('check', { state: 'done', tool: 'ready', account: 'dev', notes: ['config.statuses.initial is unset'] }), 'Tracker: ready as dev\n  note: config.statuses.initial is unset')
   const held = callRole(root, 'tracker', 'start', { items: [{ key: 'K-1' }] }, core)
   assert.deepEqual([held.held, held.plan, held.plugin], [true, 'p1', 't'])
   assert.equal(trackerReport('start', held), "Tracker start: held for the developer's yes; plan p1\n  K-1: Open -> In Progress, assignee dev")

@@ -11,7 +11,7 @@ developer's yes. Install it in the host project, then add it to the registry:
 
 ```
 claude plugin install adf-jira@agentic-dev-flow --scope project
-/adf:add adf-jira@agentic-dev-flow '{"baseUrl":"https://jira.example.com","allowlist":["PROJ"],"statuses":{"start":"In Progress","handoff":"Review"}}'
+/adf:add adf-jira@agentic-dev-flow '{"baseUrl":"https://jira.example.com","allowlist":["PROJ"],"statuses":{"initial":"Opened","start":"In Progress","handoff":"Review"}}'
 ```
 
 Then run `/adf-jira:setup` once: it discovers the project's workflow and writes the profile
