@@ -117,7 +117,7 @@ Settled by the developer on 2026-10-27, all as recommended, from the second agen
   covers it.
 - D34 Apply pushes the change branch after the whole-suite record commit.
 - D35 The consolidation's fix prompt asks the fixer to reuse an existing helper before writing
-  a replacement; re-sweeps stay over the full range.
+  a replacement; re-sweeps stay over the full range (the range superseded by D41).
 - D36 The tracker gather takes keys and a phrase together; debt ids are not sent to the
   tracker.
 - D37 Prompts rendered from a skeleton (the scope check, the land comment) carry the frame's
@@ -128,6 +128,20 @@ Settled by the developer on 2026-10-27, all as recommended, from the second agen
   status, never through the hand-off status; with no initial status, or no such route, the
   comment only, and the plan says why. Supersedes iteration 13 D18.
 - D40 The replay host runs init's worktree preparation step, every candidate confirmed.
+- D41 The first reuse sweep is two passes in parallel, `sweep p1` and `sweep p2`, read as one
+  run once both are accepted on one HEAD: a finding whose two locations name the same files with
+  overlapping lines as an earlier one is that finding, across passes and runs, so one duplicate
+  keeps one id. A consolidation's re-sweep reads only that consolidation's diff and carries the
+  round's open findings; one its re-review found not consolidated is not cleared by the
+  re-sweep's silence. Supersedes the range of D35.
+- D42 Every fix round is a fresh `fix` dispatch whose prompt carries the task brief and the
+  reviewed range; an agent is resumed only for a refused reply's retry and a `provide-context`
+  answer, each dispatched afresh where the harness cannot resume it.
+- D43 `dispatch.mjs prompt` cuts the review package for every role that reads it and refuses a
+  range it cannot cut; the orchestrator no longer cuts it.
+- D44 The gather report names a debt entry matched by its debt id as such, never as a tracker key.
+- D45 `/adf-jira:setup` asks for the initial status, from the discovered status names only;
+  while it is unset, the tracker check returns a note that propose and land show.
 
 ## Inputs for iteration 15
 
@@ -362,14 +376,28 @@ By step:
     harness copied only the root dependencies (fixed in the harness, outside this repository);
     the answerer returned `none` on questions a standing rule covered; the executor tried to
     move the partial issue during apply. Agent judgement: the first sweep missed a duplicate
-    that a re-sweep found (D35). A third pass follows on adf 0.16.0, before iteration 15.
+    that a re-sweep found (D35). A third pass on adf 0.16.0, the same change, the emulated
+    tracker and a recorded initial status (2026-10-27): 48 turns, about $102, from propose to
+    land; verify passed with warnings on its first run, so the apply round after a `FAIL` was
+    not exercised; the hand-off moved four issues to Review and the partial one back to Opened
+    (D39). Port defects it found: the sweep took four consolidation rounds, most of them for
+    duplicates the first sweep missed, and one duplicate got a second id at shifted lines (D41);
+    a fix round told to resume the implementer, which a headless pass cannot do (D42); no review
+    package was cut in the whole run, so the reviewers read `git diff` (D43); a debt id shown
+    as a tracker key (D44); no step asks for the initial status (D45) (73d391d, 0309426,
+    f8bd7df). Not port defects: the answerer once returned an empty answer (fixed in the
+    harness); the replay's merge and the fake tracker's JQL are recorded under
+    `## Harness debt`. Agent judgement: compound shell commands the permission rules refused,
+    a refused reply sent again unchanged, and an invented subnet in a tracker comment, which
+    the answerer caught.
 - 11 (this step): `## Result`, the inputs for iteration 15, the decisions D12–D26,
   `adf-npm-workspaces` `config.build` deprecated in its README (D21), versions, marketplace,
   README and roadmap row 14. No lessons row was added: every row this iteration changed
   carries its "since iteration 14" note, and none is pending on 14. After the second agent
   pass (2026-10-27): the decisions D27–D40, versions, marketplace and roadmap row 14; the
   lessons rows the decisions changed carry a "since iteration 14 (developer decision,
-  2026-10-27)" note (`apply.md`, `verify.md`, `review.md`, `propose.md`, `forge-gitlab.md`).
+  2026-10-27)" note (`apply.md`, `verify.md`, `review.md`, `propose.md`, `forge-gitlab.md`). After the third
+  pass (2026-10-28): the decisions D41–D45, versions, marketplace and roadmap row 14.
 
 Checks, on 2026-10-26:
 
@@ -378,6 +406,9 @@ Checks, on 2026-10-26:
   author, `ADF_REPLAY_FRESH`, `ADF_REPLAY_MID`): 23 of 23 PASS, `origin-replay.mjs` among them with no `defect`, the origin unchanged.
 - `claude plugin validate .`: passed.
 - On 2026-10-27, after the second pass's fixes: `npm test`: 1485 tests, 1480 pass, 0
+  failures, 5 skipped (the same five); `check-lessons.mjs`: ok, 770 rows, 19 pending, none on
+  14.
+- On 2026-10-28, after the third pass's fixes: `npm test`: 1494 tests, 1489 pass, 0
   failures, 5 skipped (the same five); `check-lessons.mjs`: ok, 770 rows, 19 pending, none on
   14.
 - Not run: a real database create and drop, a real `prisma generate` (fakes, D4); a live
@@ -394,7 +425,7 @@ Left for later:
 - The comparison's ledger rules suit injected replies; an agent pass needs a rule of its own
   that pairs rulings by meaning rather than by text.
 
-Versions: adf 0.16.0 (0.15.0 at the first release of this iteration), contract 1.7
-unchanged; adf-jira 0.3.0 (the second pass's tracker fixes); adf-gitlab 0.6.0;
+Versions: adf 0.17.0 (0.15.0 at the first release of this iteration, 0.16.0 after the second
+pass), contract 1.7 unchanged; adf-jira 0.4.0 (0.3.0 after the second pass); adf-gitlab 0.6.0;
 adf-npm-workspaces 0.1.1; adf-memory 0.2.1 (bumped during the iteration); adf-english-check
 0.6.0, adf-maintainer 0.1.0, adf-postgres 0.1.0 and adf-prisma 0.1.0 unchanged.
