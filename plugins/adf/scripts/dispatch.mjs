@@ -25,8 +25,14 @@
 //       review.maxBytes) at architecture, with `inputFile`, the file `review.mjs input --out`
 //       writes; `ai-fix F<n> r<k>`, one per finding, at integration, architecture from round 2
 //   dispatch.mjs prompt  (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>]
+//                        [--home <dir>]
 //       the plan and `prompt`, the full text with every fixed field filled; the question file's
 //       content goes into the question slot verbatim. --base and --head name a review's range.
+//       For a role that reads the review package (PACKAGE_ROLES) the call cuts it through the
+//       skill's review-package (lib/sdd.mjs reviewPackage), names the file in `Review package`
+//       and returns `package` ({ file, stray }); a range it cannot cut is refused. --home names
+//       the Claude Code home the Superpowers skill is found in (default: lib/superpowers.mjs
+//       claudeHome).
 //       ai-review refuses while its input file is missing. ai-fix reads the finding from the
 //       round's findings file (`review.mjs response` wrote it, ids renumbered) and refuses unless
 //       the finding is the `next` of the round's fix plan (`review.mjs fixplan`); it names the
@@ -127,6 +133,7 @@ import { unplannedIn } from './lib/plan.mjs'
 import { parsePlanTasks } from './lib/plan-symbols.mjs'
 import { checkReply, replyContext, ROLES as REPLY_ROLES } from './lib/reply.mjs'
 import { checkFindings, checkFix } from './lib/review.mjs'
+import { reviewPackage } from './lib/sdd.mjs'
 import { checkSpecMergeReply, writeConflictTexts } from './lib/spec-merge.mjs'
 import { mergePreview } from './lib/specs.mjs'
 import { fixTarget, Refusal } from './lib/review-state.mjs'
@@ -158,7 +165,7 @@ export const PROMPTS_DIR = join(PLUGIN_ROOT, 'schema', 'prompts')
 
 export const USAGE = `usage:
   dispatch.mjs plan --change <name> --role <role> [--task <N>] [--group <G>] [--subject sweep] [--round <k>] [--pass 1|2] [--topic <word>] [--check c4|c8] [--slice <n>] [--finding F<n>] [--capability <capability>] [--root <dir>]
-  dispatch.mjs prompt (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>]
+  dispatch.mjs prompt (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>] [--home <dir>]
   dispatch.mjs attempt --change <name> --name "<dispatch name>" [--root <dir>]
   dispatch.mjs reset --change <name> --name "<dispatch name>" --reason "<text>" [--yes <plan>] [--root <dir>]
   dispatch.mjs reply --change <name> --name "<dispatch name>" --file <reply file> [--resume yes|no] [--root <dir>]
@@ -166,7 +173,7 @@ export const USAGE = `usage:
 
 export class UsageError extends Error {}
 
-const FLAGS = ['--change', '--role', '--task', '--group', '--subject', '--round', '--pass', '--topic', '--check', '--slice', '--finding', '--capability', '--root', '--question-file', '--base', '--head', '--name', '--file', '--resume', '--reason', '--yes']
+const FLAGS = ['--change', '--role', '--task', '--group', '--subject', '--round', '--pass', '--topic', '--check', '--slice', '--finding', '--capability', '--root', '--question-file', '--base', '--head', '--name', '--file', '--resume', '--reason', '--yes', '--home']
 
 function parse(argv) {
   const values = {}
@@ -282,7 +289,22 @@ const proofLines = (p) => [
   `record: ${p.file}`
 ]
 
-function promptFor(inputs, plan, values, root, planText, main) {
+// The roles whose skeleton reads the review package; the prompt cuts it for them.
+const PACKAGE_ROLES = ['review', 're-review', 'final-review', 'merge-review', 'fix']
+
+// Cuts the review package of a range, or refuses the dispatch naming why it could not.
+function cutPackage(root, change, base, head, home) {
+  let pkg
+  try {
+    pkg = reviewPackage(root, change, base, head, { home })
+  } catch (error) {
+    throw new DispatchError(`cannot cut the review package of ${base}..${head}: ${error.message}`)
+  }
+  if (!pkg.ok) throw new DispatchError(`cannot cut the review package of ${base}..${head}: ${pkg.error}`)
+  return pkg
+}
+
+function promptFor(inputs, plan, values, root, planText, main, cut) {
   const { change } = inputs
   const sdd = sddDir(root, change)
   const fields = [['Dispatch name', plan.name], ['Change', change]]
@@ -314,7 +336,8 @@ function promptFor(inputs, plan, values, root, planText, main) {
     fields.push(['Task', `Task ${inputs.task} (group ${plan.group})`])
     fields.push(['Worktree', plan.worktree])
     fields.push(['Files in scope', task.files.map((f) => `${f.verb}: ${join(plan.worktree, f.path)}${f.to ? ` -> ${join(plan.worktree, f.to)}` : ''}`)])
-    if (inputs.role === 'impl') fields.push(['Task brief', join(sdd, `task-${inputs.task}-brief.md`)])
+    // A fix round is a fresh dispatch: it reads the implementer's brief as the implementer did.
+    if (inputs.role === 'impl' || inputs.role === 'fix') fields.push(['Task brief', join(sdd, `task-${inputs.task}-brief.md`)])
     // A test-first task's proof runs here, before its review, when the planning guide names the
     // shares (lib/tdd-proof.mjs taskProof); otherwise the reviewer runs it.
     if (inputs.role === 'review' && testFirst) {
@@ -364,7 +387,11 @@ function promptFor(inputs, plan, values, root, planText, main) {
     }
     if (range) {
       fields.push(['Range', range])
-      fields.push(['Review package', join(sdd, `review-${values.base.slice(0, 7)}..${values.head.slice(0, 7)}.diff`)])
+      if (PACKAGE_ROLES.includes(inputs.role)) {
+        const pkg = cutPackage(root, change, values.base, values.head, values.home)
+        cut.package = { file: pkg.file, stray: pkg.stray }
+        fields.push(['Review package', pkg.file])
+      }
     }
     if (inputs.role === 'sweep') {
       let sweep
@@ -561,7 +588,7 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
   if (values.name) throw new UsageError('--name belongs to attempt, reset and reply')
   if (values.reason || values.yes) throw new UsageError('--reason and --yes belong to reset')
   if (values.file || values.resume) throw new UsageError('--file and --resume belong to reply')
-  if (command === 'plan' && (values['question-file'] || values.base || values.head)) throw new UsageError('--question-file, --base and --head belong to prompt')
+  if (command === 'plan' && (values['question-file'] || values.base || values.head || values.home)) throw new UsageError('--question-file, --base, --head and --home belong to prompt')
   const inputs = {
     change,
     role: values.role,
@@ -580,15 +607,16 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
   const checkout = main ?? mainCheckout(root)
   const plan = planDispatch(inputs, { root, main: checkout, planText, exists: existsSync })
   if (command === 'plan') return { ok: true, ...plan }
-  const prompt = promptFor(inputs, plan, values, root, planText, checkout)
-  if (inputs.role !== 're-review' || !values.base) return { ok: true, ...plan, prompt }
+  const cut = {}
+  const prompt = promptFor(inputs, plan, values, root, planText, checkout, cut)
+  if (inputs.role !== 're-review' || !values.base) return { ok: true, ...plan, prompt, ...cut }
   let found
   try {
     found = unplannedIn(root, change, planText, { range: `${values.base}..${values.head}`, owner: inputs.task })
   } catch (error) {
     throw new DispatchError(`cannot read the fix's range ${values.base}..${values.head}: ${error.message}`)
   }
-  return { ok: true, ...plan, prompt, unplanned: found.files.map(({ file, verb, owner }) => ({ file, verb, owner })) }
+  return { ok: true, ...plan, prompt, ...cut, unplanned: found.files.map(({ file, verb, owner }) => ({ file, verb, owner })) }
 }
 
 if (isMain(import.meta.url)) {

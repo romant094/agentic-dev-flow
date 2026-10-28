@@ -8,7 +8,7 @@ import { run as dispatch } from '../dispatch.mjs'
 import { recordReply } from '../lib/attempts.mjs'
 import { isTestFile, sharesIn, taskProof } from '../lib/tdd-proof.mjs'
 import { run } from '../tdd-proof.mjs'
-import { commitIn, git, host } from './git-host.mjs'
+import { commitIn, git, host, superpowersHome } from './git-host.mjs'
 
 const TEST = "import { f } from '../src/f.mjs'\nif (f() !== 2) { console.error('f() is', f()); process.exit(1) }\n"
 
@@ -131,7 +131,8 @@ function doneTask(testText, shares) {
   recordReply(change, 'add-x', { name: 'T1 impl', file: 'impl.json', result })
   const q = join(change, 'q.txt')
   writeFileSync(q, 'Review it.')
-  const prompt = () => dispatch(['prompt', '--change', 'add-x', '--role', 'review', '--task', '1', '--question-file', q, '--base', parent, '--head', sha, '--root', change], { main: root }).prompt
+  const home = superpowersHome()
+  const prompt = () => dispatch(['prompt', '--change', 'add-x', '--role', 'review', '--task', '1', '--question-file', q, '--base', parent, '--head', sha, '--home', home, '--root', change], { main: root }).prompt
   const review = (findings = []) => {
     writeFileSync(join(change, 'review.json'), JSON.stringify({ role: 'review', summary: 'Reviewed.', findings, unverifiable: [] }))
     return dispatch(['reply', '--change', 'add-x', '--name', 'T1 review', '--file', 'review.json', '--root', change], { main: root }).result
