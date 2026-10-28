@@ -16,6 +16,7 @@ import { recordDispatch, recordReply, runSince, standingOf } from '../lib/attemp
 import { subjectState, writeDeferred } from '../lib/loop.mjs'
 import { readLedger as readMetricsLedger, readReplies } from '../lib/metrics-records.mjs'
 import { ROLES as REPLY_ROLES } from '../lib/reply.mjs'
+import { superpowersHome } from './git-host.mjs'
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'dispatch.mjs')
 const CHANGE = 'add-x'
@@ -66,6 +67,22 @@ function host(planText = PLAN) {
   writeFileSync(join(dir, 'plan.md'), planText)
   writeFileSync(join(dir, '.adf.json'), JSON.stringify({ base: 'develop' }))
   return root
+}
+
+// The host made a repository with two commits, base and head, a range the fake skill can cut.
+function rangeHost() {
+  const root = host()
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
+  git('init', '-q', '-b', 'develop')
+  const commit = (file) => {
+    writeFileSync(join(root, file), `${file}\n`)
+    git('add', file)
+    git('-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '-m', file)
+    return git('rev-parse', 'HEAD')
+  }
+  const base = commit('b.txt')
+  const head = commit('c.txt')
+  return { root, base, head, home: superpowersHome() }
 }
 
 const call = (root, ...args) => run([...args, '--change', CHANGE, '--root', root], { main: MAIN })
@@ -228,17 +245,22 @@ test('an implementer prompt carries every fixed field and clause, with paths abs
 })
 
 test('a review proves the test can fail only for a test-first task; its question is required', () => {
-  const root = host()
+  const { root, base, head, home } = rangeHost()
   const q = join(root, 'q.txt')
   writeFileSync(q, 'Review it.')
   const proof = /the review proves the new test can fail/
-  const tdd = call(root, 'prompt', '--role', 'review', '--task', '2', '--question-file', q, '--base', 'c'.repeat(40), '--head', 'd'.repeat(40)).prompt
+  const tdd = call(root, 'prompt', '--role', 'review', '--task', '2', '--question-file', q, '--base', base, '--head', head, '--home', home).prompt
   assert.match(tdd, proof)
-  assert.ok(tdd.includes(`scripts/tdd-proof.mjs" --worktree ${join(MAIN, '.claude', 'worktrees', `${CHANGE}--group-1`)} --commit ${'d'.repeat(40)} --test`))
+  assert.ok(tdd.includes(`scripts/tdd-proof.mjs" --worktree ${join(MAIN, '.claude', 'worktrees', `${CHANGE}--group-1`)} --commit ${head} --test`))
   assert.match(call(root, 'prompt', '--role', 'review', '--task', '2', '--question-file', q).prompt, /--commit <the task's commit>/)
-  const plain = call(root, 'prompt', '--role', 'review', '--task', '1', '--question-file', q, '--base', 'a'.repeat(40), '--head', 'b'.repeat(40)).prompt
+  const out = call(root, 'prompt', '--role', 'review', '--task', '1', '--question-file', q, '--base', base, '--head', head, '--home', home)
+  const plain = out.prompt
   assert.doesNotMatch(plain, proof)
-  assert.ok(plain.includes(`review-aaaaaaa..bbbbbbb.diff`))
+  // The prompt cuts the package it names: the file exists, holding the range's diff.
+  const file = join(root, '.superpowers', 'sdd', CHANGE, `review-${base.slice(0, 7)}..${head.slice(0, 7)}.diff`)
+  assert.ok(plain.includes(`Review package: ${file}`))
+  assert.deepEqual(out.package, { file, stray: [] })
+  assert.match(readFileSync(file, 'utf8'), /c\.txt/)
   assert.match(plain, /A reviewer that accepts a compromise records it/)
   assert.match(plain, /so do not\s+re-run them to confirm it/)
   assert.match(plain, /state no verdict: the script assigns the ids/)
@@ -251,6 +273,33 @@ test('a review proves the test can fail only for a test-first task; its question
   const refused = cli(root, 'prompt', '--change', CHANGE, '--role', 'review', '--task', '1')
   assert.equal(refused.status, 1)
   assert.match(refused.out.error, /needs --question-file/)
+})
+
+test('a range the skill cannot cut is refused, naming the cause; a role that reads no package cuts none', () => {
+  const { root, base, head, home } = rangeHost()
+  const q = join(root, 'q.txt')
+  writeFileSync(q, 'Review it.')
+  // The fake review-package refuses a head that does not descend from the base.
+  assert.throws(() => call(root, 'prompt', '--role', 'review', '--task', '1', '--question-file', q, '--base', head, '--head', base, '--home', home), /cannot cut the review package .*review-package exited 3/)
+  const refused = cli(root, 'prompt', '--change', CHANGE, '--role', 'review', '--task', '1', '--question-file', q, '--base', 'nope', '--head', head, '--home', home)
+  assert.equal(refused.status, 1)
+  assert.match(refused.out.error, /cannot cut the review package of nope\.\..*does not resolve/)
+  assert.throws(() => call(root, 'prompt', '--role', 'review', '--task', '1', '--question-file', q, '--base', base, '--head', head, '--home', join(home, 'none')), /cannot cut the review package .*not installed/)
+  const impl = call(root, 'prompt', '--role', 'impl', '--task', '1', '--question-file', q, '--base', base, '--head', head, '--home', home)
+  assert.ok(impl.prompt.includes(`Range: ${base}..${head}`))
+  assert.doesNotMatch(impl.prompt, /Review package/)
+  assert.equal(impl.package, undefined)
+})
+
+test('a fix round is a fresh dispatch: its prompt carries the task brief, the range and the package', () => {
+  const { root, base, head, home } = rangeHost()
+  const q = join(root, 'q.txt')
+  writeFileSync(q, 'F1: the guard is missing.')
+  const { prompt } = call(root, 'prompt', '--role', 'fix', '--task', '1', '--round', '1', '--question-file', q, '--base', base, '--head', head, '--home', home)
+  const sdd = join(root, '.superpowers', 'sdd', CHANGE)
+  assert.ok(prompt.includes(`Task brief: ${join(sdd, 'task-1-brief.md')}`))
+  assert.ok(prompt.includes(`Range: ${base}..${head}`))
+  assert.ok(prompt.includes(`Review package: ${join(sdd, `review-${base.slice(0, 7)}..${head.slice(0, 7)}.diff`)}`))
 })
 
 test('the sweep prompt names the base, the range and the fixed question; a merge review names the group files', () => {
@@ -533,9 +582,10 @@ test('a re-review over a fix range names the files no task covers, owned by the 
   const head = commit('src/extra.mjs')
   const q = join(root, 'q.txt')
   writeFileSync(q, 'Check the fix.')
-  const task = call(root, 'prompt', '--role', 're-review', '--task', '1', '--round', '1', '--base', base, '--head', head, '--question-file', q)
+  const home = superpowersHome()
+  const task = call(root, 'prompt', '--role', 're-review', '--task', '1', '--round', '1', '--base', base, '--head', head, '--question-file', q, '--home', home)
   assert.deepEqual(task.unplanned, [{ file: 'src/extra.mjs', verb: 'Create', owner: 1 }])
-  const group = call(root, 'prompt', '--role', 're-review', '--group', 'B', '--round', '1', '--base', base, '--head', head, '--question-file', q)
+  const group = call(root, 'prompt', '--role', 're-review', '--group', 'B', '--round', '1', '--base', base, '--head', head, '--question-file', q, '--home', home)
   assert.deepEqual(group.unplanned, [{ file: 'src/extra.mjs', verb: 'Create', owner: null }])
   assert.equal(call(root, 'prompt', '--role', 're-review', '--task', '1', '--question-file', q).unplanned, undefined)
   assert.equal(cli(root, 'prompt', '--change', CHANGE, '--role', 're-review', '--task', '1', '--base', 'nope', '--head', head, '--question-file', q).status, 1)

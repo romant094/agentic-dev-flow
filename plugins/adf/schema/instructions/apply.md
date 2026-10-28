@@ -66,8 +66,11 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/sdd.mjs" brief --change <change> --task <N> 
 node "${CLAUDE_PLUGIN_ROOT}/scripts/sdd.mjs" package --change <change> --base <ref> --head <ref> --root <root>
 ```
 
-`brief` before a task's first dispatch, `package` before a review; `file` is the output. A
-non-empty `stray` means a call wrote to the shared default and the script moved it: report it.
+`brief` before a task's first dispatch; `file` is the output. A non-empty `stray` means a call
+wrote to the shared default and the script moved it: report it. The review package is not yours
+to cut: `dispatch.mjs prompt` cuts it for every role that reads it (`review`, `re-review`,
+`final-review`, `merge-review`, `fix`) when given `--base` and `--head`, reports its `stray` in
+`package.stray`, and refuses a range it cannot cut.
 
 **Read the Execution Graph before Task 1, and never recompute it.**
 
@@ -138,7 +141,7 @@ The flags per role, as single lines:
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role impl --task <N> --root <root>
 node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role review --task <N> --question-file <file> --base <sha> --head <sha> --root <root>
-node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role fix --task <N> --round <k> --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role fix --task <N> --round <k> --base <sha> --head <sha> --root <root>
 node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role merge-review --group <G> --question-file <file> --root <root>
 ```
 
@@ -150,7 +153,9 @@ places the dispatch in that group's worktree.
 script reads the task's `**Level:**`, so name the level in the dispatch by passing the agent it
 chose; it puts reviews at the integration level or above and merge reviews and the final review
 at the architecture level, and a fix loop entering round 2 is re-dispatched one level higher.
-Round 1 resumes the implementer that holds the context. The roles are `impl`, `review`,
+Every fix round is a fresh `fix` dispatch, round 1 at the task's level; its `--base` and `--head`
+are the range the review that raised the findings read, and its prompt carries that range's
+review package and, for a task, the task brief: the implementer's context. The roles are `impl`, `review`,
 `re-review` and `fix` with `--task`; `fix` and `re-review` also with `--group`, or alone after
 the final review, or with `--subject sweep` for a consolidation, and with `--round` from round 1
 on; `merge-review` with `--group`; `final-review`; `sweep`, and with `--round` for a
@@ -178,8 +183,9 @@ the findings. The skeletons carry every fixed rule an agent follows (`implemente
 `read-only`, `git`, `reply`), among them the implementer's duty to state the task's Files,
 Interfaces and acceptance criteria before the first edit; a question restates none of them. A
 continuation sentence is not a prompt: a fresh agent holds none of the prior context and spends
-its output rediscovering it. One more step of earlier work goes to the agent
-that holds that context, by resuming it, not to a new dispatch. A read-only question about the
+its output rediscovering it, so the fields carry that context. A dispatch is finished when its
+reply is recorded; the agent is resumed only for a refused reply's retry and a `provide-context`
+answer, each dispatched afresh where the harness cannot resume it. A read-only question about the
 branch gets no worktree isolation of its own: it writes nothing. A read-only verdict that does
 not answer gets a second, wider read-only dispatch, never the orchestrator opening the files.
 
@@ -231,7 +237,8 @@ reply file, and record no reply a second time through another call. Route on `ne
     over `result.range`, the review package's base and head; `read-concerns`, read
     `result.concerns` first, each marked `agent` or `script` (a file outside the task's
     `**Files:**`, a covering run with no count line); `provide-context`, answer
-    `result.blocker` and resume the agent; `blocked`, assess `result.blocker` as the skill's
+    `result.blocker` and resume the agent, or, where the harness cannot resume it, dispatch the
+    prompt afresh with the answer in its question; `blocked`, assess `result.blocker` as the skill's
     BLOCKED handling does. `result.commits` and `result.tests` are read from git and from the
     test-run records, not from the reply.
   - `review`, `final-review`, `merge-review`: `result.spec` (`pass` or `fail`), `result.quality`
