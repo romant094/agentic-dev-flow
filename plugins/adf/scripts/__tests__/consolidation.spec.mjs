@@ -36,15 +36,20 @@ const PLAN = `# Plan
 
 const RUNNER = "process.stdout.write('ok 1 - row\\n# tests 1\\n# pass 1\\n# fail 0\\n')\n"
 
+// The first sweep's two passes, each accepted with `findings` on `head`.
+function bothPasses(change, findings, head = git(change, 'rev-parse', 'HEAD'), options = {}) {
+  for (const n of [1, 2]) recordReply(change, 'add-x', { name: `sweep p${n}`, file: `sweep-p${n}.json`, result: { verdict: findings.length ? 'FINDINGS' : 'CLEAN', findings, dropped: [], head }, ...options })
+}
+
 // A change whose first sweep reported src/b.ts:1 as a repeat of src/a.ts:1.
-function swept() {
-  const made = host({ 'plan.md': PLAN })
+function swept(files = {}) {
+  const made = host({ 'plan.md': PLAN, ...files })
   const { change } = made
   commitIn(change, 'src/a.ts', 'export const a = 1\n')
   commitIn(change, 'src/b.ts', 'export const b = 1\n')
   commitIn(change, 'runner.cjs', RUNNER)
   const finding = { introduced: 'src/b.ts:1', existing: 'src/a.ts:1', why: 'Same constant.' }
-  recordReply(change, 'add-x', { name: 'sweep', file: 'sweep.json', result: { verdict: 'FINDINGS', findings: [finding], dropped: [], head: git(change, 'rev-parse', 'HEAD') } })
+  bothPasses(change, [finding])
   mkdirSync(join(change, 'r'), { recursive: true })
   return { ...made, finding }
 }
@@ -138,7 +143,7 @@ test('a finding recorded with absolute locations lists its files in scope once, 
   commitIn(change, 'src/a.ts', 'export const a = 1\n')
   commitIn(change, 'src/b.ts', 'export const b = 1\n')
   const finding = { introduced: join(change, 'src/b.ts:1'), existing: join(change, 'src/a.ts:1'), why: 'Same constant.' }
-  recordReply(change, 'add-x', { name: 'sweep', file: 'sweep.json', result: { verdict: 'FINDINGS', findings: [finding], dropped: [], head: git(change, 'rev-parse', 'HEAD') } })
+  bothPasses(change, [finding])
   sweep(['consolidate', '--change', 'add-x', '--reason', 'consolidate', '--root', change])
   const out = call(change, 'prompt', '--role', 'fix', '--subject', 'sweep', '--round', '1')
   assert.ok(out.prompt.includes(`- Files in scope:\n  - ${join(change, 'src/b.ts')}\n  - ${join(change, 'src/a.ts')}\n- `), out.prompt)
@@ -162,7 +167,7 @@ test('an apply round sweeps its own diff: findings, ids and consolidation rounds
   commitIn(change, 'src/b.ts', 'export const b = 1\n')
   const head0 = git(change, 'rev-parse', 'HEAD')
   const old = { introduced: 'src/b.ts:1', existing: 'src/a.ts:1', why: 'Same constant.' }
-  recordReply(change, 'add-x', { name: 'sweep', file: 'sweep.json', result: { verdict: 'FINDINGS', findings: [old], dropped: [], head: head0 }, now: T0 })
+  bothPasses(change, [old], head0, { now: T0 })
   appendRecord(change, 'add-x', 'ruling', { subject: 'sweep', finding: 'S1', as: 'dismissed', decision: 'round 0 ruled it' }, { now: T0 })
   // Round 0, no round record: as before.
   assert.deepEqual([sweepState(change, 'add-x').ran, sweepInputs(change, 'add-x').round], [true, 0])
@@ -173,10 +178,63 @@ test('an apply round sweeps its own diff: findings, ids and consolidation rounds
   assert.deepEqual(sweepState(change, 'add-x'), { ran: false, ids: [], open: [], cleared: [] })
   assert.throws(() => sweep(['consolidate', '--change', 'add-x', '--reason', 'r', '--root', change]), /nothing to consolidate/)
   const fresh = { introduced: 'src/c.ts:1', existing: 'src/a.ts:1', why: 'Same constant again.' }
-  recordReply(change, 'add-x', { name: 'sweep', file: 'sweep-2.json', result: { verdict: 'FINDINGS', findings: [fresh], dropped: [], head: head1 } })
+  bothPasses(change, [fresh], head1)
   const state = sweepState(change, 'add-x')
   assert.deepEqual(state.open.map((f) => [f.id, f.introduced]), [['S1', 'src/c.ts:1']], "round 0's ruling on S1 does not reach the round's S1")
   const out = sweep(['consolidate', '--change', 'add-x', '--reason', 'consolidate', '--root', change])
   assert.deepEqual([out.round, out.fix, out.already], [1, 'fix sweep r1', false])
   assert.equal(call(change, 'prompt', '--role', 'fix', '--subject', 'sweep', '--round', '1').name, 'fix sweep r1')
+})
+
+test('the first consolidation waits for both passes, and passes on different HEADs are refused', () => {
+  const { change } = host({ 'plan.md': PLAN })
+  commitIn(change, 'src/a.ts', 'export const a = 1\n')
+  const head1 = commitIn(change, 'src/b.ts', 'export const b = 1\n')
+  const finding = { introduced: 'src/b.ts:1', existing: 'src/a.ts:1', why: 'Same constant.' }
+  const pass = (n, head) => recordReply(change, 'add-x', { name: `sweep p${n}`, file: `p${n}.json`, result: { verdict: 'FINDINGS', findings: [finding], dropped: [], head } })
+  pass(1, head1)
+  assert.throws(() => sweep(['consolidate', '--change', 'add-x', '--reason', 'r', '--root', change]), /sweep p2 has no accepted reply: consolidate once both are recorded/)
+  const head2 = commitIn(change, 'src/c.ts', 'export const c = 1\n')
+  pass(2, head2)
+  const split = sweepState(change, 'add-x')
+  assert.deepEqual([split.ran, split.open], [false, []])
+  assert.match(split.error, new RegExp(`sweep p1 ran on ${head1} and sweep p2 on ${head2}`))
+  assert.throws(() => sweep(['consolidate', '--change', 'add-x', '--reason', 'r', '--root', change]), /the two passes read one HEAD/)
+  assert.equal(listRecords(change, 'add-x').length, 0)
+  // The stale pass dispatched again at HEAD: the two are one sweep, and the round opens.
+  pass(1, head2)
+  assert.deepEqual(sweepState(change, 'add-x').open.map((f) => f.id), ['S1'])
+  assert.equal(sweep(['consolidate', '--change', 'add-x', '--reason', 'r', '--root', change]).round, 1)
+})
+
+test('a re-sweep reads the consolidation diff alone, with the open sweep findings and no dispositions', () => {
+  const spec = '## REMOVED Requirements\n\n### Requirement: Old thing\n\n**Reason**: gone\n\n**Code Disposition:** deleted\n'
+  const { change } = swept({ 'specs/cap/spec.md': spec })
+  const swept1 = git(change, 'rev-parse', 'HEAD')
+  assert.match(call(change, 'prompt', '--role', 'sweep', '--pass', '1').prompt, /A second question/)
+  assert.throws(() => call(change, 'prompt', '--role', 'sweep', '--round', '1'), /no consolidation of round 1 is recorded/)
+  sweep(['consolidate', '--change', 'add-x', '--reason', 'consolidate', '--root', change])
+  const fixed = commitIn(change, 'src/b.ts', "export { a as b } from './a.ts'\n")
+  const out = call(change, 'prompt', '--role', 'sweep', '--round', '1')
+  assert.equal(out.name, 'sweep r1')
+  assert.ok(out.prompt.includes(`- Range: ${swept1}..${fixed}`), out.prompt)
+  assert.ok(out.prompt.includes('- Open sweep findings:\n  - S1 src/b.ts:1 repeats src/a.ts:1: Same constant.'), out.prompt)
+  assert.match(out.prompt, /report again\s+each one that still stands/)
+  assert.doesNotMatch(out.prompt, /A second question|Removed or renamed/)
+  const inputs = sweep(['inputs', '--change', 'add-x', '--round', '1', '--root', change])
+  assert.deepEqual([inputs.reSweep, inputs.range, inputs.secondQuestion], [1, `${swept1}..${fixed}`, false])
+  // A re-sweep reply answers no disposition.
+  writeFileSync(join(change, 'r/s.json'), JSON.stringify({ role: 'sweep', findings: [], dispositions: [{ requirement: 'Old thing', disposition: 'deleted' }] }))
+  assert.deepEqual(call(change, 'reply', '--name', 'sweep r1', '--file', 'r/s.json').errors, ['$.dispositions: a re-sweep answers no dispositions question, so the reply gives no disposition'])
+})
+
+test('a finding the re-review lists as not consolidated stays open through a silent re-sweep', () => {
+  const { change } = swept()
+  sweep(['consolidate', '--change', 'add-x', '--reason', 'consolidate', '--root', change])
+  commitIn(change, 'src/b.ts', 'export const b = 1\nexport const unrelated = 2\n')
+  const reReview = { subject: 'sweep', previous: [], addressed: [], findings: [], open: [], toRule: [], deferred: [], outOfScope: [], notConsolidated: ['S1'], result: 'clean' }
+  recordReply(change, 'add-x', { name: 're-review sweep r1', file: 'rr.json', result: reReview })
+  recordReply(change, 'add-x', { name: 'sweep r1', file: 's.json', result: { verdict: 'CLEAN', findings: [], dropped: [], head: git(change, 'rev-parse', 'HEAD') } })
+  const state = sweepState(change, 'add-x')
+  assert.deepEqual([state.open.map((f) => f.id), state.cleared], [['S1'], []])
 })

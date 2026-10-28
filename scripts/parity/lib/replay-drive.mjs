@@ -665,16 +665,18 @@ function apply(ctx) {
     if (r.json.result?.result !== 'clean') ctx.rec.hint(r, 'blocked', 'the final review is not clean')
   }
 
-  // The reuse sweep.
-  ctx.run('apply', 'dispatch.mjs', ['attempt', '--change', name, '--name', 'sweep', '--root', ctx.root])
-  const sp = dispatchPrompt(ctx, 'apply', ['--role', 'sweep'])
-  if (sp.ok) {
+  // The reuse sweep: two passes, each given the origin's one sweep reply.
+  for (const pass of [1, 2]) {
+    const sweepName = `sweep p${pass}`
+    ctx.run('apply', 'dispatch.mjs', ['attempt', '--change', name, '--name', sweepName, '--root', ctx.root])
+    const sp = dispatchPrompt(ctx, 'apply', ['--role', 'sweep', '--pass', String(pass)])
+    if (!sp.ok) continue
     const item = itemOf(ctx.replies, 'apply', 'sweep')
     const reply = item && !item.missing ? item.reply : { role: 'sweep', findings: [] }
     writeJson(sp.json.replyFile, reply)
-    const step = ctx.rec.agent('apply', 'sweep', [`wrote the reply ${sp.json.replyFile}`])
+    const step = ctx.rec.agent('apply', sweepName, [`wrote the reply ${sp.json.replyFile}`])
     if (!item || item.missing) ctx.rec.hint(step, 'injected', `no sweep reply (${item?.missing ?? 'no item'}); a clean one is injected`)
-    ctx.run('apply', 'dispatch.mjs', ['reply', '--change', name, '--name', 'sweep', '--file', sp.json.replyFile, '--root', ctx.root])
+    ctx.run('apply', 'dispatch.mjs', ['reply', '--change', name, '--name', sweepName, '--file', sp.json.replyFile, '--root', ctx.root])
   }
 
   // The whole suite, apply's final commit.

@@ -7,7 +7,9 @@
 //
 // Names (schema/instructions/apply.md, "Name every dispatch in the fixed form"):
 //   T<n> <role>, T<n> <role> r<k>          role impl | review | re-review | fix
-//   final-review, sweep, investigate <topic>, merge-review <G>
+//   final-review, sweep p1, sweep p2, investigate <topic>, merge-review <G>
+//                  (the first sweep is two passes in parallel; `sweep`, its single dispatch
+//                  before the passes, is still read from older logs)
 //   fix [<G>] [r<k>], re-review [<G>] [r<k>]
 //   fix sweep r<k>, re-review sweep r<k>, sweep r<k>   (a sweep finding's consolidation, round k:
 //                  the fix, its re-review and the re-sweep; lib/sweep.mjs consolidate)
@@ -244,8 +246,9 @@ export function parseGraph(planText) {
 
 // ---------------------------------------------------------------- names
 
-export function dispatchName({ role, task, group, round, topic, check, slice, finding, capability, id, subject }) {
+export function dispatchName({ role, task, group, round, topic, check, slice, finding, capability, id, subject, pass }) {
   if (!ROLES.includes(role)) refuse(`unknown role "${role}"; known: ${ROLES.join(', ')}`)
+  if (pass !== undefined && role !== 'sweep') refuse('--pass belongs to sweep')
   if (subject !== undefined) {
     if (!ROUNDED.includes(role)) refuse('--subject belongs to fix and re-review')
     if (subject !== SWEEP_SUBJECT) refuse(`--subject is ${SWEEP_SUBJECT}, not "${subject}"`)
@@ -308,6 +311,12 @@ export function dispatchName({ role, task, group, round, topic, check, slice, fi
   if (group !== undefined && !GROUP.test(group)) refuse(`group "${group}" is not a group letter`)
   if (rule === 'required' && group === undefined) refuse(`${role} needs --group <letter>`)
   if (rule === 'none' && group !== undefined) refuse(`${role} takes no --group`)
+  // The first sweep is two passes, `sweep p1` and `sweep p2`; a consolidation's re-sweep is `sweep r<k>`.
+  if (role === 'sweep' && round === undefined) {
+    if (pass !== 1 && pass !== 2) refuse(`sweep needs --pass 1 or --pass 2 for the first sweep, or --round <k> for a re-sweep, not "${pass ?? ''}"`)
+    return `sweep p${pass}`
+  }
+  if (role === 'sweep' && pass !== undefined) refuse('a re-sweep (--round) takes no --pass')
   const suffix = round === undefined ? '' : ` r${round}`
   return `${group === undefined ? role : `${role} ${group}`}${suffix}`
 }
@@ -340,6 +349,8 @@ export function parseName(name) {
   if (m) return { role: m[1], subject: SWEEP_SUBJECT, round: Number(m[2]) }
   m = /^sweep r([1-9]\d*)$/.exec(text)
   if (m) return { role: 'sweep', round: Number(m[1]) }
+  m = /^sweep p([12])$/.exec(text)
+  if (m) return { role: 'sweep', pass: Number(m[1]) }
   m = /^(merge-review) ([A-Z])$/.exec(text) ?? /^(fix|re-review)(?: ([A-Z]))?(?: r([1-9]\d*))?$/.exec(text)
   if (m) return { role: m[1], ...(m[2] ? { group: m[2] } : {}), ...(m[3] ? { round: Number(m[3]) } : {}) }
   return null
@@ -365,7 +376,7 @@ export function replyFile(root, change, name, exists) {
 
 // ---------------------------------------------------------------- the plan of one dispatch
 
-// inputs: { change, role, task?, group?, round?, topic?, check?, slice?, finding?, capability?,
+// inputs: { change, role, task?, group?, round?, topic?, check?, slice?, finding?, capability?, pass?,
 //           id? }   a retro takes only `id`, no change
 // tree:   { root, main, planText (null when absent), exists(path) }
 export function planDispatch(inputs, { root, main, planText, exists }) {
@@ -419,6 +430,7 @@ export function planDispatch(inputs, { root, main, planText, exists }) {
     out.agent = `adf:${taskless(role, round)}`
     out.worktree = root
     if (inputs.subject !== undefined) out.subject = inputs.subject
+    if (role === 'sweep' && round !== undefined) out.round = round
     out.replyFile = replyFile(root, change, name, exists)
     return out
   }
@@ -495,7 +507,7 @@ export function ruleSkeletons({ role, check, round, subject }, { testFirst = fal
   if (role === 'merge-review') parts.push('merge-review')
   if (role === 're-review') parts.push('re-review')
   if (role === 'review' && testFirst) parts.push(proof ? 'test-first-proof' : 'test-first')
-  if (role === 'sweep') parts.push('read-only', 'sweep', ...(dispositions ? ['sweep-dispositions'] : []))
+  if (role === 'sweep') parts.push('read-only', 'sweep', ...(round !== undefined ? ['re-sweep'] : []), ...(dispositions ? ['sweep-dispositions'] : []))
   if (role === 'investigate') parts.push('read-only')
   parts.push('git', 'reply')
   return parts

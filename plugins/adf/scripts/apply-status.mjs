@@ -10,7 +10,8 @@
 //     merged, running, blocked, startable, waitingOnBlocked, ticked, remaining,
 //     progress: { done, total }, testFirst, completedThisSession, openDebt: { count, ids },
 //     lastHandoff, push, suite: { state, commit, reason? },
-//     sweep: { ran, open: [{ id, introduced, existing, why }], cleared: [{ id, by }] },
+//     sweep: { ran, open: [{ id, introduced, existing, why }], cleared: [{ id, by }], missing?,
+//              error? },
 //     round: { round, base, checks, tasks, group, frozen } | null, complete, report? }
 //
 //   apply-status.mjs handoff --change <name> --next "<dispatch>" [--block <G> --reason "<why>"]
@@ -23,7 +24,9 @@
 // `sweep.open` lists the reuse sweep's findings still open (lib/loop.mjs sweepState): S<n> by
 // first report, cleared by a DUP marker, by a `ruling --subject sweep --finding S<n> --as
 // dismissed`, or by a later sweep's silence after the introduced file changed; `complete` stays
-// false while one is open. In an apply round (`plan.mjs reopen`) `round` names it, the sweep's
+// false while one is open. `sweep.ran` is true once both passes of the first sweep (`sweep p1`,
+// `sweep p2`) are accepted; `missing` names a pass not yet accepted, `error` two passes that ran
+// on different HEADs. In an apply round (`plan.mjs reopen`) `round` names it, the sweep's
 // findings are the round's, and the groups it froze count as merged.
 //
 // Group numbers are graph rows, the first row 1. `state` is merged, running, blocked or

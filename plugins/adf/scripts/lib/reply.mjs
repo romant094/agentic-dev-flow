@@ -61,8 +61,8 @@
 //
 //   sweep
 //     { verdict: CLEAN | FINDINGS, findings, dropped, dispositions? }
-//     Dispositions are required exactly when sweepInputs reports a second question, one for each
-//     REMOVED or RENAMED requirement it lists; no `introduced` or `existing` carries text after
+//     Dispositions are required exactly when sweepInputs reports a second question (never for a
+//     re-sweep, `sweep r<k>`), one for each REMOVED or RENAMED requirement it lists; no `introduced` or `existing` carries text after
 //     its line (lib/sweep.mjs locationErrors); the findings a DUP marker accepts are dropped.
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
@@ -300,7 +300,8 @@ const sweep = {
     const listed = ctx.sweep.removedOrRenamed.map((r) => r.requirement ?? r.from)
     const given = reply.dispositions ?? []
     const located = locationErrors(reply.findings, ctx.root)
-    if (!ctx.sweep.secondQuestion) return [...located, ...(given.length ? ['$.dispositions: the change lists no REMOVED or RENAMED requirement, so the reply gives no disposition'] : [])]
+    const none = ctx.sweep.reSweep !== undefined ? 'a re-sweep answers no dispositions question' : 'the change lists no REMOVED or RENAMED requirement'
+    if (!ctx.sweep.secondQuestion) return [...located, ...(given.length ? [`$.dispositions: ${none}, so the reply gives no disposition`] : [])]
     if (reply.dispositions === undefined) return [...located, `$.dispositions: required, one for each REMOVED or RENAMED requirement: ${listed.join(', ')}`]
     const errors = [...located]
     const seen = new Set()
@@ -359,7 +360,7 @@ export function replyContext(root, change, name, { main = root } = {}) {
       ctx.rulings = subjectRulings(records, subjectOf(parts), since)
     }
     if (parts.subject === SWEEP_SUBJECT) ctx.consolidation = consolidationState(root, change)
-    if (parts.role === 'sweep') ctx.sweep = sweepInputs(root, change)
+    if (parts.role === 'sweep') ctx.sweep = sweepInputs(root, change, { reSweep: parts.round })
     if (parts.role === 'retro') {
       const text = readOr(retroInputFile(root, parts.id))
       if (text === null) throw new Error(`${retroInputFile(root, parts.id)} does not exist: write the retrospective's input first`)

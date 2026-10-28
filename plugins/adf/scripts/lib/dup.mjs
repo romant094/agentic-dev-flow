@@ -114,16 +114,31 @@ export function findMarkers(root) {
 // write (lib/sweep.mjs locationErrors); a bare path, `path:line` and `path:line-line` pass.
 export const TRAILING_TEXT = /:\d+(?:-\d+)?\s+\S/
 
-// A finding's `introduced` as { file, line }: `path:12`, `path:12-30`, or a bare path (line
-// null). Text after the line, which replies written before the form was checked carry
-// (`path:16 symbolName`), is dropped. A symbol with no path gives null: no marker can be
-// matched to it.
+// A finding's `introduced` as { file, line, end }: `path:12` (end 12), `path:12-30` (end 30), or
+// a bare path (line and end null). Text after the line, which replies written before the form
+// was checked carry (`path:16 symbolName`), is dropped. A symbol with no path gives null: no
+// marker can be matched to it.
 export function locate(introduced) {
-  const m = /^(.+?):(\d+)(?:-\d+)?(?:\s.*)?$/.exec(String(introduced ?? '').trim())
-  if (m) return { file: m[1], line: Number(m[2]) }
+  const m = /^(.+?):(\d+)(?:-(\d+))?(?:\s.*)?$/.exec(String(introduced ?? '').trim())
+  if (m) return { file: m[1], line: Number(m[2]), end: Number(m[3] ?? m[2]) }
   const bare = String(introduced ?? '').trim()
-  return /[/.]/.test(bare) && !/\s/.test(bare) ? { file: bare, line: null } : null
+  return /[/.]/.test(bare) && !/\s/.test(bare) ? { file: bare, line: null, end: null } : null
 }
+
+// Whether two locations name the same code: the same file and overlapping line ranges, a bare
+// path overlapping every range. A location that names no file matches only its own text.
+function sameLocation(x, y) {
+  const a = locate(x)
+  const b = locate(y)
+  if (!a || !b) return String(x ?? '').trim() === String(y ?? '').trim()
+  if (a.file.replace(/^\.\//, '') !== b.file.replace(/^\.\//, '')) return false
+  return a.line === null || b.line === null || (a.line <= b.end && b.line <= a.end)
+}
+
+// Whether two sweep findings report the same duplicate: their `introduced` and their `existing`
+// locations each match (sameLocation). Two passes, or a re-sweep after an edit that shifted the
+// lines, name one duplicate with different ranges.
+export const sameDuplicate = (a, b) => sameLocation(a.introduced, b.introduced) && sameLocation(a.existing, b.existing)
 
 // Whether a marker already accepts the finding: on its introduced file, naming its `existing`
 // verbatim, on the line directly above the introduced line or marking the whole file. A marker

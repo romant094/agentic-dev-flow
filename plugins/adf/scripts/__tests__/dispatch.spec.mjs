@@ -80,7 +80,8 @@ test('names take the fixed form for every role', () => {
   assert.equal(dispatchName({ role: 'fix', task: 3, round: 2 }), 'T3 fix r2')
   assert.equal(dispatchName({ role: 're-review', task: 12, round: 1 }), 'T12 re-review r1')
   assert.equal(dispatchName({ role: 'final-review' }), 'final-review')
-  assert.equal(dispatchName({ role: 'sweep' }), 'sweep')
+  assert.equal(dispatchName({ role: 'sweep', pass: 1 }), 'sweep p1')
+  assert.equal(dispatchName({ role: 'sweep', pass: 2 }), 'sweep p2')
   assert.equal(dispatchName({ role: 'merge-review', group: 'B' }), 'merge-review B')
   assert.equal(dispatchName({ role: 'fix', group: 'B' }), 'fix B')
   assert.equal(dispatchName({ role: 'fix' }), 'fix')
@@ -103,6 +104,10 @@ test('a name out of the form is refused', () => {
     [{ role: 'merge-review' }, /needs --group/],
     [{ role: 'merge-review', group: 'b' }, /not a group letter/],
     [{ role: 'sweep', group: 'A' }, /takes no --group/],
+    [{ role: 'sweep' }, /sweep needs --pass 1 or --pass 2/],
+    [{ role: 'sweep', pass: 3 }, /sweep needs --pass 1 or --pass 2/],
+    [{ role: 'sweep', pass: 1, round: 1 }, /a re-sweep \(--round\) takes no --pass/],
+    [{ role: 'final-review', pass: 1 }, /--pass belongs to sweep/],
     [{ role: 'fix', task: 1, round: 0 }, /positive integer/],
     [{ role: 'merge-review', group: 'A', round: 2 }, /belongs to a task dispatch, to a fix or re-review, or to a re-sweep/],
     [{ role: 'final-review', round: 1 }, /belongs to a task dispatch/],
@@ -115,12 +120,14 @@ test('a name out of the form is refused', () => {
 })
 
 test('parseName reads back every fixed-form name and refuses the rest', () => {
-  for (const name of ['T3 impl', 'T3 fix r2', 'final-review', 'sweep', 'merge-review B', 'fix B', 'fix B r2', 're-review B r1', 'fix r3', 'fix', 're-review', 'investigate auth', 'verify c8']) {
+  for (const name of ['T3 impl', 'T3 fix r2', 'final-review', 'sweep p1', 'sweep p2', 'sweep r2', 'merge-review B', 'fix B', 'fix B r2', 're-review B r1', 'fix r3', 'fix', 're-review', 'investigate auth', 'verify c8']) {
     const parts = parseName(name)
     assert.ok(parts, name)
     assert.equal(dispatchName(parts), name)
   }
-  for (const name of ['T3 implement', 'T0 impl', 'investigate two words', 'merge-review', 'merge-review B r2', 'verify c5', 'verify c6', 'verify assemble', 'review', 'Task 3 impl']) assert.equal(parseName(name), null, name)
+  for (const name of ['T3 implement', 'T0 impl', 'investigate two words', 'merge-review', 'merge-review B r2', 'verify c5', 'verify c6', 'verify assemble', 'review', 'Task 3 impl', 'sweep p3', 'sweep p1 r1']) assert.equal(parseName(name), null, name)
+  // The single first sweep of before the two passes is still read from older logs.
+  assert.deepEqual(parseName('sweep'), { role: 'sweep' })
 })
 
 test('the graph numbers groups by row and reads their tasks and wave', () => {
@@ -166,7 +173,7 @@ test('the level follows the task, the review floor and the round-2 step up', () 
   assert.equal(agent({ role: 'fix', group: 'B', round: 2 }), 'adf:architecture')
   assert.equal(agent({ role: 're-review', group: 'B', round: 2 }), 'adf:integration')
   assert.equal(agent({ role: 'final-review' }), 'adf:architecture')
-  assert.equal(agent({ role: 'sweep' }), 'adf:integration')
+  assert.equal(agent({ role: 'sweep', pass: 2 }), 'adf:integration')
   assert.equal(agent({ role: 'verify', check: 'c4' }), 'adf:architecture')
   assert.equal(agent({ role: 'verify', check: 'c8' }), 'adf:integration')
 })
@@ -258,16 +265,18 @@ test('the sweep prompt names the base, the range and the fixed question; a merge
   const git = (...args) => execFileSync('git', ['-C', root, ...args], { stdio: 'ignore' })
   git('init', '-q', '-b', 'develop')
   git('-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '--allow-empty', '-m', 'init')
-  const sweep = call(root, 'prompt', '--role', 'sweep').prompt
+  const sweep = call(root, 'prompt', '--role', 'sweep', '--pass', '1').prompt
+  assert.ok(sweep.includes('You are dispatched as `sweep p1`'))
   assert.ok(sweep.includes('Base: develop'))
   assert.match(sweep, /Range: [0-9a-f]{40}\.\.[0-9a-f]{40}/)
-  assert.ok(sweep.includes("against the change's base, `develop`"))
+  assert.ok(sweep.includes("the change's base is `develop`"))
+  assert.equal(call(root, 'prompt', '--role', 'sweep', '--pass', '2').prompt.replace(/sweep([ -])p2/g, 'sweep$1p1'), sweep, 'the two passes differ only in the name and the reply file')
   assert.match(sweep, /whose behaviour the tree already has/)
   assert.doesNotMatch(sweep, /A second question/)
   const specs = join(root, 'openspec', 'changes', CHANGE, 'specs', 'cap')
   mkdirSync(specs, { recursive: true })
   writeFileSync(join(specs, 'spec.md'), '## REMOVED Requirements\n\n### Requirement: Old thing\n\n**Reason**: gone\n')
-  const second = call(root, 'prompt', '--role', 'sweep').prompt
+  const second = call(root, 'prompt', '--role', 'sweep', '--pass', '1').prompt
   assert.match(second, /A second question/)
   assert.ok(second.includes('REMOVED Old thing (specs/cap/spec.md): no Code Disposition'))
   const q = join(root, 'q.txt')
@@ -448,17 +457,17 @@ test('in an apply round the final review, the sweep and the final fix loop dispa
   const root = host()
   const T0 = '2000-01-01T00:00:00.000Z'
   const refused = (name) => recordReply(root, CHANGE, { name, file: join(root, 'r.json'), errors: ['bad'], now: T0 })
-  for (const name of ['final-review', 'sweep', 'T3 impl']) {
+  for (const name of ['final-review', 'sweep p1', 'T3 impl']) {
     recordDispatch(root, CHANGE, name, { now: T0 })
     refused(name)
     refused(name)
   }
   recordDispatch(root, CHANGE, 're-review r1', { now: T0 })
   // Round 0, no round record: as before.
-  for (const name of ['final-review', 'sweep', 'T3 impl']) assert.equal(standingOf(root, CHANGE, name, { since: runSince(root, CHANGE, parseName(name).role) }).next, 'stop', name)
+  for (const name of ['final-review', 'sweep p1', 'T3 impl']) assert.equal(standingOf(root, CHANGE, name, { since: runSince(root, CHANGE, parseName(name).role) }).next, 'stop', name)
   assert.equal(call(root, 'round').round, 2)
   appendScripted(root, CHANGE, 'apply-round', { round: '1', checks: 'tree', task: '2.1', group: 'B', base: 'a'.repeat(40), verify: 'b'.repeat(40), frozen: 'A' }, { now: '2000-01-02T00:00:00.000Z' })
-  for (const name of ['final-review', 'sweep']) {
+  for (const name of ['final-review', 'sweep p1']) {
     assert.deepEqual([call(root, 'attempt', '--name', name).attempt, call(root, 'reply', '--name', name, '--file', 'missing.json').next], [1, 'retry'], name)
   }
   assert.equal(call(root, 'attempt', '--name', 'T3 impl').next, 'stop', "a task's count is its own")

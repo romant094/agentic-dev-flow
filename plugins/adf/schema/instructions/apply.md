@@ -153,8 +153,9 @@ at the architecture level, and a fix loop entering round 2 is re-dispatched one 
 Round 1 resumes the implementer that holds the context. The roles are `impl`, `review`,
 `re-review` and `fix` with `--task`; `fix` and `re-review` also with `--group`, or alone after
 the final review, or with `--subject sweep` for a consolidation, and with `--round` from round 1
-on; `merge-review` with `--group`; `final-review`; `sweep`, and with `--round` for a
-consolidation's re-sweep; `investigate` with a one-word `--topic`. `--base` and `--head` are
+on; `merge-review` with `--group`; `final-review`; `sweep` with `--pass 1` and `--pass 2` for the
+first sweep's two passes, or with `--round` for a consolidation's re-sweep; `investigate` with a
+one-word `--topic`. `--base` and `--head` are
 commit ids, the range of the review package.
 
 Name every dispatch in the fixed form. The name is what the metrics read the role, the task and
@@ -174,7 +175,7 @@ no question once a review of its subject (the task, the group, or the final revi
 recorded: its prompt carries `Open findings`, which the script renders from the recorded results
 and the rulings, and with no open finding the prompt is refused. Before that, the question holds
 the findings. The skeletons carry every fixed rule an agent follows (`implementer`, `reviewer`,
-`re-review`, `merge-review`, `test-first`, `test-first-proof`, `sweep`, `sweep-dispositions`,
+`re-review`, `merge-review`, `test-first`, `test-first-proof`, `sweep`, `re-sweep`, `sweep-dispositions`,
 `read-only`, `git`, `reply`), among them the implementer's duty to state the task's Files,
 Interfaces and acceptance criteria before the first edit; a question restates none of them. A
 continuation sentence is not a prompt: a fresh agent holds none of the prior context and spends
@@ -242,8 +243,8 @@ reply file, and record no reply a second time through another call. Route on `ne
   - `re-review`: `result.addressed`, `result.open` and `result.result`, as for a review; a
     consolidation's also `result.notConsolidated`, the sweep findings it found not consolidated.
   - `sweep`: `result.verdict` (`CLEAN` or `FINDINGS`), `result.findings` and `result.dropped`,
-    the findings a `DUP` marker accepts; `debt`, the debt records its `dispositions` became; a
-    re-sweep's `reSweep`, its round's ledger record.
+    the findings a `DUP` marker accepts; `debt`, the debt records its `dispositions` became, once
+    per requirement over both passes; a re-sweep's `reSweep`, its round's ledger record.
   - `investigate`: the script checks the shape only; the reply's `answer` is yours to read.
 - `retry`: the reply is refused, the first time, and goes back once, to the same agent, resumed,
   with `errors` (`mode: resume`); where the harness cannot resume it, pass `--resume no` and
@@ -427,12 +428,15 @@ continues and merges. Only the wave-2 groups that depend on it wait. Apply concl
 every group worktree is merged and removed; a blocked group pauses apply, with its worktree
 kept for the developer.
 
-**The code reuse sweep: once per change, over the merged branch.** An apply round, below, runs it
-once more, over the round's diff.
+**The code reuse sweep: two passes per apply round, over the merged branch.** An apply round,
+below, runs them once more, over the round's diff.
 
 When every group is merged, every task ticked and the final review's fixes are in, issue the
-`sweep` dispatch, exactly once per apply round, before the whole-suite run; a consolidation's re-sweep is a
-dispatch of its own, below. Never per group: a duplicate
+two sweep dispatches `sweep p1` and `sweep p2` in parallel, their prompts alike but for the
+name and the reply file, once per apply round, before the whole-suite run; a consolidation's re-sweep is a dispatch of its own, below.
+One sweep misses duplicates a second one finds, so the two passes are read as one sweep: their
+findings are joined, a finding of `sweep p2` that names the same files and overlapping lines as
+one of `sweep p1` is that finding, and both passes must have run on one HEAD. Never per group: a duplicate
 introduced by two groups is invisible to either group's own sweep, and that is the case most
 worth catching. It is not a phase: no artifact, no verify check, no command. `dispatch.mjs`
 puts it at the integration level: a cheap dispatch answers `CLEAN` almost always, which leaves
@@ -442,21 +446,25 @@ requirement's `**Code Disposition:**`, all read by `sweep.mjs inputs`. It holds 
 and no fix authority, and dispatches no agent; its tree access widens no other reviewer's
 scope.
 
-Its reply is recorded like every other, with `dispatch.mjs reply`, which records every location
+Each pass's reply is recorded like every other, with `dispatch.mjs reply`, which records every location
 relative to the repository root (an absolute one under it is made relative, one outside it
 refuses the reply), drops every finding whose introduced location carries a `DUP` marker
 naming that existing location, computes the verdict from what is left, and records the HEAD
 the sweep ran on. A sweep with no accepted reply after its retry is no verdict, never `CLEAN`. The same call writes each entry of an accepted
 reply's `dispositions` as a `debt` carrying the sweep's answer as its reason, listed in its
-output as `debt`; it never blocks apply.
+output as `debt`, once per requirement: the second pass's answer on a recorded requirement is
+skipped; it never blocks apply. `apply-status.mjs` reports `sweep.ran` once both passes are
+recorded, and the first consolidation waits for both.
 
 **A sweep finding naming both locations blocks apply from concluding.** It is the only
 maintainability finding that blocks; every other stays advisory. `apply-status.mjs` lists the
-open ones as `sweep.open`, each `S<n>` by its first report, and reports `complete` false while
-one is open. Resolution is one of two things: consolidate on the existing code, or the developer
-dismisses the finding. A consolidation clears it when a later sweep no longer reports it and its
-introduced file changed between the sweep that last reported it and that later one, unless an
-accepted debt record of `dup.mjs mark` names the pair: that finding was dismissed. Re-running
+open ones as `sweep.open`, each `S<n>` by its first report, `sweep p1`'s before `sweep p2`'s,
+and reports `complete` false while one is open; a later report at shifted lines keeps the id.
+Resolution is one of two things: consolidate on the existing code, or the developer dismisses
+the finding. A consolidation clears it when a later sweep no longer reports it and its
+introduced file changed between the sweep that last reported it and that later one, unless the
+round's re-review listed it in `notConsolidated`, or an accepted debt record of `dup.mjs mark`
+names the pair: that finding was dismissed. Re-running
 the sweep does not clear it: a second `CLEAN` on an unchanged branch would launder the first
 finding.
 
@@ -472,8 +480,10 @@ dispatch them in turn, each through `dispatch.mjs` with `--subject sweep --round
 the first two and `--round <round>` for the third: `fix sweep r<k>`, whose prompt carries the
 open findings and their files as its scope, so it needs no question; `re-review sweep r<k>`
 over the fix's range, whose files get "Added during apply" lines as every fix's do; and the
-re-sweep `sweep r<k>`, whose accepted reply writes the round's `re-sweep` ledger record of what
-it cleared and what stays open. A finding the re-review reports is the next round's, with
+re-sweep `sweep r<k>`, over the consolidation's diff alone (from the HEAD the last sweep before
+the round ran on), whose prompt carries the round's open sweep findings for it to report again
+where they still stand, with no dispositions question, and whose accepted reply writes the
+round's `re-sweep` ledger record of what it cleared and what stays open. A finding the re-review reports is the next round's, with
 whatever the re-sweep left open; a call before the round's re-sweep is accepted returns the
 round in flight. After the last round the script refuses, and the open findings go to the
 developer. Neither the sweep nor apply
@@ -532,8 +542,8 @@ The groups merged before the round are frozen base: `plan.mjs lint`, `graph` and
 `apply-status.mjs` count them merged, pair them with no group and give them no wave, so the
 round's group is wave 1 and, alone, runs in the change worktree. Then apply runs as above for
 the round's tasks: their reviews, the final whole-branch review over the round's range (`base`
-to HEAD, `apply-status.mjs` `round.base`), the reuse sweep over the same range against the whole
-tree (`sweep.mjs inputs` reads it), the whole suite. The final review, the sweep, their fix
+to HEAD, `apply-status.mjs` `round.base`), the reuse sweep's two passes over the same range
+against the whole tree (`sweep.mjs inputs` reads it), the whole suite. The final review, the sweep, their fix
 loops and the consolidation keep their names; their attempts, findings, ids, rulings and rounds
 count from the round's start, so each starts anew. Then run verify again.
 

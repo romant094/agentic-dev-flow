@@ -16,6 +16,9 @@
 //
 // The reuse sweep's open findings (lib/loop.mjs sweepState) are reported as `sweep.open`, and
 // apply is not complete while one is open: the one maintainability finding that blocks.
+// `sweep.ran` is true once both passes of the first sweep are accepted; `sweep.missing` names a
+// pass not yet accepted, and `sweep.error` passes that ran on different HEADs, which also keeps
+// apply from complete.
 //
 // In an apply round (`plan.mjs reopen`, lib/ledger.mjs applyRound) the groups it froze count as
 // merged base, the sweep's findings are the round's, and `round` names it: { round, base,
@@ -114,7 +117,7 @@ export function applyStatus(root, change, { tracks = 'tasks.md', cap = DEFAULT_C
   const debt = unresolvedDebt(records)
   const kept = groups.filter((g) => g.kept).map((g) => g.n)
   const sweep = sweepState(root, change)
-  const complete = remaining.length === 0 && kept.length === 0 && (sched.single || groups.every((g) => g.state === 'merged')) && sweep.open.length === 0
+  const complete = remaining.length === 0 && kept.length === 0 && (sched.single || groups.every((g) => g.state === 'merged')) && sweep.open.length === 0 && !sweep.error
   const pushText = read(pushPath(root, change))
   let push = null
   try {
@@ -142,7 +145,13 @@ export function applyStatus(root, change, { tracks = 'tasks.md', cap = DEFAULT_C
     lastHandoff,
     push,
     suite: suiteOf(read(join(dir, TEST_RECORD))),
-    sweep: { ran: sweep.ran, open: sweep.open.map(({ id, introduced, existing, why }) => ({ id, introduced, existing, why })), cleared: sweep.cleared },
+    sweep: {
+      ran: sweep.ran,
+      open: sweep.open.map(({ id, introduced, existing, why }) => ({ id, introduced, existing, why })),
+      cleared: sweep.cleared,
+      ...(sweep.missing ? { missing: sweep.missing } : {}),
+      ...(sweep.error ? { error: sweep.error } : {})
+    },
     round: round && { round: round.round, base: round.base, checks: round.checks, tasks: round.tasks, group: round.group, frozen: round.frozen },
     complete
   }
@@ -219,6 +228,7 @@ export function renderReport(status, { schemaName, items = [] }) {
     const g = status.groups.find((x) => x.n === n)
     return `- group ${g.letter} (${n}) is blocked; its worktree is kept`
   })
+  if (status.sweep?.error) blocked.push(`- the reuse sweep: ${status.sweep.error}`)
   for (const f of status.sweep?.open ?? []) blocked.push(`- sweep finding ${f.id}: ${f.introduced} repeats ${f.existing}; consolidate it, or the developer dismisses it`)
   return [
     ...head('Paused'),

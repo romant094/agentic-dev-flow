@@ -167,7 +167,11 @@ test('an open sweep finding is shown and keeps apply from complete until the dev
   writeFileSync(join(dir, '.apply-test-record.md'), '**Result:** pass\n')
   assert.deepEqual([run(['--change', 'add-x', '--root', change]).complete, run(['--change', 'add-x', '--root', change]).sweep], [true, { ran: false, open: [], cleared: [] }])
   const finding = { introduced: 'src/t3.ts:1', existing: 'src/t1.ts:1', why: 'Same value.' }
-  recordReply(change, 'add-x', { name: 'sweep', file: 'sweep.json', result: { verdict: 'FINDINGS', findings: [finding], dropped: [], head: git(change, 'rev-parse', 'HEAD') } })
+  const pass = (n) => recordReply(change, 'add-x', { name: `sweep p${n}`, file: `sweep-p${n}.json`, result: { verdict: 'FINDINGS', findings: [finding], dropped: [], head: git(change, 'rev-parse', 'HEAD') } })
+  pass(1)
+  // One pass recorded: the sweep has not run yet.
+  assert.deepEqual(run(['--change', 'add-x', '--root', change]).sweep, { ran: false, open: [], cleared: [], missing: ['sweep p2'] })
+  pass(2)
   const s = run(['--change', 'add-x', '--root', change, '--report'])
   assert.deepEqual([s.complete, s.sweep.open], [false, [{ id: 'S1', ...finding }]])
   assert.match(s.report, /## Implementation Paused[\s\S]*- sweep finding S1: src\/t3\.ts:1 repeats src\/t1\.ts:1; consolidate it, or the developer dismisses it/)

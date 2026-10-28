@@ -2,28 +2,32 @@
 // CLI over lib/sweep.mjs: the inputs of apply's code reuse sweep, and the filter over its reply.
 // Prints one JSON object on stdout; exit 1 on a refusal, exit 2 on a usage error.
 //
-//   sweep.mjs inputs --change <name> [--root <change worktree>]
-//       { ok, change, base, mergeBase, head, round, range, secondQuestion,
+//   sweep.mjs inputs --change <name> [--round <k>] [--root <change worktree>]
+//       { ok, change, base, mergeBase, head, round, reSweep?, range, secondQuestion,
 //         removedOrRenamed: [{ op, requirement, from?, codeDisposition, spec }],
 //         missingDisposition, dupMarkers: [{ file, line, existing, reason, wholeFile }] }
 //       base is `origin/<base>` when that ref exists, else `<base>`, from the change's metadata;
 //       range is merge-base..HEAD, the diff the sweep reads; in apply round `round` (0 before
-//       any, `plan.mjs reopen`) the round's base..HEAD. secondQuestion is true when a delta
-//       spec carries REMOVED or RENAMED; codeDisposition null is itself a finding.
+//       any, `plan.mjs reopen`) the round's base..HEAD. With --round <k>, the inputs of
+//       consolidation k's re-sweep (`sweep r<k>`, `reSweep` k): range is that consolidation's
+//       diff, from the HEAD the last accepted sweep before it ran on, and secondQuestion false.
+//       The first sweep's two passes (`sweep p1`, `sweep p2`) read the same inputs.
+//       secondQuestion is true when a delta spec carries REMOVED or RENAMED; codeDisposition
+//       null is itself a finding.
 //   sweep.mjs filter <reply file> [--root <change worktree>] [--record --change <name>]
 //       { ok, verdict, findings, dropped, dispositions?, debt? }: the validated sweep reply with
 //       every finding dropped whose introduced location carries a DUP marker naming its
 //       `existing`; the verdict is computed from what is left (the reply states none). A refused reply exits 1: it is no verdict, never
 //       CLEAN. --record writes one `debt` ledger record per disposition, the sweep's answer as
-//       its reason (lib/sweep.mjs recordDispositions); `debt` lists each id, or why it was
-//       skipped.
+//       its reason, once per requirement (lib/sweep.mjs recordDispositions); `debt` lists each
+//       id, or why it was skipped.
 //   sweep.mjs consolidate --change <name> --reason "<why>" [--root <change worktree>]
 //       { ok, round, findings, fix, reReview, sweep, record, already }: a consolidation round over
 //       the open sweep findings and the open findings of the consolidation's own review loop,
 //       recorded as a `consolidation` ledger record; fix, reReview and sweep are the round's
 //       dispatch names (`fix sweep r<k>`, `re-review sweep r<k>`, `sweep r<k>`). A round whose
 //       re-sweep has no accepted reply is returned again with already true, nothing recorded.
-//       Refused with nothing open, and after the last round (lib/dispatch.mjs MAX_ROUNDS). In an
+//       Refused until both passes of the first sweep are accepted on one HEAD, with nothing open, and after the last round (lib/dispatch.mjs MAX_ROUNDS). In an
 //       apply round its findings and rounds count from the round's start: round 1 again.
 //
 // A relative <reply file> is read from --root (default: the current directory).
@@ -33,7 +37,7 @@ import { isMain } from './lib/main.mjs'
 import { consolidate, filterReply, recordDispositions, sweepInputs } from './lib/sweep.mjs'
 
 export const USAGE =
-  'usage: sweep.mjs inputs --change <name> [--root <dir>] | sweep.mjs filter <reply file> [--root <dir>] [--record --change <name>] | sweep.mjs consolidate --change <name> --reason "<why>" [--root <dir>]'
+  'usage: sweep.mjs inputs --change <name> [--round <k>] [--root <dir>] | sweep.mjs filter <reply file> [--root <dir>] [--record --change <name>] | sweep.mjs consolidate --change <name> --reason "<why>" [--root <dir>]'
 
 export class UsageError extends Error {}
 
@@ -46,7 +50,7 @@ function parse(argv) {
       values.record = true
       continue
     }
-    if (!['--change', '--root', '--reason'].includes(arg)) {
+    if (!['--change', '--root', '--reason', '--round'].includes(arg)) {
       rest.push(arg)
       continue
     }
@@ -59,11 +63,12 @@ function parse(argv) {
 }
 
 export function run(argv, { cwd = process.cwd(), env = process.env } = {}) {
-  const { change, root = cwd, record, reason, rest } = parse(argv)
+  const { change, root = cwd, record, reason, round, rest } = parse(argv)
   const [command, file, ...extra] = rest
   if (command === 'consolidate' && change && file === undefined && !record) return consolidate(root, change, { reason, env })
-  if (reason !== undefined) throw new UsageError(USAGE)
-  if (command === 'inputs' && change && file === undefined && !record) return sweepInputs(root, change)
+  if (reason !== undefined || (round !== undefined && command !== 'inputs')) throw new UsageError(USAGE)
+  if (round !== undefined && !/^[1-9]\d*$/.test(round)) throw new UsageError(`--round is a positive integer, not "${round}"`)
+  if (command === 'inputs' && change && file === undefined && !record) return sweepInputs(root, change, { reSweep: round === undefined ? undefined : Number(round) })
   if (command === 'filter' && file && extra.length === 0 && Boolean(change) === Boolean(record)) {
     let text
     try {

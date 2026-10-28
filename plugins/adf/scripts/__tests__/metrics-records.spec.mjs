@@ -66,8 +66,10 @@ function applyLog(root, { merged = ['A', 'B'] } = {}) {
   }
   dispatch(root, 'final-review')
   valid(root, 'final-review', { findings: [] })
-  dispatch(root, 'sweep')
-  valid(root, 'sweep', { verdict: 'FINDINGS', findings: [{ introduced: 'x', existing: 'y', why: 'z' }], dropped: [] })
+  for (const name of ['sweep p1', 'sweep p2']) {
+    dispatch(root, name)
+    valid(root, name, { verdict: 'FINDINGS', findings: [{ introduced: 'x', existing: 'y', why: 'z' }], dropped: [] })
+  }
   dispatch(root, 'investigate flaky')
   valid(root, 'investigate flaky', undefined)
 }
@@ -114,7 +116,7 @@ test('replies, impl statuses and findings per layer from the attempts log', () =
   assert.deepEqual(findings.review, { dispatches: 1, findings: 3, native: { critical: 1, minor: 2 }, mapped: { CRITICAL: 1, HIGH: 0, MEDIUM: 2, LOW: 0 } })
   assert.deepEqual(findings['merge-review'], { dispatches: 2, findings: 1, native: { important: 1 }, mapped: { CRITICAL: 0, HIGH: 1, MEDIUM: 0, LOW: 0 } })
   assert.deepEqual(findings['final-review'], { dispatches: 1, findings: 0, native: {}, mapped: { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 } })
-  assert.deepEqual(findings.sweep, { dispatches: 1, findings: 1, native: {}, mapped: null }, 'the sweep is counted, never mapped')
+  assert.deepEqual(findings.sweep, { dispatches: 2, findings: 2, native: {}, mapped: null }, 'the sweep is counted per pass, never mapped')
   assert.equal(findings['re-review'], undefined, 'a layer with no accepted reply has no entry')
   assert.equal(findings['ai-review'], undefined)
   assert.equal(findings.investigate, undefined)
