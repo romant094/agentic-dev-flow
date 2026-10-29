@@ -1,8 +1,8 @@
 // lib/window.mjs in real git repositories: membership by first-parent history (a merge carrying
 // two changes, a backfilled record, the cut-off of a merged window retro, an unmerged retro and a
 // change retro that do not move it, a period, one change), the git figures, records with and
-// without data, the aggregates, the delta's directions, the waiting items, removal candidates
-// and archive's count since the last retro.
+// without data, changes sharing a branch, the aggregates, the delta's directions, the cache-lifetime
+// net saving, the waiting items, removal candidates and archive's count since the last retro.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
@@ -292,6 +292,61 @@ test('a merge carrying two changes: no files-outside-the-plan count for either, 
   const s = buildSidecar(root, { ref: 'develop', date: DATE, asOf: AS_OF })
   assert.deepEqual(s.changes.map((c) => c.values['isolation.filesOutsidePlan']), [1, null, null])
   assert.equal(s.aggregates['isolation.filesOutsidePlan'].n, 1)
+})
+
+// A v2 record on `branch` whose sessions are `[id, source]` pairs.
+function onBranch(change, branch, sessions) {
+  const r = v2(change)
+  const [first] = r.sources.transcripts.sessions
+  return { ...r, branch, sources: { ...r.sources, transcripts: { ...r.sources.transcripts, sessions: sessions.map(([id, source]) => ({ ...first, id, source })) } } }
+}
+
+test('two changes on one branch: sessions found by the branch are no data for either, as the origin', () => {
+  const root = repo()
+  merge(root, 'feat/one', archived('2026-09-02-one', { record: onBranch('one', 'feat/shared', [['s1', 'branch']]) }), '2026-09-02T10:00:00Z')
+  merge(root, 'feat/two', archived('2026-09-04-two', { record: onBranch('two', 'feat/shared', [['s1', 'branch'], ['s2', 'ledger']]) }), '2026-09-04T10:00:00Z')
+  merge(root, 'feat/alone', archived('2026-09-05-alone', { record: onBranch('alone', 'feat/alone', [['s3', 'branch']]) }), '2026-09-05T10:00:00Z')
+  const s = buildSidecar(root, { ref: 'develop', date: DATE, asOf: AS_OF })
+  const [one, two, alone] = s.changes
+  for (const [c, other] of [[one, 'two'], [two, 'one']]) {
+    assert.deepEqual(c.sharedBranch, { changes: [other], reason: `branch shared with ${other}` })
+    for (const g of ['transcripts', 'tokens', 'autonomy']) assert.deepEqual(c.coverage[g], { none: `branch shared with ${other}` }, `${c.change} ${g}`)
+    assert.equal(c.values['cost.tokens'], null)
+    assert.equal(c.values['autonomy.sessions'], null)
+    assert.equal(c.coverage.findings, 'record', 'a group the transcripts do not give stays')
+    assert.equal(c.values['quality.findings.review'], 1)
+  }
+  assert.equal(alone.sharedBranch, null, 'a change alone on its branch keeps its sessions found by the branch')
+  assert.equal(alone.coverage.tokens, 'record')
+  assert.equal(alone.values['autonomy.sessions'], 2)
+  assert.equal(s.aggregates['autonomy.sessions'].n, 1)
+})
+
+test('two changes on one branch: a record whose every session its own ledger names stays', () => {
+  const root = repo()
+  merge(root, 'feat/one', archived('2026-09-02-one', { record: onBranch('one', 'feat/shared', [['s1', 'ledger']]) }), '2026-09-02T10:00:00Z')
+  merge(root, 'feat/two', archived('2026-09-04-two', { record: onBranch('two', 'feat/shared', [['s2', 'both']]) }), '2026-09-04T10:00:00Z')
+  // A session both records hold is no change's own.
+  merge(root, 'feat/three', archived('2026-09-06-three', { record: onBranch('three', 'feat/other', [['s4', 'ledger']]) }), '2026-09-06T10:00:00Z')
+  merge(root, 'feat/four', archived('2026-09-07-four', { record: onBranch('four', 'feat/other', [['s4', 'ledger'], ['s5', 'ledger']]) }), '2026-09-07T10:00:00Z')
+  const [one, two, three, four] = buildSidecar(root, { ref: 'develop', date: DATE, asOf: AS_OF }).changes
+  for (const c of [one, two]) {
+    assert.equal(c.sharedBranch, null, c.change)
+    assert.equal(c.coverage.tokens, 'record')
+    assert.equal(c.values['autonomy.sessions'], 2)
+  }
+  assert.match(three.coverage.tokens.none, /^branch shared with four$/)
+  assert.match(four.coverage.tokens.none, /^branch shared with three$/)
+})
+
+test('the cache-lifetime net saving: bridged rewrites read instead of written, less the one-hour premium', () => {
+  const value = (cacheTtl) => changeValues({ record: { cacheTtl }, coverage: { cacheTtl: 'record' }, tasks: 1 })['cost.ttlNetSaving']
+  // 1000 rewritten tokens at 1.25 - 0.1, less 400 five-minute writes at 2 - 1.25.
+  assert.equal(value({ coldResumes: 2, beyondOneHour: 0, rewrittenTokens: 1000, write5m: 400, byModel: {} }), 850)
+  assert.equal(value({ coldResumes: 0, beyondOneHour: 1, rewrittenTokens: 0, write5m: 400, byModel: {} }), -300)
+  assert.equal(value({ coldResumes: 1, beyondOneHour: 0, rewrittenTokens: 10, write5m: null, byModel: null }), null, 'a converted v1 record kept no 5-minute write total')
+  assert.equal(DIRECTION['cost.ttlNetSaving'], 'higher')
+  assert.ok(readWaiting().find((i) => i.id === 'subagent-cache-ttl').metrics.includes('cost.ttlNetSaving'))
 })
 
 test('a window after a merged retro carries the delta against it', () => {

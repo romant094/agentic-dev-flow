@@ -21,7 +21,8 @@
 // the origin reports it) wherever every change's value and denominators agree; the coverage of
 // the groups both name (COVERAGE); the removal candidates; the since-retro count.
 // Not compared, by design: the dollar metrics (`price-free`: the port's window keeps tokens only;
-// the origin's dollars come from the prices its records were written with), the origin's
+// the origin's dollars come from the prices its records were written with; the port's
+// `cost.ttlNetSaving` is the origin's `ttlNetSavingUsd` in base-input-token equivalents), the origin's
 // `speed.taskMinutes`, `quality.recordedFindings` and `flowMerges`, and the port's metrics over
 // groups the origin never recorded (replies, review, tests, context, the token-based shares).
 //
@@ -38,6 +39,10 @@
 //   stray-now        the origin counts the worktrees registered at the retrospective's run
 //                    (`git worktree list`) for every change with a branch; the port reads the
 //                    record's list and no machine state
+//   branch-shared    the origin keeps an archived record's transcript groups when another change
+//                    of the window shares its branch, and only skips the re-measure; the port also
+//                    drops a record's transcript figures when a session of it came from the branch
+//                    alone or another record holds it (window.mjs `sharedBranch`)
 //   generated-excluded the port's diff lines also leave out lockfiles, minified and source-map
 //                    files (window.mjs EXCLUDED); the difference is exactly their lines
 //   follows-values   an aggregate whose inputs differ by the classes above
@@ -45,7 +50,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { globToRegExp } from '../../plugins/adf/scripts/lib/changes.mjs'
-import { buildSidecar, EXCLUDED, recordOf, sinceLastRetro } from '../../plugins/adf/scripts/lib/window.mjs'
+import { buildSidecar, changeValues, EXCLUDED, recordOf, sinceLastRetro } from '../../plugins/adf/scripts/lib/window.mjs'
 import { copyOriginScripts, count, gitOn, originArg } from './lib/origin-metrics.mjs'
 
 const origin = originArg('origin-window.mjs')
@@ -170,6 +175,8 @@ for (const t of theirs.changes) {
   const old = archived.get(t.archiveDir)
   const resolved = (old?.sessions ?? []).some((s) => s.resolved)
   const pr = portRecord(t.archiveDir)
+  // The port's values as they would be were the branch not shared: what the sharing alone drops.
+  const unshared = p.sharedBranch && pr ? changeValues({ record: pr, coverage: { ...pr.sources.coverage, diffLines: p.coverage.diffLines }, git: p.git, tasks: p.tasks }) : null
 
   // Task count and git figures.
   count(out.compared, 'tasks')
@@ -194,15 +201,12 @@ for (const t of theirs.changes) {
     if (listAll) row.values[metric] = [o, v]
     if (near(o, v)) continue
     const remeasured = old === null ? o !== null : rests.some((k) => t.coverage?.[k] === 'remeasured')
-    if (remeasured) cls(metric, 'remeasured')
+    if (v === null && unshared?.[portKey] != null) cls(metric, 'branch-shared')
+    else if (remeasured) cls(metric, 'remeasured')
     else if (old !== null && !resolved && v === null && rests.some((k) => k === 'cost' || k === 'facts' || k === 'autonomy')) cls(metric, 'unresolved-zero')
     else if (metric === 'efficiency.mechanicalShare') cls(metric, 'mechanical-share')
     else if (metric === 'isolation.strayWorktrees' && Array.isArray(t.git?.strayWorktrees)) cls(metric, 'stray-now')
-    else {
-      const thinking = old?.cost?.total?.thinking
-      const note = metric === 'cost.tokens' && typeof thinking === 'number' && v - o === thinking ? 'port defect: window.mjs tokensOf adds `thinking`, which `output` already counts (transcripts.mjs responses; prices.mjs costOf)' : undefined
-      fail(t.change, metric, { origin: o, port: v, ...(note ? { note } : {}) })
-    }
+    else fail(t.change, metric, { origin: o, port: v })
   }
 
   // Coverage of the groups both name.
@@ -212,7 +216,8 @@ for (const t of theirs.changes) {
     const oursRecord = read(p, pr)
     out.coverage.compared++
     if (theirsRecord === oursRecord) continue
-    if (tc === 'remeasured') cls(`coverage.${k}`, 'remeasured')
+    if (theirsRecord && p.sharedBranch && TRANSCRIPT_KEYS.includes(k)) cls(`coverage.${k}`, 'branch-shared')
+    else if (tc === 'remeasured') cls(`coverage.${k}`, 'remeasured')
     else if (theirsRecord && !resolved && old !== null && TRANSCRIPT_KEYS.includes(k)) cls(`coverage.${k}`, 'unresolved-zero')
     else fail(t.change, `coverage.${k}`, { origin: tc, port: k === 'diffLines' ? p.coverage.diffLines : oursRecord })
   }

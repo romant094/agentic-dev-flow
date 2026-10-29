@@ -31,7 +31,7 @@ import { ARCHIVE, CHANGES_DIR, globToRegExp, parseTasks } from './changes.mjs'
 import { listTree } from './debt.mjs'
 import { median, TOKEN_FIELDS } from './metrics-facts.mjs'
 import { LAYERS, removalCandidates } from './metrics-records.mjs'
-import { asV2, GROUPS, PLUGIN_ROOT, RECORD_FILE, validateRecord } from './metrics.mjs'
+import { asV2, GROUPS, PLUGIN_ROOT, RECORD_FILE, TRANSCRIPT_GROUPS, validateRecord } from './metrics.mjs'
 import { readDebtRoot } from './registry.mjs'
 
 export const RETRO_DIR = '.adf/retro'
@@ -355,8 +355,26 @@ const overhead = (byPhase, valueOf) => {
     all
   )
 }
-const activeTotal = (c) => num(c.record.timing?.activeMinutes?.total)
+// A change whose branch carries another change's sessions has no transcript figure of its own
+// (`sharedBranch`, set by buildSidecar); the timing and isolation groups also hold git figures, so
+// their transcript-derived values are dropped here rather than the whole group.
+const ownSessions = (c) => !c.sharedBranch
+const activeTotal = (c) => (ownSessions(c) ? num(c.record.timing?.activeMinutes?.total) : null)
 const sumOf = (map, field) => (map ? Object.values(map).reduce((n, e) => n + (num(e?.[field]) ?? 0), 0) : null)
+
+// What a one-hour cache lifetime for dispatched agents would have saved, as the origin weighs it
+// (adf-metrics-facts.mjs cacheTtlEvidence, `netSavingWithOneHourUsd`): the 5-minute writes after a
+// cold resume it would have bridged, read instead of written, less its premium on every 5-minute
+// write. The window keeps tokens only, so the figure is in base-input-token equivalents at the
+// cache multipliers the pricing page states for every model (5-minute write 1.25, 1-hour write 2)
+// and a cache read at 0.1 (a model that reads for less saves slightly more). Positive: the one-hour lifetime would have paid. A record that kept no
+// 5-minute write total (a converted v1 record) has no value.
+const TTL = { write5m: 1.25, write1h: 2, read: 0.1 }
+function ttlNetSaving(ttl) {
+  const [rewritten, written] = [num(ttl?.rewrittenTokens), num(ttl?.write5m)]
+  if (rewritten === null || written === null) return null
+  return rewritten * (TTL.write5m - TTL.read) - written * (TTL.write1h - TTL.write5m)
+}
 
 // The fix rounds of each task, averaged over the tasks: the larger of its highest round and its
 // number of fix dispatches. A dispatch with no round is the first attempt, round 0.
@@ -387,6 +405,7 @@ export const METRICS = [
   M('cost.tokens', ['tokens'], (c) => tokensOf(c.record.tokens?.total), 'lower'),
   M('cost.coldResumes', ['cacheTtl'], (c) => num(c.record.cacheTtl?.coldResumes), 'lower'),
   M('cost.rewrittenTokens', ['cacheTtl'], (c) => num(c.record.cacheTtl?.rewrittenTokens), 'lower'),
+  M('cost.ttlNetSaving', ['cacheTtl'], (c) => ttlNetSaving(c.record.cacheTtl), 'higher', { norm: false }),
   M(
     'efficiency.cacheHit',
     ['tokens'],
@@ -420,7 +439,7 @@ export const METRICS = [
   M('quality.unresolvedDebt', ['ledger'], (c) => c.record.ledger?.unresolvedDebt?.length ?? null, 'lower'),
   M('quality.fixesAfter', [], (c) => (counted(c) ? num(c.git?.fixesAfter) : null), 'lower'),
   M('quality.fixesPerChangeWeek', [], (c) => (counted(c) ? ratio(c.git?.fixesAfter, c.git?.exposureDays / 7) : null), 'lower', { norm: false }),
-  M('isolation.foreignBranchRecords', ['isolation'], (c) => num(c.record.isolation?.foreignBranchRecords), 'lower'),
+  M('isolation.foreignBranchRecords', ['isolation'], (c) => (ownSessions(c) ? num(c.record.isolation?.foreignBranchRecords) : null), 'lower'),
   // A list the record could not measure is null: no data, not zero files. So is the list of a
   // change whose merge carried others: it is the merge's files against one change's plan, and
   // charges each change with the others' files.
@@ -437,7 +456,7 @@ export const METRICS = [
     { norm: false }
   ),
   M('context.compactions', ['context'], (c) => num(c.record.context?.compactions), 'lower'),
-  M('overhead.timeShare', ['timing'], (c) => overhead(c.record.timing?.activeMinutes?.byPhase, num), 'lower', { norm: false }),
+  M('overhead.timeShare', ['timing'], (c) => (ownSessions(c) ? overhead(c.record.timing?.activeMinutes?.byPhase, num) : null), 'lower', { norm: false }),
   M('overhead.tokenShare', ['tokens'], (c) => overhead(c.record.tokens?.byPhase, tokensOf), 'lower', { norm: false }),
   M('predictability.minutesPerTask', ['timing'], (c) => ratio(activeTotal(c), c.tasks), 'lower', { norm: false }),
   M('predictability.tokensPerTask', ['tokens'], (c) => ratio(tokensOf(c.record.tokens?.total), c.tasks), 'lower', { norm: false })
@@ -577,6 +596,8 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
   const blobs = readBlobs(root, ref, paths)
   const records = new Map(everyDir.map((e) => [e.archiveDir, recordOf(blobs.get(`${e.archiveDir}/${RECORD_FILE}`), `${ref}:${e.archiveDir}/${RECORD_FILE}`)]))
   const figures = sel.changes.length === 0 ? new Map() : mergeFigures(root, sel.history, sel.changes, { asOf, excluded: excluder(root, exclude) })
+  const branchOf = (e) => records.get(e.archiveDir).record?.branch ?? e.branch
+  const sessionsOf = (e) => records.get(e.archiveDir).record?.sources?.transcripts?.sessions ?? []
 
   const changes = sel.changes.map((e) => {
     const { record, reason } = records.get(e.archiveDir)
@@ -590,7 +611,19 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
       git = { ...git, diffLines: null, sharedMerge: { changes: carried, diffLines: git.diffLines, fixesAfter: git.fixesAfter } }
       coverage.diffLines = none(`merge ${e.mergeSha.slice(0, 10)} carries ${carried.length} changes: ${carried.join(', ')}`)
     } else coverage.diffLines = 'git'
-    const c = { ...e, branch: record?.branch ?? e.branch, tasks, record, coverage, git }
+    // Sessions are found by branch as well as by the change's ledger (lib/transcripts.mjs), so a
+    // record whose branch another change of the selection shares may hold that change's sessions.
+    // Its transcript figures are no data when a session came from the branch alone, which the
+    // ledger does not tie to this change, or when another change's record holds the same session;
+    // a record whose every session its own ledger names, and no other record holds, stays.
+    const others = branchOf(e) == null ? [] : sel.changes.filter((o) => o !== e && branchOf(o) === branchOf(e))
+    const theirs = new Set(others.flatMap((o) => sessionsOf(o).map((s) => s.id)))
+    let sharedBranch = null
+    if (others.length > 0 && sessionsOf(e).some((s) => s.source === 'branch' || theirs.has(s.id))) {
+      sharedBranch = { changes: others.map((o) => o.change), reason: `branch shared with ${others.map((o) => o.change).join(', ')}` }
+      for (const g of TRANSCRIPT_GROUPS) if (coverage[g] === 'record') coverage[g] = none(sharedBranch.reason)
+    }
+    const c = { ...e, branch: branchOf(e), tasks, record, coverage, git, sharedBranch }
     return {
       change: e.change,
       archiveDir: e.archiveDir,
@@ -604,12 +637,13 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
       generator: record?.generator ?? null,
       coverage,
       git,
+      sharedBranch,
       values: changeValues(c)
     }
   })
 
   // The aggregates are computed from the same inputs the values came from.
-  const inputs = changes.map((c) => ({ change: c.change, record: records.get(c.archiveDir).record, coverage: c.coverage, git: c.git, tasks: c.tasks }))
+  const inputs = changes.map((c) => ({ change: c.change, record: records.get(c.archiveDir).record, coverage: c.coverage, git: c.git, tasks: c.tasks, sharedBranch: c.sharedBranch }))
   const aggregates = aggregate(inputs)
   const versions = new Map()
   for (const c of changes) {
