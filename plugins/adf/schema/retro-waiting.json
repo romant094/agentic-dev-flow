@@ -22,7 +22,7 @@
     {
       "id": "subagent-cache-ttl",
       "question": "Would a one-hour cache lifetime for dispatched agents save more in rewritten cache than its write premium costs?",
-      "metrics": ["cost.coldResumes", "cost.rewrittenTokens", "efficiency.cacheHit"],
+      "metrics": ["cost.coldResumes", "cost.rewrittenTokens", "cost.ttlNetSaving", "efficiency.cacheHit"],
       "lessons": { "file": "docs/lessons/metrics.md", "row": "Cache TTL: cold resume gap" }
     },
     {

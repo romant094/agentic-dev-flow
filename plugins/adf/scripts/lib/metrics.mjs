@@ -36,7 +36,7 @@ export const RECORD_FILE = 'metrics.json'
 // The groups `sources.coverage` names, each `record` or `{ none: reason }`.
 export const GROUPS = ['transcripts', 'range', 'generator', 'dispatches', 'tokens', 'context', 'cacheTtl', 'outliers', 'timing', 'autonomy', 'replies', 'impl', 'tests', 'findings', 'review', 'verify', 'ledger', 'isolation', 'compliance', 'maintainability']
 const SDD_GROUPS = ['replies', 'impl', 'findings', 'compliance', 'tests', 'review', 'verify', 'ledger']
-const TRANSCRIPT_GROUPS = ['transcripts', 'dispatches', 'tokens', 'context', 'cacheTtl', 'outliers', 'autonomy']
+export const TRANSCRIPT_GROUPS = ['transcripts', 'dispatches', 'tokens', 'context', 'cacheTtl', 'outliers', 'autonomy']
 // The origin's name of the review stage's layer.
 const V1_LAYERS = { 'opsx-review': 'ai-review' }
 
