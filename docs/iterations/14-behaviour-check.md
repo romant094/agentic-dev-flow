@@ -196,6 +196,15 @@ script):
   the port's apply to archive; verify's `specs-base` warns, not fails, on a change with no
   `specs-base.json`.
 
+The switch runs in two stages (developer decision, 2026-10-29), so no developer has to merge
+their work first:
+
+1. Additive: the edits above, the debt header rename among them; the origin's own flow stays.
+   Before it, list the branches in flight that change a debt index, and agree each with its
+   author, since only those can conflict with the rename.
+2. The origin's own flow (`.claude/commands/opsx/`, its scripts and schema) is removed in a
+   merge request of its own, once no change of the origin's schema is in flight.
+
 Run `/adf:init` (and `/adf:add`) interactively at the switch, never headless: Claude Code
 asks for an approval of every write under a project's `.claude/` directory, the registry and
 the settings included, and no allow rule lifts it (`docs/lessons/superpowers-gate.md`).
