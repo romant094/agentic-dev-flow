@@ -50,6 +50,10 @@ The script prints one JSON object on stdout. Its `state` is:
 - `refused`: an input or a call failed; `error` says which, and what was or was not sent.
   Exit 1.
 
+Stdin is a file holding that object, so a script reads it to its end and gets end of input. A
+script still running after 20 minutes (`ADF_PROVIDER_TIMEOUT_MS` overrides it) is stopped, and the
+core records the operation as `refused`.
+
 A script that prints no such object is treated as `refused`. With no provider of a role the
 core gets `{ "state": "none" }` and applies the role's default. A provider written for a contract
 before an operation was added, which does not declare it, is not called for it: the core gets

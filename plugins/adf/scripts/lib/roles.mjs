@@ -3,7 +3,8 @@
 // ({ root, config, input }) and prints one on stdout, whose `state` is `done`, `degraded` or
 // `refused` (contract/README.md). The core reads fields, never prose.
 import { execFileSync, spawnSync } from 'node:child_process'
-import { readFileSync, realpathSync } from 'node:fs'
+import { closeSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readRegistry, registryPlugins } from './registry.mjs'
@@ -43,16 +44,31 @@ export function callRole(root, point, operation, input, core) {
   return runProvider(root, found, point, operation, input)
 }
 
-// One provider's run: its script with the operation as its argument, in `root`. A script that
-// prints no result is refused.
+// A provider still running after this long is stopped and refused; ADF_PROVIDER_TIMEOUT_MS
+// overrides it.
+export const PROVIDER_TIMEOUT_MS = 20 * 60 * 1000
+
+// One provider's run: its script with the operation as its argument, in `root`. The payload
+// reaches stdin from a file, not a pipe: with `spawnSync`'s `input` the child once waited for an
+// end of input that never came. A script that prints no result, or runs past the timeout, is
+// refused.
 function runProvider(root, found, point, operation, input) {
   const script = join(found.dir, found.declaration.provides[point].script)
-  const run = spawnSync('node', [script, operation], {
-    cwd: root,
-    input: JSON.stringify({ root: realpathSync(root), config: found.entry.config ?? {}, input }),
-    encoding: 'utf8',
-    maxBuffer: 1 << 24
-  })
+  const timeout = Number(process.env.ADF_PROVIDER_TIMEOUT_MS) || PROVIDER_TIMEOUT_MS
+  const dir = mkdtempSync(join(tmpdir(), 'adf-payload-'))
+  const file = join(dir, 'payload.json')
+  writeFileSync(file, JSON.stringify({ root: realpathSync(root), config: found.entry.config ?? {}, input }))
+  const fd = openSync(file, 'r')
+  let run
+  try {
+    run = spawnSync('node', [script, operation], { cwd: root, stdio: [fd, 'pipe', 'pipe'], encoding: 'utf8', maxBuffer: 1 << 24, timeout })
+  } finally {
+    closeSync(fd)
+    rmSync(dir, { recursive: true, force: true })
+  }
+  if (run.error?.code === 'ETIMEDOUT') {
+    return { state: 'refused', plugin: found.declaration.name, error: `${found.declaration.name} ${operation} did not finish in ${timeout / 1000} s and was stopped` }
+  }
   let result
   try {
     result = JSON.parse(run.stdout)

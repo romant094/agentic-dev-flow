@@ -37,6 +37,18 @@ function forge(root, ...args) {
 
 const ECHO = `let t='';process.stdin.on('data',(d)=>t+=d).on('end',()=>{const j=JSON.parse(t);console.log(JSON.stringify({state:'done',op:process.argv[2],config:j.config,input:j.input,cwd:process.cwd()===j.root}))})`
 
+test('the payload reaches stdin as a file, and a provider past the timeout is stopped and refused', () => {
+  const root = host(`import {fstatSync} from 'node:fs';const s=fstatSync(0);console.log(JSON.stringify({state:'done',file:s.isFile()}))`)
+  assert.deepEqual(callRole(root, 'forge', 'check', {}, { ...CORE, home }), { state: 'done', file: true, plugin: 'fake' })
+  const slow = host(`setTimeout(()=>console.log(JSON.stringify({state:'done'})),5000)`)
+  process.env.ADF_PROVIDER_TIMEOUT_MS = '300'
+  try {
+    assert.deepEqual(callRole(slow, 'forge', 'check', {}, { ...CORE, home }), { state: 'refused', plugin: 'fake', error: 'fake check did not finish in 0.3 s and was stopped' })
+  } finally {
+    delete process.env.ADF_PROVIDER_TIMEOUT_MS
+  }
+})
+
 test('with no forge enabled the state is none and nothing runs', () => {
   assert.deepEqual(forge(host(), 'check'), {
     code: 0,
