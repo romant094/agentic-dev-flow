@@ -20,7 +20,8 @@ plugin's configuration as a JSON object.
    project (run the install command the error names, then retry), a plugin written for another
    contract version, a plugin already enabled, or a role another plugin already provides.
 
-3. Show `report` as it is.
+3. Show `report` as it is. It includes the tracker's check and its notes when a plugin provides
+   the tracker; act on a note, for example run `/adf-jira:setup`.
 
 Do not commit: the developer commits the registry and the copied host files with the rest of
 their change.

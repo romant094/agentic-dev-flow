@@ -141,7 +141,8 @@ Settled by the developer on 2026-10-27, all as recommended, from the second agen
   range it cannot cut; the orchestrator no longer cuts it.
 - D44 The gather report names a debt entry matched by its debt id as such, never as a tracker key.
 - D45 `/adf-jira:setup` asks for the initial status, from the discovered status names only;
-  while it is unset, the tracker check returns a note that propose and land show.
+  while it is unset, the tracker check returns a note that propose and land show, and
+  `/adf:init` and `/adf:add` run the tracker check once the registry check passes and show it.
 
 ## Inputs for iteration 15
 
@@ -425,7 +426,7 @@ Left for later:
 - The comparison's ledger rules suit injected replies; an agent pass needs a rule of its own
   that pairs rulings by meaning rather than by text.
 
-Versions: adf 0.17.0 (0.15.0 at the first release of this iteration, 0.16.0 after the second
+Versions: adf 0.17.1 (0.15.0 at the first release of this iteration, 0.16.0 after the second
 pass), contract 1.7 unchanged; adf-jira 0.4.0 (0.3.0 after the second pass); adf-gitlab 0.6.0;
 adf-npm-workspaces 0.1.1; adf-memory 0.2.1 (bumped during the iteration); adf-english-check
 0.6.0, adf-maintainer 0.1.0, adf-postgres 0.1.0 and adf-prisma 0.1.0 unchanged.

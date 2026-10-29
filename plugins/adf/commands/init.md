@@ -69,7 +69,9 @@ missing and changes nothing that exists.
 
 5. Show the `report` of step 1 as it is, with the `report` of step 2 when it ran in place of its
    branch policy line, one line `Debt store: <root>`, with `(root index created)` when step 3
-   created it, and one line `Worktree preparation: <n> step(s)`. When Superpowers is not available, continue: setup does not need
+   created it, and one line `Worktree preparation: <n> step(s)`. The report includes the
+   tracker's check and its notes when a plugin provides the tracker; act on a note, for example
+   run `/adf-jira:setup`. When Superpowers is not available, continue: setup does not need
    Superpowers, but every command that changes a change does.
 
 Do not commit: the developer commits the registry, the settings, `.gitignore`, the planning

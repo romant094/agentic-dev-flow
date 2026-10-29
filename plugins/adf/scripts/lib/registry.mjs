@@ -5,6 +5,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { dirname, isAbsolute, join, normalize } from 'node:path'
 import { validateBranches } from './branches.mjs'
 import { installedPath, PLUGIN_ID } from './installed.mjs'
+import { trackerReport } from './roles.mjs'
 
 export const REGISTRY_PATH = '.claude/adf-extensions.json'
 export const DECLARATION_FILE = 'adf-extension.json'
@@ -377,6 +378,7 @@ export function initReport(r) {
     `Superpowers: ${r.superpowers.ok ? 'available' : `not available (${r.superpowers.reason}); install it with \`${r.superpowers.install}\``}`,
     `Enabled plugins: ${plugins(r.check)}`,
     checkLine(r.check),
+    ...(r.tracker ? [trackerReport('check', r.tracker)] : []),
     'Enable a plugin with /adf:add <plugin id or path>.',
     'Nothing was committed: the developer commits the registry, the settings, .gitignore, the planning guide and the review prompt.'
   ].join('\n')
@@ -386,12 +388,13 @@ export function branchesReport(branches, check) {
   return [policy(branches), `Enabled plugins: ${plugins(check)}`, checkLine(check)].join('\n')
 }
 
-export function addReport(added, check) {
+export function addReport(added, check, tracker) {
   return [
     `Enabled: ${added.name} (${added.points.length ? added.points.join(', ') : 'no points'})`,
     `Host files copied: ${added.hostFiles.copied.length ? added.hostFiles.copied.join(', ') : 'none'}`,
     `Host files already present: ${added.hostFiles.kept.length ? added.hostFiles.kept.join(', ') : 'none'}`,
     checkLine(check),
+    ...(tracker ? [trackerReport('check', tracker)] : []),
     'Nothing was committed: the developer commits the registry and the copied host files.'
   ].join('\n')
 }

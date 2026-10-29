@@ -182,3 +182,36 @@ test('the memory plugin enables as the one knowledge provider and copies its ske
   writeFileSync(join(other, 'adf-extension.json'), JSON.stringify({ name: 'other-memory', contract: '1.3', provides: { knowledge: { script: 's.mjs', operations: ['context', 'log', 'check'] } } }))
   assert.match(adf(root, 'add', 'plugins/other-memory').out.error, /role knowledge is already provided by adf-memory/)
 })
+
+// A fixture tracker that answers every operation with `check`.
+function trackerPlugin(root, check) {
+  const dir = join(root, 'plugins', 't')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'adf-extension.json'), JSON.stringify({ name: 't', contract: '1.7', provides: { tracker: { script: 't.mjs', operations: ['check', 'gather', 'start', 'handoff'] } } }))
+  writeFileSync(join(dir, 't.mjs'), `console.log(${JSON.stringify(JSON.stringify(check))})`)
+}
+
+test('init and add show the tracker check and its notes; with no tracker there is no tracker line', () => {
+  const root = host()
+  adf(root, 'init')
+  adf(root, 'branches', '--integration', 'develop')
+  const bare = adf(root, 'init').out
+  assert.equal(bare.check.ok, true)
+  assert.equal(bare.tracker, undefined)
+  assert.doesNotMatch(bare.report, /Tracker/)
+
+  trackerPlugin(root, { state: 'done', account: 'dev', notes: ['statuses.initial is not set; run /adf-jira:setup'] })
+  const added = adf(root, 'add', 'plugins/t')
+  assert.equal(added.code, 0)
+  assert.equal(added.out.tracker.state, 'done')
+  assert.match(added.out.report, /\nRegistry check: ok\nTracker: ready as dev\n {2}note: statuses\.initial is not set; run \/adf-jira:setup\n/)
+
+  const init = adf(root, 'init').out
+  assert.match(init.report, /\nTracker: ready as dev\n {2}note: statuses\.initial is not set; run \/adf-jira:setup\n/)
+
+  // A degraded tracker is shown with its hint; init does not fail because of it.
+  trackerPlugin(root, { state: 'degraded', tool: 'no token', hint: 'set JIRA_TOKEN' })
+  const degraded = adf(root, 'init')
+  assert.equal(degraded.code, 0)
+  assert.match(degraded.out.report, /\nTracker check: not done \(no token\)\. set JIRA_TOKEN\n/)
+})

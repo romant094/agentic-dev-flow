@@ -18,7 +18,9 @@
 //
 // init, branches, add and remove also run `check` and return it with `report`, the rendered
 // text the command shows. add and remove change the registry before the check, so a failing
-// check after them is reported, not refused.
+// check after them is reported, not refused. When that check passes and a plugin provides the
+// tracker, init and add also run the tracker's `check` and return it as `tracker`, its notes
+// in `report`; a degraded or refused tracker is reported, never a failure.
 //
 // --root <dir> names the host project (default: the current directory); --home <dir> the
 // Claude Code home (default: $CLAUDE_CONFIG_DIR, else ~/.claude).
@@ -30,6 +32,7 @@ import { detectIntegration, readBranches, setBranches } from './lib/branches.mjs
 import { createPlanningGuide, createReviewPrompt, ignoreLocalDirs } from './lib/host-files.mjs'
 import { addExtension, addReport, branchesReport, checkRegistry, initRegistry, initReport, removeExtension, removeReport } from './lib/registry.mjs'
 import { checkSuperpowers, claudeHome } from './lib/superpowers.mjs'
+import { trackerCall } from './lib/tracker.mjs'
 import { isMain } from './lib/main.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -41,6 +44,12 @@ function option(args, name) {
   if (i === -1) return undefined
   const [, value] = args.splice(i, 2)
   return value
+}
+
+// The tracker's `check` after a passing registry check, or nothing when no plugin provides it.
+function trackerCheck(root, check) {
+  if (!check.ok || !check.plugins.some((p) => p.points.includes('tracker'))) return {}
+  return { tracker: trackerCall(root, 'check', {}, core) }
 }
 
 export function run(argv) {
@@ -65,6 +74,7 @@ export function run(argv) {
         superpowers: checkSuperpowers(root, { home }),
         check: checkRegistry(root, { ...core, home })
       }
+      Object.assign(result, trackerCheck(root, result.check))
       return { ...result, report: initReport(result) }
     }
     case 'branches': {
@@ -77,7 +87,8 @@ export function run(argv) {
       if (!target) throw new Error('usage: add <plugin id or path> [--config <json>]')
       const added = addExtension(root, target, { ...core, home, config: config && JSON.parse(config) })
       const check = checkRegistry(root, { ...core, home })
-      return { ...added, check, report: addReport(added, check) }
+      const tracker = trackerCheck(root, check)
+      return { ...added, check, ...tracker, report: addReport(added, check, tracker.tracker) }
     }
     case 'remove': {
       if (!target) throw new Error('usage: remove <plugin name>')
