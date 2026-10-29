@@ -26,9 +26,11 @@
 //                 replies its agents wrote
 //   unread-write  the layer is short by no more dispatches than the reply files of that layer
 //                 the transcripts name (by full path, or by a relative or variable path on the
-//                 change's branch) but no body the tool reads wrote (measured: a reply written by
-//                 a script the agent generated, or by a command whose path variable was set in an
-//                 earlier call; the origin counted only the valid ones), and the corpus holds no
+//                 change's branch) but no body the tool reads wrote, or whose last body the tool
+//                 reads fails the origin's validateReply (check-reply.mjs) (measured: a reply
+//                 written by a script the agent generated, or by a command whose path variable was
+//                 set in an earlier call; a refused body a script then fixed, `node -e '...delete
+//                 j.notes...'`; the origin counted only the valid ones), and the corpus holds no
 //                 more findings than the record
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -145,6 +147,7 @@ for (const file of transcripts) {
 const scripts = copyOriginScripts(origin)
 try {
   const { countFindings } = await scripts.load('adf-metrics-findings.mjs')
+  const { validateReply } = await scripts.load('check-reply.mjs')
   for (const { dir, text } of archivedRecordTexts(git)) {
     const record = JSON.parse(text)
     if (!record.findings) continue
@@ -174,8 +177,10 @@ try {
         count(out.classes, 'pruned')
         continue
       }
-      // The layer's files the transcripts name but no body the tool reads wrote.
-      const unread = [...new Set([...(named.get(change) ?? []), ...(namedOnBranch.get(record.branch) ?? [])])].filter((n) => layerOf(n) === layer && !files.has(n))
+      // The layer's files the transcripts name but no body the tool reads wrote, or whose last
+      // body read the origin refuses: what made it valid was a write the tool cannot read.
+      const refused = (n) => validateReply(files.get(n).value.role, files.get(n).value).length > 0
+      const unread = [...new Set([...(named.get(change) ?? []), ...(namedOnBranch.get(record.branch) ?? []), ...files.keys()])].filter((n) => layerOf(n) === layer && (!files.has(n) || refused(n)))
       const short = (theirs?.dispatches ?? 0) - (recomputed?.dispatches ?? 0)
       if (short > 0 && short <= unread.length && (theirs?.findings ?? 0) >= (recomputed?.findings ?? 0)) {
         count(out.classes, 'unread-write')
