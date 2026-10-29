@@ -100,6 +100,14 @@ test('fresh: the change goes through every phase of the port, each from what the
     const check = r.steps.find((s) => s.command?.startsWith('node land.mjs check'))
     assert.equal(check.result.state, 'skipped')
 
+    // The worktree preparation: the recipe holds the sandbox's fake in place of the command init
+    // offered, and provision ran it in the change's worktree.
+    assert.match(git('show', 'develop:openspec/planning.md'), /^- `adf-replay-prepare npm run build --workspace @host\/shared` from `packages\/shared`$/m)
+    const prepared = sandbox.calls('adf-replay-prepare')
+    assert.ok(prepared.length >= 1 && prepared.every((c) => c.argv[0] === 'npm run build --workspace @host/shared'), JSON.stringify(prepared))
+    assert.ok(prepared.some((c) => c.cwd.includes(`/.claude/worktrees/${CHANGE}`)), JSON.stringify(prepared))
+    assert.ok(injected(r, /the recipe's command is the sandbox's fake adf-replay-prepare; init offered npm run build --workspace @host\/shared/).length === 1)
+
     // What the replay had to supply is marked.
     assert.ok(injected(r, /category and title are injected/).length === 1, 'ai-review r1 has no category or title in the record')
     assert.ok(injected(r, /origin's merge request body is not in git/).length === 1)

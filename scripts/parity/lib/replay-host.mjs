@@ -224,11 +224,14 @@ export const passed = (checks) => checks.registry.ok && checks.debt.ok && checks
 // `candidate` is a sandbox candidate (sandbox.addCandidate) at its base, with `develop` checked
 // out; `change` (optional) names the change propose's preflight is run for. Returns
 //   { ok, edits: [{ path, step, kind, why }], refusals: [{ check, file, line, message, edit | null }],
-//     environment: [{ path, why }], unclaimed: [path], before, checks, commit, pushed, notes }
+//     environment: [{ path, why }], unclaimed: [path], before, checks, commit, pushed, notes, prepared }
+// `prepareCommand` (optional) substitutes a command for every candidate the preparation confirms:
+// the recipe runs `<prepareCommand> <the candidate's command>` with the candidate's own inputs, and
+// `prepared` lists each { command, offered }. Off by default, so the real command is recorded.
 // kind: init | branches | debt-root | prepare | add | recorded | refusal | stub. `before` holds the host
 // checks run before any edit of this step's own (after init, branches, the debt root and the
 // plugins), so every refusal the origin tree raises is in it.
-export function setupHost(sandbox, candidate, { registry = recordedRegistry(), guide = RECORDED_GUIDE, integration = 'develop', debtRoot = DEBT_ROOT, change = null, message = MESSAGE } = {}) {
+export function setupHost(sandbox, candidate, { registry = recordedRegistry(), guide = RECORDED_GUIDE, integration = 'develop', debtRoot = DEBT_ROOT, change = null, message = MESSAGE, prepareCommand = null } = {}) {
   assertIsolated(sandbox, candidate)
   const { main } = candidate
   if (sandbox.git(main, 'rev-parse', '--abbrev-ref', 'HEAD') !== integration) throw new Error(`setupHost: ${main} is not on ${integration}`)
@@ -238,6 +241,7 @@ export function setupHost(sandbox, candidate, { registry = recordedRegistry(), g
   const notes = []
   const environment = installClaudeHome(sandbox)
   const unclaimed = []
+  const prepared = []
   let state = snapshot(sandbox, main)
   // Runs `fn`, then lists every path it changed with the why `why(path, result)` gives; a path
   // with no why is a change the step did not announce.
@@ -284,8 +288,11 @@ export function setupHost(sandbox, candidate, { registry = recordedRegistry(), g
     const offered = run.core('prepare.mjs', 'candidates')
     if (offered.exit !== 0) refuse('prepare.mjs candidates', offered)
     for (const c of offered.json.candidates) {
-      const out = step(`prepare.mjs add ${c.command}`, 'prepare', (path) => (path === 'openspec/planning.md' ? `## Worktree preparation: \`${c.command}\` from ${c.inputs.join(', ')}, the candidate init offers, confirmed (${c.why})` : null), () => run.core('prepare.mjs', 'add', '--command', c.command, ...c.inputs.flatMap((p) => ['--input', p])))
-      if (out.exit !== 0) refuse(`prepare.mjs add ${c.command}`, out)
+      const command = prepareCommand ? `${prepareCommand} ${c.command}` : c.command
+      const what = prepareCommand ? `the substitute for \`${c.command}\`, the candidate init offers,` : 'the candidate init offers,'
+      const out = step(`prepare.mjs add ${command}`, 'prepare', (path) => (path === 'openspec/planning.md' ? `## Worktree preparation: \`${command}\` from ${c.inputs.join(', ')}, ${what} confirmed (${c.why})` : null), () => run.core('prepare.mjs', 'add', '--command', command, ...c.inputs.flatMap((p) => ['--input', p])))
+      if (out.exit !== 0) refuse(`prepare.mjs add ${command}`, out)
+      prepared.push({ command, offered: c.command })
     }
   } else notes.push(`the worktree preparation recipe already had ${recipe.json.steps.length} step(s)`)
 
@@ -361,7 +368,7 @@ export function setupHost(sandbox, candidate, { registry = recordedRegistry(), g
   const dirty = sandbox.git(main, 'status', '--porcelain')
   if (dirty) notes.push(`the host checks after the commit changed the tree: ${dirty.split('\n').join('; ')}`)
   const ok = passed(checks) && pushed && unclaimed.length === 0 && !dirty
-  return { ok, edits, refusals, environment, unclaimed, before, checks, commit, pushed, notes }
+  return { ok, edits, refusals, environment, unclaimed, before, checks, commit, pushed, notes, prepared }
 }
 
 // The host edits by path, in first-change order: { path, kinds, why: [one line per step] }.

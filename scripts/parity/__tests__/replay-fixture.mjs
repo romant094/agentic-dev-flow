@@ -1,5 +1,6 @@
 // A fixture origin for the phase drivers (replay-drive.spec.mjs): a host shaped like the real
-// origin (a .gitignore, a debt tree with the `Jira` column, memory pages, a main spec) and one
+// origin (a .gitignore, a debt tree with the `Jira` column, memory pages, a main spec, a shared
+// package whose build another package needs, so init offers a worktree preparation step) and one
 // change made with the origin's flow on a kept branch: propose, a group branch merged, a task
 // committed on the change branch, the apply record, verify, review with a fixed finding, archive
 // and ingest; then GitLab's squash merge onto develop.
@@ -205,7 +206,9 @@ export function fixtureOrigin() {
 
   commit({
     '.gitignore': '.claude/worktrees/\nnode_modules\n.env\n',
-    'package.json': '{ "name": "host", "private": true }\n',
+    'package.json': '{ "name": "host", "private": true, "workspaces": ["packages/*"] }\n',
+    'packages/shared/package.json': '{ "name": "@host/shared", "scripts": { "build": "tsc" } }\n',
+    'packages/app/package.json': '{ "name": "@host/app", "dependencies": { "@host/shared": "*" } }\n',
     'openspec/specs/cap/spec.md': MAIN_SPEC(),
     '.claude/memory/index.md': '# Index\n',
     '.claude/memory/concepts/a.md': PAGE,

@@ -45,6 +45,7 @@ export const PHASES = ['propose', 'apply', 'verify', 'review', 'archive', 'land'
 export const MID_FLIGHT_PHASES = ['apply', 'verify', 'review', 'archive']
 const CORE = join(REPO, 'plugins', 'adf', 'scripts')
 export const SUITE = 'adf-replay-suite'
+export const PREPARE = 'adf-replay-prepare'
 const ENV_KEY = 'DATABASE_URL'
 export const TRACKER_SKIP = 'replay: the origin had no scope step, so the change works without the tracker'
 const LONG = 4000
@@ -75,6 +76,22 @@ function installSuite(sandbox) {
     'fi',
     "echo 'ok 1 - replay'", "echo '# tests 1'", "echo '# pass 1'", "echo '# fail 0'",
     `echo '${RECORDED_GUIDE.proof.value}'`,
+    ''
+  ].join('\n'), { mode: 0o755 })
+  return file
+}
+
+// The fake worktree preparation command: the recipe runs it in place of each command init
+// offers, which needs the dependencies the clone does not carry. It logs the offered command it
+// stands for, like the other fakes, and passes.
+function installPrepare(sandbox) {
+  const file = join(sandbox.bin, PREPARE)
+  if (existsSync(file)) return file
+  const log = join(sandbox.log, `${PREPARE}.jsonl`)
+  writeFileSync(file, [
+    '#!/bin/sh',
+    `printf '{"argv":["%s"],"cwd":"%s"}\\n' "$*" "$PWD" >> '${log}'`,
+    'echo "replay prepare: a script-level replay builds nothing ($*)"',
     ''
   ].join('\n'), { mode: 0o755 })
   return file
@@ -246,8 +263,11 @@ function setUp(ctx, { host = {}, refs = {} } = {}) {
   installSuite(sandbox)
   ctx.record.environment.push({ path: `<S>/bin/${SUITE}`, why: 'the fake whole-suite and covering command: a passing count line and the fresh-run proof line, a covering run passing at its task commit only; no test runs in a script-level replay' })
   const guide = { ...RECORDED_GUIDE, wholeSuite: { value: SUITE, source: 'replay: a fake suite command in the sandbox bin; the recorded value is npm test -- --force' } }
-  const result = setupHost(sandbox, c, { change: candidate.name, guide, ...host })
+  installPrepare(sandbox)
+  ctx.record.environment.push({ path: `<S>/bin/${PREPARE}`, why: 'the fake worktree preparation command the recipe runs in place of each command init offers: it logs and passes; the clone carries no node_modules and none is installed' })
+  const result = setupHost(sandbox, c, { change: candidate.name, guide, prepareCommand: PREPARE, ...host })
   const step = rec.agent('host', 'setupHost (lib/replay-host.mjs)', [`setupHost ${ctx.as}: ok ${result.ok}, ${result.edits.length} edit(s), commit ${result.commit}`])
+  for (const p of result.prepared) rec.hint(step, 'injected', `the recipe's command is the sandbox's fake ${PREPARE}; init offered ${p.offered}`)
   step.result = cut({ ok: result.ok, commit: result.commit, pushed: result.pushed, refusals: result.refusals, unclaimed: result.unclaimed, checks: result.checks, notes: result.notes })
   if (!result.ok) rec.hint(step, 'blocked', 'the host checks did not all pass after the setup; the replay goes on and records what follows')
   const scripts = installSkillScripts(sandbox)

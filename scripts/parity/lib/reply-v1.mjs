@@ -45,10 +45,13 @@ export function asV1Reply(text) {
 
 // The texts of one transcript record a reply may be in: the body of a `Write` tool call, and of
 // every Bash heredoc (`expanded` when its delimiter is unquoted, so the shell expanded it). `path`
-// is the file written: the Write's `file_path`, or the redirection target on the heredoc's line,
-// unexpanded (`command` is the heredoc's whole command, for its variable assignments).
+// is the file written: the Write's `file_path`, or the redirection target of the heredoc's own
+// command, unexpanded: the last `>` before the `<<` on its line (`cmd 2>/dev/null; cat > f <<'E'`),
+// else the first after it (`cat <<'E' > f`); a file descriptor's redirect (`2>`, `&>`) is none.
+// `command` is the heredoc's whole command, for its variable assignments.
 const HEREDOC = /<<-?\s*(['"]?)(\w+)\1[^\n]*\n([\s\S]*?)\n\2(?=\s|$)/g
-const REDIRECT = />\s*['"]?([^\s'"<>;|&]+)/
+const REDIRECT = /(?<![\d&>])>>?\s*['"]?([^\s'"<>;|&]+)/g
+const redirectOf = (before, after) => [...before.matchAll(REDIRECT)].at(-1)?.[1] ?? [...after.matchAll(REDIRECT)][0]?.[1] ?? null
 export function replyBodies(entry) {
   const content = entry?.message?.content
   if (!Array.isArray(content)) return []
@@ -59,8 +62,10 @@ export function replyBodies(entry) {
     if (part.name === 'Bash') {
       const command = String(part.input?.command ?? '')
       for (const m of command.matchAll(HEREDOC)) {
-        const line = command.slice(command.lastIndexOf('\n', m.index) + 1, command.indexOf('\n', m.index))
-        out.push({ text: m[3], source: 'heredoc', expanded: m[1] === '', path: REDIRECT.exec(line)?.[1] ?? null, command })
+        const start = command.lastIndexOf('\n', m.index) + 1
+        const before = command.slice(start, m.index)
+        const after = command.slice(m.index, command.indexOf('\n', m.index)).replace(/^<<-?\s*(['"]?)\w+\1/, '')
+        out.push({ text: m[3], source: 'heredoc', expanded: m[1] === '', path: redirectOf(before, after), command })
       }
     }
   }

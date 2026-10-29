@@ -161,6 +161,26 @@ test('the setup runs init\'s worktree preparation step: every candidate confirme
   })
 })
 
+test('with a prepare command, the substitute is written to the host guide with the candidate\'s own inputs, the offered command kept in its why', () => {
+  const origin = fixtureOrigin({
+    extra: {
+      'package.json': `${JSON.stringify({ name: 'host', private: true, workspaces: ['packages/*', 'apps/*'] })}\n`,
+      'packages/shared/package.json': `${JSON.stringify({ name: '@host/shared', scripts: { build: 'tsc' }, main: 'dist/index.js' })}\n`,
+      'apps/server/package.json': `${JSON.stringify({ name: '@host/server', dependencies: { '@host/shared': '*' } })}\n`
+    }
+  })
+  withHost(origin, (sandbox, c) => {
+    const r = setupHost(sandbox, c, { registry: REGISTRY, change: 'add-x', prepareCommand: 'fake-prepare' })
+    assert.equal(r.ok, true, editReport(r))
+    assert.deepEqual(r.prepared, [{ command: 'fake-prepare npm run build --workspace @host/shared', offered: 'npm run build --workspace @host/shared' }])
+    const prepare = r.edits.filter((e) => e.kind === 'prepare')
+    assert.deepEqual(prepare.map((e) => e.step), ['prepare.mjs add fake-prepare npm run build --workspace @host/shared'])
+    assert.match(prepare[0].why, /the substitute for `npm run build --workspace @host\/shared`, the candidate init offers/)
+    const guide = git(c.main, 'show', 'HEAD:openspec/planning.md')
+    assert.match(guide, /^- `fake-prepare npm run build --workspace @host\/shared` from `packages\/shared`$/m)
+  })
+})
+
 test('a refusal no rule fixes is recorded with no edit, and the setup is not ok', () => {
   const origin = fixtureOrigin({ block: '| ID | Title | Jira |' })
   withHost(origin, (sandbox, c) => {
