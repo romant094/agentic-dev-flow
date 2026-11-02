@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createReviewPrompt } from '../lib/host-files.mjs'
+import { setDebtRoot } from '../lib/registry.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const REVIEW_TEMPLATE = join(here, '..', '..', 'host', 'review-prompt.md')
@@ -250,4 +251,26 @@ test('init and add show the tracker check and its notes; with no tracker there i
   const degraded = adf(root, 'init')
   assert.equal(degraded.code, 0)
   assert.match(degraded.out.report, /\nTracker check: not done \(no token\)\. set JIRA_TOKEN\n/)
+})
+
+test('init and add show the debt check once the debt root is set; with no root there is no debt line', () => {
+  const root = host()
+  const first = adf(root, 'init').out
+  assert.equal(first.debt, undefined)
+  assert.doesNotMatch(first.report, /Debt check/)
+  adf(root, 'branches', '--integration', 'develop')
+  setDebtRoot(root, 'docs/tech-debt')
+  const tree = join(root, 'docs', 'tech-debt')
+  mkdirSync(join(tree, 'snmp'), { recursive: true })
+  writeFileSync(join(tree, 'index.md'), '# Technical Debt\n\n| Block | Covers |\n|---|---|\n| [`snmp`](snmp/index.md) | SNMP |\n')
+  writeFileSync(join(tree, 'snmp', 'index.md'), '| ID | Title | Anchors | Class | Source | Jira |\n|---|---|---|---|---|---|\n')
+  const init = adf(root, 'init')
+  assert.equal(init.code, 0, 'a failing debt check is reported, not a refusal')
+  assert.equal(init.out.debt.ok, false)
+  assert.match(init.out.report, /\nDebt check: 1 error\(s\) in docs\/tech-debt; run debt\.mjs check\n- snmp\/index\.md:1 the columns must be .*; rename the column Jira to Tracker\n/)
+  writeFileSync(join(tree, 'snmp', 'index.md'), '| ID | Title | Anchors | Class | Source | Tracker |\n|---|---|---|---|---|---|\n')
+  const added = adf(root, 'add', 'plugins/sample')
+  assert.equal(added.code, 0)
+  assert.deepEqual(added.out.debt, { root: 'docs/tech-debt', ok: true, errors: [] })
+  assert.match(added.out.report, /\nRegistry check: ok\nDebt check: ok \(docs\/tech-debt\)\n/)
 })

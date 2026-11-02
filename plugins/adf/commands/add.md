@@ -37,7 +37,9 @@ configuration replaces its current one in place (step 3).
    the plugin declares as required and the configuration lacks: the plugin is enabled, and an
    operation that needs those keys refuses until a configuration sets them. The report includes
    the tracker's check and its notes when a plugin provides the tracker; act on a note, for
-   example run `/adf-jira:setup`.
+   example run `/adf-jira:setup`. It includes the debt check
+   when the registry names a debt root; on its errors, tell the developer the flow refuses to
+   read the tree until they are fixed, for example a last column `Jira` renamed to `Tracker`.
 
 Do not commit: the developer commits the registry and the copied host files with the rest of
 their change.

@@ -27,17 +27,20 @@
 // rendered text the command shows. add, config and remove change the registry before the check, so a failing
 // check after them is reported, not refused. When that check passes and a plugin provides the
 // tracker, init and add also run the tracker's `check` and return it as `tracker`, its notes
-// in `report`; a degraded or refused tracker is reported, never a failure.
+// in `report`; a degraded or refused tracker is reported, never a failure. Once the registry
+// names a debt root, init and add also run the debt tree's check (lib/debt.mjs checkTree) and
+// return it as `debt`, its errors in `report`; a failing debt check is reported, never a failure.
 //
 // --root <dir> names the host project (default: the current directory); --home <dir> the
 // Claude Code home (default: $CLAUDE_CONFIG_DIR, else ~/.claude).
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { checkTree } from './lib/debt.mjs'
 import { fileURLToPath } from 'node:url'
 import { declareInHost, marketplaceSource } from './lib/host-settings.mjs'
 import { detectIntegration, readBranches, setBranches } from './lib/branches.mjs'
 import { createPlanningGuide, createReviewPrompt, ignoreLocalDirs } from './lib/host-files.mjs'
-import { addExtension, addReport, branchesReport, checkRegistry, configExtension, configReport, initRegistry, initReport, removeExtension, removeReport } from './lib/registry.mjs'
+import { addExtension, addReport, branchesReport, checkRegistry, configExtension, configReport, initRegistry, initReport, readDebtRoot, removeExtension, removeReport } from './lib/registry.mjs'
 import { checkSuperpowers, claudeHome } from './lib/superpowers.mjs'
 import { trackerCall } from './lib/tracker.mjs'
 import { isMain } from './lib/main.mjs'
@@ -57,6 +60,12 @@ function option(args, name) {
 function trackerCheck(root, check) {
   if (!check.ok || !check.plugins.some((p) => p.points.includes('tracker'))) return {}
   return { tracker: trackerCall(root, 'check', {}, core) }
+}
+
+// The debt tree's check, or nothing when the registry names no debt root.
+function debtCheck(root) {
+  const path = readDebtRoot(root)
+  return path ? { debt: { root: path, ...checkTree(join(root, path)) } } : {}
 }
 
 export function run(argv) {
@@ -81,7 +90,7 @@ export function run(argv) {
         superpowers: checkSuperpowers(root, { home }),
         check: checkRegistry(root, { ...core, home })
       }
-      Object.assign(result, trackerCheck(root, result.check))
+      Object.assign(result, trackerCheck(root, result.check), debtCheck(root))
       return { ...result, report: initReport(result) }
     }
     case 'branches': {
@@ -95,7 +104,8 @@ export function run(argv) {
       const added = addExtension(root, target, { ...core, home, config: config && JSON.parse(config) })
       const check = checkRegistry(root, { ...core, home })
       const tracker = trackerCheck(root, check)
-      return { ...added, check, ...tracker, report: addReport(added, check, tracker.tracker) }
+      const debt = debtCheck(root)
+      return { ...added, check, ...tracker, ...debt, report: addReport(added, check, tracker.tracker, debt.debt) }
     }
     case 'config': {
       if (!target || config === undefined) throw new Error('usage: config <plugin name or id> --config <json>')

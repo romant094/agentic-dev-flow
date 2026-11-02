@@ -494,7 +494,7 @@ test('check refuses a duplicate id across the index and resolved.md, an empty Re
     'snmp/resolved.md:8 snmp-04 is above the block\'s high-water line snmp-03'
   ])
   const columns = write(tmp(), { 'index.md': ROOT, 'snmp/index.md': HEADER, 'snmp/resolved.md': `# Resolved\n\n${HEADER}` })
-  assert.deepEqual(checkTree(columns).errors.map((e) => e.message), ['the columns must be ID | Title | Anchors | Class | Tracker | Resolved by | Date'])
+  assert.deepEqual(checkTree(columns).errors.map((e) => e.message), ['the columns must be ID | Title | Anchors | Class | Tracker | Resolved by | Date, not ID | Title | Anchors | Class | Source | Tracker'])
 })
 
 test('add --precedent names a resolved entry, adds the column to an old table, and check refuses a precedent that is not resolved', () => {
@@ -513,4 +513,42 @@ test('add --precedent names a resolved entry, adds the column to an old table, a
   assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
   writeFileSync(join(tree, 'ui/index.md'), readFileSync(join(tree, 'ui/index.md'), 'utf8').replace('`snmp-01` |\n', '`snmp-02` |\n'))
   assert.deepEqual(checkTree(tree).errors.map((e) => e.message), ["ui-02: precedent snmp-02 is not a row of any block's resolved.md"])
+})
+
+test('check and the reader refuse a block table whose last column is Jira, naming the rename to Tracker', () => {
+  const jira = '| ID | Title | Anchors | Class | Source | Jira |\n|---|---|---|---|---|---|\n'
+  const tree = write(tmp(), { 'index.md': ROOT, 'snmp/index.md': `# SNMP\n\n${jira}| \`snmp-01\` | One | \`a.ts\` | debt | s | KEY-1 |\n` })
+  assert.deepEqual(checkTree(tree).errors.map((e) => `${e.file}:${e.line} ${e.message}`), [
+    'snmp/index.md:3 the columns must be ID | Title | Anchors | Class | Source | Tracker, optionally followed by Precedent, not ID | Title | Anchors | Class | Source | Jira; rename the column Jira to Tracker',
+    'snmp/index.md:5 snmp-01 is named but no row carries it'
+  ])
+  assert.throws(() => listTree(tree), /snmp\/index\.md:3 the columns must be ID \| Title \| Anchors \| Class \| Source \| Tracker, optionally followed by Precedent, not ID \| Title \| Anchors \| Class \| Source \| Jira; rename the column Jira to Tracker; run debt\.mjs check/)
+  assert.throws(() => addEntry(tree, entry({ title: 'Two' })), /rename the column Jira to Tracker/)
+  const precedent = write(tmp(), { 'index.md': ROOT, 'snmp/index.md': '| ID | Title | Anchors | Class | Source | Jira | Precedent |\n|---|---|---|---|---|---|---|\n' })
+  assert.match(checkTree(precedent).errors[0].message, /, not ID \| Title \| Anchors \| Class \| Source \| Jira \| Precedent; rename the column Jira to Tracker$/)
+})
+
+test('check and the reader refuse a block table with another header, naming the found and the expected one', () => {
+  const tree = write(tmp(), { 'index.md': ROOT, 'snmp/index.md': '| ID | Name | Where |\n|---|---|---|\n| `snmp-01` | One | `a.ts` |\n' })
+  assert.deepEqual(checkTree(tree).errors.map((e) => `${e.file}:${e.line} ${e.message}`), [
+    'snmp/index.md:1 the columns must be ID | Title | Anchors | Class | Source | Tracker, optionally followed by Precedent, not ID | Name | Where',
+    'snmp/index.md:3 snmp-01 is named but no row carries it'
+  ])
+  assert.throws(() => listTree(tree), /^Error: the debt tree is invalid: snmp\/index\.md:1 the columns must be .*, not ID \| Name \| Where; run debt\.mjs check$/)
+  const resolved = write(tmp(), { 'index.md': ROOT, 'snmp/index.md': HEADER, 'snmp/resolved.md': '# Resolved\n\n| ID | Title | Anchors | Class | Jira | Resolved by | Date |\n|---|---|---|---|---|---|---|\n' })
+  assert.throws(() => listTree(resolved), /snmp\/resolved\.md:3 the columns must be ID \| Title \| Anchors \| Class \| Tracker \| Resolved by \| Date, not .*; rename the column Jira to Tracker/)
+})
+
+test('a format description in an index is never an entry: a fenced example is no table, and another table in the root index is reported', () => {
+  const example = '```\n| ID | Title | Anchors | Class | Source | Jira |\n|---|---|---|---|---|---|\n| `snmp-01` | Example | `a.ts` | debt | s | |\n```\n'
+  const tree = write(tmp(), {
+    'index.md': `${ROOT}\n## Format\n\n${example}`,
+    'snmp/index.md': `# SNMP\n\n${example}\n${HEADER}| \`snmp-01\` | One | \`a.ts\` | debt | s | |\n`
+  })
+  assert.deepEqual(listTree(tree).entries.map((e) => [e.id, e.title, e.subBlock]), [['snmp-01', 'One', null]])
+  assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
+  const unfenced = write(tmp(), { 'index.md': `${ROOT}\n## Format\n\n${HEADER}| \`snmp-01\` | Example | \`a.ts\` | debt | s | |\n`, 'snmp/index.md': `${HEADER}| \`snmp-01\` | One | \`a.ts\` | debt | s | |\n` })
+  assert.deepEqual(checkTree(unfenced).errors.map((e) => `${e.file}:${e.line} ${e.message}`), [
+    'index.md:11 the root index holds one table, Block | Covers, not ID | Title | Anchors | Class | Source | Tracker; a format example belongs in a code fence'
+  ])
 })

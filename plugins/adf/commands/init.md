@@ -40,7 +40,15 @@ missing and changes nothing that exists.
    node "${CLAUDE_PLUGIN_ROOT}/scripts/debt.mjs" root --set <path>
    ```
 
-   If `root` is not null, change nothing.
+   Then check the tree, which may already exist:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/debt.mjs" check
+   ```
+
+   Exit code 1 here means the tree has errors: continue, and show them in step 5.
+
+   If `root` is not null, change nothing: the `report` of step 1 already holds the debt check.
 
 4. Read the worktree preparation recipe of the planning guide:
 
@@ -69,7 +77,10 @@ missing and changes nothing that exists.
 
 5. Show the `report` of step 1 as it is, with the `report` of step 2 when it ran in place of its
    branch policy line, one line `Debt store: <root>`, with `(root index created)` when step 3
-   created it, and one line `Worktree preparation: <n> step(s)`. The report includes the
+   created it, and, when step 3 set the root, `Debt check: ok` or the count and every
+   `file:line message` of its `errors`. On debt errors, tell the developer the flow refuses to
+   read the tree until they are fixed, for example a last column `Jira` renamed to `Tracker`.
+   One line `Worktree preparation: <n> step(s)`. The report includes the
    tracker's check and its notes when a plugin provides the tracker; act on a note, for example
    run `/adf-jira:setup`. When Superpowers is not available, continue: setup does not need
    Superpowers, but every command that changes a change does.

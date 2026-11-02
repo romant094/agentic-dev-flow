@@ -393,6 +393,9 @@ const checkLine = (check) =>
     check.ok ? 'Registry check: ok' : `Registry check: ${check.errors.length} error(s)\n${check.errors.map((e) => `- ${e}`).join('\n')}`,
     ...(check.warnings ?? []).map((w) => `Warning: ${w}`)
   ].join('\n')
+// The debt tree's check (lib/debt.mjs checkTree), with its root.
+export const debtLine = (debt) =>
+  debt.ok ? `Debt check: ok (${debt.root})` : `Debt check: ${debt.errors.length} error(s) in ${debt.root}; run debt.mjs check\n${debt.errors.map((e) => `- ${e.file}${e.line === null ? '' : `:${e.line}`} ${e.message}`).join('\n')}`
 const policy = (branches) => `Branch policy: integration ${branches.integration}; protected ${branches.protected.join(', ')}`
 
 const reviewPromptLine = (p) => {
@@ -415,6 +418,7 @@ export function initReport(r) {
     `Superpowers: ${r.superpowers.ok ? 'available' : `not available (${r.superpowers.reason}); install it with \`${r.superpowers.install}\``}`,
     `Enabled plugins: ${plugins(r.check)}`,
     checkLine(r.check),
+    ...(r.debt ? [debtLine(r.debt)] : []),
     ...(r.tracker ? [trackerReport('check', r.tracker)] : []),
     'Enable a plugin with /adf:add <plugin id or path>.',
     'Nothing was committed: the developer commits the registry, the settings, .gitignore, the planning guide and the review prompt.'
@@ -428,13 +432,14 @@ export function branchesReport(branches, check) {
 const missingLine = (keys) =>
   keys.length ? [`Warning: the config has no ${keys.join(', ')}; an operation that needs ${keys.length === 1 ? 'it' : 'them'} refuses until extensions.mjs config sets ${keys.length === 1 ? 'it' : 'them'}`] : []
 
-export function addReport(added, check, tracker) {
+export function addReport(added, check, tracker, debt) {
   return [
     `Enabled: ${added.name} (${added.points.length ? added.points.join(', ') : 'no points'})`,
     ...missingLine(added.missingConfig),
     `Host files copied: ${added.hostFiles.copied.length ? added.hostFiles.copied.join(', ') : 'none'}`,
     `Host files already present: ${added.hostFiles.kept.length ? added.hostFiles.kept.join(', ') : 'none'}`,
     checkLine(check),
+    ...(debt ? [debtLine(debt)] : []),
     ...(tracker ? [trackerReport('check', tracker)] : []),
     'Nothing was committed: the developer commits the registry and the copied host files.'
   ].join('\n')
