@@ -143,7 +143,7 @@ was checked in code where a file:line is given. `#n` is the port's issue that al
 | 10 | Land: N24, N25, N26 | `land.spec.mjs` |
 | 11 | Instructions and outputs: N14, N15, N16, N19 | `npm test` |
 | 12 | Tracker setup: N20, N21 | `discover.spec.mjs` |
-| 13 | The switch checklist (README) covers T1–T4: stage 1 renames the debt column and drops the example row, rewords the entry point for new changes, and disables the origin's tracker plugin | the comparison below |
+| 13 | The switch checklist (README): one stage after a freeze, the two-stage switch with T1–T4 as the fallback. The host repository declares the marketplace and enables the plugins in its committed project settings, so no developer installs a plugin by hand. A developer's migration guide: what each developer does after the switch merges, on their machine and for each of their changes in flight (developer decision, 2026-11-02) | the comparison below |
 | 14 | Version and release | `npm test`, `npm run parity -- <origin>` |
 
 ## Inputs for iteration 15
