@@ -148,24 +148,48 @@ was checked in code where a file:line is given. `#n` is the port's issue that al
 
 ## Inputs for iteration 15
 
-These replace or add to iteration 14's `## Inputs for iteration 15` where they differ.
+These replace or add to iteration 14's `## Inputs for iteration 15` where they differ. The switch
+is one stage after a freeze (developer decision, 2026-11-02; see the comparison below), not the
+two stages iteration 14 decided.
 
-1. Before init: rename the debt tables' last column `Jira` to `Tracker`, and replace the example
-   row of the root index's format description with a pointer to the port's debt format (T4).
-   Stage 1 also rewords the agent instructions so a new change starts with `/adf:propose` (T2),
-   and disables the origin's own tracker plugin (T3).
-2. Declare the marketplace by its git URL; install every plugin at `project` scope.
-3. `/adf:init`: integration branch `develop`; no other protected branch (the origin has no
+Freeze and switch:
+
+1. Collect the phase of every change in flight, the developers' worktrees included.
+2. Before the freeze, finish to archive with the origin's flow every change past verify. On
+   2026-11-02 these were `add-manual-backup-now`, `add-sync-backup-summary-toast` and
+   `close-backup-action-dialog-on-submit`.
+3. A change with a plan and apply records but no verify either finishes with the origin's flow
+   before the freeze, or continues with `/adf:verify` after it; the second path is not rehearsed.
+   On 2026-11-02: `enrich-backup-preview-diff`, `rework-firmware-upgrade-lock-and-cancel`.
+4. A change with only propose's artifacts continues with `/adf:apply` after the switch, the path
+   iteration 14's replay covered. On 2026-11-02: `add-firmware-distribution`,
+   `correct-backup-run-outcome-reporting`.
+5. Freeze: nobody commits to a change branch until step 12.
+6. One merge request switches: the `remove-first` removal (inventory above), the debt column
+   rename `Jira` to `Tracker` with the example row of the root index replaced by a pointer to the
+   port's debt format (T4, N10), and the plugin install.
+
+Setup, in the switch branch:
+
+7. Declare the marketplace by its git URL; install every plugin at `project` scope.
+8. `/adf:init`: integration branch `develop`; no other protected branch (the origin has no
    `main`); debt root `.claude/memory/tech-debt`; preparation `npm run build:shared` with the
    inputs init infers.
-4. The guide: whole-suite command `npx turbo run test --force`; `## Worktree copies` names `.env`.
-5. `/adf:add` once per plugin, each with its config on the first add (until N3):
-   `adf-postgres` before `adf-prisma`; `adf-jira` with the statuses the developer confirmed in the
-   rehearsal: `initial` Opened, `start` In Progress, `handoff` Review, `excluded` Resolved, Closed,
-   Review, Suspended.
-6. `/adf-jira:setup`; take the personal layer from the origin's existing one.
-7. Merge the setup into `develop` before the first propose (N5).
-8. Until N1 and N22 are fixed: reassign before start; at hand-off, the assignee last.
+9. The guide: whole-suite command `npx turbo run test --force`; `## Worktree copies` names `.env`.
+10. `/adf:add` once per plugin, each with its config on the first add (until N3):
+    `adf-postgres` before `adf-prisma`; `adf-jira` with the statuses the developer confirmed in
+    the rehearsal: `initial` Opened, `start` In Progress, `handoff` Review, `excluded` Resolved,
+    Closed, Review, Suspended.
+11. `/adf-jira:setup`; take the personal layer from the origin's existing one.
+
+After the switch:
+
+12. Merge the switch into `develop` before the first propose (N5); end the freeze.
+13. Merge `develop` into every change branch still open; never rebase a pushed branch. A change
+    forked from a branch other than `develop` gets a `base:` line in its `.openspec.yaml`.
+14. Continue each change with the `/adf:*` command of its next phase; `adf-gitlab` finalize
+    takes over its `opsx` Draft (D6).
+15. Until N1 and N22 are fixed: reassign before start; at hand-off, the assignee last.
 
 ## Comparison: remove-first and two-stage
 
@@ -192,7 +216,10 @@ Not rehearsed: a change of the origin's schema continuing after stage 1, and `fi
 over its Draft (D6). The clone's in-flight branches and Drafts belong to other developers. The
 risk stays for iteration 15; the replay's mid-flight run (iteration 14) is the only evidence.
 
-Recommendation for 15: the two-stage switch, with T2–T4 in stage 1.
+Decision for 15 (developer, 2026-11-02): one stage after a freeze. Work in flight stops at a
+phase boundary, the switch is the `remove-first` commit set this rehearsal drove end to end, and
+open change branches take `develop` by merge. Both flows never coexist, so T1–T5 do not arise.
+The two-stage switch stays the fallback where a freeze is not possible, with T2–T4 in stage 1.
 
 ## Result
 
