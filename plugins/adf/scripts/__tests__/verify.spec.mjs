@@ -381,6 +381,16 @@ test('out-of-plan exempts an approved skill edit only for its files under .claud
   assert.throws(() => runChecks(root, { change: CHANGE, skillEdits: ['0000000'] }), /--skill-edit 0000000 is not a commit/)
 })
 
+test('out-of-plan exempts the planning guide in the commit suite.mjs set makes, and only there', () => {
+  const { root } = host()
+  commit(root, { 'openspec/planning.md': '## Whole-suite command\n\n```sh\nnpm test\n```\n' }, 'docs(openspec): record the whole-suite command')
+  assert.equal(runIn(root)['out-of-plan'].verdict, 'pass')
+  commit(root, { 'openspec/planning.md': '## Whole-suite command\n\n```sh\nnpm test -- --all\n```\n', 'docs/notes.md': 'n\n' }, 'docs(openspec): record the whole-suite command')
+  assert.equal(runIn(root)['out-of-plan'].summary, '1 file(s) outside every task: docs/notes.md')
+  commit(root, { 'openspec/planning.md': '# edited by hand\n' }, 'docs: edit the guide')
+  assert.equal(runIn(root)['out-of-plan'].summary, '2 file(s) outside every task: openspec/planning.md, docs/notes.md')
+})
+
 test('out-of-plan warns naming an unparsed Files bullet', () => {
   const { root } = host({ plan: PLAN.replace('- Modify: `lib/`', '- Modify: lib/ without backticks\n- Modify: `lib/`') })
   const check = runIn(root)['out-of-plan']
@@ -779,14 +789,42 @@ test('skill-candidates lists the skill lines naming a changed path, symbol, comm
 test('developer writes its output file and a section the verdict reads', () => {
   const { root } = host()
   runChecks(root, { change: CHANGE })
-  judged(root)
   assert.throws(() => writeDeveloper(root, { change: CHANGE, text: ' ', verdict: 'pass' }), /empty/)
   assert.throws(() => writeDeveloper(root, { change: CHANGE, text: 'x', verdict: 'ok' }), /--verdict must be one of/)
   const section = writeDeveloper(root, { change: CHANGE, text: 'Ran the board flash.\nIt booted.', verdict: 'fail' })
   assert.equal(section.summary, 'Ran the board flash.')
   assert.equal(readFileSync(join(root, section.output), 'utf8'), 'Ran the board flash.\nIt booted.\n')
+  judged(root)
   const verdict = computeVerdict(root, { change: CHANGE })
   assert.deepEqual(verdict.failing, ['developer'])
+})
+
+test('a developer section recorded after c4 makes c4 stale: the verdict re-dispatches it, and its prompt reads the section', () => {
+  const { root } = host()
+  runChecks(root, { change: CHANGE })
+  judge(root, CHANGE, 'c8')
+  judge(root, CHANGE, 'c4', c4Reply({ exercised: [{ mechanism: 'greet', path: 'the HTTP path', exercisedBy: null }] }))
+  assert.equal(computeVerdict(root, { change: CHANGE }).line, 'Verdict: PASS WITH WARNINGS')
+  const section = writeDeveloper(root, { change: CHANGE, text: 'Three requests against the branch server.\nAll 200.', verdict: 'pass' })
+  assert.deepEqual(section.stale, ['c4'])
+  let result = computeVerdict(root, { change: CHANGE })
+  assert.deepEqual(result.redispatch, ['c4'])
+  assert.match(result.refusals[0], /^c4\.json is missing: .*developer section/)
+  assert.deepEqual(result.redispatchCommands.map((c) => c.id), ['c4'])
+  const { prompt } = dispatchCli(['prompt', '--change', CHANGE, '--role', 'verify', '--check', 'c4', '--root', root])
+  assert.ok(prompt.includes(join(verifyDir(root, CHANGE), 'developer.txt')), 'the c4 prompt names the developer section')
+  judge(root, CHANGE, 'c4', c4Reply({ exercised: [{ mechanism: 'greet', path: 'the HTTP path', exercisedBy: 'the developer check' }] }))
+  result = computeVerdict(root, { change: CHANGE })
+  assert.equal(result.line, 'Verdict: PASS')
+})
+
+test('with no developer section, the c4 prompt names none and c4 stands', () => {
+  const { root } = host()
+  runChecks(root, { change: CHANGE })
+  judged(root)
+  const { prompt } = dispatchCli(['prompt', '--change', CHANGE, '--role', 'verify', '--check', 'c4', '--root', root])
+  assert.ok(!prompt.includes(join(verifyDir(root, CHANGE), 'developer.txt')))
+  assert.equal(computeVerdict(root, { change: CHANGE }).line, 'Verdict: PASS')
 })
 
 test('assemble renders the record from the sections, ends on the verdict line and commits it alone', () => {

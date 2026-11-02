@@ -47,7 +47,8 @@ names is passed as the name; otherwise the active change answers in step 1.
    then step 4 again for `verify c8`; on a decline, record a ruling.
 
 6. **Run the checks that need the developer,** if the plan assigns any to verify, and record
-   each with `verify.mjs developer`.
+   each with `verify.mjs developer`. Recording one removes the `c4` section, so step 7 asks for
+   `verify c4` again, which then reads the developer's checks.
 
 7. **Compute the verdict.** `verify.mjs verdict --report`. On `refusals`, run the commands its
    `redispatchCommands`, `rulingCommands` and `rerunCommand` name, as the instruction states,

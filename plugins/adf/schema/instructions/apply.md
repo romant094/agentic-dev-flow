@@ -575,15 +575,19 @@ cannot be parsed and the two failure sets only partly overlap, `comparison` says
 from the output files, and say how. `--commit` commits the record and pushes the change branch
 once, as `group-finish` does; read its `push.state` as there.
 
-`status` `not-run` means the guide holds no command. Find one in the project's own files (its
-package manifest's scripts, a build file, its continuous-integration configuration), propose it
-to the developer, and on their confirmation record it and run again:
+`status` `not-run` means the guide holds no command. Nothing ran, so nothing is written,
+committed or pushed: there is no record, and `remedy` names the `set` call. Find a command in the
+project's own files (its package manifest's scripts, a build file, its continuous-integration
+configuration), propose it to the developer, and on their confirmation record it and run again:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" set --command "<command>" --root <root> --commit
 ```
 
 On a decline, run nothing and report that the whole suite was not run; never a silent pass.
+Verify then finds no record and runs the suite itself, which is `not-run` until the developer
+rules. The commit `set` makes writes the planning guide on the change branch; verify's
+`out-of-plan` check exempts the guide in a commit with that message, and nothing else.
 
 `status` `environment-broken` means the base measured its environment, not its code:
 `environment.reason` says whether it failed at scale with one environment error, or a package's

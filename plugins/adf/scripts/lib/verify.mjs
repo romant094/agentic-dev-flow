@@ -27,7 +27,8 @@ import { c4Lines, c8Lines, fence as fenceText } from './reply-render.mjs'
 import { callHook, CORE, hookProviders, knowledgePaths } from './roles.mjs'
 import { scopeNaming } from './scope.mjs'
 import { checkSpecsBase, extractRequirementsSection, MESSAGES, parseDeltaSpec, validateProject } from './specs.mjs'
-import { countsOf, readTestRecord } from './suite.mjs'
+import { PLANNING_FILE } from './guide.mjs'
+import { countsOf, readTestRecord, SET_MESSAGE } from './suite.mjs'
 import { claudeHome } from './superpowers.mjs'
 import { gitIn } from './workspace.mjs'
 
@@ -75,14 +76,15 @@ function attempt(fn) {
 // `git log --name-only` over a range: [{ sha, files }]. Renames are split into a deletion and
 // an addition, so both paths are accounted for.
 function commitsIn(git, range) {
-  const text = git('log', '--no-renames', '--name-only', '--format=%x1e%H', range)
+  const text = git('log', '--no-renames', '--name-only', '--format=%x1e%H%x1f%s', range)
   return text
     .split('\x1e')
     .map((chunk) => chunk.trim())
     .filter(Boolean)
     .map((chunk) => {
-      const [sha, ...files] = chunk.split('\n').map((l) => l.trim())
-      return { sha, files: files.filter(Boolean) }
+      const [head, ...files] = chunk.split('\n').map((l) => l.trim())
+      const [sha, subject = ''] = head.split('\x1f')
+      return { sha, subject, files: files.filter(Boolean) }
     })
 }
 
@@ -443,10 +445,13 @@ function checkOutOfPlan(root, change, git, base, skillEdits, knowledge) {
     return full
   })
   const findings = []
-  for (const { sha, files } of commitsIn(git, `${base.ref}..HEAD`)) {
+  for (const { sha, subject, files } of commitsIn(git, `${base.ref}..HEAD`)) {
     const skillEdit = exempt.includes(sha)
+    // The flow's own write of the planning guide: `suite.mjs set --commit` during apply.
+    const guideSet = subject === SET_MESSAGE
     for (const file of files) {
       if (file.startsWith(prefix)) continue
+      if (guideSet && file === PLANNING_FILE) continue
       if (skillEdit && file.startsWith('.claude/skills/')) continue
       if (allowed.some((re) => re.test(file))) continue
       if (known.some((re) => re.test(file))) continue
@@ -701,9 +706,11 @@ export function computeVerdict(rootArg, { change }) {
       rerun = true
     }
   }
+  const developer = existsSync(join(dir, `${DEVELOPER_ID}.json`))
   for (const id of REQUIRED_SECTIONS) {
     if (!sections.has(id) && !redispatch.has(id)) {
-      refusals.push(`${id}.json is missing: the verify ${id} dispatch has not written its section`)
+      const why = id === 'c4' && developer ? 'since the developer section was recorded, so it reads that section' : 'its section'
+      refusals.push(`${id}.json is missing: the verify ${id} dispatch has not written ${why}`)
       redispatch.add(id)
     }
   }
@@ -783,6 +790,8 @@ function nextStep(result) {
 
 // What was run with the developer and what it showed: `<verify>/developer.txt`, verbatim, and
 // its section `<verify>/developer.json`. The verdict is the one agreed with the developer.
+// A c4 section written before it judged what was exercised without it, so it is removed, and the
+// verdict re-dispatches c4, whose prompt names developer.txt: `stale` lists what was removed.
 export function writeDeveloper(rootArg, { change, text, verdict, summary }) {
   const root = resolve(rootArg)
   if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
@@ -800,7 +809,10 @@ export function writeDeveloper(rootArg, { change, text, verdict, summary }) {
     output: relOutput(change, `${DEVELOPER_ID}.txt`)
   }
   writeFileSync(join(dir, `${DEVELOPER_ID}.json`), `${JSON.stringify(section, null, 2)}\n`)
-  return { ok: true, file: relOutput(change, `${DEVELOPER_ID}.json`), ...section }
+  const c4 = join(dir, 'c4.json')
+  const stale = existsSync(c4) ? ['c4'] : []
+  rmSync(c4, { force: true })
+  return { ok: true, file: relOutput(change, `${DEVELOPER_ID}.json`), ...section, stale }
 }
 
 // ---------------------------------------------------------------- stale-skill candidates

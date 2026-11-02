@@ -23,4 +23,6 @@ names. `proseEdits` answers each entry of the Prose edits field once, with the r
 gives, or null when it gives none. `removalAccounting` answers each entry of the Removed or renamed
 field once, by its operation and name: the disposition, null when there is none, whether the code
 holds it, and whether the old path is still reachable. `exercised` gives one entry per path of a
-new mechanism, with what exercised it, or null when nothing did.
+new mechanism, with what exercised it, or null when nothing did. When the files in scope name
+`developer.txt`, the checks run with the developer it records are recorded runs: a path one of
+them exercised names that check.
