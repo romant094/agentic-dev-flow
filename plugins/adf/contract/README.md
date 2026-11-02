@@ -268,7 +268,9 @@ call order for hooks; a role has at most one provider. `points` is written by `/
 the declaration's `provides`: it lets the core name an absent entry for the points it provides
 without reading its declaration. An entry with no `points` (written before they were) is named
 for no point, and the registry check still warns about it. `config` is opaque to the core and is
-passed to the plugin's operations.
+passed to the plugin's operations. `extensions.mjs config <name or id> --config '<json>'`
+replaces an enabled entry's `config` in place, so its position, the hooks' call order, is kept;
+`config` and `remove` take a plugin's name or its id.
 
 `metrics.pricesUrl` (optional) is the page archive fetches the model price table from, an http
 or https URL; without it the core uses its default, and `/adf:init` does not ask for it:
@@ -312,3 +314,9 @@ to write there while git does not ignore the path.
 
 `hostFiles` (optional, since 1.1) are copied into the host by `/adf:add` when missing; a host
 that edited its copy keeps it.
+
+`requiredConfig` (optional) lists the keys of the registry entry's `config` the plugin's
+operations need, for example `["prefix", "url"]`. The core does not check them when it calls the
+plugin: the plugin validates its own config. `/adf:add` and `extensions.mjs config` name the keys
+the config lacks as a warning and never refuse, because an operation that needs none of them
+still works. A core that does not know the field ignores it.

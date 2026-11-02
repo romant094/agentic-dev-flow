@@ -16,7 +16,7 @@ Install it in the host project, then add it to the registry with `/adf:add`:
 | Operation | Does |
 |---|---|
 | `provision` | For a `change` or `group` worktree whose `needs` names `database`: creates the database `<prefix>_<branch slug>_<hash>`, then rewrites `config.url.key` in the worktree's copy of `config.url.file` to point at it. A database that already exists is kept, and the env file is still rewritten. Every other kind, or no `database` in `needs`: done, nothing created, a note says why. |
-| `teardown` | For a `change` or `group` worktree: `DROP DATABASE IF EXISTS "<name>" WITH (FORCE)`, the name recomputed from `branch`. A `base-check` or `proof` worktree: done, nothing dropped. |
+| `teardown` | For a `change` or `group` worktree: `DROP DATABASE IF EXISTS "<name>" WITH (FORCE)`, the name recomputed from `branch`. A `base-check` or `proof` worktree, or no config: done, nothing dropped. |
 
 The name: the branch in lower case, every run of other characters as `_`, after
 `config.prefix` and `_`; cut so that the whole name, with `_` and the first 8 hex digits of the
@@ -36,7 +36,13 @@ the main checkout's `config.url.file`, with the database `postgres`. Nothing new
 | `url.key` | yes | the variable in it that holds the connection string (`postgres://` or `postgresql://`) |
 | `exec` | no | `{ "docker": "<container>" }` runs `psql` in that container; `"local"` (the default) runs the host's `psql` |
 
-A missing or malformed field is refused, and the error names it. An example, for a project
+The config is checked only when a database is needed: a provision whose `kind` or `needs` asks
+for none is done whatever the config holds, and a teardown with no config (`{}`) is done with
+nothing dropped, since provision made no database. When a database is needed, a missing or
+malformed field is refused, and the error names it. The declaration lists `prefix` and `url` as
+`requiredConfig`, so `/adf:add` warns when the config lacks them. To set or change the config
+of the enabled plugin, keeping its place in the registry:
+`extensions.mjs config adf-postgres --config '<json>'` (through `/adf:add` with a config). An example, for a project
 whose Postgres runs in the Docker container `db` and whose `.env` holds `DATABASE_URL`:
 
 ```json

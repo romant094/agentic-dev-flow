@@ -13,6 +13,7 @@ import {
   initRegistry,
   addExtension,
   removeExtension,
+  configExtension,
   checkRegistry,
   validateDebtSettings,
   readDebtRoot,
@@ -135,6 +136,65 @@ test('removeExtension takes the plugin out by name', () => {
   assert.equal(removeExtension(root, 'sample').path, 'plugins/sample')
   assert.deepEqual(readRegistry(root).extensions, [])
   assert.throws(() => removeExtension(root, 'sample'), /not enabled/)
+})
+
+test('validateDeclaration refuses a requiredConfig that is not a list of names', () => {
+  assert.deepEqual(validateDeclaration({ name: 'sample', contract: '1.0', provides: {}, requiredConfig: ['prefix'] }, []), [])
+  assert.match(validateDeclaration({ name: 'sample', contract: '1.0', provides: {}, requiredConfig: 'prefix' }, [])[0], /requiredConfig/)
+})
+
+test('addExtension names the required config keys the config lacks, and still enables the plugin', () => {
+  const root = host()
+  initRegistry(root, CORE)
+  plugin(root, 'db', { name: 'db', contract: '1.0', provides: {}, requiredConfig: ['prefix', 'url'] })
+  plugin(root, 'set', { name: 'set', contract: '1.0', provides: {}, requiredConfig: ['prefix'] })
+  assert.deepEqual(addExtension(root, 'plugins/db', { coreContract: CORE, points: [] }).missingConfig, ['prefix', 'url'])
+  assert.deepEqual(addExtension(root, 'plugins/set', { config: { prefix: 'x' }, coreContract: CORE, points: [] }).missingConfig, [])
+  assert.equal(readRegistry(root).extensions.length, 2)
+})
+
+test('configExtension replaces an enabled plugin\'s config in place, by name or path', () => {
+  const root = host()
+  initRegistry(root, CORE)
+  for (const name of ['first', 'second', 'third']) plugin(root, name, { name, contract: '1.0', provides: {}, requiredConfig: ['a'] })
+  for (const name of ['first', 'second', 'third']) addExtension(root, `plugins/${name}`, { config: { old: true }, coreContract: CORE, points: [] })
+  const result = configExtension(root, 'second', { config: { a: 1 } })
+  assert.equal(result.name, 'second')
+  assert.equal(result.index, 1)
+  assert.deepEqual(result.missingConfig, [])
+  assert.deepEqual(
+    readRegistry(root).extensions.map((e) => [e.path, e.config]),
+    [['plugins/first', { old: true }], ['plugins/second', { a: 1 }], ['plugins/third', { old: true }]],
+  )
+  assert.deepEqual(configExtension(root, 'first', { config: {} }).missingConfig, ['a'])
+})
+
+test('configExtension refuses a plugin that is not enabled and a config that is not an object', () => {
+  const root = host()
+  initRegistry(root, CORE)
+  plugin(root, 'sample', { name: 'sample', contract: '1.0', provides: {} })
+  assert.throws(() => configExtension(root, 'sample', { config: { a: 1 } }), /sample is not enabled/)
+  addExtension(root, 'plugins/sample', { coreContract: CORE, points: [] })
+  for (const config of [undefined, null, [], 'x']) {
+    assert.throws(() => configExtension(root, 'sample', { config }), /config must be a JSON object/)
+  }
+  assert.deepEqual(readRegistry(root).extensions, [{ path: 'plugins/sample', points: [] }])
+})
+
+test('removeExtension and configExtension take the full id of an entry whose plugin is not installed', () => {
+  const root = host()
+  initRegistry(root, CORE)
+  const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
+  writeFileSync(
+    join(root, REGISTRY_PATH),
+    JSON.stringify({ contract: CORE, extensions: [{ plugin: 'gone@mk', points: [] }, { plugin: 'other@mk', points: [] }] }),
+  )
+  assert.equal(configExtension(root, 'gone@mk', { config: { a: 1 }, home }).index, 0)
+  assert.deepEqual(readRegistry(root).extensions[0], { plugin: 'gone@mk', points: [], config: { a: 1 } })
+  assert.throws(() => removeExtension(root, 'gone@elsewhere', { home }), /gone@elsewhere is not enabled/)
+  assert.equal(removeExtension(root, 'gone@mk', { home }).plugin, 'gone@mk')
+  assert.equal(removeExtension(root, 'other', { home }).plugin, 'other@mk')
+  assert.deepEqual(readRegistry(root).extensions, [])
 })
 
 test('checkRegistry reports a plugin whose directory disappeared', () => {

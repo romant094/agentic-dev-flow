@@ -65,7 +65,7 @@ test('init, add, check, remove on a fresh host', () => {
   const added = adf(root, 'add', 'plugins/sample', '--config', '{"greeting":"hi"}')
   assert.equal(added.code, 0)
   const { check, report, ...enabled } = added.out
-  assert.deepEqual(enabled, { name: 'sample', points: [], hostFiles: { copied: [], kept: [] } })
+  assert.deepEqual(enabled, { name: 'sample', points: [], hostFiles: { copied: [], kept: [] }, missingConfig: [] })
   assert.deepEqual(check.plugins, [{ name: 'sample', path: 'plugins/sample', points: [] }])
   assert.match(report, /^Enabled: sample \(no points\)\n[\s\S]*Registry check: ok/)
 
@@ -127,7 +127,7 @@ test('an installed plugin is enabled by id, its host files copied once, and a ro
   adfAt(root, forgeHome, 'branches', '--integration', 'develop')
   const added = adfAt(root, forgeHome, 'add', 'forge-a@mk')
   assert.equal(added.code, 0)
-  assert.deepEqual({ ...added.out, check: undefined, report: undefined }, { name: 'forge-a', points: ['forge'], hostFiles: { copied: ['.forge/mr.md'], kept: [] }, check: undefined, report: undefined })
+  assert.deepEqual({ ...added.out, check: undefined, report: undefined }, { name: 'forge-a', points: ['forge'], hostFiles: { copied: ['.forge/mr.md'], kept: [] }, missingConfig: [], check: undefined, report: undefined })
   assert.equal(added.out.check.ok, true)
   assert.equal(existsSync(join(root, '.forge', 'mr.md')), true)
   const registry = JSON.parse(readFileSync(join(root, '.claude', 'adf-extensions.json'), 'utf8'))
@@ -137,6 +137,42 @@ test('an installed plugin is enabled by id, its host files copied once, and a ro
   assert.match(adfAt(root, forgeHome, 'add', 'missing@mk').out.error, /not installed for this project/)
   assert.equal(adfAt(root, forgeHome, 'remove', 'forge-a').code, 0)
   assert.deepEqual(adfAt(root, forgeHome, 'add', 'forge-a@mk').out.hostFiles, { copied: [], kept: ['.forge/mr.md'] })
+  assert.equal(adfAt(root, forgeHome, 'remove', 'forge-a@mk').code, 0)
+})
+
+test('config replaces an enabled plugin\'s config in place by name or id, and refuses one not enabled', () => {
+  const root = host()
+  const forgeHome = installedForge(root)
+  adfAt(root, forgeHome, 'init')
+  adfAt(root, forgeHome, 'branches', '--integration', 'develop')
+  adfAt(root, forgeHome, 'add', 'forge-a@mk', '--config', '{"host":"old"}')
+  adfAt(root, forgeHome, 'add', 'plugins/sample')
+  const registry = () => JSON.parse(readFileSync(join(root, '.claude', 'adf-extensions.json'), 'utf8')).extensions
+  const byId = adfAt(root, forgeHome, 'config', 'forge-a@mk', '--config', '{"host":"new"}')
+  assert.equal(byId.code, 0)
+  assert.match(byId.out.report, /^Configured: forge-a \(position 1 of 2, kept\)\n[\s\S]*Registry check: ok/)
+  assert.deepEqual(registry(), [{ plugin: 'forge-a@mk', points: ['forge'], config: { host: 'new' } }, { path: 'plugins/sample', points: [] }])
+  assert.equal(adfAt(root, forgeHome, 'config', 'forge-a', '--config', '{"host":"short"}').code, 0)
+  assert.deepEqual(registry()[0].config, { host: 'short' })
+  const absent = adfAt(root, forgeHome, 'config', 'forge-b@mk', '--config', '{}')
+  assert.equal(absent.code, 1)
+  assert.match(absent.out.error, /forge-b@mk is not enabled/)
+  assert.match(adfAt(root, forgeHome, 'config', 'forge-a').out.error, /usage: config/)
+})
+
+test('add and config warn about the required config a plugin lacks', () => {
+  const root = host()
+  mkdirSync(join(root, 'plugins', 'db'), { recursive: true })
+  writeFileSync(join(root, 'plugins', 'db', 'adf-extension.json'), JSON.stringify({ name: 'db', contract: '1.0', provides: {}, requiredConfig: ['prefix', 'url'] }))
+  adf(root, 'init')
+  adf(root, 'branches', '--integration', 'develop')
+  const added = adf(root, 'add', 'plugins/db', '--config', '{"prefix":"x"}')
+  assert.equal(added.code, 0)
+  assert.deepEqual(added.out.missingConfig, ['url'])
+  assert.match(added.out.report, /Warning: the config has no url; an operation that needs it refuses until extensions\.mjs config sets it/)
+  const configured = adf(root, 'config', 'db', '--config', '{"prefix":"x","url":"y"}')
+  assert.deepEqual(configured.out.missingConfig, [])
+  assert.doesNotMatch(configured.out.report, /Warning: the config/)
 })
 
 test('the review prompt goes to the registry\'s review.prompt, and an existing one is never overwritten', () => {

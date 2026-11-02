@@ -1,9 +1,10 @@
 ---
 description: Disable an ADF plugin in this project. Triggers may be phrased in any language.
-argument-hint: <plugin name>
+argument-hint: <plugin name or id>
 ---
 
-Disable the plugin named in the arguments. The plugin's files stay where they are; only its
+Disable the plugin named in the arguments, by its name (`adf-jira`) or its id
+(`adf-jira@agentic-dev-flow`). The plugin's files stay where they are; only its
 registry entry goes.
 
 1. If the developer gave no name, run
@@ -13,7 +14,7 @@ registry entry goes.
 2. Run:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/extensions.mjs" remove "<plugin name>"
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/extensions.mjs" remove "<plugin name or id>"
    ```
 
    On exit code 1, show the `error` field to the developer and stop.

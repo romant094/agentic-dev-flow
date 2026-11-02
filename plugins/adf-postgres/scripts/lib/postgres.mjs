@@ -258,13 +258,15 @@ const startHint = (exec) =>
 
 // ---------------------------------------------------------------- operations
 
+// The config is checked only once a database is needed: a project that enabled the plugin but
+// has not configured it yet still provisions every change that needs none.
 function provision({ run, root, config, input }) {
-  const cfg = readConfig(config)
-  if (cfg.problems.length) return refused(`${cfg.problems.join('; ')}; nothing was created.`)
   const problems = readInput(input, ['needs'])
   if (problems.length) return refused(`${problems.join('; ')}; nothing was created.`)
   if (!WITH_DATABASE.includes(input.kind)) return done([], [`a ${input.kind} worktree gets no database.`])
   if (!input.needs.includes('database')) return done([], ['needs does not name database, so no database was made.'])
+  const cfg = readConfig(config)
+  if (cfg.problems.length) return refused(`${cfg.problems.join('; ')}; nothing was created.`)
   if (!isText(input.branch)) {
     return refused('branch is null (a detached HEAD?): there is no branch to name a database after; nothing was created.')
   }
@@ -318,6 +320,8 @@ function provision({ run, root, config, input }) {
 }
 
 function teardown({ run, root, config, input }) {
+  // With no config, provision made no database, so there is none to drop.
+  if (isObject(config) && Object.keys(config).length === 0) return done([], ['no config is set, so this plugin made no database to drop.'])
   const cfg = readConfig(config)
   if (cfg.problems.length) return refused(`${cfg.problems.join('; ')}; nothing was dropped.`)
   const problems = readInput(input, [])

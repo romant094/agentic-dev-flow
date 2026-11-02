@@ -70,8 +70,8 @@ Then, in the host project:
 /adf:archive [change]
 /adf:land <change>
 /adf:retro [--change <name> | --from <date> --to <date>]
-/adf:add <plugin id or path>
-/adf:remove <plugin name>
+/adf:add <plugin id or path> [config as JSON]
+/adf:remove <plugin name or id>
 ```
 
 A plugin is installed for the project, then enabled by its id. For example, GitLab merge
@@ -88,6 +88,9 @@ claude plugin install adf-english-check@agentic-dev-flow --scope project
 The English check works as soon as it is installed: it is a Claude Code hook on every agent's
 `git commit`. `/adf:add adf-english-check@agentic-dev-flow '{"include":[...]}'` only changes its
 scope (`plugins/adf-english-check/README.md`).
+
+`/adf:add` with a configuration on a plugin that is already enabled replaces its configuration
+in place (`extensions.mjs config`), keeping its place in the registry.
 
 A project on npm workspaces, PostgreSQL or Prisma provisions every worktree the flow makes
 with the stack plugins, enabled in this order, each with its project values in `config`:

@@ -13,11 +13,18 @@
 //   extensions.mjs add <id|path> [--config J]
 //                                            enable a plugin, installed (name@marketplace)
 //                                            or at a path; copy the host files it declares
-//   extensions.mjs remove <name>             disable a plugin
+//   extensions.mjs config <name|id> --config J
+//                                            replace an enabled plugin's config, keeping its
+//                                            place in the registry
+//   extensions.mjs remove <name|id>          disable a plugin
 //   extensions.mjs check                     validate the registry and every plugin
 //
-// init, branches, add and remove also run `check` and return it with `report`, the rendered
-// text the command shows. add and remove change the registry before the check, so a failing
+// config and remove name a plugin by its name or its id (`name@marketplace`). add and config
+// return `missingConfig`, the keys of the declaration's `requiredConfig` the config lacks, as
+// a warning in `report`, never a refusal.
+//
+// init, branches, add, config and remove also run `check` and return it with `report`, the
+// rendered text the command shows. add, config and remove change the registry before the check, so a failing
 // check after them is reported, not refused. When that check passes and a plugin provides the
 // tracker, init and add also run the tracker's `check` and return it as `tracker`, its notes
 // in `report`; a degraded or refused tracker is reported, never a failure.
@@ -30,7 +37,7 @@ import { fileURLToPath } from 'node:url'
 import { declareInHost, marketplaceSource } from './lib/host-settings.mjs'
 import { detectIntegration, readBranches, setBranches } from './lib/branches.mjs'
 import { createPlanningGuide, createReviewPrompt, ignoreLocalDirs } from './lib/host-files.mjs'
-import { addExtension, addReport, branchesReport, checkRegistry, initRegistry, initReport, removeExtension, removeReport } from './lib/registry.mjs'
+import { addExtension, addReport, branchesReport, checkRegistry, configExtension, configReport, initRegistry, initReport, removeExtension, removeReport } from './lib/registry.mjs'
 import { checkSuperpowers, claudeHome } from './lib/superpowers.mjs'
 import { trackerCall } from './lib/tracker.mjs'
 import { isMain } from './lib/main.mjs'
@@ -90,8 +97,14 @@ export function run(argv) {
       const tracker = trackerCheck(root, check)
       return { ...added, check, ...tracker, report: addReport(added, check, tracker.tracker) }
     }
+    case 'config': {
+      if (!target || config === undefined) throw new Error('usage: config <plugin name or id> --config <json>')
+      const configured = configExtension(root, target, { config: JSON.parse(config), home })
+      const check = checkRegistry(root, { ...core, home })
+      return { ...configured, check, report: configReport(configured, check) }
+    }
     case 'remove': {
-      if (!target) throw new Error('usage: remove <plugin name>')
+      if (!target) throw new Error('usage: remove <plugin name or id>')
       const removed = removeExtension(root, target, { home })
       const check = checkRegistry(root, { ...core, home })
       return { ...removed, check, report: removeReport(removed, check) }
@@ -99,7 +112,7 @@ export function run(argv) {
     case 'check':
       return checkRegistry(root, { ...core, home })
     default:
-      throw new Error('usage: extensions.mjs init|branches|add|remove|check [--root <dir>]')
+      throw new Error('usage: extensions.mjs init|branches|add|config|remove|check [--root <dir>]')
   }
 }
 
