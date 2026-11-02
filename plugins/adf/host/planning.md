@@ -25,9 +25,9 @@ verification runs. -->
 ## Whole-suite command
 
 <!-- The one command that runs every test of the project with no cache, so a pass proves the
-current code. Apply runs it once, at the end. When this section is empty, apply finds the
-command in the project's own files, proposes it, and writes it here once the developer
-confirms. -->
+current code. Apply runs it once, at the end. /adf:init proposes one from the CI configuration
+and the package scripts; when this section is still empty, apply finds the command in the
+project's own files, proposes it, and writes it here once the developer confirms. -->
 
 ## Fresh-run proof
 
@@ -51,7 +51,8 @@ path. Delete it to leave that proof to the task's reviewer. -->
 <!-- The untracked files every worktree the flow makes needs from the main checkout, each path in
 backticks, such as a local environment file. Each is copied when the worktree has none, never
 linked; a path git does not ignore is skipped. The project's plugins adjust the copies, for
-example a database address. -->
+example a database address. /adf:init proposes the `.env*` files git ignores in the main
+checkout and writes the ones the developer confirms. -->
 
 ## Worktree preparation
 

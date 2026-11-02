@@ -287,7 +287,9 @@ or https URL; without it the core uses its default, and `/adf:init` does not ask
   (`metrics-format.md`), written by archive's `metrics` step.
 - `.adf/retro/<id>.md` and `.json`, the id `<YYYY-MM-DD>-window`, `<YYYY-MM-DD>-period` or
   `<YYYY-MM-DD>-<change>`: each retrospective's report and its sidecar; the newest window
-  sidecar on the integration branch starts the next window.
+  sidecar on the integration branch starts the next window. In a host that archived changes
+  before ADF, `/adf:init` writes a window sidecar with only a cut-off, the integration branch's
+  tip, so those changes stay out of the first window and the corpus lint's count.
 
 Everything else in `.adf/` is the extension plugins' local work directory, in the main
 checkout and never committed: a plugin keeps its local files in a directory of its own there

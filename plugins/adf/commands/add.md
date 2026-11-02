@@ -43,3 +43,8 @@ configuration replaces its current one in place (step 3).
 
 Do not commit: the developer commits the registry and the copied host files with the rest of
 their change.
+
+End with this note to the developer: merge the registry change into the integration branch
+before the next `/adf:propose`. A change's provisioning reads the registry from the change
+worktree's own copy, so a change already open sees the plugin, or its new configuration, only
+when the integration branch is merged into its branch.
