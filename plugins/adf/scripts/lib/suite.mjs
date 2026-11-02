@@ -49,6 +49,7 @@
 import { spawnSync } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { changeDir } from './changes.mjs'
 import { addBaseCheck, removeBaseCheck } from './groups.mjs'
 import { mainCheckout } from './installed.mjs'
@@ -73,6 +74,9 @@ export const DEFAULT_TIMEOUT_MINUTES = 30
 // The messages of the commits `suite.mjs set --commit` and `suite.mjs run --record --commit` make.
 export const SET_MESSAGE = 'docs(openspec): record the whole-suite command'
 export const recordMessage = (change) => `docs(openspec): record the whole-suite run of ${change}`
+// What a run with no command in the guide replies: how to set one.
+export const setRemedy = (root) =>
+  `find the project's whole-suite command, confirm it with the developer, record it with \`node "${join(dirname(fileURLToPath(import.meta.url)), '..', 'suite.mjs')}" set --command "<command>" --root "${root}" --commit\`, and run again`
 
 const toPosix = (p) => p.split('\\').join('/')
 const rel = (root, file) => toPosix(relative(root, file))
@@ -530,7 +534,9 @@ export function runSuite(rootArg, { change, baseCheck: withBaseArg = false, reco
   delete out.quote
   delete out.now
   out.ok = !result.blocking
-  if (record) {
+  // No command means nothing ran: a record would say only that, and apply would commit it.
+  if (result.status === 'not-run') out.remedy = setRemedy(root)
+  if (record && result.status !== 'not-run') {
     const file = join(changeDir(root, change), RECORD_FILE)
     writeFileSync(file, recordText(result))
     out.record = rel(root, file)

@@ -70,8 +70,9 @@ pass. What resolves each check:
   stopped, most likely at a blocked group; it fails whatever the other checks say. Resolve it
   through apply, never by deleting it from verify.
 - `out-of-plan`: a file that no task's `**Files:**` block names, outside the change's own
-  directory, the registry's `outsidePlan` globs and the approved skill edits, fails with its
-  commit. The resolution is a plan amendment the developer approves, an "Added during apply"
+  directory, the registry's `outsidePlan` globs, the approved skill edits and the planning guide
+  in a commit `suite.mjs set --commit` made (its message `docs(openspec): record the whole-suite
+  command`), fails with its commit. The resolution is a plan amendment the developer approves, an "Added during apply"
   line as the apply instruction states it, or a ruling; never a rewritten verdict. An unparsed
   `**Files:**` bullet is a warning: its path is not in backticks, so the check could not read it.
 - `ext:<plugin>:<id>`: a check a project plugin returns through the `verify-check` hook, after
@@ -282,7 +283,9 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" developer --change <change> --te
 ```
 
 It copies the text verbatim to `<verify>developer.txt` and writes its section, which does not
-replace a check.
+replace a check. A developer check is a recorded run, so it can exercise what `verify c4` found
+nothing exercised: recording it removes the `c4` section (`stale` names it), the verdict asks for
+`verify c4` again, and that dispatch's prompt names `<verify>developer.txt` among its files.
 
 **The verdict is computed by script.**
 

@@ -425,7 +425,9 @@ function promptFor(inputs, plan, values, root, planText, main, cut) {
     fields.push(['Base', base], ['Range', base && head ? `${base}..${head}` : undefined], ['Run record', join(verify, 'run.json')])
     const changeDir = join(root, 'openspec', 'changes', change)
     if (inputs.check === 'c4') {
-      fields.push(['Files in scope', [join(changeDir, 'design.md'), join(changeDir, 'specs'), join(changeDir, 'tasks.md'), join(changeDir, 'plan.md')]])
+      // The checks run with the developer are recorded runs: what they exercised counts.
+      const developer = join(verify, 'developer.txt')
+      fields.push(['Files in scope', [join(changeDir, 'design.md'), join(changeDir, 'specs'), join(changeDir, 'tasks.md'), join(changeDir, 'plan.md'), ...(existsSync(developer) ? [developer] : [])]])
       // The lists the reply answers entry by entry, from the script (lib/verify-reply.mjs).
       let listed
       try {

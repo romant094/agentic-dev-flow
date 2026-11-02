@@ -50,7 +50,8 @@
 //       section
 //   verify.mjs developer --change <name> --text-file <file> --verdict <pass|warn|fail|not-run>
 //                        [--summary <text>] [--root <dir>]
-//       write verify/developer.txt (the file's text, verbatim) and its section developer.json
+//       write verify/developer.txt (the file's text, verbatim) and its section developer.json;
+//       remove the c4 section, which judged what was exercised without it, and list it as `stale`
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { run as dispatchCli } from './dispatch.mjs'

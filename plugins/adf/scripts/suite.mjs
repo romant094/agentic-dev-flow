@@ -19,7 +19,7 @@
 //       removes that worktree (never forced) to tell a pre-existing failure from a new one
 //       --record writes openspec/changes/<change>/.apply-test-record.md, apply's final commit;
 //       --commit then commits that record alone through lib/commit.mjs with the message
-//       recordMessage(<change>), whatever the run's status, and pushes the change branch once
+//       recordMessage(<change>), whatever the run's status but not-run, and pushes the change branch once
 //       through the forge role as group-finish does (lib/groups.mjs pushChange): { ..., commit,
 //       push: { state, hint?, error? } }; state `none` means no forge plugin is enabled. With no
 //       branch policy the commit refuses, so nothing is committed and nothing pushed
@@ -36,7 +36,9 @@
 //       the .json beside it: { ok: true, file, command, exit, counts | null, failing, outputFile,
 //       worktree, sha, timedOut?, error? }. Exit 0 whenever the run happened, failing tests and
 //       a timeout included: the record says so. Exit 1 on a refusal (no change, no worktree)
-//   With no command in the guide, run reports `status: "not-run"` with the reason; never a pass.
+//   With no command in the guide, run reports `status: "not-run"` with the reason and `remedy`,
+//   the `set` call that records one; never a pass. It writes no record, so --commit commits and
+//   pushes nothing.
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -117,7 +119,7 @@ export function run(argv, { cwd = process.cwd() } = {}) {
       if (values.section !== undefined && !SECTIONS.includes(values.section)) throw new UsageError(`--section must be one of ${SECTIONS.join(', ')}`)
       const timeoutMinutes = timeoutOf(values)
       const out = runSuite(root, { change: values.change, baseCheck: Boolean(values['base-check']), record: Boolean(values.record), section: values.section ?? null, timeoutMinutes })
-      if (!values.commit) return out
+      if (!values.commit || out.status === 'not-run') return out
       const commit = commitPaths(root, { only: [out.record], message: recordMessage(values.change) }).commit
       // The commit checks what the push needs (a named branch, the branch policy), so a push
       // that could not start has already stopped the commit.
