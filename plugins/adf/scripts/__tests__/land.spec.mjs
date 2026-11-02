@@ -238,7 +238,7 @@ test('with no forge, git ancestry decides merged; each step resumes; a partial i
 
   const waiting = land(root, 'wait')
   assert.deepEqual([waiting.ok, waiting.state, waiting.next], [true, 'waiting', 'wait'])
-  assert.match(waiting.report, /^Merge request: none; no forge plugin is enabled, so nothing was pushed and no merge request exists\.\nNot merged: fix\/PROJ-1\/fix-pool is in none of develop, decided from git ancestry\.$/)
+  assert.match(waiting.report, /^Merge request: none; no forge plugin is enabled, so nothing was pushed and no merge request exists\.\nNot merged: fix\/PROJ-1\/fix-pool is in none of develop, decided from git ancestry and patch ids\.$/)
   assert.throws(() => land(root, 'comment-input'), /comment-input waits for wait/)
   assert.match(land(root, 'report').report, /Next: land\.mjs wait --change fix-pool, once the merge request is merged\./)
 
@@ -302,6 +302,21 @@ test('mergedByAncestry: a fast-forward is merged at the tip, origin/<base> count
   assert.throws(() => mergedByAncestry(root, { branch: 'feat/gone', base: 'develop' }), /the branch feat\/gone is not in/)
 })
 
+test('with no forge, a squash merge is merged when its patch id matches the branch\'s change; the squash commit is the merge commit', () => {
+  const root = landHost({ merged: false })
+  land(root, 'check')
+  assert.equal(land(root, 'wait').state, 'waiting')
+  git(root, 'merge', '-q', '--squash', BRANCH)
+  git(root, 'commit', '-q', '-m', 'fix(pool): close the old socket (squashed)')
+  const squash = git(root, 'rev-parse', 'HEAD')
+  const by = mergedByAncestry(root, { branch: BRANCH, base: 'develop' })
+  assert.deepEqual([by.merged, by.ref, by.mergeCommit, by.squash], [true, 'develop', squash, true])
+  const merged = land(root, 'wait')
+  assert.deepEqual([merged.state, merged.detail.via, merged.detail.mergeCommit], ['done', 'patch-id', squash])
+  assert.match(merged.report, /\nMerged: fix\/PROJ-1\/fix-pool is in develop as the squash commit [0-9a-f]{7}, decided from patch ids\.$/)
+  assert.equal(land(root, 'comment-input').dispatches.length, 2)
+})
+
 // ---------------------------------------------------------------- with a forge
 
 test('with a forge: open and draft wait, closed stops land, merged passes the merge request link to the hand-off', () => {
@@ -339,6 +354,53 @@ test('a forge that does not provide state falls back to git ancestry and keeps t
   land(degraded, 'check')
   const out = land(degraded, 'wait')
   assert.deepEqual([out.ok, out.state, out.hint, out.next], [true, 'degraded', 'run glab auth login', 'wait'])
+})
+
+test('comment-input reads the archived change and the debt tree from the merge commit, fetched, when the main checkout lacks them; nothing is pulled', () => {
+  const scope = { ...SCOPE, items: [SCOPE.items[0], debtItem('snmp-01', 'PROJ-7')] }
+  const tree = { 'index.md': DEBT_ROOT, 'snmp/index.md': debtIndex([['snmp-05', 'PROJ-7']]), 'snmp/resolved.md': debtResolved([['snmp-01', 'PROJ-7']]) }
+  const root = landHost({ merged: false, forge: '1.7', scope, tree })
+  const origin = realpathSync(mkdtempSync(join(tmpdir(), 'adf-origin-')))
+  git(origin, 'init', '-q', '--bare')
+  git(root, 'remote', 'add', 'origin', origin)
+  git(root, 'push', '-q', 'origin', 'develop', BRANCH)
+  const other = join(realpathSync(mkdtempSync(join(tmpdir(), 'adf-other-'))), 'clone')
+  git(tmpdir(), 'clone', '-q', '-b', 'develop', origin, other)
+  git(other, 'config', 'user.email', 't@example.com')
+  git(other, 'config', 'user.name', 'T')
+  git(other, 'merge', '-q', '--no-ff', '--no-edit', `origin/${BRANCH}`)
+  git(other, 'push', '-q', 'origin', 'develop')
+  const merge = git(other, 'rev-parse', 'HEAD')
+  const before = git(root, 'rev-parse', 'develop')
+  setConfig(root, 'plugins/f', { state: { state: 'done', number: 7, url: MR, status: 'merged', mergedAt: '2026-10-20T10:00:00Z', mergeCommit: merge } })
+  land(root, 'check')
+  assert.equal(land(root, 'wait').state, 'done')
+  const input = land(root, 'comment-input')
+  const snapshot = join(root, '.superpowers', 'sdd', CHANGE, 'land', 'merged')
+  assert.deepEqual([input.detail.changeDir, input.detail.readFrom], [join(snapshot, ARCHIVED), merge])
+  assert.deepEqual(input.dispatches.map((d) => [d.key, d.state]), [['PROJ-1', 'taken'], ['PROJ-7', 'partial']], 'the debt tree of the merge commit')
+  const one = JSON.parse(readFileSync(input.dispatches[0].inputFile, 'utf8'))
+  assert.equal(one.artifacts.proposal, join(snapshot, ARCHIVED, 'proposal.md'))
+  assert.equal(readFileSync(one.artifacts.proposal, 'utf8'), '## Why\n\nThe pool leaks.\n')
+  assert.deepEqual(one.artifacts.specs, [join(snapshot, ARCHIVED, 'specs', 'session-pool', 'spec.md')])
+  assert.deepEqual([git(root, 'rev-parse', 'develop'), existsSync(join(root, ARCHIVED))], [before, false], 'the main checkout is not pulled')
+
+  const lost = landHost({ merged: false, forge: '1.7', forgeState: { state: 'done', number: 7, url: MR, status: 'merged', mergedAt: '2026-10-20T10:00:00Z', mergeCommit: 'f'.repeat(40) } })
+  land(lost, 'check')
+  land(lost, 'wait')
+  assert.throws(() => land(lost, 'comment-input'), /the merge commit ffffff[f]+ is not in .*, even after a fetch/)
+})
+
+test('the hand-off preview warns when the change merged into a branch other than the integration branch', () => {
+  const root = landHost()
+  setBranches(root, { integration: 'rehearsal', protected: ['main'] })
+  for (const step of ['check', 'wait', 'comment-input']) land(root, step)
+  comment(root, 'PROJ-1', valid('PROJ-1', 'taken', TAKEN))
+  comment(root, 'PROJ-2', valid('PROJ-2', 'partial', PARTIAL))
+  const held = land(root, 'handoff')
+  const warning = 'Warning: the change merged into develop, not into the integration branch rehearsal; a tester on rehearsal does not see it until develop reaches it.'
+  assert.deepEqual([held.state, held.warning, held.preview], ['pending', warning, [warning, 'PROJ-1: taken', 'PROJ-2: partial']])
+  assert.deepEqual(calls(root, 'tracker').at(-1).input.items.map((i) => i.key), ['PROJ-1', 'PROJ-2'], 'the tracker gets the items only')
 })
 
 // ---------------------------------------------------------------- the comment's checks

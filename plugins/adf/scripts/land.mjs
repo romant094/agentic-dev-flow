@@ -14,18 +14,20 @@
 //   land.mjs wait --change <name>
 //       the forge's state of the merge request: merged is done (mergedAt, mergeCommit); open or
 //       draft is waiting, to run again later; closed stops land (exit 1). With no forge, or one
-//       that does not provide state, merged is decided from git ancestry with the local base
+//       that does not provide state, merged is decided from git ancestry with the local base,
+//       else from patch ids (a squash merge)
 //   land.mjs comment-input --change <name>
 //       one input file and one prompt per taken or partial tracker issue: { dispatches: [{ name,
 //       key, state, agent, worktree, inputFile, promptFile, replyFile }] }; dispatch each as
-//       `land-comment <KEY>`, read-only
+//       `land-comment <KEY>`, read-only. A change the main checkout lacks is read from the merge
+//       commit, fetched when it is not local; the main checkout is never pulled
 //   land.mjs comment --change <name> --key <KEY> --file <reply json>
 //       the reply checked against schema/land-comment.schema.json and the field rules
 //       (lib/tracker.mjs checkFields), and recorded. { ok, valid, errors?, missing, next }
 //   land.mjs handoff --change <name> [--yes]
 //       refused until every issue has its fields. Without --yes the tracker's handoff plan and
-//       its preview, held: { state: pending, held, plan, preview, report, waiting }; with it the
-//       plan applied
+//       its preview, held: { state: pending, held, plan, preview, report, waiting, warning? }; with
+//       it the plan applied. warning: the base is not the integration branch
 //   land.mjs report --change <name>
 //       read-only: { ok, complete, skipped, stopped, done, next, file, steps, report }
 import { resolve } from 'node:path'
