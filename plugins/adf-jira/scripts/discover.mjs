@@ -42,6 +42,17 @@ export async function main(argv, deps = {}) {
   out(`Project ${facts.project.key} — ${facts.project.name}`)
   out(`Issue types: ${facts.issueTypes.map((t) => t.name).join(', ')}`)
   out(`Statuses discovered: ${Object.keys(facts.workflow).length}`)
+  out('\nWorkflow per issue type (a status setup recommends must come from here):')
+  for (const [type, record] of Object.entries(facts.workflowByType)) {
+    out(type)
+    for (const [status, transitions] of Object.entries(record.workflow)) {
+      const sample = record.samples[status]
+      const from = sample ? `sampled ${sample.issue}, ${sample.asAssignee ? 'as assignee' : 'not as assignee'}` : 'unsampled'
+      const offered = transitions.map((t) => `${t.name} → ${t.to}${t.conditional ? ' [conditional]' : ''}`)
+      const blocked = (record.unavailable[status] ?? []).map((t) => `${t.name} → ${t.to} [unavailable to this account]`)
+      out(`  ${status} (${from}): ${[...offered, ...blocked].join(', ') || 'none'}`)
+    }
+  }
   out(`Written to ${paths.discovered}`)
 
   if (facts.unsampledStatuses.length > 0) {

@@ -87,6 +87,18 @@ describe('profile.mjs', () => {
     assert.ok(!('envFile' in out.config))
   })
 
+  it('names an existing personal layer outside the profile directory, for setup to import instead of interviewing', () => {
+    const root = host({ extensions: [{ plugin: 'adf-jira@m', config: { baseUrl: 'https://j.example', allowlist: ['PROJ'], profileDir: 'tools/jira' } }] })
+    const describe = () => describeProfile({ cwd: root, run: () => null, ignored: () => true, home: root, processEnv: {} }).profile.importLocal
+    assert.equal(describe(), null)
+    mkdirSync(join(root, '.claude', 'jira', 'profile'), { recursive: true })
+    writeFileSync(join(root, '.claude', 'jira', 'profile', 'local.md'), '# Personal\n')
+    assert.equal(describe(), join(root, '.claude', 'jira', 'profile', 'local.md'))
+    mkdirSync(join(root, 'tools', 'jira'), { recursive: true })
+    writeFileSync(join(root, 'tools', 'jira', 'local.md'), '# Personal\n')
+    assert.equal(describe(), null)
+  })
+
   it('prints JIRA_GIT_AUTHOR from the env file as gitAuthor, and no other env value', () => {
     const root = host({ extensions: [{ plugin: 'adf-jira@m', config: { baseUrl: 'https://j.example', allowlist: ['PROJ'] } }] })
     const home = mkdtempSync(join(tmpdir(), 'adf-jira-home-'))

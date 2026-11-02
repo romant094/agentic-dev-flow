@@ -129,3 +129,106 @@ describe('discover', () => {
     await assert.rejects(discover(client, 'DEMO', new Date('2026-09-01T00:00:00Z')), /connection refused/)
   })
 })
+
+// A project whose issue types run different workflows: the stub answers by issue type and
+// status, the way a real instance does, and records every request.
+function makeTypedClient({ types, pairs }) {
+  const gets = []
+  const jqls = []
+  const get = async (path) => {
+    gets.push(path)
+    if (path === '/rest/api/2/serverInfo') return { baseUrl: 'https://jira.example.com', version: '8.20.2', deploymentType: 'Server' }
+    if (path === '/rest/api/2/project/DEMO') return { key: 'DEMO', name: 'Demo Project' }
+    if (path.startsWith('/rest/api/2/issue/createmeta')) return { projects: [{ issuetypes: [] }] }
+    if (path === '/rest/api/2/field') return []
+    if (path === '/rest/api/2/project/DEMO/statuses') return Object.entries(types).map(([name, statuses]) => ({ name, statuses: statuses.map((s) => ({ name: s })) }))
+    const m = path.match(/^\/rest\/api\/2\/issue\/([^/]+)\/transitions/)
+    if (m) return { transitions: Object.values(pairs).find((p) => p.key === m[1])?.transitions ?? [] }
+    if (path.startsWith('/rest/api/2/mypermissions')) return { permissions: {} }
+    throw new Error(`stub client: unexpected get ${path}`)
+  }
+  const search = async (jql) => {
+    jqls.push(jql)
+    const type = jql.match(/issuetype = "([^"]+)"/)?.[1]
+    const status = jql.match(/status = "([^"]+)"/)?.[1]
+    const pair = pairs[`${type}/${status}`]
+    if (!pair) return []
+    if (/assignee = currentUser\(\)/.test(jql) && !pair.mine) return []
+    return [{ key: pair.key, fields: {} }]
+  }
+  return { client: { get, search }, gets, jqls }
+}
+
+describe('discover per issue type', () => {
+  const now = new Date('2026-11-02T00:00:00Z')
+  const typed = () =>
+    makeTypedClient({
+      types: { Task: ['Opened', 'In Progress'], Bug: ['Opened', 'Verified'] },
+      pairs: {
+        'Task/Opened': { key: 'DEMO-1', mine: true, transitions: [{ id: '4', name: 'Start Progress', to: { name: 'In Progress' }, isConditional: true }] },
+        'Task/In Progress': { key: 'DEMO-2', mine: false, transitions: [] },
+        'Bug/Opened': {
+          key: 'DEMO-3',
+          mine: true,
+          transitions: [
+            { id: '11', name: 'Verify', to: { name: 'Verified' } },
+            { id: '12', name: 'Start Progress', to: { name: 'In Progress' }, isConditional: true, isAvailable: false }
+          ]
+        }
+      }
+    })
+
+  it('samples one issue per issue type and status pair, scoped by type', async () => {
+    const stub = typed()
+    await discover(stub.client, 'DEMO', now)
+    for (const [type, status] of [['Task', 'Opened'], ['Task', 'In Progress'], ['Bug', 'Opened'], ['Bug', 'Verified']]) {
+      assert.ok(
+        stub.jqls.some((q) => q.includes(`issuetype = "${type}"`) && q.includes(`status = "${status}"`)),
+        `no search for ${type} × ${status}`
+      )
+    }
+  })
+
+  it('records each type its own transitions, so one type cannot speak for another', async () => {
+    const facts = await discover(typed().client, 'DEMO', now)
+    assert.deepEqual(
+      facts.workflowByType.Task.workflow.Opened.map((t) => t.to),
+      ['In Progress']
+    )
+    assert.deepEqual(
+      facts.workflowByType.Bug.workflow.Opened.map((t) => t.to),
+      ['Verified']
+    )
+  })
+
+  it('prefers an issue the account is assigned to, and records which issue and as whom', async () => {
+    const stub = typed()
+    const facts = await discover(stub.client, 'DEMO', now)
+    assert.ok(stub.jqls.some((q) => q.includes('issuetype = "Task"') && q.includes('assignee = currentUser()')))
+    assert.deepEqual(facts.workflowByType.Task.samples.Opened, { issue: 'DEMO-1', asAssignee: true })
+    assert.deepEqual(facts.workflowByType.Task.samples['In Progress'], { issue: 'DEMO-2', asAssignee: false })
+  })
+
+  it('records the conditions the API exposes, and keeps an unavailable transition out of the route graph', async () => {
+    const stub = typed()
+    const facts = await discover(stub.client, 'DEMO', now)
+    assert.ok(stub.gets.some((p) => /\/transitions\?.*includeUnavailableTransitions=true/.test(p)))
+    assert.equal(facts.workflowByType.Task.workflow.Opened[0].conditional, true)
+    assert.deepEqual(
+      facts.workflowByType.Bug.workflow.Opened.map((t) => t.id),
+      ['11']
+    )
+    assert.deepEqual(facts.workflowByType.Bug.unavailable.Opened, [{ id: '12', name: 'Start Progress', to: 'In Progress', conditional: true }])
+  })
+
+  it('lists an unsampled pair under its type, and a status unsampled only when no type sampled it', async () => {
+    const facts = await discover(typed().client, 'DEMO', now)
+    assert.deepEqual(facts.workflowByType.Bug.unsampledStatuses, [{ status: 'Verified', reason: 'no issue of this type in this status to sample' }])
+    assert.deepEqual(facts.unsampledStatuses, [{ status: 'Verified', reason: 'no issue in this status to sample' }])
+  })
+
+  it('keeps the status-keyed graph as the union of the types, for the route solver', async () => {
+    const facts = await discover(typed().client, 'DEMO', now)
+    assert.deepEqual(facts.workflow.Opened.map((t) => t.id).sort(), ['11', '4'])
+  })
+})

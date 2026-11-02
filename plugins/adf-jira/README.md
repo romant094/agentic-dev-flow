@@ -168,7 +168,7 @@ with an unclosed block is refused. Every comment then has the host template's sh
 
 | Skill | Does |
 |---|---|
-| `/adf-jira:setup` | Discovers the project's API facts into `discovered.json` and interviews for `conventions.md` and `local.md`. Refuses to write while git does not ignore the personal files. |
+| `/adf-jira:setup` | Discovers the project's API facts into `discovered.json`, sampling each issue type × status pair, and recommends statuses from that record. Interviews for `conventions.md` and `local.md`, offering to import an existing personal layer (`profile.importLocal`) instead. Refuses to write while git does not ignore the personal files. |
 | `/adf-jira:bulk` | Status changes and field edits across a JQL selection, each issue on its own route. |
 | `/adf-jira:comment` | Writes a comment, or rewrites one by id, on one issue or a selection. |
 | `/adf-jira:epic` | An epic with its children and estimates, and the rollup read from Jira's Σ fields. |
@@ -180,8 +180,8 @@ The skills run the plugin's scripts:
 
 | Script | Does |
 |---|---|
-| `scripts/profile.mjs [--skill <name>]` | Prints the profile's paths, whether git ignores the personal files, the profile's age, the non-secret config, `gitAuthor` (`JIRA_GIT_AUTHOR`, null when unset) and, with `--skill`, that skill's plan directory. Reads the env file for that one value, prints no other, and calls nothing. |
-| `scripts/discover.mjs [<KEY>]` | Writes `discovered.json`. |
+| `scripts/profile.mjs [--skill <name>]` | Prints the profile's paths, whether git ignores the personal files, the profile's age, the non-secret config, `gitAuthor` (`JIRA_GIT_AUTHOR`, null when unset), `profile.importLocal` (an existing personal layer outside the profile directory, or null) and, with `--skill`, that skill's plan directory. Reads the env file for that one value, prints no other, and calls nothing. |
+| `scripts/discover.mjs [<KEY>]` | Writes `discovered.json`: per issue type, the transitions from each status, read with a GET on one issue per type × status pair (one assigned to the account when there is one), with the transitions the API marks conditional or unavailable; and `workflow`, their union keyed by status, for the route solver. Prints the per-type record. |
 | `scripts/read-issues.mjs "<JQL>" [out]` | Reads issues; a result outside the allowlist fails the read, and an output path git does not ignore is refused before it. |
 | `scripts/read-comments.mjs "<KEY>" [out]` | Reads every comment of an issue, with its id; the allowlist is checked before the request. |
 | `scripts/apply-plan.mjs <plan> [--confirm]` | Prints the plan's summary and records a digest of its rows, or applies it with `--confirm`. Refuses a plan git does not ignore, and with `--confirm` a plan whose summary was never printed or whose rows changed since: print the summary again and show it to the developer. |

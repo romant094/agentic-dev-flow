@@ -8,10 +8,11 @@
 //
 // { ok, projectDir, config: { baseUrl, allowlist, debtEpic, fields, statuses, commentTemplate,
 //   correctionTemplate, debtTemplate, profileDir }, gitAuthor, profile: { dir, discovered, conventions, local,
-//   exists, ignored, discoveredAt, stale }, plans: { dir, ignored } }
+//   exists, ignored, importLocal, discoveredAt, stale }, plans: { dir, ignored } }
 // `gitAuthor` is JIRA_GIT_AUTHOR, the developer's git author name, or null when unset.
 // `ignored` says whether git ignores the personal files; setup refuses to write them when it
-// does not. `plans` is the directory of the named skill's plans, `.adf/jira/<skill>/` in the main
+// does not. `importLocal` is an existing personal layer outside the profile directory that setup
+// offers to import instead of interviewing, or null. `plans` is the directory of the named skill's plans, `.adf/jira/<skill>/` in the main
 // checkout, with whether git ignores it; null without --skill. apply-plan.mjs refuses a plan
 // git does not ignore.
 import { existsSync, readFileSync } from 'node:fs'
@@ -20,7 +21,7 @@ import { join } from 'node:path'
 import { loadConfig } from './lib/context.mjs'
 import { resolveLayers } from './lib/env.mjs'
 import { plansDir } from './lib/plan.mjs'
-import { MAX_AGE_DAYS, isIgnored, isStale, profilePaths } from './lib/profile.mjs'
+import { MAX_AGE_DAYS, importableLocal, isIgnored, isStale, profilePaths } from './lib/profile.mjs'
 import { isMain } from './lib/main.mjs'
 
 export function describeProfile({ cwd = process.cwd(), now = new Date(), run, ignored = isIgnored, home = homedir(), processEnv = process.env, skill } = {}) {
@@ -44,6 +45,7 @@ export function describeProfile({ cwd = process.cwd(), now = new Date(), run, ig
       ...paths,
       exists: { discovered: existsSync(paths.discovered), conventions: existsSync(paths.conventions), local: existsSync(paths.local) },
       ignored: { discovered: ignored(projectDir, paths.discovered), local: ignored(projectDir, paths.local) },
+      importLocal: importableLocal(projectDir, profileDir),
       discoveredAt,
       stale: discoveredAt === null ? null : isStale({ discoveredAt }, now, MAX_AGE_DAYS)
     },
