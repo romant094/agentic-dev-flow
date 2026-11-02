@@ -46,11 +46,20 @@
 //   generated-excluded the port's diff lines also leave out lockfiles, minified and source-map
 //                    files (window.mjs EXCLUDED); the difference is exactly their lines
 //   follows-values   an aggregate whose inputs differ by the classes above
+//   rounded-inputs   an aggregate's mean or median: the origin's is over each change's value as its
+//                    record rounds it to 4 places (`cacheHitRate`), the port's over the unrounded
+//                    ratio; the port's per-change values, rounded, give the origin's figure
+//   origin-anchor    the origin's window starts after its last window retro, a sidecar under
+//                    `.claude/memory/retros/` the port does not read; until the switch, when init's
+//                    seed anchors the port's window, the port's ref has no `.adf/retro/` window
+//                    sidecar. The port's side is given that retro's cut-off as its previous window
+//                    (buildSidecar and sinceLastRetro `previous`), counted once
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { globToRegExp } from '../../plugins/adf/scripts/lib/changes.mjs'
 import { buildSidecar, changeValues, EXCLUDED, recordOf, sinceLastRetro } from '../../plugins/adf/scripts/lib/window.mjs'
+import { median } from '../../plugins/adf/scripts/lib/metrics-facts.mjs'
 import { copyOriginScripts, count, gitOn, originArg } from './lib/origin-metrics.mjs'
 
 const origin = originArg('origin-window.mjs')
@@ -103,6 +112,7 @@ const TRANSCRIPT_KEYS = ['cost', 'facts', 'autonomy', 'facts.outliers', 'cost.ca
 const out = { date, ref: REF, membership: null, changes: 0, compared: {}, classes: {}, aggregates: { compared: 0, follows: 0 }, coverage: { compared: 0 }, candidates: null, since: null, rows: [], unexplained: [] }
 const fail = (change, what, detail) => out.unexplained.push({ change, what, ...detail })
 const classed = (c) => count(out.classes, c)
+const round4 = (v) => (typeof v === 'number' && Number.isFinite(v) ? Number(v.toFixed(4)) : null)
 const near = (a, b) => (a === null && b === null) || (typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 1e-9)
 const originValue = (c, key) => {
   const dot = key.indexOf('.')
@@ -135,7 +145,13 @@ try {
 } finally {
   scripts.remove()
 }
-const ours = buildSidecar(origin, { mode: 'window', ref: REF, date, exclude: [MEMORY] })
+// The origin's window anchor (`origin-anchor`): its last window retro, which the port does not
+// read, given to the port as init's seed would give it once the project switches.
+const ORIGIN_RETROS = '.claude/memory/retros'
+const anchorPath = theirs.previous ? `${ORIGIN_RETROS}/${theirs.previous}.json` : null
+const anchorText = anchorPath && sinceLastRetro(origin, { ref: REF }).previous === null ? git.orNull('show', `${REF}:${anchorPath}`) : null
+const anchor = anchorText === null ? undefined : { date: theirs.previous, path: anchorPath, cutoff: JSON.parse(anchorText).cutoff ?? null, sidecar: { seed: true } }
+const ours = buildSidecar(origin, { mode: 'window', ref: REF, date, exclude: [MEMORY], previous: anchor })
 
 // ---------------------------------------------------------------- membership
 
@@ -243,7 +259,12 @@ for (const [metric, [portKey]] of Object.entries(MAPPED)) {
     continue
   }
   out.aggregates.compared++
-  if (unequal.length > 0) fail('*', `aggregate ${metric}`, { stats: unequal, origin: Object.fromEntries(unequal.map((s) => [s, ta[s]])), port: Object.fromEntries(unequal.map((s) => [s, pa[s]])) })
+  if (unequal.length === 0) continue
+  // The mean and median over the port's per-change values, rounded as the origin's records are.
+  const xs = ours.changes.map((c) => c.values[portKey] ?? null).filter((v) => v !== null)
+  const rounded = { mean: round4(xs.reduce((x, y) => x + y, 0) / xs.length), median: round4(median(xs)) }
+  if (xs.length > 0 && unequal.every((s) => s in rounded && near(rounded[s], ta[s]))) classed('rounded-inputs')
+  else fail('*', `aggregate ${metric}`, { stats: unequal, origin: Object.fromEntries(unequal.map((s) => [s, ta[s]])), port: Object.fromEntries(unequal.map((s) => [s, pa[s]])) })
 }
 
 // ---------------------------------------------------------------- candidates and since
@@ -255,7 +276,8 @@ out.candidates = { origin: theirLayers, port: ourLayers, portChecks: ours.candid
 if (theirLayers.sort().join() !== [...ourLayers].sort().join() || ours.candidates.checks.length > 0) fail('*', 'candidates', out.candidates)
 
 const sinceCount = Number(/^(\d+) changes/.exec(sinceText)?.[1] ?? Number.NaN)
-const port = sinceLastRetro(origin, { ref: REF })
+const port = sinceLastRetro(origin, { ref: REF, previous: anchor })
+if (anchor) classed('origin-anchor')
 out.since = { origin: sinceText, port: { count: port.count, previous: port.previous, lintDue: port.lintDue } }
 if (sinceCount !== port.count) fail('*', 'since', { origin: sinceCount, port: port.count })
 if (/no retrospective has been merged yet/.test(sinceText) !== (port.previous === null)) fail('*', 'since', { origin: sinceText, port: port.previous })
