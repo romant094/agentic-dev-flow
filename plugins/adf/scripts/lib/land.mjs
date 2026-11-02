@@ -20,25 +20,32 @@
 //                  command to run again later (no polling here); `closed` stops land. With no
 //                  forge, or a forge that does not provide `state`, "merged" is decided from git
 //                  ancestry (D19): the branch tip is an ancestor of the local base, else of
-//                  origin/<base>; nothing is fetched.
+//                  origin/<base>; else a commit on that ref since the fork point carries the
+//                  branch's change by patch id (a squash merge); nothing is fetched.
 //   comment-input  per issue, the input of one read-only `land-comment <KEY>` agent and its
 //                  prompt: the issue, the change's artifacts, the scope check, the merge; for a
 //                  debt group the resolved and the remaining entries, and its state, recorded.
+//                  The change and the debt tree are read from the main checkout when it holds
+//                  the change, else from the merge commit (fetched from origin/<base> when it
+//                  is not local) into land/merged/, else from the change's worktree. The main
+//                  checkout is never pulled.
 //   comment        per issue, the agent's fields checked (lib/tracker.mjs checkFields) and
 //                  recorded; done once every issue has them.
 //   handoff        the tracker's `handoff`, held (lib/tracker.mjs heldWrite): without yes the
 //                  plan and its preview, with it the plan applied. Items { key, state, fields },
 //                  each text field a list of one-line texts (lib/tracker.mjs handoffFields);
 //                  mr { url } from the forge's state (from archive's mr step with a forge that
-//                  does not provide state), null with no forge.
+//                  does not provide state), null with no forge. A base other than the registry's
+//                  integration branch puts a warning line first in the preview.
 //
 // State: <main>/.superpowers/sdd/<change>/land/land.json, in the main checkout, so it outlives
 // the worktree:
 //   { version: 1, change, steps: { <step>: { state, at?, detail? } } }
 //   check          done | skipped | degraded | failed; detail { scopeFile, tracker, items, report }
-//   wait           done | waiting | closed | degraded | failed; detail { via: forge | ancestry,
+//   wait           done | waiting | closed | degraded | failed; detail { via: forge | ancestry | patch-id,
 //                  forge, branch, base, url, number?, status, ref?, mergedAt, mergeCommit, report }
-//   comment-input  done; detail { changeDir, dispatches, debtTargets: [{ source: debt, key,
+//   comment-input  done; detail { changeDir, readFrom: checkout | <merge commit> | worktree,
+//                  dispatches, debtTargets: [{ source: debt, key,
 //                  state, kind, title, resolved, remaining }] }
 //   comment        pending | done; detail { keys: { <KEY>: { state, fields, reply, at } }, missing }
 //   handoff        held | done | failed | refused | skipped; detail { plan, preview, applied,
@@ -47,11 +54,12 @@
 // recorded with the same fields is too. A comment with other fields replaces them until the
 // hand-off is applied, and a held hand-off plan is dropped, since it carries the old fields.
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readArchiveState } from './archive.mjs'
-import { META_FILE, readChangeMeta } from './changes.mjs'
+import { readBranches } from './branches.mjs'
+import { ARCHIVE, CHANGES_DIR, META_FILE, readChangeMeta } from './changes.mjs'
 import { LAND_ROLES, landCommentName, sddDir } from './dispatch.mjs'
 import { listTree } from './debt.mjs'
 import { findChangeDir } from './ingest.mjs'
@@ -61,6 +69,7 @@ import { readDebtRoot, readRegistry } from './registry.mjs'
 import { callRole, CORE, forgeReport, trackerReport } from './roles.mjs'
 import { debtGroups, findScope, renderSkeleton, trackerDir, trackerTargets } from './scope.mjs'
 import { checkFields, FIELD_LIMITS, HANDOFF_FIELDS, handoffFields, heldWrite, trackerCall } from './tracker.mjs'
+import { fetchRef, readBlobs } from './window.mjs'
 import { worktreePath } from './workspace.mjs'
 
 const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -178,6 +187,34 @@ function changeAt(ctx) {
 
 const changeDirOf = (ctx) => changeAt(ctx)?.dir ?? null
 
+const hasCommit = (main, commit) => gitText(main, 'rev-parse', '--verify', '--quiet', `${commit}^{commit}`) !== null
+
+// The change, active or archived, and the debt tree as the merge commit holds them, written under
+// land/merged/ in the repository's layout: { root, dir, commit }. The commit is fetched from
+// origin/<base> when it is not local; null when it is still not there or does not hold the change.
+function changeAtMerge(ctx, { mergeCommit, base }) {
+  if (!mergeCommit) return null
+  if (!hasCommit(ctx.main, mergeCommit) && base) fetchRef(ctx.main, { ref: `origin/${base}` })
+  if (!hasCommit(ctx.main, mergeCommit)) return null
+  const names = (path) => (gitText(ctx.main, 'ls-tree', '--name-only', `${mergeCommit}:${path}`) ?? '').split('\n').filter(Boolean)
+  const dated = new RegExp(`^\\d{4}-\\d{2}-\\d{2}-${ctx.change}$`)
+  const archived = names(`${CHANGES_DIR}/${ARCHIVE}`).filter((n) => dated.test(n)).sort().at(-1)
+  const changePath = names(CHANGES_DIR).includes(ctx.change) ? `${CHANGES_DIR}/${ctx.change}` : archived ? `${CHANGES_DIR}/${ARCHIVE}/${archived}` : null
+  if (!changePath) return null
+  const root = join(landDir(ctx.main, ctx.change), 'merged')
+  rmSync(root, { recursive: true, force: true })
+  const debtPath = readDebtRoot(ctx.main)
+  for (const path of [changePath, ...(debtPath ? [debtPath] : [])]) {
+    const files = (gitText(ctx.main, 'ls-tree', '-r', '-z', '--name-only', mergeCommit, '--', path) ?? '').split('\0').filter(Boolean)
+    for (const [file, text] of readBlobs(ctx.main, mergeCommit, files)) {
+      if (text === null) continue
+      mkdirSync(dirname(join(root, file)), { recursive: true })
+      writeFileSync(join(root, file), text)
+    }
+  }
+  return { root, dir: join(root, changePath), commit: mergeCommit }
+}
+
 // The issues land hands off: the scope's tracker targets, then the debt groups comment-input
 // recorded with their state.
 function landTargets(ctx, land) {
@@ -186,15 +223,15 @@ function landTargets(ctx, land) {
 
 const debtEntry = (e) => ({ id: e.id, title: e.title, class: e.class, anchors: e.anchors ?? [] })
 
-// Each debt group's target after the merge, from the debt tree of `root`, the checkout holding
-// the merged change: the open entries still holding the key remain (`scope` says how the change
+// Each debt group's target after the merge, from the debt tree under `treeRoot`, the checkout or
+// the merge commit's copy holding the merged change, at the debt.root of `root`'s registry: the open entries still holding the key remain (`scope` says how the change
 // took one, null when it did not); the scope's entries no longer open are resolved.
-function debtTargets(scope, root) {
+function debtTargets(scope, root, treeRoot = root) {
   const groups = debtGroups(scope)
   if (groups.length === 0) return []
   const path = readDebtRoot(root)
   if (!path) refuse(`the registry of ${root} names no debt.root; land cannot tell which entries of ${groups.map((g) => g.key).join(', ')} remain`)
-  const tree = listTree(join(root, path), { kind: 'debt' }).entries
+  const tree = listTree(join(treeRoot, path), { kind: 'debt' }).entries
   return groups.map(({ key, entries }) => {
     const remaining = tree.filter((e) => e.tracker === key)
     const left = new Set(remaining.map((e) => e.id))
@@ -263,9 +300,19 @@ function isAncestor(main, a, b) {
   return run.status === 0
 }
 
+// The patch id of a diff, or of each commit of a `git log -p`: a map patch id -> commit.
+function patchIds(main, args) {
+  const patch = gitText(main, '-c', 'core.quotePath=false', ...args, '--no-color', '--no-ext-diff')
+  if (!patch) return new Map()
+  const out = execFileSync('git', ['patch-id', '--stable'], { cwd: main, input: `${patch}\n`, encoding: 'utf8' })
+  return new Map(out.split('\n').filter(Boolean).map((l) => l.split(' ')))
+}
+
 // "Merged" with no forge state (D19): the branch tip is an ancestor of the local base, else of
 // origin/<base> as last fetched. The merge commit is the first merge on the path from the tip to
-// the base, else the tip itself (a fast-forward).
+// the base, else the tip itself (a fast-forward). Else a squash merge: a commit of that ref since
+// its fork point from the branch whose patch id is the patch id of the branch's whole change; a
+// squash that also carries other edits differs, and is not seen.
 export function mergedByAncestry(main, { branch, base }) {
   const tip = gitText(main, 'rev-parse', '--verify', '--quiet', `${branch}^{commit}`)
   if (!tip) refuse(`the branch ${branch} is not in ${main}; with no forge state land decides "merged" from git ancestry, and needs the branch`)
@@ -275,6 +322,13 @@ export function mergedByAncestry(main, { branch, base }) {
     if (!isAncestor(main, tip, ref)) continue
     const mergeCommit = gitText(main, 'rev-list', '--ancestry-path', '--merges', '--reverse', `${tip}..${ref}`)?.split('\n').find(Boolean) ?? tip
     return { merged: true, ref, tip, mergeCommit, mergedAt: gitText(main, 'show', '-s', '--format=%cI', mergeCommit) }
+  }
+  for (const ref of refs) {
+    const fork = gitText(main, 'merge-base', tip, ref)
+    if (!fork) continue
+    const [change] = patchIds(main, ['diff', fork, tip]).keys()
+    const mergeCommit = change && patchIds(main, ['log', '-p', '--no-merges', '--format=commit %H', `${fork}..${ref}`]).get(change)
+    if (mergeCommit) return { merged: true, ref, tip, mergeCommit, squash: true, mergedAt: gitText(main, 'show', '-s', '--format=%cI', mergeCommit) }
   }
   return { merged: false, refs, tip }
 }
@@ -290,11 +344,13 @@ export function waitStep(ctx) {
       // A forge that predates `state` still opened the merge request archive recorded.
       const mrUrl = forge === 'none' ? null : url
       if (!by.merged) {
-        const report = `${forgeLine}\nNot merged: ${branch} is in none of ${by.refs.join(', ')}, decided from git ancestry.`
+        const report = `${forgeLine}\nNot merged: ${branch} is in none of ${by.refs.join(', ')}, decided from git ancestry and patch ids.`
         return { state: 'waiting', detail: { via: 'ancestry', forge, branch, base, url: mrUrl, status: null, report }, out: { report, waiting: `the merge of ${branch} into ${base}: once it is merged, run land.mjs wait --change ${ctx.change} again` } }
       }
-      const report = `${forgeLine}\nMerged: ${branch} is in ${by.ref} (commit ${by.mergeCommit.slice(0, 7)}), decided from git ancestry.`
-      return { state: 'done', detail: { via: 'ancestry', forge, branch, base, url: mrUrl, status: 'merged', ref: by.ref, mergedAt: by.mergedAt, mergeCommit: by.mergeCommit, report }, out: { report } }
+      const report = by.squash
+        ? `${forgeLine}\nMerged: ${branch} is in ${by.ref} as the squash commit ${by.mergeCommit.slice(0, 7)}, decided from patch ids.`
+        : `${forgeLine}\nMerged: ${branch} is in ${by.ref} (commit ${by.mergeCommit.slice(0, 7)}), decided from git ancestry.`
+      return { state: 'done', detail: { via: by.squash ? 'patch-id' : 'ancestry', forge, branch, base, url: mrUrl, status: 'merged', ref: by.ref, mergedAt: by.mergedAt, mergeCommit: by.mergeCommit, report }, out: { report } }
     }
     const forge = got.plugin ?? null
     if (got.state === 'refused') return { state: 'failed', detail: { forge, branch, base, report: forgeLine, error: got.error ?? forgeLine }, out: { report: forgeLine, refusal: forgeLine } }
@@ -324,13 +380,14 @@ function specDeltas(dir) {
 export function commentInputStep(ctx) {
   return runStep(ctx, 'comment-input', (land) => {
     const { scope } = requireScope(ctx)
-    const at = changeAt(ctx)
-    if (!at) refuse(`the change ${ctx.change} is in neither the main checkout nor its worktree; pull its base into the main checkout, then run comment-input again`)
+    const merge = land.steps.wait.detail ?? {}
+    const found = changeAt(ctx)
+    const at = found?.root === ctx.main ? found : changeAtMerge(ctx, merge) ?? found
+    if (!at) refuse(`the change ${ctx.change} is in neither the main checkout nor its worktree, and the merge commit ${merge.mergeCommit ?? '(none recorded)'} is not in ${ctx.main}, even after a fetch of origin/${merge.base ?? '<base>'}, or does not hold it; fetch the merge, then run comment-input again`)
     const { dir } = at
-    const debt = debtTargets(scope, at.root)
+    const debt = debtTargets(scope, ctx.main, at.root)
     const artifact = (name) => (existsSync(join(dir, name)) ? join(dir, name) : null)
     const artifacts = { dir, proposal: artifact('proposal.md'), specs: specDeltas(dir), tasks: artifact('tasks.md'), verify: artifact('verify.md') }
-    const merge = land.steps.wait.detail ?? {}
     const out = landDir(ctx.main, ctx.change)
     mkdirSync(join(out, 'comment'), { recursive: true })
     mkdirSync(join(out, 'replies'), { recursive: true })
@@ -367,7 +424,7 @@ export function commentInputStep(ctx) {
     })
     return {
       state: 'done',
-      detail: { changeDir: dir, dispatches, debtTargets: debt },
+      detail: { changeDir: dir, readFrom: at.commit ?? (at.root === ctx.main ? 'checkout' : 'worktree'), dispatches, debtTargets: debt },
       out: { dispatches, waiting: `dispatch each, read-only and in parallel, with its promptFile; then land.mjs comment --change ${ctx.change} --key <KEY> --file <replyFile>` }
     }
   })
@@ -467,6 +524,13 @@ export function handoffStep(ctx, { yes = false } = {}) {
     writeLand(ctx.main, ctx.change, land)
   }
   const { ok, ...rest } = out
+  const base = land.steps.wait.detail?.base ?? null
+  const integration = readBranches(ctx.main)?.integration ?? null
+  const warning = base && integration && base !== integration ? `Warning: the change merged into ${base}, not into the integration branch ${integration}; a tester on ${integration} does not see it until ${base} reaches it.` : null
+  if (warning) {
+    rest.warning = warning
+    if (Array.isArray(rest.preview)) rest.preview = [warning, ...rest.preview]
+  }
   return { ok, change: ctx.change, step: 'handoff', next: nextOf(readLand(ctx.main, ctx.change)), ...rest, mr }
 }
 

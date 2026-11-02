@@ -54,9 +54,11 @@ to land only when it returns `ask` true.
    node "${CLAUDE_PLUGIN_ROOT}/scripts/land.mjs" wait --change <name>
    ```
 
-   `done`: go on. `waiting`: the merge request is open or a draft, or the branch is not in its
-   base yet; show `report` and `waiting`, and stop until the developer says it is merged, then
-   run `/adf:land` again. `closed` (`ok: false`): show `refusal` and stop; nothing is handed
+   `done`: go on. With no forge state, "merged" is the branch tip in its base, or a squash
+   commit on the base whose patch id is the branch's whole change; a squash that carries other
+   edits too is not seen, and only a forge with `state` sees it. `waiting`: the merge request is
+   open or a draft, or the branch is not in its base yet; show `report` and `waiting`, and stop
+   until the developer says it is merged, then run `/adf:land` again. `closed` (`ok: false`): show `refusal` and stop; nothing is handed
    off. `degraded`: show `hint`, and run it again once the forge is fixed.
 
 4. **Write the comment inputs and dispatch the agents.**
@@ -66,7 +68,9 @@ to land only when it returns `ask` true.
    ```
 
    For each entry of `dispatches`, dispatch a read-only agent named `name` at `agent`, with the
-   text of `promptFile` as its prompt, all in parallel.
+   text of `promptFile` as its prompt, all in parallel. When the main checkout does not hold the
+   merged change, the script reads it from the merge commit, fetched when it is not local; do not
+   pull or update the main checkout yourself.
 
 5. **Check each reply.**
 
@@ -85,7 +89,9 @@ to land only when it returns `ask` true.
    ```
 
    When `state` is `pending`, show `report`, the tracker's preview of each comment and status
-   change, and ask the developer for a yes. On the yes only, run it again with `--yes`. A
+   change, and ask the developer for a yes. A `warning` (also the preview's first line) says the
+   change merged into a branch other than the integration branch: show it, and name it when you
+   ask for the yes. On the yes only, run it again with `--yes`. A
    `failed` item: run it again with `--yes`, and the plan resumes where it stopped. `refused`:
    show `error`, and run it without `--yes` for a new plan.
 
