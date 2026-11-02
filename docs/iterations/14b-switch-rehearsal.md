@@ -13,8 +13,8 @@ The rehearsal has two variants, each in its own clone and on its own integration
 - `remove-first`: the origin's own flow is removed first, then init and add run on a project
   with no flow. Run on 2026-10-30 and 2026-11-02; findings below.
 - `two-stage`: the switch as iteration 14 decided it: init and add on top of the origin's own
-  flow (stage 1), then the removal in a merge request of its own (stage 2). Not run yet. Its
-  findings are compared with `remove-first`'s and added here.
+  flow (stage 1), then the removal in a merge request of its own (stage 2). Run on 2026-11-02
+  without a second change: the change cycle is the same code `remove-first` already drove.
 
 ## Rehearsal: remove-first
 
@@ -143,14 +143,17 @@ was checked in code where a file:line is given. `#n` is the port's issue that al
 | 10 | Land: N24, N25, N26 | `land.spec.mjs` |
 | 11 | Instructions and outputs: N14, N15, N16, N19 | `npm test` |
 | 12 | Tracker setup: N20, N21 | `discover.spec.mjs` |
-| 13 | The `two-stage` rehearsal; its findings added above and fixed | the comparison below |
+| 13 | The switch checklist (README) covers T1–T4: stage 1 renames the debt column and drops the example row, rewords the entry point for new changes, and disables the origin's tracker plugin | the comparison below |
 | 14 | Version and release | `npm test`, `npm run parity -- <origin>` |
 
 ## Inputs for iteration 15
 
 These replace or add to iteration 14's `## Inputs for iteration 15` where they differ.
 
-1. Before init: rename the debt tables' last column `Jira` to `Tracker` (until N10 refuses it).
+1. Before init: rename the debt tables' last column `Jira` to `Tracker`, and replace the example
+   row of the root index's format description with a pointer to the port's debt format (T4).
+   Stage 1 also rewords the agent instructions so a new change starts with `/adf:propose` (T2),
+   and disables the origin's own tracker plugin (T3).
 2. Declare the marketplace by its git URL; install every plugin at `project` scope.
 3. `/adf:init`: integration branch `develop`; no other protected branch (the origin has no
    `main`); debt root `.claude/memory/tech-debt`; preparation `npm run build:shared` with the
@@ -166,7 +169,30 @@ These replace or add to iteration 14's `## Inputs for iteration 15` where they d
 
 ## Comparison: remove-first and two-stage
 
-To be filled after the `two-stage` rehearsal.
+Init, add and tracker setup were answered by the developer in both variants and gave the same
+host files, except for choices the developer made differently: the protected branches, the
+registry order of `adf-gitlab` and `adf-memory`, and the order of the excluded statuses. Stage 2
+was the `remove-first` removal commit picked onto the stage 1 branch; only the project settings
+file conflicted, because the install had rewritten it (F9).
+
+Findings only `two-stage` shows (stage 1, both flows present):
+
+| ID | Finding | Fix |
+|---|---|---|
+| T1 | The origin's own tracker skills still describe the debt column as `Jira` after the rename | Disable the origin's tracker plugin in stage 1 (T3) |
+| T2 | The host's agent instructions still name the origin's propose; an agent asked to start a change picks it over `/adf:propose` | Stage 1 rewords the entry point for new changes; changes in flight keep the origin's commands |
+| T3 | The origin's tracker skills and `adf-jira`'s have near-identical descriptions; the agent chose `adf-jira` only from a commit message. The origin's flow does not call its tracker plugin | Stage 1 disables the origin's tracker plugin |
+| T4 | After the rename, `debt check` refuses the root index: the format description's example row is read as an entry. Before the rename the tree passed silently (N10) | The rename and the example row's removal are one edit |
+| T5 | The origin's capability-level agents sit beside the plugin's; no name clash | Removed in stage 2 |
+
+After stage 2: the registry and debt checks pass, and an agent picks `/adf:propose` and
+`adf-jira:task`.
+
+Not rehearsed: a change of the origin's schema continuing after stage 1, and `finalize` taking
+over its Draft (D6). The clone's in-flight branches and Drafts belong to other developers. The
+risk stays for iteration 15; the replay's mid-flight run (iteration 14) is the only evidence.
+
+Recommendation for 15: the two-stage switch, with T2–T4 in stage 1.
 
 ## Result
 
