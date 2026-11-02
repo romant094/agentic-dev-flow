@@ -3,15 +3,23 @@
 // were not its own; a commit made by hand also checked the branch from a read that had failed.
 // Here every git read that a guard depends on is checked, and a failed read refuses.
 //
-// The commit takes only the given paths (`git commit -- <paths>`), so work the developer staged
-// elsewhere is never swept in; it is refused instead, because a staged file outside the paths is
-// someone's decision the flow must not overrule. The message is passed as it is: nothing is
+// The commit takes only the given paths: a file staged outside them before the step refuses,
+// because it is someone's decision the flow must not overrule, so the index holds nothing else.
+// The paths are then staged and the index committed (`git commit` with no pathspec). A pathspec
+// commit builds the commit from a temporary index, so a host hook that formats and re-stages
+// (lefthook's `stage_fixed`, lint-staged) would leave the real index ahead of HEAD and the next
+// step would refuse those files as foreign. The message is passed as it is: nothing is
 // appended to it. The host's git hooks run as they do for the developer: no hook is disabled,
 // and the files reported are read from the commit, so what a hook rewrote or added is there; a
 // hook that refuses stops the commit with its output.
-import { realpathSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+//
+// Before the paths are staged, the planning guide's `## Format command` runs on them, when the
+// guide has one (`formatPaths`), so the commit holds the host's style with or without a hook.
+import { spawnSync } from 'node:child_process'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { isProtected, readBranches } from './branches.mjs'
+import { PLANNING_FILE, sectionLine } from './guide.mjs'
 import { gitIn } from './workspace.mjs'
 
 export class Refusal extends Error {}
@@ -63,6 +71,34 @@ export function checkCommitPlace(root, { git = gitIn(root) } = {}) {
   return { root: realpathSync(top), main, branch, protected: branches.protected }
 }
 
+// ---------------------------------------------------------------- the guide's format command
+
+export const FORMAT_HEADING = '## Format command'
+export const FILES = '{files}'
+
+export const formatCommandIn = (text) => sectionLine(text, FORMAT_HEADING, 'command')
+
+// A path as one shell word: `/bin/sh -c` on POSIX, `cmd.exe` on Windows.
+const quote = (path) => (process.platform === 'win32' ? `"${path}"` : `'${path.replaceAll("'", "'\\''")}'`)
+
+// Runs the guide's format command in `root` on the paths that exist, `{files}` replaced by them,
+// through the platform shell: the command is the developer's own line in the guide, not a string
+// built from input. No section, or no path left, runs nothing. A command that exits non-zero
+// refuses with its output. Returns the command run, or null.
+export function formatPaths(root, paths) {
+  const file = join(resolve(root), PLANNING_FILE)
+  const template = existsSync(file) ? formatCommandIn(readFileSync(file, 'utf8')) : null
+  const present = paths.filter((p) => existsSync(join(resolve(root), p)))
+  if (template === null || present.length === 0) return null
+  const command = template.replaceAll(FILES, present.map(quote).join(' '))
+  const run = spawnSync(command, { cwd: root, shell: true, encoding: 'utf8', windowsHide: true })
+  if (run.error || run.status !== 0) {
+    const output = `${run.stdout ?? ''}${run.stderr ?? ''}`.trim() || String(run.error?.message ?? '')
+    refuse(`the format command of ${PLANNING_FILE} (${command}) exited ${run.status ?? 'abnormally'}${output ? `: ${output}` : ''}; fix it or the files and run again`)
+  }
+  return command
+}
+
 export function commitPaths(root, { only, message }, { git = gitIn(root) } = {}) {
   if (!Array.isArray(only) || only.length === 0) refuse('no path to commit; name each with --only')
   if (typeof message !== 'string' || message.trim() === '') refuse('the commit message is empty')
@@ -74,11 +110,12 @@ export function commitPaths(root, { only, message }, { git = gitIn(root) } = {})
   if (foreign.length > 0) {
     refuse(`files outside the given paths are staged: ${foreign.join(', ')}; the developer decides about them`)
   }
+  formatPaths(place.root, paths)
   step(git, 'stage the given paths', 'add', '--', ...paths)
   const staged = list(step(git, 'list the staged files', 'diff', '--cached', '--name-only', '-z', '--', ...paths))
   if (staged.length === 0) refuse(`nothing to commit in ${paths.join(', ')}`)
 
-  step(git, 'make the commit', 'commit', '-q', '-m', message, '--', ...paths)
+  step(git, 'make the commit', 'commit', '-q', '-m', message)
   const commit = step(git, 'read the new commit', 'rev-parse', 'HEAD')
   const files = list(step(git, 'list the committed files', 'diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '-z', 'HEAD'))
   return { ok: true, commit, branch: place.branch, files }

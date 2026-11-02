@@ -63,6 +63,15 @@ The flow's scripts run each command in a new worktree once its providers have ru
 before a covering or whole-suite run, or after a group merge, when its inputs changed since its
 last run there. /adf:init proposes candidates and writes the ones the developer confirms. -->
 
+## Format command
+
+<!-- Optional. The one command, in backticks, that formats files in the project's own style,
+with `{files}` where the paths go, for example `npx biome format --write {files}`. Before each
+commit the flow's scripts make, they run it from the project root on the paths that commit
+takes, each path quoted, then stage and commit them. A command that exits non-zero refuses the
+commit with its output. Delete the section, or leave it empty, to commit the files as the flow
+wrote them. /adf:init proposes a command and writes the one the developer confirms. -->
+
 ## Checks that need the developer
 
 <!-- Checks an implementer cannot run on its own, such as a pass against a live environment or

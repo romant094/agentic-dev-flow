@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setBranches } from '../lib/branches.mjs'
-import { commitPaths, normalizePath, Refusal } from '../lib/commit.mjs'
+import { commitPaths, formatCommandIn, normalizePath, Refusal } from '../lib/commit.mjs'
+import { sectionLine } from '../lib/guide.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { initRegistry } from '../lib/registry.mjs'
 import { create, gitIn } from '../lib/workspace.mjs'
@@ -175,4 +176,69 @@ test('a pre-commit hook that exits 1 refuses the step with its output, and nothi
 test('the commit disables no hook: no --no-verify, no -n', () => {
   const source = readFileSync(fileURLToPath(new URL('../lib/commit.mjs', import.meta.url)), 'utf8')
   assert.doesNotMatch(source, /--no-verify|'-n'/)
+})
+
+test('a pre-commit hook that formats and re-stages leaves the index and the tree at the commit (#1)', () => {
+  const { root, change } = host()
+  hook(root, "printf 'formatted\\n' > a.txt\ngit add a.txt")
+  writeFileSync(join(change, 'a.txt'), 'unformatted\n')
+  commitPaths(change, { only: ['a.txt'], message: 'chore: a' })
+  assert.equal(git(change, 'show', 'HEAD:a.txt'), 'formatted')
+  assert.equal(git(change, 'status', '--porcelain'), '', 'the index is not left ahead of HEAD')
+})
+
+test('a file staged under the given paths before the step is committed with them', () => {
+  const { change } = host()
+  writeChange(change)
+  git(change, 'add', 'openspec/changes/add-x/proposal.md')
+  const out = commitPaths(change, { only: ['openspec/changes/add-x'], message: 'm' })
+  assert.deepEqual(out.files.sort(), ['openspec/changes/add-x/proposal.md', 'openspec/changes/add-x/specs/cap/spec.md'])
+  assert.equal(git(change, 'status', '--porcelain'), '')
+})
+
+// ---------------------------------------------------------------- the guide's format command
+
+const guide = (change, body) => {
+  mkdirSync(join(change, 'openspec'), { recursive: true })
+  writeFileSync(join(change, 'openspec', 'planning.md'), `# Planning Guide\n\n## Format command\n\n${body}\n\n## Packages\n`)
+}
+
+test('formatCommandIn reads the one line of the section; no section or an empty one is null', () => {
+  assert.equal(formatCommandIn('## Format command\n\n`npx biome format --write {files}`\n'), 'npx biome format --write {files}')
+  assert.equal(formatCommandIn('## Format command\n\n<!-- none -->\n\n## Packages\n'), null)
+  assert.equal(formatCommandIn('# Planning Guide\n'), null)
+  assert.throws(() => sectionLine('## Format command\n\na\nb\n', '## Format command', 'command'), /holds 2 lines; it must hold one command/)
+})
+
+test('the guide\'s format command runs on the step\'s paths before the commit, and the commit holds its output (#2)', () => {
+  const { change } = host()
+  writeChange(change)
+  guide(change, "`perl -pi -e 's/^p$/formatted p/' {files}`")
+  writeFileSync(join(change, 'it\'s here.txt'), 'p\n')
+  const out = commitPaths(change, { only: ['openspec/changes/add-x/proposal.md', "it's here.txt"], message: 'm' })
+  assert.deepEqual(out.files.sort(), ["it's here.txt", 'openspec/changes/add-x/proposal.md'])
+  assert.equal(git(change, 'show', 'HEAD:openspec/changes/add-x/proposal.md'), 'formatted p')
+  assert.equal(git(change, 'show', "HEAD:it's here.txt"), 'formatted p', 'a path with a quote reaches the command as one argument')
+  assert.equal(git(change, 'status', '--porcelain', '--', 'openspec/changes/add-x/proposal.md', "it's here.txt"), '')
+})
+
+test('a format command that exits non-zero refuses with its output, and nothing is staged or committed', () => {
+  const { change } = host()
+  writeChange(change)
+  guide(change, "`echo 'cannot format {files}'; exit 3`")
+  const head = git(change, 'rev-parse', 'HEAD')
+  assert.throws(
+    () => commitPaths(change, { only: ['openspec/changes/add-x'], message: 'm' }),
+    (e) => e instanceof Refusal && /the format command .*exited 3/.test(e.message) && /cannot format/.test(e.message)
+  )
+  assert.equal(git(change, 'rev-parse', 'HEAD'), head)
+  assert.equal(git(change, 'diff', '--cached', '--name-only'), '')
+})
+
+test('a guide with no format command commits the files as written', () => {
+  const { change } = host()
+  writeChange(change)
+  guide(change, '<!-- none -->')
+  commitPaths(change, { only: ['openspec/changes/add-x/proposal.md'], message: 'm' })
+  assert.equal(git(change, 'show', 'HEAD:openspec/changes/add-x/proposal.md'), 'p')
 })

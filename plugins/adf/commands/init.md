@@ -75,16 +75,27 @@ missing and changes nothing that exists.
 
    If `steps` is not empty, change nothing.
 
-5. Show the `report` of step 1 as it is, with the `report` of step 2 when it ran in place of its
+5. Read the `## Format command` section of `openspec/planning.md`. If it holds no command, read
+   the project's format scripts (the `package.json` scripts, the `Makefile`, the git hook
+   configuration such as `lefthook.yml` or `.husky/`) and propose one command that formats the
+   files it is given, with `{files}` where the paths go, for example
+   `npx biome format --write {files}`. Every commit the flow makes runs it on its paths first.
+   When the developer confirms a command, write it into the section as one line in backticks,
+   adding the section before `## Checks that need the developer` when the guide lacks it;
+   when the developer declines, or the project has no formatter, leave the section as it is.
+   If the section holds a command, change nothing.
+
+6. Show the `report` of step 1 as it is, with the `report` of step 2 when it ran in place of its
    branch policy line, one line `Debt store: <root>`, with `(root index created)` when step 3
    created it, and, when step 3 set the root, `Debt check: ok` or the count and every
    `file:line message` of its `errors`. On debt errors, tell the developer the flow refuses to
    read the tree until they are fixed, for example a last column `Jira` renamed to `Tracker`.
-   One line `Worktree preparation: <n> step(s)`. The report includes the
-   tracker's check and its notes when a plugin provides the tracker; act on a note, for example
+   One line `Worktree preparation: <n> step(s)` and one line `Format command: <command>` or
+   `Format command: none`. The report includes the tracker's check and its notes when a plugin
+   provides the tracker; act on a note, for example
    run `/adf-jira:setup`. When Superpowers is not available, continue: setup does not need
    Superpowers, but every command that changes a change does.
 
 Do not commit: the developer commits the registry, the settings, `.gitignore`, the planning
-guide with its worktree preparation, the review prompt and the debt tree's root index. A change's worktree forks from the integration branch, so it sees them only after they
+guide with its worktree preparation and format command, the review prompt and the debt tree's root index. A change's worktree forks from the integration branch, so it sees them only after they
 reach it.
