@@ -1,11 +1,14 @@
 import { test } from 'node:test'
 import { strict as assert } from 'node:assert'
-import { resolve } from 'node:path'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import {
   DEFAULT_CONFIG,
   findForeign,
   globToRegExp,
   inScope,
+  loadConfig,
   parseCommits,
   resolveConfig,
   splitCommands
@@ -170,4 +173,30 @@ test('a commit message or a value flag does not widen the commit', () => {
   assert.equal(parseCommits('git commit -m -a', cwd)[0].wide, false)
   assert.equal(parseCommits('git commit -ma', cwd)[0].wide, false)
   assert.equal(parseCommits('git commit -m "add all"', cwd)[0].wide, false)
+})
+
+// The plugin is enabled in a repository only by an entry in its registry.
+function host(t, registry) {
+  const root = mkdtempSync(join(tmpdir(), 'english-config-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  if (registry !== undefined) {
+    mkdirSync(join(root, '.claude'))
+    writeFileSync(join(root, '.claude/adf-extensions.json'), JSON.stringify(registry))
+  }
+  return root
+}
+
+test('loadConfig: no registry is null, the plugin is not enabled', (t) => {
+  assert.equal(loadConfig(host(t)), null)
+})
+
+test('loadConfig: a registry without an entry for the plugin is null', (t) => {
+  assert.equal(loadConfig(host(t, { contract: '1.1', extensions: [{ plugin: 'other@m', config: {} }] })), null)
+  assert.equal(loadConfig(host(t, { contract: '1.1' })), null)
+})
+
+test('loadConfig: an entry enables the plugin, with the defaults for a key it does not set', (t) => {
+  assert.deepEqual(loadConfig(host(t, { extensions: [{ plugin: 'adf-english-check@m' }] })), DEFAULT_CONFIG)
+  const config = loadConfig(host(t, { extensions: [{ plugin: 'adf-english-check@m', config: { include: ['docs/**'] } }] }))
+  assert.deepEqual(config, { ...DEFAULT_CONFIG, include: ['docs/**'] })
 })

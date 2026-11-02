@@ -7,11 +7,17 @@
 // `&`, parentheses and newlines; `cd <dir>` moves the effective directory for the commands
 // after it; `npm --prefix <dir>` (or `-C <dir>`) moves it for that command. A line that
 // cannot be read (an open quote) is allowed: the guard fails open.
+//
+// The guard acts only in a repository whose registry (`.claude/adf-extensions.json` in the
+// main checkout) enables the plugin; with no registry or no entry for it, it allows everything.
 import { spawnSync } from 'node:child_process'
-import { realpathSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { PLUGIN_NAME } from './provision.mjs'
+
+export const REGISTRY_PATH = '.claude/adf-extensions.json'
+const DECLARATION_FILE = 'adf-extension.json'
 
 // The commands the ban names and the aliases npm accepts for them.
 export const INSTALL_COMMANDS = new Set([
@@ -109,16 +115,17 @@ export function installDirectories(line, cwd) {
   return found
 }
 
-// A linked worktree's git dir differs from the repository's common dir; the main checkout's
-// are the same. Outside a repository, or in a directory that does not exist, it is not one.
-export function isLinkedWorktree(dir) {
+// The main checkout of the linked worktree `dir` is in, or null. A linked worktree's git dir
+// differs from the repository's common dir; the main checkout's are the same. Outside a
+// repository, or in a directory that does not exist, it is not one.
+export function linkedWorktreeMain(dir) {
   const r = spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore']
   })
-  if (r.error || r.status !== 0) return false
+  if (r.error || r.status !== 0) return null
   const [gitDir, commonDir] = r.stdout.trim().split('\n')
-  if (!gitDir || !commonDir) return false
+  if (!gitDir || !commonDir) return null
   const real = (path) => {
     try {
       return realpathSync.native(path)
@@ -126,7 +133,27 @@ export function isLinkedWorktree(dir) {
       return path
     }
   }
-  return real(gitDir) !== real(commonDir)
+  return real(gitDir) !== real(commonDir) ? dirname(real(commonDir)) : null
+}
+
+function isOurEntry(root, entry) {
+  if (typeof entry?.plugin === 'string') return entry.plugin.split('@')[0] === PLUGIN_NAME
+  if (typeof entry?.path !== 'string') return false
+  const file = join(isAbsolute(entry.path) ? entry.path : join(root, entry.path), DECLARATION_FILE)
+  try {
+    return JSON.parse(readFileSync(file, 'utf8')).name === PLUGIN_NAME
+  } catch {
+    return false
+  }
+}
+
+// Whether the registry of the checkout `root` has an entry for this plugin: an installed id
+// `adf-npm-workspaces@<marketplace>`, or a path whose declaration names the plugin.
+export function isEnabled(root) {
+  const file = join(root, REGISTRY_PATH)
+  if (!existsSync(file)) return false
+  const registry = JSON.parse(readFileSync(file, 'utf8'))
+  return (Array.isArray(registry?.extensions) ? registry.extensions : []).some((e) => isOurEntry(root, e))
 }
 
 // { code, stderr }: 0 the call runs, 2 the call is blocked and stderr says why.
@@ -142,7 +169,9 @@ export function guardHookInput(input) {
     throw error
   }
   for (const { sub, dir } of targets) {
-    if (dir === null || !isLinkedWorktree(dir)) continue
+    if (dir === null) continue
+    const main = linkedWorktreeMain(dir)
+    if (main === null || !isEnabled(main)) continue
     return {
       code: 2,
       stderr:

@@ -11,7 +11,11 @@ import { fileURLToPath } from 'node:url'
 const HOOK = join(dirname(fileURLToPath(import.meta.url)), '..', 'hook.mjs')
 const RU = '\u043f\u0440\u0438\u0432\u0435\u0442'
 
-function repo() {
+// The plugin acts only where the registry enables it: every repository but the ones a case
+// builds without an entry carries an entry with no config, so the defaults apply.
+const ENABLED = JSON.stringify({ contract: '1.1', extensions: [{ plugin: 'adf-english-check@agentic-dev-flow' }] })
+
+function repo({ registry = ENABLED } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'english-check-'))
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' })
   git('init', '-q')
@@ -23,6 +27,7 @@ function repo() {
     writeFileSync(join(root, path), text)
   }
   write('README.md', 'base\n')
+  if (registry !== null) write('.claude/adf-extensions.json', registry)
   git('add', '.')
   git('commit', '-q', '-m', 'base')
   return { root, git, write }
@@ -199,13 +204,28 @@ test('a path entry whose declaration is named english-check gives the configurat
   assert.equal(hook('git commit -m x', r.root).code, 2)
 })
 
-test('a registry without an entry for the plugin keeps the defaults', (t) => {
+test('a registry entry with no config applies the defaults', (t) => {
   const r = repo()
   t.after(() => rmSync(r.root, { recursive: true, force: true }))
-  r.write('.claude/adf-extensions.json', JSON.stringify({ contract: '1.1', extensions: [] }))
   r.write('openspec/changes/x/proposal.md', `${RU}\n`)
   r.git('add', '.')
   assert.equal(hook('git commit -m x', r.root).code, 2)
+})
+
+test('a registry without an entry for the plugin: the hook does nothing', (t) => {
+  const r = repo({ registry: JSON.stringify({ contract: '1.1', extensions: [{ plugin: 'other@agentic-dev-flow' }] }) })
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('openspec/changes/x/proposal.md', `${RU}\n`)
+  r.git('add', '.')
+  assert.deepEqual(hook('git commit -m x', r.root), { code: 0, stderr: '', stdout: '' })
+})
+
+test('no registry: the hook does nothing', (t) => {
+  const r = repo({ registry: null })
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('openspec/changes/x/proposal.md', `${RU}\n`)
+  r.git('add', '.')
+  assert.deepEqual(hook('git commit -m x', r.root), { code: 0, stderr: '', stdout: '' })
 })
 
 test('a check that cannot run fails open: exit 1 and a warning, never a block', (t) => {
