@@ -1,8 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
 import { recordReply } from '../lib/attempts.mjs'
@@ -139,6 +139,29 @@ test('tick --commit refuses, and ticks nothing, while another path is staged', (
   assert.equal(out.code, 1)
   assert.match(out.result.error, /other paths are staged.*other\.txt/)
   assert.equal(read(root), '## 1. G\n\n- [ ] 1.1 one\n- [ ] 1.2 two\n')
+})
+
+test('tick --commit commits through the index: a pre-commit hook that formats and re-stages leaves nothing behind (#1)', () => {
+  const root = repo()
+  const hook = join(root, '.git', 'hooks', 'pre-commit')
+  mkdirSync(dirname(hook), { recursive: true })
+  writeFileSync(hook, "#!/bin/sh\nprintf '# formatted\\n' >> openspec/changes/c/tasks.md\ngit add openspec/changes/c/tasks.md\n")
+  chmodSync(hook, 0o755)
+  const out = run(['tick', '1.1', '--change', 'c', '--root', root, '--commit'])
+  assert.equal(out.code, 0)
+  assert.match(git(root, 'show', 'HEAD:openspec/changes/c/tasks.md'), /- \[x\] 1\.1 one\n- \[ \] 1\.2 two\n# formatted$/)
+  assert.equal(git(root, 'status', '--porcelain'), '')
+})
+
+test('tick --commit runs the guide\'s format command on the tick\'s paths first (#2)', () => {
+  const root = repo()
+  writeFileSync(join(root, 'openspec', 'planning.md'), "## Format command\n\n`perl -pi -e 's/^- \\[x\\]/- [X]/' {files}`\n")
+  git(root, 'add', 'openspec/planning.md')
+  git(root, 'commit', '-q', '-m', 'guide')
+  const out = run(['tick', '1.1', '--change', 'c', '--root', root, '--commit'])
+  assert.equal(out.code, 0)
+  assert.equal(git(root, 'show', 'HEAD:openspec/changes/c/tasks.md'), '## 1. G\n\n- [X] 1.1 one\n- [ ] 1.2 two')
+  assert.equal(git(root, 'status', '--porcelain'), '')
 })
 
 test('tasks.mjs lint exits 1 on an error finding and 0 on warnings alone', () => {

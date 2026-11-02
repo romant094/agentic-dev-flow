@@ -52,11 +52,12 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { changeDir } from './changes.mjs'
 import { addBaseCheck, removeBaseCheck } from './groups.mjs'
 import { mainCheckout } from './installed.mjs'
+import { PLANNING_FILE, sectionBounds as guideSectionBounds, sectionLine } from './guide.mjs'
 import { prepareWorktree } from './prepare.mjs'
 import { CHECKS, countsIn, RECORD_FILE, reconcileCounts, verifyDir } from './verify.mjs'
 import { gitIn } from './workspace.mjs'
 
-export const PLANNING_FILE = 'openspec/planning.md'
+export { PLANNING_FILE }
 export const HEADING = '## Whole-suite command'
 export const PROOF_HEADING = '## Fresh-run proof'
 export const SECTION_ID = 'test-record'
@@ -79,29 +80,7 @@ const rel = (root, file) => toPosix(relative(root, file))
 // ---------------------------------------------------------------- the planning guide
 
 // [start, end) line indexes of the section body, or null when the heading is absent.
-export function sectionBounds(lines, heading = HEADING) {
-  const at = lines.findIndex((l) => l.trim() === heading)
-  if (at < 0) return null
-  let end = lines.findIndex((l, i) => i > at && /^#{1,2}\s/.test(l))
-  if (end < 0) end = lines.length
-  return { at, start: at + 1, end }
-}
-
-// The one line of a guide section: a fenced block, an inline code span or a plain line; null
-// when the section is absent or empty.
-function sectionLine(text, heading, what) {
-  const lines = String(text ?? '').split(/\r?\n/)
-  const bounds = sectionBounds(lines, heading)
-  if (!bounds) return null
-  const body = lines.slice(bounds.start, bounds.end).join('\n').replace(/<!--[\s\S]*?-->/g, '')
-  const fence = /^(```|~~~)[^\n]*\n([\s\S]*?)^\1\s*$/m.exec(body)
-  const candidates = (fence ? fence[2] : body).split('\n').map((l) => l.trim()).filter(Boolean)
-  if (candidates.length === 0) return null
-  if (candidates.length > 1) throw new Error(`the ${heading} section holds ${candidates.length} lines; it must hold one ${what}`)
-  const line = candidates[0]
-  const inline = /^`([^`]+)`\.?$/.exec(line)
-  return (inline ? inline[1] : line).trim() || null
-}
+export const sectionBounds = (lines, heading = HEADING) => guideSectionBounds(lines, heading)
 
 export const commandIn = (text) => sectionLine(text, HEADING, 'command')
 

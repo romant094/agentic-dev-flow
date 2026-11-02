@@ -3,6 +3,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { changeDir } from './changes.mjs'
+import { formatPaths } from './commit.mjs'
 import { notClean, subjectState } from './loop.mjs'
 import { lintTasks, parsePlan } from './plan.mjs'
 import { gitIn } from './workspace.mjs'
@@ -48,9 +49,10 @@ export function tickGate(root, change, number) {
 export const tickMessage = (item, change) => `chore(openspec): tick ${item} of ${change}`
 
 // Commits the tick: the tasks file, and plan.md when it differs from HEAD (an "Added during
-// apply" bullet). Staged paths outside these are refused, never swept into the commit, and
-// git stages and commits by path only. Returns { sha, paths }, sha null when nothing changed;
-// `dryRun` runs the refusal alone.
+// apply" bullet). Staged paths outside these are refused, never swept into the commit; the
+// guide's format command runs on the paths, which are then staged and committed through the
+// index, as lib/commit.mjs does. Returns { sha, paths }, sha null when nothing changed; `dryRun`
+// runs the refusal alone.
 export function commitTick(root, change, item, { tracks = 'tasks.md', git = gitIn(root), dryRun = false } = {}) {
   const dir = `openspec/changes/${change}`
   const candidates = [`${dir}/${tracks}`, `${dir}/plan.md`]
@@ -60,8 +62,9 @@ export function commitTick(root, change, item, { tracks = 'tasks.md', git = gitI
   if (dryRun) return { sha: null, paths: [] }
   const paths = candidates.filter((p) => git('status', '--porcelain', '--', p) !== '')
   if (!paths.length) return { sha: null, paths: [] }
+  formatPaths(root, paths)
   git('add', '--', ...paths)
-  git('commit', '-m', tickMessage(item, change), '--', ...paths)
+  git('commit', '-m', tickMessage(item, change))
   return { sha: git('rev-parse', 'HEAD'), paths }
 }
 
