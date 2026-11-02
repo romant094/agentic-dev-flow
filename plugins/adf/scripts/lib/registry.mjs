@@ -68,7 +68,18 @@ export function validateDeclaration(declaration, points) {
   if (!Array.isArray(hostFiles) || !hostFiles.every((f) => inside(f?.from) && inside(f?.to))) {
     errors.push('hostFiles must be a list of { from, to } paths inside the plugin and the host')
   }
+  const required = declaration.requiredConfig
+  if (required !== undefined && !(Array.isArray(required) && required.every((key) => typeof key === 'string' && key !== ''))) {
+    errors.push('requiredConfig must be a list of config key names')
+  }
   return errors
+}
+
+// The keys of the declaration's `requiredConfig` that `config` does not set. A plugin may run
+// without them (an operation that needs none still works), so the core warns and never refuses.
+export function missingConfig(declaration, config) {
+  const given = config !== null && typeof config === 'object' && !Array.isArray(config) ? config : {}
+  return (declaration.requiredConfig ?? []).filter((key) => !Object.hasOwn(given, key))
 }
 
 export function validateRegistry(registry) {
@@ -273,22 +284,48 @@ export function addExtension(root, target, { config, coreContract, points, home 
   if (config !== undefined) entry.config = config
   writeRegistry(root, { ...registry, extensions: [...registry.extensions, entry] })
   const hostFiles = copyHostFiles(root, entry, declaration, { home })
-  return { name: declaration.name, points: Object.keys(declaration.provides), hostFiles }
+  return { name: declaration.name, points: Object.keys(declaration.provides), hostFiles, missingConfig: missingConfig(declaration, config) }
 }
 
-export function removeExtension(root, name, { home } = {}) {
-  const registry = requireRegistry(root)
+// The index of the entry `target` names: an id (`name@marketplace`) names the entry with that
+// id; anything else is a plugin's name, its declared one or, when its declaration cannot be
+// read, the name part of its id.
+function findEntry(root, registry, target, { home }) {
   const index = registry.extensions.findIndex((entry) => {
+    if (PLUGIN_ID.test(target)) return entry.plugin === target
     try {
-      return readDeclaration(root, entry, { home }).name === name
+      return readDeclaration(root, entry, { home }).name === target
     } catch {
-      return entry.plugin?.split('@')[0] === name
+      return entry.plugin?.split('@')[0] === target
     }
   })
-  if (index === -1) throw new Error(`${name} is not enabled`)
-  const [removed] = registry.extensions.splice(index, 1)
+  if (index === -1) throw new Error(`${target} is not enabled`)
+  return index
+}
+
+export function removeExtension(root, target, { home } = {}) {
+  const registry = requireRegistry(root)
+  const [removed] = registry.extensions.splice(findEntry(root, registry, target, { home }), 1)
   writeRegistry(root, registry)
   return removed
+}
+
+// Replaces the config of the enabled plugin `target` names (its name or id), keeping its place
+// in `extensions`: the order is the hooks' call order.
+export function configExtension(root, target, { config, home } = {}) {
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) throw new Error('config must be a JSON object')
+  const registry = requireRegistry(root)
+  const index = findEntry(root, registry, target, { home })
+  const entry = { ...registry.extensions[index], config }
+  registry.extensions[index] = entry
+  writeRegistry(root, registry)
+  let declaration = null
+  try {
+    declaration = readDeclaration(root, entry, { home })
+  } catch {
+    // An entry whose plugin is not installed keeps its config; there is no declaration to check it against.
+  }
+  return { name: declaration?.name ?? target, entry, index, of: registry.extensions.length, missingConfig: declaration ? missingConfig(declaration, config) : [] }
 }
 
 // The enabled plugins with their directories, for the core to call, and the entries whose plugin
@@ -388,14 +425,27 @@ export function branchesReport(branches, check) {
   return [policy(branches), `Enabled plugins: ${plugins(check)}`, checkLine(check)].join('\n')
 }
 
+const missingLine = (keys) =>
+  keys.length ? [`Warning: the config has no ${keys.join(', ')}; an operation that needs ${keys.length === 1 ? 'it' : 'them'} refuses until extensions.mjs config sets ${keys.length === 1 ? 'it' : 'them'}`] : []
+
 export function addReport(added, check, tracker) {
   return [
     `Enabled: ${added.name} (${added.points.length ? added.points.join(', ') : 'no points'})`,
+    ...missingLine(added.missingConfig),
     `Host files copied: ${added.hostFiles.copied.length ? added.hostFiles.copied.join(', ') : 'none'}`,
     `Host files already present: ${added.hostFiles.kept.length ? added.hostFiles.kept.join(', ') : 'none'}`,
     checkLine(check),
     ...(tracker ? [trackerReport('check', tracker)] : []),
     'Nothing was committed: the developer commits the registry and the copied host files.'
+  ].join('\n')
+}
+
+export function configReport(configured, check) {
+  return [
+    `Configured: ${configured.name} (position ${configured.index + 1} of ${configured.of}, kept)`,
+    ...missingLine(configured.missingConfig),
+    checkLine(check),
+    'Nothing was committed: the developer commits the registry.'
   ].join('\n')
 }
 

@@ -1,6 +1,7 @@
 {
   "name": "adf-postgres",
   "contract": "1.6",
+  "requiredConfig": ["prefix", "url"],
   "provides": {
     "provision": {
       "script": "scripts/postgres.mjs",

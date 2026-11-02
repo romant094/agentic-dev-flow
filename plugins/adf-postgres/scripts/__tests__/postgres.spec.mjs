@@ -158,6 +158,30 @@ test('a missing or malformed config is refused with what is missing', () => {
   assert.equal(r.calls.length, 0)
 })
 
+test('with no config, a worktree that needs no database is done and only a database need is refused', () => {
+  const paths = fixture()
+  for (const extra of [{ needs: [] }, { kind: 'base-check' }, { kind: 'proof' }]) {
+    const r = op('provision', provisionInput(paths, extra), [], {})
+    assert.equal(r.code, 0)
+    assert.equal(r.result.state, 'done')
+    assert.deepEqual(r.result.actions, [])
+  }
+  const r = op('provision', provisionInput(paths), [], {})
+  assert.equal(r.code, 1)
+  assert.match(r.result.error, /config\.prefix is missing/)
+  assert.equal(r.calls.length, 0)
+})
+
+test('with no config, teardown is done and drops nothing', () => {
+  const paths = fixture()
+  const r = op('teardown', { ...paths, kind: 'change', change: 'add-eee', branch: BRANCH }, [], {})
+  assert.equal(r.code, 0)
+  assert.equal(r.result.state, 'done')
+  assert.deepEqual(r.result.actions, [])
+  assert.match(r.result.notes[0], /no config/)
+  assert.equal(r.calls.length, 0)
+})
+
 // ---------------------------------------------------------------- provision
 
 test('provision does nothing without database in needs, or for a base-check', () => {
