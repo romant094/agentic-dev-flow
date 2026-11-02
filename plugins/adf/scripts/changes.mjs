@@ -20,7 +20,8 @@
 //                                                    resolves an archived change for land.
 //                                                    { ok, ask, change, root, branch, source,
 //                                                    switched?, reason?, choices? }
-//   changes.mjs status [--change <name>] [--report]  each artifact: done, ready or blocked;
+//   changes.mjs status [--change <name>] [--report]  each artifact: done, skipped (with its
+//                                                    reason when there is one), ready or blocked;
 //                                                    --report adds the rendered propose report
 //                                                    (the merge request is forge.mjs's own report)
 //   changes.mjs instructions <artifact|apply> [--change <name>]
@@ -39,8 +40,13 @@
 //   changes.mjs done <artifact> [--change <name>]    moves a Superpowers skill's default-folder
 //                                                    output into the change, reports copied
 //                                                    project guidance, runs the artifact's gates
-//   changes.mjs skip <artifact> [--change <name>]    records that an optional artifact is not
-//                                                    written
+//   changes.mjs skip <artifact> [--change <name>] [--reason "<why>"]
+//                                                    records that an artifact is not written: an
+//                                                    optional one, or one the schema marks
+//                                                    skippable (specs), which needs --reason
+//   changes.mjs unskip <artifact> [--change <name>]  undoes a skip, so the artifact is written;
+//                                                    a skipped artifact whose output exists is
+//                                                    a `conflict` in status until this or a delete
 //   changes.mjs schema                               validate the schema and print its graph
 //   changes.mjs archive --change <name>              archive's move: copies the ledger into the
 //                                                    change once, then moves the change to
@@ -51,8 +57,8 @@
 //                                                    copied|none, already }
 //
 // --root <dir> names the host project or the change worktree (default: the current directory).
-// Without --change the change is the one active change under the root. next, done, skip and
-// archive write, and refuse the main checkout unless --allow-main is given.
+// Without --change the change is the one active change under the root. next, done, skip,
+// unskip and archive write, and refuse the main checkout unless --allow-main is given.
 import { execFileSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import {
@@ -67,7 +73,8 @@ import {
   newChange,
   refuseMainCheckout,
   skipArtifact,
-  statusReport
+  statusReport,
+  unskipArtifact
 } from './lib/changes.mjs'
 import { buildOrder, loadSchema } from './lib/schema.mjs'
 import { isMain } from './lib/main.mjs'
@@ -125,6 +132,7 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
   const report = flag(args, '--report')
   const allowMain = flag(args, '--allow-main')
   const archived = flag(args, '--archived')
+  const reason = option(args, '--reason')
   const [command, target] = args
   const schema = loadSchema(schemaDir)
   const change = () => inferChange(root, given, schema)
@@ -171,9 +179,13 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
       writing()
       return markDone(resolve(root), change(), target, schema)
     case 'skip':
-      if (!target) throw new Error('usage: skip <artifact> [--change <name>]')
+      if (!target) throw new Error('usage: skip <artifact> [--change <name>] [--reason "<why>"]')
       writing()
-      return skipArtifact(root, change(), target, schema)
+      return skipArtifact(root, change(), target, schema, { reason })
+    case 'unskip':
+      if (!target) throw new Error('usage: unskip <artifact> [--change <name>]')
+      writing()
+      return unskipArtifact(root, change(), target, schema)
     case 'schema':
       return { name: schema.name, version: schema.version, order: buildOrder(schema), apply: schema.apply ?? null }
     case 'archive':
@@ -181,7 +193,7 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
       writing()
       return archiveChange(resolve(root), given)
     default:
-      throw new Error('usage: changes.mjs new|list|find|active|status|instructions|next|done|skip|schema|archive [--root <dir>]')
+      throw new Error('usage: changes.mjs new|list|find|active|status|instructions|next|done|skip|unskip|schema|archive [--root <dir>]')
   }
 }
 

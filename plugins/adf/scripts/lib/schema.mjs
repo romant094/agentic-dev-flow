@@ -18,6 +18,9 @@ const GUIDE = /^[a-z0-9][a-z0-9-]*\.md$/
 // has one (lib/scope.mjs).
 export const GATES = ['scope-sources', 'specs-validate', 'specs-capabilities', 'specs-against-main', 'specs-base', 'tasks-lint', 'plan-symbols', 'plan-lint']
 
+// `skippable: true` lets a change skip an artifact apply needs, with a reason (`changes.mjs skip
+// <id> --reason`): the skipped artifact meets what requires it, and verify and archive read the
+// reason. An optional artifact is skipped without one.
 const isText = (value) => typeof value === 'string' && value.length > 0
 
 export function validateSchema(schema, dir) {
@@ -44,6 +47,7 @@ export function validateSchema(schema, dir) {
     if (artifact.guides !== undefined && !(Array.isArray(artifact.guides) && artifact.guides.every((g) => GUIDE.test(g)))) {
       errors.push(`artifact "${id}": guides must list file names such as planning.md`)
     }
+    if (artifact.skippable !== undefined && typeof artifact.skippable !== 'boolean') errors.push(`artifact "${id}": skippable must be a boolean`)
     if (artifact.gates !== undefined) {
       if (!Array.isArray(artifact.gates)) errors.push(`artifact "${id}": gates must be an array`)
       else {

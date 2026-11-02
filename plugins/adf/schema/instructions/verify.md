@@ -54,7 +54,10 @@ pass. What resolves each check:
   propose; a change with no key to map passes with a note.
 - `deltas`: each capability's delta against its main spec. `needs sync` is expected before
   archive, which merges the deltas: a warning naming the capabilities, not a failure. A
-  `conflict` is a delta archive could not apply, and fails.
+  `conflict` is a delta archive could not apply, and fails. A change that skipped `specs`
+  passes this check and `validation` as N/A with its skip reason, and fails `deltas` if it holds
+  a delta spec all the same: delete the delta, or keep it and take `specs` out of `skipped` in
+  the change's `.adf.json`.
 - `specs-base`: `specs.mjs base --check`. Archive's three-way check reads each modified,
   removed or renamed requirement's base text from the change's `specs-base.json`, taken at
   propose, because a rebase moves `git merge-base` past the edit another change made. A

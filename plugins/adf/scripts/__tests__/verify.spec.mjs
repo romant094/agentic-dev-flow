@@ -224,6 +224,21 @@ test('deltas warns on a capability still to sync and fails on one archive cannot
   assert.equal(checks.deltas.summary, 'cannot be merged at archive: greeting')
 })
 
+test('a change that skipped specs passes validation and deltas with the reason, and fails deltas on a delta spec', () => {
+  const { root } = host()
+  const meta = { schema: 'adf', base: 'develop', skipped: ['specs'], skipReasons: { specs: 'a refactor; no requirement changes' } }
+  commit(root, { [changeFile('.adf.json')]: `${JSON.stringify(meta)}\n` }, 'skip specs')
+  let checks = runIn(root)
+  assert.equal(checks.deltas.verdict, 'fail')
+  assert.equal(checks.deltas.summary, 'specs skipped (a refactor; no requirement changes), yet the change has delta specs: greeting')
+  git(root, 'rm', '-q', '-r', changeFile('specs'))
+  git(root, 'commit', '-q', '-m', 'drop the delta')
+  checks = runIn(root)
+  assert.deepEqual([checks.validation.verdict, checks.validation.summary], ['pass', 'N/A: specs skipped (a refactor; no requirement changes)'])
+  assert.deepEqual([checks.deltas.verdict, checks.deltas.summary], ['pass', 'N/A: specs skipped (a refactor; no requirement changes)'])
+  assert.equal(checks['specs-base'].verdict, 'pass')
+})
+
 test('deltaState reads renames, removals and modifications against the main spec', () => {
   const renamed = `## RENAMED Requirements\n\n- FROM: \`### Requirement: Greeting\`\n- TO: \`### Requirement: Welcome\`\n`
   assert.deepEqual(deltaState(renamed, MAIN), { state: 'needs sync', pending: ['RENAMED Greeting -> Welcome'], conflicts: [] })

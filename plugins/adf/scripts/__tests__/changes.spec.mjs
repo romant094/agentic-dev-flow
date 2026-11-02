@@ -14,7 +14,10 @@ import {
   newChange,
   parseTasks,
   readChangeMeta,
-  resolveOutputs
+  resolveOutputs,
+  skipArtifact,
+  statusReport,
+  unskipArtifact
 } from '../lib/changes.mjs'
 import { setBranches } from '../lib/branches.mjs'
 import { initRegistry } from '../lib/registry.mjs'
@@ -92,6 +95,46 @@ test('status follows the graph as artifacts appear', () => {
   assert.equal(status.isComplete, false)
   assert.deepEqual(status.applyRequires, ['plan'])
   assert.throws(() => changeStatus(root, 'nope', schema), /no change "nope"/)
+})
+
+test('a skipped artifact shows skipped with its reason, and meets what requires it', () => {
+  const root = host()
+  newChange(root, 'c', schema)
+  write(root, 'openspec/changes/c/brainstorm.md')
+  write(root, 'openspec/changes/c/proposal.md')
+  assert.deepEqual(skipArtifact(root, 'c', 'design', schema), { changeName: 'c', skipped: ['design'] })
+  assert.throws(() => skipArtifact(root, 'c', 'specs', schema), /specs is required before apply; skip it only with a reason/)
+  assert.throws(() => skipArtifact(root, 'c', 'proposal', schema, { reason: 'why' }), /proposal is required before apply and cannot be skipped/)
+  const reason = 'a refactor; no requirement changes'
+  assert.deepEqual(skipArtifact(root, 'c', 'specs', schema, { reason }), { changeName: 'c', skipped: ['design', 'specs'], reason })
+  const meta = JSON.parse(readFileSync(join(root, 'openspec/changes/c/.adf.json'), 'utf8'))
+  assert.deepEqual([meta.skipped, meta.skipReasons], [['design', 'specs'], { specs: reason }])
+
+  const status = changeStatus(root, 'c', schema)
+  assert.deepEqual([statuses(status).design, statuses(status).specs, statuses(status).tasks], ['skipped', 'skipped', 'ready'])
+  assert.equal(status.artifacts.find((a) => a.id === 'specs').reason, reason)
+  assert.equal('reason' in status.artifacts.find((a) => a.id === 'design'), false)
+  const report = statusReport(status, { root })
+  assert.match(report, /\n- design: skipped\n/)
+  assert.match(report, /\n- specs: skipped \(a refactor; no requirement changes\)\n/)
+  const tasks = artifactInstructions(root, 'c', 'tasks', schema)
+  assert.deepEqual(tasks.dependencies.map((d) => [d.id, d.done, d.skipped]), [['specs', false, reason]])
+
+  // A skipped artifact whose output is written is a conflict, never done; unskip settles it.
+  write(root, 'openspec/changes/c/design.md')
+  const conflict = changeStatus(root, 'c', schema).artifacts.find((a) => a.id === 'design')
+  assert.equal(conflict.status, 'conflict')
+  assert.match(conflict.conflict, /design is skipped, yet design\.md is written: delete it, or run changes\.mjs unskip design/)
+  assert.match(statusReport(changeStatus(root, 'c', schema), { root }), /\n- design: conflict: design is skipped/)
+  assert.deepEqual(unskipArtifact(root, 'c', 'specs', schema), { changeName: 'c', skipped: ['design'] })
+  assert.equal('skipReasons' in JSON.parse(readFileSync(join(root, 'openspec/changes/c/.adf.json'), 'utf8')), false)
+  assert.deepEqual(unskipArtifact(root, 'c', 'design', schema), { changeName: 'c', skipped: [] })
+  assert.equal(statuses(changeStatus(root, 'c', schema)).design, 'done')
+  assert.throws(() => unskipArtifact(root, 'c', 'design', schema), /design is not skipped/)
+  const other = host()
+  newChange(other, 'c', schema)
+  write(other, 'openspec/changes/c/design.md')
+  assert.throws(() => skipArtifact(other, 'c', 'design', schema), /design is already written/)
 })
 
 test('instructions carry the template, the project guidance and the graph neighbours', () => {

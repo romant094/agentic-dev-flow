@@ -127,6 +127,18 @@ any tracker keys the change works on.
         `context`, `rules` and `guides` as constraints.
      3. Write to `instructions.resolvedOutputPath`; never assume a path. For an `optional`
         artifact the change does not need, run the skip command `optionalNote` names instead.
+        For `specs`, when the change modifies no requirement (a refactor of specified
+        behaviour), skip it with the reason instead, and the proposal still names the
+        capability the change touches:
+
+        ```bash
+        node "${CLAUDE_PLUGIN_ROOT}/scripts/changes.mjs" skip specs --reason "<why no requirement changes>" --change <name> --root <root>
+        ```
+
+        A skipped artifact shows `skipped` in `status`, with its reason. One skipped and then
+        written is a `conflict`, which blocks `next` and the commit: delete its output, or run
+        `changes.mjs unskip <artifact> --change <name> --root <root>`. Verify fails a change
+        that skipped specs yet holds a delta spec; archive merges nothing for it.
      4. For the proposal, when `create` reported `scope`, run
         `scope.mjs render --change <name> --root <root>` first: it writes the
         `## Scope sources` section.

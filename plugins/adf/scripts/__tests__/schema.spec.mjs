@@ -70,6 +70,12 @@ test('gates must name known checks, once each', () => {
   assert.ok(validateSchema(graph(artifact('a', [], { gates: 'tasks-lint' })), dir).some((e) => /gates must be an array/.test(e)))
 })
 
+test('skippable is a boolean, and the shipped schema lets only specs be skipped with a reason', () => {
+  assert.deepEqual(validateSchema(graph(artifact('a', [], { skippable: true })), dir), [])
+  assert.ok(validateSchema(graph(artifact('a', [], { skippable: 'yes' })), dir).some((e) => /"a": skippable must be a boolean/.test(e)))
+  assert.deepEqual(loadSchema().artifacts.filter((a) => a.skippable).map((a) => a.id), ['specs'])
+})
+
 test('the shipped schema gates specs, tasks and plan with the checks propose used to run by hand', () => {
   const gates = Object.fromEntries(loadSchema().artifacts.filter((a) => a.gates).map((a) => [a.id, a.gates]))
   assert.deepEqual(gates, {

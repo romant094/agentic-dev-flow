@@ -129,7 +129,9 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    Show its totals (added, modified, removed, renamed), the new capabilities, the conflicts and
    `merged`, which says the main specs already hold the delta. There is no choice to archive
    without the merge: only archive writes the main specs, and an archived change is not
-   archived again, so a skipped merge could never be made. The merge itself:
+   archived again, so a skipped merge could never be made. A change that skipped `specs` has no
+   delta: the step merges nothing and its report names the skip reason; it refuses such a change
+   that holds a delta spec. The merge itself:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/archive.mjs" merge --change <change> [--resolutions <file> ...] [--purpose <capability>=<file> ...] --root <root>

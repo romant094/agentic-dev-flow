@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { attemptsFile, parseEvents, readLog } from './attempts.mjs'
-import { changeDir, globToRegExp, META_FILE, parseTasks, readChangeMeta } from './changes.mjs'
+import { changeDir, globToRegExp, META_FILE, parseTasks, readChangeMeta, skippedArtifacts } from './changes.mjs'
 import { parseName } from './dispatch.mjs'
 import { baseCheckPath, listGroups } from './groups.mjs'
 import { commitPaths } from './commit.mjs'
@@ -26,7 +26,7 @@ import { onlyOutsideReview } from './review-state.mjs'
 import { c4Lines, c8Lines, fence as fenceText } from './reply-render.mjs'
 import { callHook, CORE, hookProviders, knowledgePaths } from './roles.mjs'
 import { scopeNaming } from './scope.mjs'
-import { checkSpecsBase, extractRequirementsSection, parseDeltaSpec, validateProject } from './specs.mjs'
+import { checkSpecsBase, extractRequirementsSection, MESSAGES, parseDeltaSpec, validateProject } from './specs.mjs'
 import { countsOf, readTestRecord } from './suite.mjs'
 import { claudeHome } from './superpowers.mjs'
 import { gitIn } from './workspace.mjs'
@@ -90,6 +90,14 @@ function readMeta(root, change) {
   return readChangeMeta(root, changeDir(root, change))
 }
 
+// The reason a change skipped its specs (`changes.mjs skip specs --reason`), '' with none given;
+// null when it did not skip them.
+function specsSkipped(root, change) {
+  const skipped = skippedArtifacts(readMeta(root, change))
+  return skipped.has('specs') ? (skipped.get('specs') ?? '') : null
+}
+const skippedSpecs = (reason) => `specs skipped${reason ? ` (${reason})` : ''}`
+
 export function resolveBase(root, change, git) {
   const meta = readMeta(root, change)
   if (!meta) return { error: `cannot read ${changePrefix(change)}${META_FILE}` }
@@ -121,6 +129,11 @@ function checkValidation(root, change) {
     for (const issue of other.issues) lines.push(`    ${issue.level} ${issue.path}: ${issue.message}`)
   }
   const errors = item.issues.length
+  // A change that skipped its specs has no delta; that alone is no failure.
+  const skip = specsSkipped(root, change)
+  if (skip !== null && !item.valid && item.issues.every((i) => i.message.startsWith(MESSAGES.CHANGE_NO_DELTAS))) {
+    return { verdict: 'pass', summary: `N/A: ${skippedSpecs(skip)}`, text: lines.join('\n') }
+  }
   return item.valid
     ? { verdict: 'pass', summary: `${change} validates strictly`, text: lines.join('\n') }
     : { verdict: 'fail', summary: `${change} has ${errors} validation issue${errors === 1 ? '' : 's'}`, text: lines.join('\n') }
@@ -190,6 +203,16 @@ function checkDeltas(root, change) {
         .map((e) => e.name)
         .sort()
     : []
+  // A change that skipped its specs modifies no requirement, so it has no delta spec.
+  const skip = specsSkipped(root, change)
+  if (skip !== null) {
+    if (capabilities.length === 0) return { verdict: 'pass', summary: `N/A: ${skippedSpecs(skip)}`, text: 'no delta specs' }
+    return {
+      verdict: 'fail',
+      summary: `${skippedSpecs(skip)}, yet the change has delta specs: ${capabilities.join(', ')}`,
+      text: `${skippedSpecs(skip)}: a change that skips specs modifies no requirement. Delete the delta specs, or keep them and remove "specs" from "skipped" in ${changePrefix(change)}${META_FILE}.`
+    }
+  }
   if (capabilities.length === 0) return { verdict: 'pass', summary: 'N/A: the change has no delta specs', text: 'no delta specs' }
   const lines = []
   const byState = { synced: [], 'needs sync': [], conflict: [] }

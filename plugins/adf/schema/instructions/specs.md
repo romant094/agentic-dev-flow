@@ -1,5 +1,10 @@
 Create the specification files that define WHAT the system must do.
 
+A change that modifies no requirement, such as a refactor of already-specified behaviour, writes
+no delta spec: skip `specs` with the reason, `changes.mjs skip specs --reason "<why>"`. The skip
+and its reason are recorded in the change's `.adf.json`; verify fails the change if it holds a
+delta spec anyway, and archive merges nothing for it.
+
 Write delta specs under this change only. The project's `openspec/specs/` is written by archive
 alone; a hand-authored main spec drifts from the archived deltas.
 

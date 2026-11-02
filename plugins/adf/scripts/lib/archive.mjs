@@ -79,7 +79,7 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
-import { archiveChange, archiveDate, archiveTarget, CHANGES_DIR, changeStatus, globToRegExp, LEDGER_FILE, META_FILE, parseTasks, readChangeMeta } from './changes.mjs'
+import { archiveChange, archiveDate, archiveTarget, CHANGES_DIR, changeStatus, globToRegExp, LEDGER_FILE, META_FILE, parseTasks, readChangeMeta, skippedArtifacts } from './changes.mjs'
 import { attemptsFile, recordReply } from './attempts.mjs'
 import { readBranches } from './branches.mjs'
 import { commitPaths } from './commit.mjs'
@@ -378,9 +378,9 @@ export function checkStep(ctx) {
       refuse(`${base.refusal}; the merge must not use a base the delta was not written against`, { roots, specsBase: { missing: base.missing, stale: base.stale } })
     }
     const dir = join(root, CHANGES_DIR, change)
-    const skipped = new Set(readMeta(root, dir).skipped ?? [])
+    readMeta(root, dir)
     for (const a of changeStatus(root, change, loadSchema()).artifacts) {
-      if (a.status !== 'done' && !skipped.has(a.id)) warnings.push(`artifact ${a.id} is ${a.status}`)
+      if (!['done', 'skipped'].includes(a.status)) warnings.push(`artifact ${a.id} is ${a.status}`)
     }
     const tasksFile = join(dir, 'tasks.md')
     if (existsSync(tasksFile)) {
@@ -486,6 +486,12 @@ export function mergeStep(ctx, { resolutionFiles = [], purposeFiles = {} } = {})
       return value
     })
     checkResolutions(resolutions)
+    // A change that skipped its specs merges nothing; a delta spec it holds anyway is refused.
+    const skipped = skippedArtifacts(readMeta(root, join(root, CHANGES_DIR, change)))
+    const specsSkipped = skipped.has('specs') ? (skipped.get('specs') ?? '') : null
+    const skippedText = `specs skipped${specsSkipped ? ` (${specsSkipped})` : ''}`
+    const deltas = specCapabilities(join(root, CHANGES_DIR, change))
+    if (specsSkipped !== null && deltas.length > 0) refuse(`${skippedText}, yet the change has delta specs: ${deltas.join(', ')}; nothing was written`)
     const purposes = {}
     for (const [capability, file] of Object.entries(purposeFiles)) {
       let text
@@ -525,6 +531,7 @@ export function mergeStep(ctx, { resolutionFiles = [], purposeFiles = {} } = {})
         written: out.written,
         totals: out.totals,
         noChanges: out.noChanges,
+        ...(specsSkipped !== null ? { specsSkipped } : {}),
         merged: out.merged,
         newCapabilities: out.newCapabilities,
         purposes: Object.keys(purposes),
@@ -866,7 +873,7 @@ const summary = {
     `every debt, recorded finding and deviation placed${d.resolvedDebt?.length ? `; resolved debt moved to resolved.md: ${d.resolvedDebt.join(', ')}, resolved by ${d.resolvedBy}` : ''}${d.goneDebt?.length ? `; taken debt gone from the tree: ${d.goneDebt.join(', ')}` : ''}${d.debtFiles?.length ? `; debt files ${d.debtFiles.join(', ')}` : ''}`,
   merge: (d) =>
     d.noChanges
-      ? 'no delta specs'
+      ? `no delta specs${d.specsSkipped !== undefined ? `; specs skipped${d.specsSkipped ? ` (${d.specsSkipped})` : ''}` : ''}`
       : d.merged
         ? 'the main specs already held the delta'
         : `added ${d.totals.added}, modified ${d.totals.modified}, removed ${d.totals.removed}, renamed ${d.totals.renamed}${d.newCapabilities?.length ? `; new capabilities ${d.newCapabilities.join(', ')}` : ''}${d.purposes?.length ? `; Purpose written by hand for ${d.purposes.join(', ')}` : ''}${d.resolved?.length ? `; conflicts resolved: ${d.resolved.join('; ')}` : ''}${d.warnings?.length ? `; warnings: ${d.warnings.join('; ')}` : ''}`,
