@@ -22,7 +22,12 @@ The plugin enforces the rule with a Claude Code `PreToolUse` hook on Bash comman
 directory they run in is a linked git worktree (its git directory differs from the
 repository's common directory). It reads `cd <dir> &&` and `npm --prefix <dir>` (or `-C`). The
 main checkout, `npm install -g` and every other command are allowed. A command line it cannot
-read, or a `cd` to a variable, is allowed: the guard fails open. Claude Code loads a plugin's
+read, or a `cd` to a variable, is allowed: the guard fails open.
+
+The guard acts only in a repository whose registry, `.claude/adf-extensions.json` in the main
+checkout, has an entry for this plugin (an installed id or a `path` entry whose directory holds
+this plugin's `adf-extension.json`). With no registry, or no entry for this plugin, it does
+nothing: it exits 0 and prints nothing, though the plugin is installed. Claude Code loads a plugin's
 hooks only for a plugin installed by id, so the guard needs the plugin installed as above: a
 registry `path` entry runs `provision` but carries no guard.
 

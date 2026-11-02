@@ -14,7 +14,7 @@ Hangul pass. Every offending line is reported, with its 1-based line number and 
 
 The plugin ships one `PreToolUse` hook with the matcher `Bash`. It runs before every Bash call
 of every agent in the session, subagents included, and does nothing unless the command runs
-`git commit`. It recognises `git commit`, `git -C <dir> commit`, environment prefixes such as
+`git commit` in a repository whose registry enables this plugin (see Configuration). It recognises `git commit`, `git -C <dir> commit`, environment prefixes such as
 `LEFTHOOK=0 git commit`, `cd <dir> && git commit`, and commits chained with `&&`, `||` or `;`.
 
 The files it checks are those the commit takes:
@@ -64,6 +64,10 @@ The scope comes from the host's ADF registry, `.claude/adf-extensions.json` at t
 root: the entry `{"plugin": "adf-english-check@agentic-dev-flow", "config": {...}}`, or a `path`
 entry whose directory holds this plugin's `adf-extension.json`. `/adf:add` can write it.
 
+The entry also enables the check. In a repository with no registry, or whose registry has no
+entry for this plugin, the hook does nothing: it exits 0 and prints nothing, though the plugin is
+installed. An entry with no `config` checks the defaults below.
+
 | Key | Meaning | Default |
 |---|---|---|
 | `include` | globs of repository-relative paths in scope | `openspec/changes/**`, `openspec/specs/**` |
@@ -77,8 +81,9 @@ segment. The default exclusion exempts a change's `plan.md`, also after it is ar
 
 ## Limits
 
-- The check exists only where this plugin is enabled in Claude Code. A commit made by hand,
-  outside Claude Code, is not checked, and the plugin installs no git hook.
+- The check exists only where this plugin is enabled in Claude Code and in the repository's
+  registry. A commit made by hand, outside Claude Code, is not checked, and the plugin installs
+  no git hook.
 - The hook reads the command line, not what the shell will do: a commit hidden in a script or an
   alias is not seen, except in the core's commit scripts listed above.
 - A file staged partly is checked as it is in the working tree.

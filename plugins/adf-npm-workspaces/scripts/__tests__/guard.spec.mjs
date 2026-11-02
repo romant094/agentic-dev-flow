@@ -11,7 +11,11 @@ import { installDirectories } from '../lib/guard.mjs'
 // against a real repository and a linked worktree of it in the system temp directory.
 const GUARD = join(dirname(fileURLToPath(import.meta.url)), '..', 'guard.mjs')
 
-function repo(t) {
+// The guard acts only where the registry enables the plugin: every repository but the ones a
+// case builds without an entry carries one, committed, so the worktree has it too.
+const ENABLED = JSON.stringify({ contract: '1.6', extensions: [{ plugin: 'adf-npm-workspaces@agentic-dev-flow' }] })
+
+function repo(t, { registry = ENABLED } = {}) {
   const main = realpathSync(mkdtempSync(join(tmpdir(), 'npm-guard-')))
   t.after(() => rmSync(main, { recursive: true, force: true }))
   const git = (...args) => execFileSync('git', args, { cwd: main, encoding: 'utf8' })
@@ -21,6 +25,10 @@ function repo(t) {
   git('config', 'commit.gpgsign', 'false')
   mkdirSync(join(main, 'apps/web'), { recursive: true })
   writeFileSync(join(main, 'apps/web/package.json'), '{}')
+  if (registry !== null) {
+    mkdirSync(join(main, '.claude'))
+    writeFileSync(join(main, '.claude/adf-extensions.json'), registry)
+  }
   git('add', '.')
   git('commit', '-q', '-m', 'base')
   const worktree = join(main, '.claude/worktrees/feature')
@@ -43,6 +51,23 @@ test('npm install and its kin are blocked in a linked worktree', (t) => {
     assert.match(out.stderr, /A dependency update is its own change/)
   }
   assert.equal(guard('npm install', join(r.worktree, 'apps/web')).code, 2)
+})
+
+test('no registry: the guard does nothing', (t) => {
+  const r = repo(t, { registry: null })
+  assert.deepEqual(guard('npm install', r.worktree), { code: 0, stderr: '', stdout: '' })
+})
+
+test('a registry without an entry for the plugin: the guard does nothing', (t) => {
+  const r = repo(t, { registry: JSON.stringify({ contract: '1.6', extensions: [{ plugin: 'other@agentic-dev-flow' }] }) })
+  assert.deepEqual(guard('npm install', r.worktree), { code: 0, stderr: '', stdout: '' })
+})
+
+test('a path entry whose declaration is named adf-npm-workspaces enables the guard', (t) => {
+  const r = repo(t, { registry: JSON.stringify({ contract: '1.6', extensions: [{ path: 'vendor/nw' }] }) })
+  mkdirSync(join(r.main, 'vendor/nw'), { recursive: true })
+  writeFileSync(join(r.main, 'vendor/nw/adf-extension.json'), JSON.stringify({ name: 'adf-npm-workspaces', contract: '1.6' }))
+  assert.equal(guard('npm install', r.worktree).code, 2)
 })
 
 test('the main checkout is allowed', (t) => {

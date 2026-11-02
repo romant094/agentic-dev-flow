@@ -95,14 +95,15 @@ function isOurEntry(root, entry) {
   }
 }
 
-// The host registry's entry for this plugin, if any, gives the configuration; no registry or
-// no entry means the defaults.
+// The host registry's entry for this plugin gives the configuration, with the defaults for a
+// key it does not set. No registry or no entry is null: the plugin is not enabled in that
+// repository, and the check does nothing there.
 export function loadConfig(root) {
   const file = join(root, REGISTRY_PATH)
-  if (!existsSync(file)) return resolveConfig()
+  if (!existsSync(file)) return null
   const registry = JSON.parse(readFileSync(file, 'utf8'))
   const entry = (Array.isArray(registry?.extensions) ? registry.extensions : []).find((e) => isOurEntry(root, e))
-  return resolveConfig(entry?.config)
+  return entry ? resolveConfig(entry.config) : null
 }
 
 // Splits a shell command line into simple commands, each a list of words. Quotes and
@@ -424,6 +425,7 @@ export function checkHookInput(input, git = defaultGit) {
     const { root, files } = commitFiles(commit, git)
     if (!root) continue
     const config = loadConfig(root)
+    if (!config) continue
     const scanned = scanFiles(root, files, config).concat(commit.diffFile ? scanDiff(commit.diffFile, config) : [])
     // A line may run two commits in one repository; each finding is reported once.
     for (const f of scanned) {
