@@ -19,7 +19,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/profile.mjs"
 |---|---|---|---|
 | API facts | `<profileDir>/discovered.json` | no, gitignored | `scripts/discover.mjs` |
 | Team agreements | `<profileDir>/conventions.md` | yes | interview |
-| Personal preferences | `<profileDir>/local.md` | no, gitignored | interview |
+| Personal preferences | `<profileDir>/local.md` | no, gitignored | an existing one imported, else interview |
 
 The layers are separate because they go stale for different reasons: an admin editing a
 workflow invalidates the facts but not the agreements, and a team changing its process
@@ -65,6 +65,16 @@ do not open the file to investigate.
 Report to the developer: instance version and deployment type, the issue types found, how
 many statuses the workflow has, and the path written.
 
+Discovery samples every issue type × status pair: one issue per pair, preferring one the
+account is assigned to, and a read-only GET of its transitions. `discovered.json` keeps the
+result per type under `workflowByType.<type>`: `workflow` (the transitions from each status),
+`samples` (which issue, and whether as assignee), `unavailable` (transitions the API lists but
+the account's conditions block) and `unsampledStatuses`. A transition the API marks
+conditional carries `conditional: true`. The script prints this per type. The REST API does not
+say which condition or validator applies; a conditional transition, or one seen only on an
+issue sampled as assignee, may be the assignee's alone. Name such a transition to the
+developer as a condition to confirm, not a fact.
+
 Re-running is safe and silent: `discovered.json` is regenerated, and `conventions.md` and
 `local.md` are never touched by the script.
 
@@ -91,7 +101,11 @@ Ask about:
    which status a partially addressed issue goes back to at hand-off (`initial`). Offer as
    candidates only the status names in `discovered.json`; do not guess one. These are also the
    registry config's `statuses` (`initial`, `start`, `handoff`, `excluded`), which the flow's
-   tracker steps read: when the developer confirms them, set them there too. Without
+   tracker steps read: when the developer confirms them, set them there too.
+   Recommend from `workflowByType`, never by guess: for each candidate, show per issue type
+   whether the status exists, which transition reaches it from where, and whether that
+   transition is conditional, unavailable or unsampled. A status that one type cannot reach
+   is named as such, with the type. Without
    `initial`, a partial issue keeps its status at hand-off and `/adf-jira:sync-debt` refuses to
    plan an edit.
 
@@ -102,6 +116,13 @@ decisions. Never overwrite an existing answer without showing it and asking.
 
 These must not go into `conventions.md`: they are one developer's, and committing them
 imposes them on the team.
+
+Look first for a personal layer the host already has. When `profile.exists.local` is `true`,
+read `local.md` and ask only what it does not record. When `profile.importLocal` names a
+file — a personal layer outside the profile directory, such as a previous tracker plugin's
+`.claude/jira/profile/local.md` — offer to import it instead of the interview: show it, copy
+it to `profile.local` on the developer's yes, then ask only what it does not record. Never
+merge, rewrite or delete the source file.
 
 Ask about:
 
@@ -130,9 +151,10 @@ nothing is ever guessed silently. Two questions are often left open, and are wor
 when they are:
 
 - what to do when the agreed hours exceed the material available in commits;
-- whether every issue type runs the same workflow scheme as the types verified during
-  discovery. The graph is keyed by status name alone, so a type with its own scheme is a
-  correctness risk until its transitions are confirmed.
+- whether a conditional transition, or one seen only as assignee, is open to everyone.
+  The route solver reads `workflow`, the union of the types' graphs keyed by status name,
+  so a route can take a transition that one issue type does not offer; check a type's own
+  graph in `workflowByType` before relying on a route for it.
 
 ## Staleness
 

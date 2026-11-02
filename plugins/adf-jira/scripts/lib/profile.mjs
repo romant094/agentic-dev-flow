@@ -2,7 +2,7 @@
 // conventions.md (team agreements, committed) and local.md (personal practice, never
 // committed), in the registry config's `profileDir`.
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
 export const DEFAULT_PROFILE_DIR = join('.claude', 'jira', 'profile')
@@ -16,6 +16,18 @@ export function profilePaths(projectDir, profileDir = DEFAULT_PROFILE_DIR) {
     conventions: join(dir, 'conventions.md'),
     local: join(dir, 'local.md')
   }
+}
+
+// Where a personal layer may already exist outside the configured profile directory: the default
+// directory, which a previous tracker plugin of the host used too.
+export const PREVIOUS_LOCAL_PATHS = [join(DEFAULT_PROFILE_DIR, 'local.md')]
+
+// The path of an existing personal layer setup can import instead of interviewing, or null when
+// the profile has its own or there is none.
+export function importableLocal(projectDir, profileDir) {
+  const own = profilePaths(projectDir, profileDir).local
+  if (existsSync(own)) return null
+  return PREVIOUS_LOCAL_PATHS.map((p) => join(projectDir, p)).find((p) => p !== own && existsSync(p)) ?? null
 }
 
 export function readDiscovered(projectDir, profileDir) {

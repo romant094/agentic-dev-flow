@@ -163,7 +163,7 @@ function discoveryFetch() {
     if (pathname === '/rest/api/2/field') return json([{ id: 'customfield_1', name: 'Reproduce steps', custom: true }])
     if (pathname === '/rest/api/2/project/PROJ/statuses') return json([{ name: 'Task', statuses: [{ name: 'Opened' }] }])
     if (pathname === '/rest/api/2/search') return json({ startAt: 0, total: 1, issues: [{ key: 'PROJ-1', fields: {} }] })
-    if (pathname === '/rest/api/2/issue/PROJ-1/transitions') return json({ transitions: [{ id: '4', name: 'Start', to: { name: 'In Progress' } }] })
+    if (pathname === '/rest/api/2/issue/PROJ-1/transitions') return json({ transitions: [{ id: '4', name: 'Start', to: { name: 'In Progress' }, isConditional: true }] })
     if (pathname === '/rest/api/2/mypermissions') return json({ permissions: { CREATE_ISSUE: { havePermission: true } } })
     throw new Error(`unexpected ${init.method ?? 'GET'} ${pathname}`)
   }
@@ -188,6 +188,14 @@ describe('discover.mjs', () => {
     assert.deepEqual(facts.fieldMap, { 'Reproduce steps': 'customfield_1' })
     assert.ok(lines.out.some((l) => /JIRA_PAT\s+project\s+11 chars/.test(l)))
     assert.ok(!lines.out.join('\n').includes('token-value'))
+  })
+
+  it('prints each issue type\'s statuses and transitions, conditional ones marked, for setup to recommend from', async () => {
+    const root = host()
+    const { lines, deps: d } = deps(root, { fetch: discoveryFetch().fetch, ignored: () => true })
+    assert.equal(await discover(['PROJ'], d), 0)
+    const text = lines.out.join('\n')
+    assert.match(text, /Task\n\s+Opened \(sampled PROJ-1, as assignee\): Start → In Progress \[conditional\]/)
   })
 
   it('refuses a project outside the allowlist', async () => {
