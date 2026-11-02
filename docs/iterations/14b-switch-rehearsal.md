@@ -230,6 +230,10 @@ adf-english-check 0.7.0, adf-npm-workspaces 0.2.0, adf-postgres 0.2.0 and adf-ji
 `v0.18.0`, the `ref` a host's project settings name. Steps 1–14 are done; every finding above
 is fixed except F5 and N13 (decided, not fixed here). The port's issues #1–#10 are closed.
 
+The `v0.18.0` tag points at a commit whose suite fails two contract-version assertions (the
+plugin code is the same); adf 0.18.1, tag `v0.18.1`, is the same release on a passing commit
+and is the `ref` to name.
+
 - Steps 1–12 ran as one branch each (`fix/14b-*`), merged into `feat/plugin-core`.
 - Step 13 is `docs/switching.md`: the one-stage switch after a freeze, the two-stage fallback
   and the developer's migration guide.
