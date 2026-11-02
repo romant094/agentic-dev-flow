@@ -96,8 +96,8 @@ function knowledgeHost(declaration, script) {
   return root
 }
 
-test('contract 1.7 defines the forge, knowledge, upstream and tracker roles and the provision, teardown and verify-check hooks', () => {
-  assert.equal(CORE.coreContract, '1.7')
+test('contract 1.8 defines the forge, knowledge, upstream and tracker roles and the provision, teardown and verify-check hooks', () => {
+  assert.equal(CORE.coreContract, '1.8')
   assert.deepEqual(Object.keys(CORE.points), ['forge', 'knowledge', 'upstream', 'provision', 'teardown', 'verify-check', 'tracker'])
   assert.deepEqual(CORE.points.forge, { kind: 'role', since: '1.1', operations: ['check', 'open', 'push', 'finalize', 'state'], operationSince: { push: '1.2', state: '1.7' } })
   assert.deepEqual(CORE.points.knowledge, { kind: 'role', since: '1.3', operations: ['context', 'log', 'check'] })
