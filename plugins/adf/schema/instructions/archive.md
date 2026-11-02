@@ -28,7 +28,10 @@ The steps run in the order `archive.mjs next` gives: `check`, `placements`, `mer
 `pending`, `done`, `degraded`, `failed` or `skipped`, kept per change in the main checkout, in
 `<main>/.superpowers/sdd/<change>/archive/state.json`: the change directory moves at `move` and
 the worktree goes at `remove`, and the main checkout's copy outlives both. A step runs only once
-every step before it is settled (`done`, `degraded` or `skipped`). A `done` or `skipped` step is
+every step before it is settled (`done`, `degraded` or `skipped`), so the steps are sequential:
+run one, read its result, and only after it settles ask `next` for the following one. Never run
+steps in parallel, nor a step beside another step's dispatch: the later one refuses because the
+earlier one has not settled. A `done` or `skipped` step is
 reported as it is and never runs again; a `failed` or `degraded` step runs again. Every step is
 idempotent, so `/adf:archive` run again resumes at the first step not settled. Once `remove` has
 run, the worktree is gone: `state`, `next` and `report` then take `--root <main>`.

@@ -217,7 +217,26 @@ export function artifactInstructions(root, name, artifactId, schema) {
   }
 }
 
-export function applyInstructions(root, name, schema) {
+// The apply instruction's parts: each starts at a `<!-- part: <name> | <when to read it> -->`
+// line and runs to the next. An instruction with no marker is one part, `all`.
+const PART = /^<!-- part: ([a-z-]+) \| (.+) -->$/
+export function instructionParts(text) {
+  const parts = []
+  for (const line of text.split('\n')) {
+    const m = PART.exec(line)
+    if (m) parts.push({ name: m[1], when: m[2], lines: [] })
+    else {
+      if (parts.length === 0) parts.push({ name: 'all', when: 'the whole procedure', lines: [] })
+      parts.at(-1).lines.push(line)
+    }
+  }
+  return parts.map(({ lines, ...p }) => ({ ...p, text: lines.join('\n').trim() }))
+}
+
+// `part` names the part of the apply instruction to deliver; by default the first, with the
+// index of every part and the command that prints it, so the orchestrator reads each part at
+// the step it serves rather than the whole procedure at once.
+export function applyInstructions(root, name, schema, { part = null } = {}) {
   const dir = requireChange(root, name)
   const apply = schema.apply ?? {}
   const required = apply.requires ?? schema.artifacts.map((a) => a.id)
@@ -233,7 +252,11 @@ export function applyInstructions(root, name, schema) {
   const total = (tasks ?? []).length
 
   let state = 'ready'
-  let instruction = readSchemaFile(schema, 'instructions', apply.instruction)?.trim() ?? null
+  const text = readSchemaFile(schema, 'instructions', apply.instruction)
+  const parts = text === null ? [] : instructionParts(text)
+  const chosen = part === null ? parts[0] : parts.find((p) => p.name === part)
+  if (part !== null && !chosen) throw new Error(`no apply part "${part}"; known: ${parts.map((p) => p.name).join(', ')}`)
+  let instruction = chosen?.text ?? null
   if (missingArtifacts.length > 0) {
     state = 'blocked'
     instruction = `Cannot apply this change yet. Missing artifacts: ${missingArtifacts.join(', ')}. Create them first.`
@@ -257,6 +280,7 @@ export function applyInstructions(root, name, schema) {
     state,
     ...(missingArtifacts.length > 0 ? { missingArtifacts } : {}),
     ...(apply.guides ? { guides: projectGuidance(root, { id: 'apply', guides: apply.guides }).guides } : {}),
+    ...(state === 'ready' && chosen ? { part: chosen.name, parts: parts.map((p) => ({ name: p.name, when: p.when, command: `changes.mjs instructions apply --part ${p.name} --change ${name} --root ${root}` })) } : {}),
     instruction
   }
 }

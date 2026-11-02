@@ -46,7 +46,7 @@ process.stdin.on('data', (d) => (t += d)).on('end', () => {
     writeFileSync(file, text)
   }
   const state = config.states?.[process.argv[2]] ?? 'done'
-  console.log(JSON.stringify({ state, actions: [], notes: config.notes ?? [], ...(state === 'refused' ? { error: config.name + ' says no' } : {}), ...(state === 'degraded' ? { hint: 'start the tool' } : {}) }))
+  console.log(JSON.stringify({ state, actions: config.actions ?? [], notes: config.notes ?? [], ...(state === 'refused' ? { error: config.name + ' says no' } : {}), ...(state === 'degraded' ? { hint: 'start the tool' } : {}) }))
 })
 `
 
@@ -121,6 +121,22 @@ test('the change worktree gets its copies and the provision call; a second run c
   assert.deepEqual([again.copies.copied, again.copies.kept], [[], ['.env']])
   assert.equal(readFileSync(join(change, '.env'), 'utf8'), 'URL=rewritten\n', 'a copy a provider rewrote is kept')
   assert.equal(readFileSync(join(root, '.env'), 'utf8'), 'URL=main\n')
+})
+
+// 14b N14: a provider that links a whole node_modules returns one action per link; the command
+// prints a count per kind, and the paths only of what went wrong.
+test('the provision command summarises each provider\'s actions as counts per kind', () => {
+  const { change } = setup()
+  const actions = [...Array.from({ length: 500 }, (_, i) => ({ op: 'link', path: `node_modules/p${i}` })), { op: 'mkdir', path: 'node_modules' }]
+  providers(change, [{ name: 'many', config: { actions } }])
+  const out = run(['provision', '--change', 'add-x', '--root', change])
+  assert.equal(out.ok, true, out.error)
+  assert.deepEqual(out.actions, { many: { link: 500, mkdir: 1 } })
+  assert.equal(out.hook, undefined, 'the per-action list stays out of the output')
+  assert.equal(out.input, undefined, 'the hook input is not echoed')
+  assert.deepEqual(out.copies.skipped.map((s) => s.path), ['config/local.json', 'missing.txt', '../outside'], 'problems are kept')
+  assert.ok(JSON.stringify(out).length < 4096, `${JSON.stringify(out).length} bytes`)
+  assert.match(out.report, /many: done/)
 })
 
 test('no copy is written through a link: a link in its place is replaced, a linked parent is skipped', () => {

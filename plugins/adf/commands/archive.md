@@ -44,6 +44,11 @@ for the merge request pushed with no CI run.
    `next` null: go to step 4. Otherwise run that step (step 3) and ask again. A re-run of
    `/adf:archive` resumes here, at the first step not settled.
 
+   The steps are sequential: run one step at a time, each only after the previous one
+   succeeded and `next` names the following one; never steps in parallel, nor a step beside
+   another step's dispatch — a step whose predecessor has not settled refuses. The rule: the
+   archive instruction, "The steps, their state, and resuming".
+
 3. **Run the step**, one `archive.mjs <step>` call, with what the instruction's rule for that
    step gives it:
    - `check`: show `detail.warnings`, if any, and ask whether to archive anyway. A stale or

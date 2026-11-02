@@ -99,8 +99,10 @@ function consolidationBase(root, change, records, k) {
   return before.at(-1).result.head
 }
 
-// `reSweep`: the round k of a consolidation's re-sweep, whose range is that consolidation's diff.
-export function sweepInputs(root, change, { reSweep } = {}) {
+// The range an apply round's whole-branch work reads — the final review and the sweep: from the
+// round's base, or with no apply round the merge base of the change's base and HEAD, to HEAD.
+// { ref, mergeBase, head, round, from, records }; throws when the base does not resolve.
+export function changeRange(root, change) {
   const dir = changeDir(root, change)
   if (!existsSync(dir)) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
@@ -122,7 +124,14 @@ export function sweepInputs(root, change, { reSweep } = {}) {
   const head = git('rev-parse', 'HEAD')
   const records = readRecords(root, change)
   const round = applyRound(records)
-  const from = reSweep === undefined ? (round?.base ?? mergeBase) : consolidationBase(root, change, records, reSweep)
+  return { ref, mergeBase, head, round, from: round?.base ?? mergeBase, records }
+}
+
+// `reSweep`: the round k of a consolidation's re-sweep, whose range is that consolidation's diff.
+export function sweepInputs(root, change, { reSweep } = {}) {
+  const { ref, mergeBase, head, round, from: roundFrom, records } = changeRange(root, change)
+  const dir = changeDir(root, change)
+  const from = reSweep === undefined ? roundFrom : consolidationBase(root, change, records, reSweep)
   const removedOrRenamed = specFiles(join(dir, 'specs')).flatMap((file) =>
     removalsIn(readFileSync(file, 'utf8')).map((r) => ({ ...r, spec: file.slice(dir.length + 1).split('\\').join('/') }))
   )

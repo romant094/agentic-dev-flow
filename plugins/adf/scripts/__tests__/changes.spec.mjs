@@ -169,6 +169,31 @@ test('apply is blocked until plan exists and its tasks exist, then tracks progre
   assert.equal(applyInstructions(root, 'c', schema).state, 'all_done')
 })
 
+// The apply instruction is delivered in parts, so the orchestrator reads the one its step needs
+// rather than the whole procedure at once (14b N14); the parts together are the whole file.
+test('apply instructions come in parts: the start part and an index, any part by name, nothing lost', () => {
+  const root = host()
+  newChange(root, 'c', schema)
+  for (const file of ['brainstorm.md', 'proposal.md', 'specs/a/spec.md', 'plan.md']) write(root, `openspec/changes/c/${file}`)
+  write(root, 'openspec/changes/c/tasks.md', '- [ ] 1.1 One\n')
+  const ready = applyInstructions(root, 'c', schema)
+  assert.equal(ready.part, 'start')
+  assert.deepEqual(ready.parts.map((p) => p.name), ['start', 'dispatch', 'groups', 'finish', 'records'])
+  for (const p of ready.parts) assert.ok(p.when.length > 10 && p.command.includes(`--part ${p.name}`), p.name)
+  assert.ok(Buffer.byteLength(JSON.stringify(ready)) < 16 * 1024, 'the default output is short')
+  const texts = ready.parts.map((p) => applyInstructions(root, 'c', schema, { part: p.name }).instruction)
+  for (const [i, t] of texts.entries()) assert.ok(Buffer.byteLength(t) < 16 * 1024, ready.parts[i].name)
+  assert.equal(texts[0], ready.instruction)
+  assert.match(texts[1], /^\*\*Every dispatch comes from `dispatch\.mjs`\.\*\*/)
+  const whole = readFileSync(join(schema.dir, 'instructions', schema.apply.instruction), 'utf8')
+  const strip = (t) => t.replace(/^<!-- part: .* -->\n/gm, '').replace(/\s+/g, ' ').trim()
+  assert.equal(texts.join('\n\n').replace(/\s+/g, ' ').trim(), strip(whole))
+  assert.throws(() => applyInstructions(root, 'c', schema, { part: 'nope' }), /no apply part "nope"; known: start, dispatch/)
+  const out = JSON.parse(execFileSync('node', [cli, 'instructions', 'apply', '--part', 'groups', '--change', 'c', '--root', root], { encoding: 'utf8' }))
+  assert.equal(out.part, 'groups')
+  assert.match(out.instruction, /^\*\*Work added during apply is recorded against the plan\.\*\*/)
+})
+
 test('tasks: only unindented checkboxes count', () => {
   const tasks = parseTasks('- [ ] a\n  - [ ] nested\n- [x] b\n-[ ] tight\n* [X] c\n')
   assert.deepEqual(tasks.map((t) => [t.description, t.done]), [['a', false], ['b', true], ['c', true]])

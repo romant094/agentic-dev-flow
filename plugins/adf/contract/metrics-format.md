@@ -37,7 +37,10 @@ person. A plugin reads records; it never writes one.
 - `transcripts`: `{ runtime, sessions, unresolved }`. `runtime` is the harness whose transcripts
   were read (`claude-code`). Each session: `id`, `source` (`ledger`, `branch` or `both`: named
   by the ledger, found on the change branch, or both), `resolved`, `scope` (`branch` when only
-  its records on the change branch count, `session` when all do), `first`, `last`,
+  its records on the change branch count, `session` when all do; with `branch`, the records on
+  the base or an integration branch from the change's first ledger entry up to the session's
+  first record on the change branch count too, so propose's start from the main checkout is
+  measured), `first`, `last`,
   `phaseSource` (`ledger`, `commands` or `none`). `unresolved`: ledger sessions with no transcript.
 - `disagreements`: `{ sessionId, issue }` where the ledger and the transcripts disagree on the
   change's sessions.

@@ -18,8 +18,10 @@
 //       names from the main checkout where the worktree holds nothing, then calls the
 //       `provision` hook with the plan's paths and needs (`**Needs:**`, plus each --need; a
 //       change or group worktree only). Refused when the worktree's or the main checkout's
-//       `git status --porcelain` changed: { ok, state, worktree, kind, input, copies, hook,
-//       notes, report, error? }. Show `report`: it holds each provider's notes. Re-runnable
+//       `git status --porcelain` changed: { ok, state, worktree, kind, copies, actions,
+//       prepare?, report, error? }, `actions` a count per kind for each provider
+//       (`{ <plugin>: { <op>: n } }`), never the list. Show `report`: it holds each provider's
+//       notes. Re-runnable
 //   workspace.mjs group-add|group-merge|group-remove --change <name> --group <n>
 //       from the change worktree: make a task group's worktree from the change branch and
 //       provision it (`provision`; `ok: false` when that refused, the worktree left made),
@@ -63,7 +65,7 @@ import { branchKey, readScope } from './lib/scope.mjs'
 import { addBaseCheck, addGroup, finishGroup, listGroups, mergeGroup, removeBaseCheck, removeGroup } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
 import { NEED_WORD, planInputs } from './lib/plan.mjs'
-import { KINDS, NEEDS_KINDS, provisionWorktree } from './lib/provision.mjs'
+import { KINDS, NEEDS_KINDS, provisionSummary, provisionWorktree } from './lib/provision.mjs'
 import { reviewPackage } from './lib/sdd.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
 
@@ -115,7 +117,7 @@ function provision(root, { change, worktree, kind, need }, core) {
   if (bad.length) throw new Error(`--need takes a lowercase word, not ${bad.join(', ')}`)
   if (need.length && !NEEDS_KINDS.includes(kind)) throw new Error(`--need applies to a ${NEEDS_KINDS.join(' or ')} worktree, not ${kind}`)
   const { files, needs } = planInputs(root, change)
-  return provisionWorktree(root, { worktree, kind, change, files, needs: [...new Set([...needs, ...need])] }, core)
+  return provisionSummary(provisionWorktree(root, { worktree, kind, change, files, needs: [...new Set([...needs, ...need])] }, core))
 }
 
 export function run(argv) {

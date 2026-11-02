@@ -24,8 +24,11 @@
 //                                                    reason when there is one), ready or blocked;
 //                                                    --report adds the rendered propose report
 //                                                    (the merge request is forge.mjs's own report)
-//   changes.mjs instructions <artifact|apply> [--change <name>]
-//                                                    what to write next, or how to apply
+//   changes.mjs instructions <artifact|apply> [--change <name>] [--part <name>]
+//                                                    what to write next, or how to apply: apply
+//                                                    prints one part of its instruction (the
+//                                                    first by default) and `parts`, the index of
+//                                                    every part with when to read it
 //   changes.mjs next [--change <name>]               the next artifact propose writes, with its
 //                                                    instructions and dependency files, or
 //                                                    {done:true}; refused while a written
@@ -133,6 +136,7 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
   const allowMain = flag(args, '--allow-main')
   const archived = flag(args, '--archived')
   const reason = option(args, '--reason')
+  const part = option(args, '--part')
   const [command, target] = args
   const schema = loadSchema(schemaDir)
   const change = () => inferChange(root, given, schema)
@@ -160,9 +164,10 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
       return { ...status, report: text }
     }
     case 'instructions':
-      if (!target) throw new Error('usage: instructions <artifact|apply> [--change <name>]')
+      if (!target) throw new Error('usage: instructions <artifact|apply> [--change <name>] [--part <name>]')
+      if (part !== undefined && target !== 'apply') throw new Error('--part belongs to instructions apply')
       return target === 'apply'
-        ? applyInstructions(root, change(), schema)
+        ? applyInstructions(root, change(), schema, { part: part ?? null })
         : artifactInstructions(root, change(), target, schema)
     case 'next': {
       writing()

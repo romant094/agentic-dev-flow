@@ -1148,6 +1148,31 @@ test('the deferred minors and out-of-scope items are collected into deferred.jso
   assert.match(call(host(), 'prompt', '--role', 'final-review', '--question-file', q).prompt, /- Deferred: none/)
 })
 
+// 14b N15: the final review's range is the change's, from its base (or the apply round's) to
+// HEAD; the script reads it, so the command needs only the question.
+test('the final review infers its range: the merge base, or the apply round\'s base, to HEAD', () => {
+  const { root, base, head, home } = rangeHost()
+  const git = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
+  git('reset', '-q', '--hard', base)
+  git('checkout', '-q', '-b', 'feat/x', head)
+  const q = join(root, 'q.txt')
+  writeFileSync(q, 'Review the branch.')
+  const out = call(root, 'prompt', '--role', 'final-review', '--question-file', q, '--home', home)
+  assert.ok(out.prompt.includes(`- Range: ${base}..${head}`), out.prompt)
+  assert.match(out.prompt, /- Review package: .*\.diff/)
+  assert.deepEqual(out.range, { base, head, inferred: true })
+  // Given flags win.
+  const given = call(root, 'prompt', '--role', 'final-review', '--question-file', q, '--base', base, '--head', head, '--home', home)
+  assert.equal(given.range, undefined)
+  // In an apply round the range starts at the round's base.
+  writeFileSync(join(root, 'd.txt'), 'd\n')
+  git('add', 'd.txt')
+  git('-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '-m', 'd')
+  const tip = git('rev-parse', 'HEAD')
+  appendScripted(root, CHANGE, 'apply-round', { round: '1', checks: 'tree', task: '2.1', group: 'B', base: head, verify: head, frozen: 'A' })
+  assert.deepEqual(call(root, 'prompt', '--role', 'final-review', '--question-file', q, '--home', home).range, { base: head, head: tip, inferred: true })
+})
+
 test('scope-check <KEY> is a fixed-form name: parsed with its key, refused with a space, a colon or no key', async () => {
   const { scopeCheckName, SCOPE_ROLES } = await import('../lib/dispatch.mjs')
   assert.deepEqual(parseName('scope-check PROJ-12'), { role: 'scope-check', key: 'PROJ-12' })
