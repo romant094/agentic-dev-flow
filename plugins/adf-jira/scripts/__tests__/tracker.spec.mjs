@@ -362,6 +362,32 @@ describe('tracker start', () => {
     assert.equal(jira.writes().length, writes)
   })
 
+  it('takes an issue assigned to someone else before moving it: the assignee, then the transition', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: { 'PROJ-1': issue('PROJ-1', { status: 'Opened', assignee: 'other.login' }) } })
+    const { result: held } = await call(jira, where, 'start', { items: [{ key: 'PROJ-1' }], stateDir: where.stateDir })
+    const { result } = await call(jira, where, 'start', { stateDir: where.stateDir, apply: held.plan })
+    assert.deepEqual(result.applied, ['PROJ-1'])
+    assert.deepEqual(
+      jira.writes().map((c) => `${c.method} ${c.path}`),
+      ['PUT /rest/api/2/issue/PROJ-1', 'POST /rest/api/2/issue/PROJ-1/transitions']
+    )
+  })
+
+  it('refuses a held plan whose rows were edited by hand, naming the re-plan, sending nothing', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: issues() })
+    const { result: held } = await call(jira, where, 'start', { items: [{ key: 'PROJ-1' }], stateDir: where.stateDir })
+    const plan = JSON.parse(readFileSync(held.file, 'utf8'))
+    plan.rows.find((r) => r.step === 'assignee').steps[0].fields.assignee.name = 'someone.else'
+    writeFileSync(held.file, JSON.stringify(plan))
+    const { code, result } = await call(jira, where, 'start', { stateDir: where.stateDir, apply: held.plan })
+    assert.equal(code, 1)
+    assert.equal(result.state, 'refused')
+    assert.match(result.error, /rows changed since the plan was held.*run start again without apply/)
+    assert.equal(jira.writes().length, 0)
+  })
+
   it('skips an issue moved by hand between the plan and the apply', async () => {
     const where = project()
     const jira = fakeJira({ issues: issues() })
@@ -430,7 +456,7 @@ describe('tracker start', () => {
     const plan = JSON.parse(readFileSync(result.file, 'utf8'))
     assert.deepEqual(
       plan.rows.map((r) => `${r.key} ${r.step} ${r.from}`),
-      ['PROJ-1 transition Opened', 'PROJ-1 assignee In Progress', 'PROJ-1 comment In Progress']
+      ['PROJ-1 assignee Opened', 'PROJ-1 transition Opened', 'PROJ-1 comment In Progress']
     )
     const body = 'h3. Corrected before the work started\n# The port range: 1-65534 (was 1-65535)\n# The default port: 8080\n\nh3. Answered by the developer\n# Does the bulk edit count? — No, a later change.'
     assert.equal(rowOf(plan, 'PROJ-1', 'comment').steps[0].comment.body, body)
@@ -510,7 +536,7 @@ describe('tracker handoff', () => {
     const plan = JSON.parse(readFileSync(result.file, 'utf8'))
     assert.deepEqual(
       plan.rows.map((r) => `${r.key} ${r.step} ${r.from ?? '-'}`),
-      ['PROJ-1 transition In Progress', 'PROJ-1 assignee Review', 'PROJ-1 comment Review', 'PROJ-2 comment -', 'PROJ-3 transition In Progress', 'PROJ-3 assignee Review', 'PROJ-3 comment Review']
+      ['PROJ-1 transition In Progress', 'PROJ-1 comment Review', 'PROJ-1 assignee Review', 'PROJ-2 comment -', 'PROJ-3 transition In Progress', 'PROJ-3 comment Review', 'PROJ-3 assignee Review']
     )
     assert.equal(rowOf(plan, 'PROJ-1', 'assignee').steps[0].fields.assignee.name, '<JIRA_QA>')
     assert.match(rowOf(plan, 'PROJ-3', 'comment').steps[0].comment.body, /does not reproduce on commit abc1234/)
@@ -530,6 +556,17 @@ describe('tracker handoff', () => {
       'h3. Done\n# The form validates the port.\n\nh3. How to test\n# Open the port page.\n# Enter 70000 and save.\n\nMerge request: https://git.example.com/group/repo/-/merge_requests/7'
     )
     assert.match(jira.comments['PROJ-2'][0].body, /h3\. How to test\n# Edit one port and save 70000\.\n\nh3\. Remains\n# The bulk edit is not covered\./)
+  })
+
+  it('hands over with every action on the issue first and the assignee last: transition, comment, assignee', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: issues() })
+    const { result: held } = await call(jira, where, 'handoff', { items: [taken], mr, stateDir: where.stateDir })
+    await call(jira, where, 'handoff', { stateDir: where.stateDir, apply: held.plan })
+    assert.deepEqual(
+      jira.writes().map((c) => `${c.method} ${c.path}`),
+      ['POST /rest/api/2/issue/PROJ-1/transitions', 'POST /rest/api/2/issue/PROJ-1/comment', 'PUT /rest/api/2/issue/PROJ-1']
+    )
   })
 
   const withInitial = { ...CONFIG, statuses: { ...CONFIG.statuses, initial: 'Opened' } }

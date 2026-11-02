@@ -109,9 +109,10 @@ excluded, flags, file }`:
   excluded issue and an epic have `null`.
 
 **`start`** without `apply` builds a plan in `stateDir` and sends nothing: per issue, the
-shortest route from its status to `statuses.start`, then the developer as assignee when the
-issue is not assigned to them, then, for an item with `corrections`, the correction comment:
-the corrections and the developer's `answers`, rendered with `templates/corrections.md` (one
+developer as assignee when the issue is not assigned to them, then the shortest route from its
+status to `statuses.start` (the developer takes the issue first, since a workflow may offer the
+start transition to the assignee only), then, for an item with `corrections`, the correction
+comment: the corrections and the developer's `answers`, rendered with `templates/corrections.md` (one
 `<!-- corrected -->` section, lists `corrections` and `answers`), or the host file named by
 `config.correctionTemplate`. An item with no corrections gets no comment. An issue with no
 route, a route through an unsampled status, a hop whose screen requires a field, or nothing to
@@ -121,7 +122,7 @@ do is skipped with its reason. With `apply: <plan id>` the plan runs.
 
 | State | Fields | The rows |
 |---|---|---|
-| `taken` | `done`, `test` (lists); `commit` | the route to `statuses.handoff`, the tester (`JIRA_QA`) as assignee, the comment |
+| `taken` | `done`, `test` (lists); `commit` | the route to `statuses.handoff`, the comment, then the tester (`JIRA_QA`) as assignee: every action on the issue first, the assignee last |
 | `partial` | `done`, `test`, `remains` (lists); `commit` | the route back to `statuses.initial`, never through `statuses.handoff`, then the comment; with no `statuses.initial`, or no such route, the comment only and the status stays, the plan's `unmoved` naming why |
 | `not-reproduced` | `tried`, `commit`; `test` | as `taken`: the comment says the issue does not reproduce on that commit, and the tester retests it |
 
@@ -131,8 +132,10 @@ a text holding a link or a URL, and a `commit` that is not a commit hash are ref
 checks the wording; the plugin renders the markup.
 
 **Held plans and resume.** A plan is `start-<UTC stamp>` or `handoff-<UTC stamp>`, a file in
-`stateDir`. Before it applies, the plugin refuses a plan whose allowlist reaches past the
-configured one, and a plan built against an older profile than the current one. Each write of
+`stateDir`, with a digest of its rows. Before it applies, the plugin refuses a plan whose
+allowlist reaches past the configured one, a plan built against an older profile than the
+current one, and a plan whose rows no longer match the digest, as after an edit by hand: run
+`start` or `handoff` again without `apply` for a new plan. Each write of
 an issue is its own row, with `step` `transition`, `assignee` or `comment`, and each row checks
 the status it expects before it runs (a partial hand-off's comment checks none). A rerun with
 the same plan id resumes from the per-row state: a row already done is not sent again, so a
@@ -181,7 +184,7 @@ The skills run the plugin's scripts:
 | `scripts/discover.mjs [<KEY>]` | Writes `discovered.json`. |
 | `scripts/read-issues.mjs "<JQL>" [out]` | Reads issues; a result outside the allowlist fails the read, and an output path git does not ignore is refused before it. |
 | `scripts/read-comments.mjs "<KEY>" [out]` | Reads every comment of an issue, with its id; the allowlist is checked before the request. |
-| `scripts/apply-plan.mjs <plan> [--confirm]` | Prints the plan's summary, or applies it with `--confirm`. Refuses a plan git does not ignore. |
+| `scripts/apply-plan.mjs <plan> [--confirm]` | Prints the plan's summary and records a digest of its rows, or applies it with `--confirm`. Refuses a plan git does not ignore, and with `--confirm` a plan whose summary was never printed or whose rows changed since: print the summary again and show it to the developer. |
 | `scripts/sync-debt.mjs state\|check-groups\|plan\|track` | The steps of `/adf-jira:sync-debt`: the tree's groups and keyless entries, the grouping checked, the create and edit plans, and the keys of the applied rows written back. Calls no Jira. |
 | `scripts/core-debt.mjs <args>` | Runs the core's `scripts/debt.mjs` with the same arguments: the core beside this plugin in a checkout, else the `adf` plugin of this plugin's marketplace from Claude Code's install records. |
 

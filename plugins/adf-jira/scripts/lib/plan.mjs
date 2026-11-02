@@ -1,5 +1,6 @@
 // A plan is the one shape every write takes: rows of steps, an allowlist, the profile it was
 // built against, and per-row state. The allowlist gate rejects a whole plan, never filters it.
+import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { isIgnored } from './profile.mjs'
@@ -106,4 +107,21 @@ export function savePlan(projectDir, skill, plan, now, ignored = isIgnored) {
 
 export function loadPlan(path) {
   return validatePlan(JSON.parse(readFileSync(path, 'utf8')))
+}
+
+// The fields the runner writes into a row as it applies; the rest is what the developer saw.
+const RUN_FIELDS = new Set(['state', 'error', 'note', 'createdKey'])
+
+// A digest of the rows as shown to the developer, recorded when the plan is held and checked
+// before it applies: a row edited by hand since then no longer matches. The runner's per-row
+// state is left out, so a rerun after a partial apply still matches.
+export function rowsDigest(rows) {
+  const shown = rows.map((row) => Object.fromEntries(Object.entries(row).filter(([k]) => !RUN_FIELDS.has(k))))
+  return createHash('sha256').update(JSON.stringify(shown)).digest('hex')
+}
+
+// Null when the plan's rows match the digest recorded at hold; else why not.
+export function digestMismatch(plan) {
+  if (plan.digest === undefined) return 'never held'
+  return plan.digest === rowsDigest(plan.rows) ? null : 'changed'
 }

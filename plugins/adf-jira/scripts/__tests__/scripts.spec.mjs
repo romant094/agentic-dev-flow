@@ -72,6 +72,7 @@ describe('apply-plan.mjs', () => {
     const jira = fakeJira({ issues: { 'PROJ-1': issue('PROJ-1', { status: 'In Progress' }) } })
     const path = planFile(root, [handToQa])
     const { lines, deps: d } = deps(root, { fetch: jira.fetch })
+    assert.equal(await applyPlan([path], d), 1)
     assert.equal(await applyPlan([path, '--confirm'], d), 0)
     assert.equal(jira.store['PROJ-1'].fields.status, 'Review')
     assert.deepEqual(jira.store['PROJ-1'].fields.assignee, { name: 'qa.login' })
@@ -79,6 +80,41 @@ describe('apply-plan.mjs', () => {
     assert.equal(saved.rows[0].state, 'done')
     assert.equal(saved.rows[0].steps[1].fields.assignee.name, '<JIRA_QA>')
     assert.ok(lines.out.join('\n').includes('applied:       1'))
+  })
+
+  it('refuses to apply a plan whose rows were edited after the summary, naming the render, sending nothing', async () => {
+    const root = host()
+    const jira = fakeJira({ issues: { 'PROJ-1': issue('PROJ-1', { status: 'In Progress' }) } })
+    const path = planFile(root, [handToQa])
+    const { deps: d } = deps(root, { fetch: jira.fetch })
+    assert.equal(await applyPlan([path], d), 1)
+    const plan = JSON.parse(readFileSync(path, 'utf8'))
+    plan.rows[0].steps[1].fields.assignee.name = 'someone.else'
+    writeFileSync(path, JSON.stringify(plan))
+    await assert.rejects(applyPlan([path, '--confirm'], d), /rows changed since its summary was printed.*apply-plan\.mjs .*plan\.json without --confirm/)
+    assert.equal(jira.calls.length, 0)
+  })
+
+  it('refuses to apply a plan whose summary was never printed', async () => {
+    const root = host()
+    const jira = fakeJira({ issues: { 'PROJ-1': issue('PROJ-1', { status: 'In Progress' }) } })
+    const path = planFile(root, [handToQa])
+    await assert.rejects(applyPlan([path, '--confirm'], deps(root, { fetch: jira.fetch }).deps), /summary was never printed.*without --confirm/)
+    assert.equal(jira.calls.length, 0)
+  })
+
+  it('reruns a confirmed plan after a failure: the per-row state is not an edit', async () => {
+    const root = host()
+    const jira = fakeJira({ issues: { 'PROJ-1': issue('PROJ-1', { status: 'In Progress' }), 'PROJ-2': issue('PROJ-2', { status: 'In Progress' }) } })
+    const path = planFile(root, [handToQa, { ...handToQa, key: 'PROJ-2' }])
+    const { deps: d } = deps(root, { fetch: jira.fetch })
+    assert.equal(await applyPlan([path], d), 1)
+    delete jira.store['PROJ-2']
+    assert.equal(await applyPlan([path, '--confirm'], d), 1)
+    assert.equal(JSON.parse(readFileSync(path, 'utf8')).rows[1].state, 'failed')
+    jira.store['PROJ-2'] = issue('PROJ-2', { status: 'In Progress' })
+    assert.equal(await applyPlan([path, '--confirm'], d), 0)
+    assert.equal(jira.store['PROJ-2'].fields.status, 'Review')
   })
 
   it('refuses a plan whose allowlist reaches past the configured one', async () => {
