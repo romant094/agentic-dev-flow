@@ -44,6 +44,12 @@
 //   no-notification-fallback  the origin's token-economy row fell back to the harness's
 //                   `<usage>` notification totals for subagents without transcripts; the port keeps
 //                   no notification figure (not compared, counted)
+//   ledger-lead-in  the port counts a session's records on the base or an integration branch from
+//                   the change's first ledger entry up to its first record on the change's branch
+//                   (propose starts from the main checkout, 14b N19); the origin counts the change's
+//                   branch only. The port's side is compared as read without the lead-in (the
+//                   ledger's times removed, the one input of sliceByBranch `from`), and the class is
+//                   counted where the lead-in changed the reading
 //   price-free      no prices on either side: the origin's dollar figures are not compared, the
 //                   port keeps tokens only (counted once per change)
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -156,7 +162,11 @@ try {
     }
     const theirs = await extractMetrics({ ...io, changeName: entry.change, branch, prices: null, range: `${entry.mergeSha}^1..${entry.mergeSha}^2` })
     const ledger = ledgerOf(dir, entry.change)
-    const tx = readTranscripts({ repoPath: origin, commonDir: join(origin, '.git'), branch, ledger: ledger.records, projectsDir })
+    const read = (records) => readTranscripts({ repoPath: origin, commonDir: join(origin, '.git'), branch, ledger: records, projectsDir })
+    // The ledger's times start the port's lead-in (sliceByBranch `from`); without them it has none.
+    const full = read(ledger.records)
+    const tx = read(ledger.records.map(({ at, ...r }) => r))
+    const leadIn = JSON.stringify(full) !== JSON.stringify(tx)
     const resolvedTheirs = theirs.sessions.filter((s) => s.resolved)
     if (resolvedTheirs.length === 0 && tx.value === null) {
       count(out.skipped, 'no surviving session')
@@ -171,6 +181,7 @@ try {
     }
     const compared = (what) => count(out.compared, what)
     cls('cost', 'price-free')
+    if (leadIn) cls('transcripts', 'ledger-lead-in')
     if (theirs.tokenEconomy?.[1]?.source === 'notifications' && theirs.subagentDispatches?.dispatches > 0) cls('tokenEconomy', 'no-notification-fallback')
 
     // Sessions.

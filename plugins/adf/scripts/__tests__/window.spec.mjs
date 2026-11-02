@@ -398,6 +398,18 @@ test('the waiting items: known metric keys, the handoff threshold first, values 
   assert.equal(agg['quality.fixesPerChangeWeek'].mean, 1)
 })
 
+test('a passed anchor replaces the ref\'s window sidecar for the sidecar and the since count', () => {
+  const root = repo()
+  const first = merge(root, 'feat/a', archived('2026-09-02-a'), '2026-09-02T10:00:00Z')
+  merge(root, 'feat/b', archived('2026-09-03-b'), '2026-09-03T10:00:00Z')
+  const previous = { date: '2026-09-02', path: 'elsewhere/2026-09-02.json', cutoff: { mergeSha: first, mergedAt: '2026-09-02T10:00:00Z' }, sidecar: {} }
+  assert.equal(previousRetro(root, { ref: 'develop' }), null)
+  assert.deepEqual(buildSidecar(root, { ref: 'develop', date: '2026-09-04', previous }).changes.map((c) => c.change), ['b'])
+  const since = sinceLastRetro(root, { ref: 'develop', previous })
+  assert.deepEqual([since.count, since.previous.path], [1, 'elsewhere/2026-09-02.json'])
+  assert.equal(sinceLastRetro(root, { ref: 'develop' }).count, 2)
+})
+
 test('sinceLastRetro counts the changes since the last window retro; the lint is due at 3', () => {
   const root = repo()
   for (const day of ['02', '03', '04']) merge(root, `feat/c${day}`, archived(`2026-09-${day}-c${day}`), `2026-09-${day}T10:00:00Z`)

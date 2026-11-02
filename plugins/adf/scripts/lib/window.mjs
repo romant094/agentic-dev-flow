@@ -588,11 +588,12 @@ const today = () => new Date().toISOString().slice(0, 10)
 // The sidecar of a retrospective: the retro agent's input and, for a window, the next window's
 // anchor. Reads the ref's tree and history, and the checkout's debt tree for `adfDebt`, and
 // writes nothing. `asOf` bounds the fix commits counted after each merge: the end of `date`, or
-// now when that is earlier.
-export function buildSidecar(root, { mode = 'window', change, from, to, ref = integrationRef(root), date = today(), asOf, exclude = [], fetchedAt = null, waiting = readWaiting() } = {}) {
+// now when that is earlier. `previous` replaces the ref's newest window sidecar (previousRetro's
+// shape); the parity harness passes the anchor of a project not yet switched.
+export function buildSidecar(root, { mode = 'window', change, from, to, ref = integrationRef(root), previous, date = today(), asOf, exclude = [], fetchedAt = null, waiting = readWaiting() } = {}) {
   if (!DAY.test(date)) throw new Error('date must be YYYY-MM-DD')
   asOf ??= new Date(Math.min(Date.parse(`${date}T23:59:59.999Z`), Date.now())).toISOString()
-  const previous = previousRetro(root, { ref })
+  previous ??= previousRetro(root, { ref })
   const sel = selectWindow(root, { mode, change, from, to, ref, previous })
   const everyDir = archivedEntries(sel.history)
   const paths = [...new Set([...everyDir.map((e) => `${e.archiveDir}/${RECORD_FILE}`), ...sel.changes.map((e) => `${e.archiveDir}/tasks.md`)])]
@@ -683,8 +684,8 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
 
 // The changes archived on the ref since the last window retro, and whether the corpus lint is
 // due. `fetchedAt` is the caller's fetch time; without it, the repository's last fetch.
-export function sinceLastRetro(root, { ref = integrationRef(root), fetchedAt } = {}) {
-  const sel = selectWindow(root, { mode: 'window', ref })
+export function sinceLastRetro(root, { ref = integrationRef(root), previous, fetchedAt } = {}) {
+  const sel = selectWindow(root, { mode: 'window', ref, previous })
   const count = sel.changes.length
   return {
     ref,

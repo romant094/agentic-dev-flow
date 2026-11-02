@@ -39,6 +39,10 @@
 //                       after the time the out-of-order entry names: its writer could not have
 //                       seen the entry above, so another branch's merge or rebase put it there
 //   pipe-in-title       a title holding `|`, which the header's field separator forbids
+// A listed finding of log.md that no longer shows is `rotated` when log.md no longer holds the
+// entry and the archive of its month does: the origin's rotation sorts the entries it archives,
+// which repairs the order (counted, never failing). Any other listed finding that no longer
+// shows fails the tool.
 // Headers an archive holds twice are listed as `duplicates`; the port's rotation refuses to write
 // such an archive, the origin's does not see a zone-suffixed one (counted, never failing).
 import { spawnSync, execFileSync } from 'node:child_process'
@@ -196,7 +200,11 @@ try {
   }
   const byKind = {}
   for (const f of findings) byKind[f.kind] = (byKind[f.kind] ?? 0) + 1
-  const absent = EXPECTED_FINDINGS.filter((e) => !findings.some((f) => f.file === e.file && f.kind === e.kind && f.header.startsWith(`## [${e.at}]`)))
+  const holds = (text, at) => text?.split('\n').some((l) => l.startsWith(`## [${at}]`)) ?? false
+  const rotated = (e) => e.file === 'log.md' && !holds(logText, e.at) && holds(archives[e.at.slice(0, 7)], e.at)
+  const missing = EXPECTED_FINDINGS.filter((e) => !findings.some((f) => f.file === e.file && f.kind === e.kind && f.header.startsWith(`## [${e.at}]`)))
+  const absent = missing.filter((e) => !rotated(e))
+  if (missing.length > absent.length) result.explained.rotated = missing.length - absent.length
   result.check = {
     files: Object.keys(files).length,
     entries: Object.values(files).reduce((n, t) => n + splitEntries(t).entries.length, 0),
