@@ -93,9 +93,12 @@ test('the setup records each debt refusal with its minimal edit, commits on deve
     const columns = r.refusals.filter((x) => /the columns must be/.test(x.message))
     assert.deepEqual(columns.map((x) => [x.file, x.line]), [['.claude/memory/tech-debt/snmp/index.md', 1]])
     assert.match(columns[0].edit, /renamed Jira to Tracker/)
+    const table = r.refusals.find((x) => /^the root index holds one table/.test(x.message))
+    assert.deepEqual([table.file, table.line], ['.claude/memory/tech-debt/index.md', 5])
+    assert.match(table.edit, /example table removed/)
     const example = r.refusals.find((x) => x.message === 'snmp-00 is named but no row carries it')
     assert.equal(example.file, '.claude/memory/tech-debt/index.md')
-    assert.match(example.edit, /example row naming snmp-00 removed/)
+    assert.match(example.edit, /^none needed/, 'the example row went with its table')
     assert.equal(r.before.debt.ok, false)
     assert.ok(r.refusals.every((x) => x.edit !== null), JSON.stringify(r.refusals))
 

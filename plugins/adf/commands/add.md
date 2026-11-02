@@ -21,7 +21,9 @@ plugin's configuration as a JSON object.
    contract version, a plugin already enabled, or a role another plugin already provides.
 
 3. Show `report` as it is. It includes the tracker's check and its notes when a plugin provides
-   the tracker; act on a note, for example run `/adf-jira:setup`.
+   the tracker; act on a note, for example run `/adf-jira:setup`. It includes the debt check
+   when the registry names a debt root; on its errors, tell the developer the flow refuses to
+   read the tree until they are fixed, for example a last column `Jira` renamed to `Tracker`.
 
 Do not commit: the developer commits the registry and the copied host files with the rest of
 their change.

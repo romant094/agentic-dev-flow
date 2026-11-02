@@ -19,13 +19,18 @@
 //                   rename is counted.
 // Explained check findings:
 //   prose-example   the root index's format example names `snmp-00`, which no row carries
+//   root-example    the root index's format example is a table outside a code fence, a second
+//                   table of the root index
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { checkTree, DEBT_CLASSES, DEBT_COLUMNS, listTree, splitCells } from '../../plugins/adf/scripts/lib/debt.mjs'
 
-const EXPLAINED_FINDINGS = [{ file: 'index.md', match: /^snmp-00 is named but no row carries it$/, explained: 'prose-example' }]
+const EXPLAINED_FINDINGS = [
+  { file: 'index.md', match: /^snmp-00 is named but no row carries it$/, explained: 'prose-example' },
+  { file: 'index.md', match: /^the root index holds one table, Block \| Covers, not /, explained: 'root-example' }
+]
 
 const origin = process.argv[2]
 const listAll = process.argv.includes('--all')

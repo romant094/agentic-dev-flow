@@ -109,8 +109,9 @@ by the same rules; `mark-filed` and `remove` work on its ids; no record is writt
 
 ## What `debt.mjs check` refuses
 
-- a root index missing, or without its `Block | Covers` table; a block with no root row, a root
-  row not linking `<block>/index.md`, a block with no `index.md`;
+- a root index missing, or without its `Block | Covers` table; any other table in the root
+  index; a block with no root row, a root row not linking `<block>/index.md`, a block with no
+  `index.md`;
 - a table whose columns are not exactly the block's columns (a block index may add
   `Precedent` last), naming any planning or count column;
 - a `resolved.md` with no table, or a table whose columns are not exactly the resolved columns;
@@ -126,3 +127,13 @@ by the same rules; `mark-filed` and `remove` work on its ids; no record is writt
 - a count of entries in an index's prose or headings;
 - an id of a block named anywhere in the tree that no row carries, in an index or in a
   `resolved.md`, the high-water line aside.
+
+A refused header names the file and line, the expected columns and the found ones; when one
+column differs, it names the rename, as `Jira` written for `Tracker`. The reader
+(`listTree`, under `debt.mjs list` and every command that reads the tree: propose's gather,
+archive, land, the retrospective) refuses a block or `resolved.md` table with such a header
+too, rather than skip its rows. `/adf:init` and `/adf:add` run the check once the registry names
+a debt root and show its errors.
+
+A table inside a fenced code block is not a table: a format example in an index belongs in a
+fence, so its example row is never read as an entry. Its ids still count as named.

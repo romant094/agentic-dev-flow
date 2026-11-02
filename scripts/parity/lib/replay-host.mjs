@@ -150,6 +150,7 @@ const changedSince = (before, after) => [...after.keys()].filter((p) => before.g
 const DEBT_COLUMNS = /^\|\s*ID\s*\|\s*Title\s*\|\s*Anchors\s*\|\s*Class\s*\|\s*Source\s*\|\s*Jira\s*\|(.*)$/
 const COLUMN_ERROR = /^the columns must be ID \| Title \| Anchors \| Class \| Source \| Tracker/
 const NAMED_ERROR = /^(\S+) is named but no row carries it$/
+const ROOT_TABLE_ERROR = /^the root index holds one table, Block \| Covers, not /
 
 // The minimal edit for one refusal of `debt.mjs check`, applied to the tree; null when the
 // refusal is not one the switch fixes by a rule, which is then left as it is.
@@ -164,6 +165,17 @@ function fixDebtRefusal(tree, error, root) {
     lines[i] = `| ID | Title | Anchors | Class | Source | Tracker |${m[1]}`
     writeFileSync(file, lines.join('\n'))
     return { file: join(root, error.file), line: error.line, edit: 'the table header\'s last column renamed Jira to Tracker, the column debt.mjs checks and `track` writes (docs/lessons/memory.md, pending: iteration 15)' }
+  }
+  // The root index of the origin documents the row format with an example table outside a code
+  // fence, which the port reports as a second table of the root index.
+  if (ROOT_TABLE_ERROR.test(error.message) && error.file === 'index.md') {
+    const i = error.line - 1
+    let end = i
+    while (end < lines.length && lines[end].startsWith('|')) end++
+    if (end === i) return null
+    lines.splice(i, end - i)
+    writeFileSync(file, lines.join('\n'))
+    return { file: join(root, error.file), line: error.line, edit: `the example table removed from the root index's format description; the switch replaces that description with the port's (plugins/adf/contract/debt-format.md)` }
   }
   const named = NAMED_ERROR.exec(error.message)
   // The root index of the origin documents the row format with an example row; the port reads

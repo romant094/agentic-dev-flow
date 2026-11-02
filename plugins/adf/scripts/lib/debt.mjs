@@ -94,14 +94,22 @@ const key = (cell) => (cell === '' || /^[-\u2013\u2014]$/.test(cell) ? null : ce
 
 // The lines of a page sorted into headings, tables and prose. A table belongs to the last
 // heading of level two or deeper above it, its sub-block; a level-one heading is the page title.
+// A fenced code block, such as a format example, holds neither a heading nor a table.
 export function parsePage(text) {
   const lines = text.split('\n')
   const headings = []
   const tables = []
   const prose = []
   let subBlock = null
+  let fenced = false
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]
+    const fence = /^\s*(```|~~~)/.test(line)
+    if (fence) fenced = !fenced
+    if (fence || fenced) {
+      if (line.trim() !== '') prose.push({ line: i, text: line })
+      continue
+    }
     const heading = /^(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line)
     if (heading) {
       headings.push({ line: i, level: heading[1].length, text: heading[2] })
@@ -194,6 +202,23 @@ function resolvedOf(block, columns, cells) {
   }
 }
 
+// Why a table's columns are refused, or null when they are the expected ones (followed by
+// `optional` when given): the expected and the found header, and the rename that fixes them
+// when one column differs, as `Jira` written for `Tracker`.
+function columnsError(found, expected, optional = null) {
+  const accepted = optional ? [expected, [...expected, optional]] : [expected]
+  if (accepted.some((c) => c.join('|') === found.join('|'))) return null
+  const near = accepted.find((c) => c.length === found.length && c.filter((name, i) => name !== found[i]).length === 1)
+  const at = near ? near.findIndex((name, i) => name !== found[i]) : -1
+  return `the columns must be ${expected.join(' | ')}${optional ? `, optionally followed by ${optional}` : ''}, not ${found.join(' | ')}${near ? `; rename the column ${found[at]} to ${near[at]}` : ''}`
+}
+
+// The reader refuses a table it cannot read, rather than skip its rows silently.
+function refuseColumns(tree, file, table, expected, optional) {
+  const error = columnsError(table.columns, expected, optional)
+  if (error) throw new Error(`the debt tree is invalid: ${relative(tree, file)}:${table.header + 1} ${error}; run debt.mjs check`)
+}
+
 const adfBodyPath = (tree, block, id) => join(tree, block, `${id}.md`)
 
 function adfBody(tree, block, id) {
@@ -222,7 +247,8 @@ function blocksOf(tree) {
 
 // Every block, sub-block and entry, computed from the files; nothing is written. `kind` keeps
 // only `debt` (product) or `adf` entries. `resolved` holds the rows of the blocks' resolved.md,
-// never an entry: open debt is `entries` alone.
+// never an entry: open debt is `entries` alone. A table of a block whose columns are not the
+// block's is refused, naming its file and line.
 export function listTree(tree, { kind } = {}) {
   const blocks = []
   const entries = []
@@ -241,6 +267,7 @@ export function listTree(tree, { kind } = {}) {
       bodyFiles: blockKind === 'adf' ? [] : block.others.map((f) => `${block.id}/${f}`)
     })
     for (const table of tables) {
+      refuseColumns(tree, block.index, table, blockKind === 'adf' ? ADF_COLUMNS : DEBT_COLUMNS, blockKind === 'adf' ? null : PRECEDENT)
       for (const row of table.rows) {
         const entry = entryOf(block.id, table.columns, row.cells, table.subBlock)
         if (entry.kind === 'adf') entry.body = adfBody(tree, block.id, entry.id)
@@ -248,6 +275,7 @@ export function listTree(tree, { kind } = {}) {
       }
     }
     for (const table of block.resolved?.page.tables ?? []) {
+      refuseColumns(tree, block.resolved.file, table, RESOLVED_COLUMNS)
       for (const row of table.rows) resolved.push(resolvedOf(block.id, table.columns, row.cells))
     }
   }
@@ -287,6 +315,9 @@ export function checkTree(tree) {
   const root = rootBlocks(tree)
   if (!root.exists) err(rootFile, null, 'the tree has no root index')
   else if (!root.table) err(rootFile, null, `the root index has no "${ROOT_COLUMNS.join(' | ')}" table`)
+  for (const table of root.page?.tables ?? []) {
+    if (table !== root.table) err(rootFile, table.header, `the root index holds one table, ${ROOT_COLUMNS.join(' | ')}, not ${table.columns.join(' | ')}; a format example belongs in a code fence`)
+  }
 
   const blocks = blocksOf(tree)
   const ids = new Map()
@@ -330,9 +361,9 @@ export function checkTree(tree) {
     for (const table of block.page.tables) {
       const planning = table.columns.filter((c) => PLANNING.test(c))
       if (planning.length) err(block.index, table.header, `columns ${planning.join(', ')} hold planning or a count, which the tracker owns`)
-      const columns = table.columns.join('|')
-      if (columns !== expected.join('|') && (adf || columns !== PRECEDENT_COLUMNS.join('|'))) {
-        err(block.index, table.header, `the columns must be ${expected.join(' | ')}${adf ? '' : `, optionally followed by ${PRECEDENT}`}`)
+      const columnsWrong = columnsError(table.columns, expected, adf ? null : PRECEDENT)
+      if (columnsWrong) {
+        err(block.index, table.header, columnsWrong)
         continue
       }
       for (const row of table.rows) {
@@ -360,8 +391,9 @@ export function checkTree(tree) {
     const { file, page } = block.resolved
     if (page.tables.length === 0) err(file, null, `${RESOLVED_FILE} has no "${RESOLVED_COLUMNS.join(' | ')}" table`)
     for (const table of page.tables) {
-      if (table.columns.join('|') !== RESOLVED_COLUMNS.join('|')) {
-        err(file, table.header, `the columns must be ${RESOLVED_COLUMNS.join(' | ')}`)
+      const columnsWrong = columnsError(table.columns, RESOLVED_COLUMNS)
+      if (columnsWrong) {
+        err(file, table.header, columnsWrong)
         continue
       }
       for (const row of table.rows) {
