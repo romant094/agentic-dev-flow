@@ -27,7 +27,18 @@ missing and changes nothing that exists.
 
    If `branches` is not null, change nothing.
 
-3. Read where the technical debt store lives:
+3. Seed the retrospective window, so the changes the project archived before ADF do not count
+   toward its first window or make the corpus lint due at the first archive:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/init.mjs" seed
+   ```
+
+   It writes `.adf/retro/<date>-window.json` only when the integration branch has archived
+   changes and no window retrospective; otherwise `reason` says why it wrote nothing. Change
+   nothing on either result.
+
+4. Read where the technical debt store lives:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/debt.mjs" root
@@ -46,11 +57,11 @@ missing and changes nothing that exists.
    node "${CLAUDE_PLUGIN_ROOT}/scripts/debt.mjs" check
    ```
 
-   Exit code 1 here means the tree has errors: continue, and show them in step 5.
+   Exit code 1 here means the tree has errors: continue, and show them in step 9.
 
    If `root` is not null, change nothing: the `report` of step 1 already holds the debt check.
 
-4. Read the worktree preparation recipe of the planning guide:
+5. Read the worktree preparation recipe of the planning guide:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/prepare.mjs" recipe
@@ -75,7 +86,34 @@ missing and changes nothing that exists.
 
    If `steps` is not empty, change nothing.
 
-5. Read the `## Format command` section of `openspec/planning.md`. If it holds no command, read
+6. Read what the planning guide holds for the whole-suite command and the worktree copies, and
+   what init infers for them:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/init.mjs" suggest
+   ```
+
+   If `suite.current` is null, show each of `suite.candidates` with its `source` and `why`, and
+   ask the developer for the one command that runs every test of the project with no cache; a
+   candidate may need a flag that disables the cache, such as `--force`. When `candidates` is
+   empty, read the package scripts and the build files to offer one. Write only what the
+   developer confirms:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" set --command "<command>"
+   ```
+
+   If `copies.candidates` is not empty, show them with `copies.current`, and ask which untracked
+   files every worktree needs from the main checkout. Write only what the developer confirms:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/init.mjs" copies --path <path> [--path <path> ...]
+   ```
+
+   If `suite.current` is not null, change nothing for the command; if `copies.candidates` is
+   empty, change nothing for the copies.
+
+7. Read the `## Format command` section of `openspec/planning.md`. If it holds no command, read
    the project's format scripts (the `package.json` scripts, the `Makefile`, the git hook
    configuration such as `lefthook.yml` or `.husky/`) and propose one command that formats the
    files it is given, with `{files}` where the paths go, for example
@@ -85,17 +123,37 @@ missing and changes nothing that exists.
    when the developer declines, or the project has no formatter, leave the section as it is.
    If the section holds a command, change nothing.
 
-6. Show the `report` of step 1 as it is, with the `report` of step 2 when it ran in place of its
-   branch policy line, one line `Debt store: <root>`, with `(root index created)` when step 3
-   created it, and, when step 3 set the root, `Debt check: ok` or the count and every
+8. Find the lines of the project's agent instruction files (`CLAUDE.md`, `AGENTS.md` and the
+   like) that name a previous flow's commands, such as `/opsx:propose` or `openspec/schemas`:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/init.mjs" scan
+   ```
+
+   It changes nothing. Do not edit these files: the developer rewords them for `/adf:*`.
+
+9. Show the `report` of step 1 as it is, with the `report` of step 2 when it ran in place of its
+   branch policy line, one line `Debt store: <root>`, with `(root index created)` when step 4
+   created it, and, when step 4 set the root, `Debt check: ok` or the count and every
    `file:line message` of its `errors`. On debt errors, tell the developer the flow refuses to
    read the tree until they are fixed, for example a last column `Jira` renamed to `Tracker`.
-   One line `Worktree preparation: <n> step(s)` and one line `Format command: <command>` or
-   `Format command: none`. The report includes the tracker's check and its notes when a plugin
+   One line `Window seed: <path>` or `Window seed: none (<reason>)` from step 3. One line
+   `Worktree preparation: <n> step(s)`, one line `Whole-suite command: <command>` or
+   `Whole-suite command: none; apply asks for it`, one line `Worktree copies: <paths>` or
+   `Worktree copies: none`, and one line `Format command: <command>` or
+   `Format command: none`. Then the `report` of step 8 as it is. The report includes the
+   tracker's check and its notes when a plugin
    provides the tracker; act on a note, for example
    run `/adf-jira:setup`. When Superpowers is not available, continue: setup does not need
    Superpowers, but every command that changes a change does.
 
 Do not commit: the developer commits the registry, the settings, `.gitignore`, the planning
-guide with its worktree preparation and format command, the review prompt and the debt tree's root index. A change's worktree forks from the integration branch, so it sees them only after they
-reach it.
+guide with its whole-suite command, worktree copies, worktree preparation and format command,
+the review prompt, the window seed and the debt tree's root index.
+
+End with this note to the developer: commit the setup and merge it into the integration branch
+before the first `/adf:propose`. A change's worktree forks from the integration branch and its
+provisioning reads the registry and the planning guide from that worktree's own copy, so a
+change opened before the setup merges never sees it, and a later change to the registry or the
+guide on the integration branch reaches a change already open only when that branch is merged
+into it.

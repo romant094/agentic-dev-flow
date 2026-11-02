@@ -136,11 +136,14 @@ const DEPENDENCY_FIELDS = ['dependencies', 'devDependencies', 'peerDependencies'
 // workspace depends on, whose built output a fresh worktree lacks. The command is the root
 // script that builds that package when one names it, else the package manager's workspace call;
 // the input is the package's directory. Only candidates: the developer confirms each one.
+// The package manager the lockfile names; npm without one.
+export const packageManager = (root) => (existsSync(join(root, 'pnpm-lock.yaml')) ? 'pnpm' : existsSync(join(root, 'yarn.lock')) ? 'yarn' : 'npm')
+
 export function candidates(rootArg) {
   const root = resolve(rootArg)
   const pkg = readJson(join(root, 'package.json'))
   if (!pkg) return []
-  const manager = existsSync(join(root, 'pnpm-lock.yaml')) ? 'pnpm' : existsSync(join(root, 'yarn.lock')) ? 'yarn' : 'npm'
+  const manager = packageManager(root)
   const packages = workspaceDirs(root, pkg)
     .map((dir) => ({ dir, manifest: readJson(join(root, dir, 'package.json')) }))
     .filter((p) => p.manifest && typeof p.manifest.name === 'string')

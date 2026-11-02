@@ -17,6 +17,9 @@
 //                  values and coverage, git figures, aggregates, the delta against the previous
 //                  window, removal candidates and the items waiting for data
 //   sinceLastRetro archive's report line: the changes archived since the last window retro
+//   seedWindow     /adf:init's window marker: a window sidecar whose cut-off is the integration
+//                  ref's tip, so the changes a host archived before ADF stay out of the first
+//                  window and the corpus lint's count
 //   unfiledAdfDebt the ADF debt records with no Filed value, read through lib/debt.mjs from the
 //                  registry's debt root in the checkout, as archive reads it
 //
@@ -24,7 +27,7 @@
 // every group and contributes no value: no data is never a zero. A record is never written or
 // re-measured here; the change worktree its sources lived in is gone by the time a window runs.
 import { execFileSync } from 'node:child_process'
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { requireBranches } from './branches.mjs'
 import { ARCHIVE, CHANGES_DIR, globToRegExp, parseTasks } from './changes.mjs'
@@ -691,4 +694,29 @@ export function sinceLastRetro(root, { ref = integrationRef(root), fetchedAt } =
     changes: sel.changes.map((e) => e.change),
     lintDue: count >= LINT_DUE
   }
+}
+
+// ---------------------------------------------------------------- init's seed
+
+// Writes `.adf/retro/<date>-window.json` with the integration ref's tip as its cut-off, and only
+// a cut-off: it anchors the next window as a window retro would, with no figures. Nothing is
+// written when the ref has no archived change, when a window sidecar in the ref already anchors
+// the window, or when the checkout holds one not yet merged. The developer commits it with the
+// rest of the setup; it moves the window once it reaches the ref.
+export function seedWindow(root, { ref = integrationRef(root), date = new Date().toISOString().slice(0, 10) } = {}) {
+  if (!DAY.test(date)) throw new Error('the date must be YYYY-MM-DD')
+  const tip = attempt(() => gitIn(root)(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).trim())
+  if (!tip) return { seeded: false, ref, reason: `${ref} has no commit` }
+  const previous = previousRetro(root, { ref })
+  if (previous) return { seeded: false, ref, path: previous.path, reason: `${previous.path} already anchors the window on ${ref}` }
+  const dir = join(root, RETRO_DIR)
+  const local = existsSync(dir) ? readdirSync(dir).filter((name) => SIDECAR.test(name)).sort() : []
+  if (local.length) return { seeded: false, ref, path: `${RETRO_DIR}/${local.at(-1)}`, reason: `${RETRO_DIR}/${local.at(-1)} is not on ${ref} yet; commit it with the setup` }
+  const archivedBefore = archivedEntries(readHistory(root, ref)).length
+  if (archivedBefore === 0) return { seeded: false, ref, reason: `no change archived on ${ref}; the first window starts empty` }
+  const cutoff = { mergeSha: tip, mergedAt: gitIn(root)(['show', '-s', '--format=%cI', tip]).trim() }
+  const path = `${RETRO_DIR}/${date}-window.json`
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(root, path), `${JSON.stringify({ schemaVersion: SIDECAR_VERSION, date, mode: 'window', seed: true, ref, cutoff, archivedBefore }, null, 2)}\n`)
+  return { seeded: true, ref, path, cutoff, archivedBefore }
 }
