@@ -171,7 +171,9 @@ Freeze and switch:
 
 Setup, in the switch branch:
 
-7. Declare the marketplace by its git URL; install every plugin at `project` scope.
+7. Declare the marketplace in the committed project settings by its git URL with the release tag
+   as `ref` (developer decision, 2026-11-02; `docs/switching.md`); enable every plugin at
+   `project` scope.
 8. `/adf:init`: integration branch `develop`; no other protected branch (the origin has no
    `main`); debt root `.claude/memory/tech-debt`; preparation `npm run build:shared` with the
    inputs init infers.
@@ -223,4 +225,18 @@ The two-stage switch stays the fallback where a freeze is not possible, with T2�
 
 ## Result
 
-To be filled at the release.
+Released as adf 0.18.0 (contract 1.8: the optional declaration field `requiredConfig`), with
+adf-english-check 0.7.0, adf-npm-workspaces 0.2.0, adf-postgres 0.2.0 and adf-jira 0.5.0; tag
+`v0.18.0`, the `ref` a host's project settings name. Steps 1–14 are done; every finding above
+is fixed except F5 and N13 (decided, not fixed here). The port's issues #1–#10 are closed.
+
+- Steps 1–12 ran as one branch each (`fix/14b-*`), merged into `feat/plugin-core`.
+- Step 13 is `docs/switching.md`: the one-stage switch after a freeze, the two-stage fallback
+  and the developer's migration guide.
+- Step 14: `npm test` passes; `npm run parity -- <origin>` passes 23 of 23 tools, the origin
+  checkout unchanged. Four parity classes are new: `rotated` (a log finding moved into its
+  month's archive), `ledger-lead-in` (N19), `origin-anchor` (the origin's own window anchor,
+  which init's seed replaces after the switch) and `rounded-inputs` (the origin averages
+  rounded per-change values).
+
+Not done here: the rehearsal was not repeated on 0.18.0. Iteration 15 is its first real run.

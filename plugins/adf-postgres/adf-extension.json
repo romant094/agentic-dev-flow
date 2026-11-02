@@ -1,6 +1,6 @@
 {
   "name": "adf-postgres",
-  "contract": "1.6",
+  "contract": "1.8",
   "requiredConfig": ["prefix", "url"],
   "provides": {
     "provision": {

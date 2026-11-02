@@ -31,7 +31,7 @@ the `forge` operations' `ci` field and the `upstream` role; `1.5` gives `upstrea
 `check` takes the repository, and `file` takes the findings and the ADF debt themselves; `1.6`
 adds the first hooks, `provision`, `teardown` and `verify-check`; `1.7` adds the `tracker` role
 and the `forge` operation `state`, and checks a declaration against the operations of its own
-contract version.
+contract version. `1.8` adds the optional declaration field `requiredConfig`.
 
 ## Calling convention
 

@@ -11,7 +11,7 @@
     {
       "name": "adf",
       "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
-      "version": "0.17.2",
+      "version": "0.18.0",
       "source": "./plugins/adf"
     },
     {
@@ -23,7 +23,7 @@
     {
       "name": "adf-english-check",
       "description": "Blocks an agent's git commit when a file in scope holds non-English prose",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "source": "./plugins/adf-english-check"
     },
     {
@@ -41,13 +41,13 @@
     {
       "name": "adf-npm-workspaces",
       "description": "ADF provisioning for npm workspaces: a worktree's own node_modules with its workspace links inside the worktree, and a guard against npm install in a worktree",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "source": "./plugins/adf-npm-workspaces"
     },
     {
       "name": "adf-postgres",
       "description": "ADF provisioning for PostgreSQL: a database per worktree, named from its branch, its URL in the worktree's env file, dropped at teardown",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "source": "./plugins/adf-postgres"
     },
     {
@@ -59,7 +59,7 @@
     {
       "name": "adf-jira",
       "description": "ADF tracker for Jira: gathers issues at propose, starts them and hands them to the tester after the merge, plus guarded two-phase Jira skills",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "source": "./plugins/adf-jira"
     }
   ]
