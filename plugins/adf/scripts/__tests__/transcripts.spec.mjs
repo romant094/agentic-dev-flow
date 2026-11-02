@@ -222,3 +222,46 @@ test('autonomy skips the opening message, flow launches, injected text and remin
   ]
   assert.deepEqual(autonomyOf(records), { developerMessages: 2, askUserQuestion: 0, clears: 1 })
 })
+
+test('the branch slice starts at the change\'s first ledger entry: the base-branch lead-in counts', () => {
+  const records = [
+    { type: 'x', gitBranch: 'rehearsal', timestamp: '2026-10-01T09:00:00.000Z' },
+    { type: 'x', gitBranch: 'rehearsal', timestamp: '2026-10-01T09:10:00.000Z' },
+    { type: 'x', timestamp: '2026-10-01T09:20:00.000Z' },
+    { type: 'x', gitBranch: BRANCH, timestamp: '2026-10-01T09:40:00.000Z' },
+    { type: 'x', gitBranch: 'rehearsal', timestamp: '2026-10-01T09:45:00.000Z' },
+    { type: 'x', gitBranch: 'feat/b', timestamp: '2026-10-01T09:50:00.000Z' }
+  ]
+  const s = sliceByBranch(records, BRANCH, { from: '2026-10-01T09:05:00.000Z', bases: ['rehearsal'] })
+  assert.deepEqual(s.records.map((r) => r.timestamp.slice(11, 16)), ['09:10', '09:20', '09:40'])
+  assert.equal(s.first, '2026-10-01T09:10:00.000Z')
+  // Without a start, only the branch's own records.
+  assert.equal(sliceByBranch(records, BRANCH).first, '2026-10-01T09:40:00.000Z')
+  // A lead-in on another change's branch is not the change's.
+  const other = sliceByBranch([{ type: 'x', gitBranch: 'feat/b', timestamp: '2026-10-01T09:10:00.000Z' }, records[3]], BRANCH, { from: '2026-10-01T09:05:00.000Z', bases: ['rehearsal'] })
+  assert.equal(other.first, '2026-10-01T09:40:00.000Z')
+})
+
+test('sessions and their subagents are measured from the change\'s first ledger entry', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'adf-transcripts-'))
+  const write = (file, text) => {
+    mkdirSync(join(dir, MAIN, ...file.split('/').slice(0, -1)), { recursive: true })
+    writeFileSync(join(dir, MAIN, file), text)
+  }
+  write('p1.jsonl', jsonl([
+    user('2026-10-05T09:00:00.000Z', 'scope', { branch: 'rehearsal' }),
+    assistant('m1', '2026-10-05T09:01:00.000Z', usage({ output: 1, thinking: 0 }), { branch: 'rehearsal' }),
+    assistant('m2', '2026-10-05T09:10:00.000Z', usage({ output: 2, thinking: 0 }), { branch: 'rehearsal' }),
+    assistant('m3', '2026-10-05T09:40:00.000Z', usage({ output: 3, thinking: 0 }))
+  ]))
+  write('p1/subagents/agent-b1.jsonl', jsonl([assistant('mb', '2026-10-05T09:20:00.000Z', usage({ output: 4, thinking: 0 }), { branch: 'rehearsal', sidechain: true })]))
+  write('p1/subagents/agent-b1.meta.json', JSON.stringify({ agentType: 'adf:architecture', description: 'brainstorm' }))
+  const records = [{ id: 'session-1', kind: 'session', at: '2026-10-05T09:05:00.000Z', sessionId: 'p1', phase: 'propose' }]
+  const { value } = readTranscripts({ repoPath: REPO, branch: BRANCH, base: 'rehearsal', ledger: records, projectsDir: dir })
+  const [p1] = value.sessions
+  assert.equal(p1.scope, 'branch')
+  assert.equal(p1.first, '2026-10-05T09:10:00.000Z')
+  assert.deepEqual(p1.responses.map((r) => r.id), ['m2', 'm3'])
+  assert.equal(p1.foreignRecords, 0, 'the lead-in is the change\'s own, not foreign')
+  assert.deepEqual(p1.subagents.map((a) => a.agentId), ['b1'])
+})

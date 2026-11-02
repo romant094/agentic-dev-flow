@@ -81,13 +81,25 @@ export const onChangeBranch = (candidate, branch) => candidate === branch || can
 // The records written while the session was on the change's branch. One session can move on to
 // another change's branch; counting it whole charges each change for the other's work. A record
 // with no `gitBranch` inherits the last one seen.
-export function sliceByBranch(records, branch) {
-  const kept = []
+//
+// `from` is the change's first ledger entry: propose makes the change from the main checkout,
+// so the session works on an integration branch (or one of `bases`) for a while before its first
+// record on the change's branch. That lead-in — the records at or after `from` on such a branch,
+// before `until` (by default the slice's first record on the change's branch) — is the change's
+// too. Nothing before `from` is, and nothing on another change's branch.
+export function sliceByBranch(records, branch, { from = null, until = null, bases = [] } = {}) {
+  const onBranch = []
+  const tagged = []
   let current = null
   for (const record of records) {
     if (typeof record.gitBranch === 'string') current = record.gitBranch
-    if (current !== null && onChangeBranch(current, branch)) kept.push(record)
+    const mine = current !== null && onChangeBranch(current, branch)
+    if (mine) onBranch.push(record)
+    tagged.push({ record, mine, base: current === null || INTEGRATION_BRANCHES.has(current) || bases.includes(current) })
   }
+  const end = until ?? timestamps(onBranch)[0] ?? null
+  const leadIn = (t) => from !== null && end !== null && typeof t.record.timestamp === 'string' && t.record.timestamp >= from && t.record.timestamp < end && t.base
+  const kept = from === null ? onBranch : tagged.filter((t) => t.mine || leadIn(t)).map((t) => t.record)
   const times = timestamps(kept)
   return { records: kept, first: times[0] ?? null, last: times.at(-1) ?? null }
 }
@@ -212,11 +224,13 @@ export function compactionsOf(records) {
     .map((r) => ({ at: r.timestamp ?? null, trigger: r.compactMetadata?.trigger ?? null, preTokens: r.compactMetadata?.preTokens ?? null }))
 }
 
-// Records on another branch, written between the session's first and last record on the
-// change's branch: work interleaved with the change's, not the rest of a long session.
-function foreignRecords(records, branch, first, last) {
+// Records on another branch, written between the session's first and last record of the
+// change's slice and not in it: work interleaved with the change's, not the rest of a long
+// session.
+function foreignRecords(records, branch, first, last, kept) {
   if (!first || !last) return 0
-  return records.filter((r) => typeof r.timestamp === 'string' && r.timestamp >= first && r.timestamp <= last && typeof r.gitBranch === 'string' && !onChangeBranch(r.gitBranch, branch)).length
+  const own = new Set(kept)
+  return records.filter((r) => !own.has(r) && typeof r.timestamp === 'string' && r.timestamp >= first && r.timestamp <= last && typeof r.gitBranch === 'string' && !onChangeBranch(r.gitBranch, branch)).length
 }
 
 // ---------------------------------------------------------------- reading
@@ -235,9 +249,10 @@ function readMeta(file) {
 
 // The dispatched agents of one session. An agent other agents name as their parent is a
 // controller. With a branch, only an agent's records on it count, and an agent with none is not
-// the change's. An agent whose `.meta.json` has no transcript beside it is kept, `missing`, with
-// the reason, so it is named rather than dropped.
-export function readSubagents(dir, branch = null) {
+// the change's; `window` is the parent session's lead-in (sliceByBranch `from`, `until`, `bases`).
+// An agent whose `.meta.json` has no transcript beside it is kept, `missing`, with the reason, so
+// it is named rather than dropped.
+export function readSubagents(dir, branch = null, window = {}) {
   if (!existsSync(dir)) return []
   const names = readdirSync(dir)
   const ids = unique(names.map((n) => /^agent-(.+?)(?:\.meta\.json|\.jsonl)$/.exec(n)?.[1]).filter(Boolean)).sort()
@@ -259,7 +274,7 @@ export function readSubagents(dir, branch = null) {
       continue
     }
     let records = readParsed(join(dir, `agent-${agentId}.jsonl`))
-    if (branch) records = sliceByBranch(records, branch).records
+    if (branch) records = sliceByBranch(records, branch, window).records
     if (records.length === 0) continue
     const times = timestamps(records)
     out.push({ ...base, missing: false, reason: null, responses: responses(records), times, first: times[0] ?? null, last: times.at(-1) ?? null })
@@ -267,8 +282,8 @@ export function readSubagents(dir, branch = null) {
   return out
 }
 
-function buildSession({ id, key, source, records, branch, projectsDir }) {
-  const sliced = branch ? sliceByBranch(records, branch) : null
+function buildSession({ id, key, source, records, branch, window, projectsDir }) {
+  const sliced = branch ? sliceByBranch(records, branch, window) : null
   const scope = sliced && sliced.records.length > 0 ? 'branch' : 'session'
   const own = scope === 'branch' ? sliced.records : records
   const times = timestamps(own)
@@ -290,16 +305,17 @@ function buildSession({ id, key, source, records, branch, projectsDir }) {
     commands: commandsOf(records),
     autonomy: autonomyOf(own, records),
     compactions: compactionsOf(own),
-    foreignRecords: scope === 'branch' ? foreignRecords(records, branch, first, last) : 0,
-    subagents: readSubagents(join(projectsDir, key, id, 'subagents'), scope === 'branch' ? branch : null)
+    foreignRecords: scope === 'branch' ? foreignRecords(records, branch, first, last, own) : 0,
+    subagents: readSubagents(join(projectsDir, key, id, 'subagents'), scope === 'branch' ? branch : null, { ...window, until: branch ? sliceByBranch(records, branch).first : null })
   }
 }
 
 // The transcripts of one change. `repoPath` is the change's checkout, `commonDir` its git common
-// dir (absolute), `branch` the change's branch, `ledger` the change's ledger records. Returns
-// `{ value: { runtime, projectsDir, keys, sessions, unresolved }, reason: null }`, or
-// `{ value: null, reason }` when no session resolves.
-export function readTranscripts({ repoPath, commonDir = null, branch = null, ledger = [], projectsDir = defaultProjectsDir() }) {
+// dir (absolute), `branch` the change's branch, `base` the branch it merges into, `ledger` the
+// change's ledger records: a session's records count from the ledger's first entry
+// (sliceByBranch). Returns `{ value: { runtime, projectsDir, keys, sessions, unresolved }, reason:
+// null }`, or `{ value: null, reason }` when no session resolves.
+export function readTranscripts({ repoPath, commonDir = null, branch = null, base = null, ledger = [], projectsDir = defaultProjectsDir() }) {
   if (!existsSync(projectsDir)) return absent(`no transcript directory ${projectsDir}`)
   const entries = readdirSync(projectsDir)
   const keys = projectKeys({ repoPath, commonDir, entries }).filter((k) => entries.includes(k))
@@ -339,6 +355,8 @@ export function readTranscripts({ repoPath, commonDir = null, branch = null, led
     const where = keys.length === 0 ? `no project key of ${repoPath} under ${projectsDir}` : `no session ${discoverable ? `on branch ${branch} ` : ''}under ${keys.join(', ')}`
     return absent(unresolved.length > 0 ? `${where}; the ledger's sessions ${unresolved.join(', ')} have no transcript` : where)
   }
-  const sessions = [...found].map(([id, s]) => buildSession({ id, ...s, branch: onBranch, projectsDir }))
+  const from = ledger.map((r) => r?.at).filter((t) => typeof t === 'string' && !Number.isNaN(Date.parse(t))).sort()[0] ?? null
+  const window = { from, bases: base ? [base] : [] }
+  const sessions = [...found].map(([id, s]) => buildSession({ id, ...s, branch: onBranch, window, projectsDir }))
   return present({ runtime: RUNTIME, projectsDir, keys, sessions, unresolved })
 }

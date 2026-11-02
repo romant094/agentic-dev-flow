@@ -27,7 +27,10 @@
 //   dispatch.mjs prompt  (the inputs of plan) [--question-file <file>] [--base <sha> --head <sha>]
 //                        [--home <dir>]
 //       the plan and `prompt`, the full text with every fixed field filled; the question file's
-//       content goes into the question slot verbatim. --base and --head name a review's range.
+//       content goes into the question slot verbatim. --base and --head name a review's range;
+//       final-review without them reads the change's (lib/sweep.mjs changeRange: the apply
+//       round's base, else the merge base, to HEAD) and returns it as `range` ({ base, head,
+//       inferred: true }).
 //       For a role that reads the review package (PACKAGE_ROLES) the call cuts it through the
 //       skill's review-package (lib/sdd.mjs reviewPackage), names the file in `Review package`
 //       and returns `package` ({ file, stray }); a range it cannot cut is refused. --home names
@@ -137,7 +140,7 @@ import { reviewPackage } from './lib/sdd.mjs'
 import { checkSpecMergeReply, writeConflictTexts } from './lib/spec-merge.mjs'
 import { mergePreview } from './lib/specs.mjs'
 import { fixTarget, Refusal } from './lib/review-state.mjs'
-import { recordDispositions, recordReSweep, sweepInputs } from './lib/sweep.mjs'
+import { changeRange, recordDispositions, recordReSweep, sweepInputs } from './lib/sweep.mjs'
 import { readRecords } from './lib/ledger.mjs'
 import {
   atOrAfter,
@@ -324,8 +327,22 @@ function promptFor(inputs, plan, values, root, planText, main, cut) {
   let dispositions = false
   let proof = null
   let questionOptional = false
-  const range = values.base && values.head ? `${values.base}..${values.head}` : undefined
   if ((values.base === undefined) !== (values.head === undefined)) throw new UsageError('--base and --head go together')
+  // The final review reads the change's range (lib/sweep.mjs changeRange) when none is given; a
+  // range that does not resolve leaves the prompt without one, as before.
+  if (inputs.role === 'final-review' && values.base === undefined) {
+    let inferred = null
+    try {
+      inferred = changeRange(root, change)
+    } catch {
+      // No base to read: the caller passes --base and --head.
+    }
+    if (inferred) {
+      values = { ...values, base: inferred.from, head: inferred.head }
+      cut.range = { base: inferred.from, head: inferred.head, inferred: true }
+    }
+  }
+  const range = values.base && values.head ? `${values.base}..${values.head}` : undefined
 
   if (inputs.task !== undefined) {
     const task = parsePlanTasks(planText).find((t) => t.number === inputs.task)

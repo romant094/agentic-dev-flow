@@ -165,6 +165,19 @@ export function provisionWorktree(root, { worktree, kind, change, files = [], ne
   return { ok: errors.length === 0, state, worktree: tree, kind, input, copies, hook, notes, ...(prepare ? { prepare: { ok: prepare.ok, ran: prepare.ran, skipped: prepare.skipped } } : {}), report, ...(errors.length ? { error: errors.join('; ') } : {}) }
 }
 
+// What the provision command prints: a provider's actions as a count per kind (`{ <plugin>: {
+// <op>: n } }`), not one entry per link, and neither the hook's input nor its raw results; the
+// copies keep their skipped paths, and `report` holds every provider's state and notes.
+export function provisionSummary(p) {
+  const actions = {}
+  for (const r of p.hook?.results ?? []) {
+    if (!Array.isArray(r.actions) || r.actions.length === 0) continue
+    const counts = (actions[r.plugin] ??= {})
+    for (const a of r.actions) counts[a?.op ?? 'unknown'] = (counts[a?.op ?? 'unknown'] ?? 0) + 1
+  }
+  return { ok: p.ok, state: p.state, worktree: p.worktree, kind: p.kind, copies: p.copies, actions, ...(p.prepare ? { prepare: p.prepare } : {}), report: p.report, ...(p.error ? { error: p.error } : {}) }
+}
+
 // Calls `teardown` for a worktree about to be removed, while it still exists. Returns { ok,
 // state, hook, report, error? }: a refused teardown is `ok: false`, and its caller does not
 // remove the worktree; a degraded one is `ok: true`, its hint in the report.

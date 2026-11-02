@@ -1,3 +1,4 @@
+<!-- part: start | at step 3, before anything is dispatched: isolation, provisioning, the orchestrator, the execution graph, fan-out and dispatch rounds under the tree guard -->
 The procedure `/adf:apply` executes once the change is resolved and its plan is in place. The
 command file carries the step order; the orchestrator's rules are stated here in full and the
 command points at them. What a dispatched agent is told is stated in full in the prompt
@@ -129,6 +130,7 @@ worktree or another change's: STOP apply and show `changed`. Three times an impl
 where it was not sent, and nothing noticed but a refused merge and a crashed server. One
 snapshot is open at a time, so no orchestrator write (a tick, a merge) happens inside a round.
 
+<!-- part: dispatch | before the first dispatch: the dispatch commands, fix loops, replies and their results, rulings over the Superpowers defaults, test-first, ticking a task -->
 **Every dispatch comes from `dispatch.mjs`.**
 
 ```bash
@@ -143,7 +145,12 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --rol
 node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role review --task <N> --question-file <file> --base <sha> --head <sha> --root <root>
 node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role fix --task <N> --round <k> --base <sha> --head <sha> --root <root>
 node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role merge-review --group <G> --question-file <file> --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role final-review --question-file <file> --root <root>
 ```
+
+`final-review` reads its range itself: the apply round's base, or with no round the merge base
+of the change's base, to HEAD, returned as `range`; pass `--base` and `--head` only to review
+another range.
 
 `impl` and `review` take `--task` and never `--group`: the task names its group, and the script
 places the dispatch in that group's worktree.
@@ -355,6 +362,7 @@ It ticks the `tasks.md` item the plan task's back-reference names and commits it
 never a group's, so two groups never conflict over `tasks.md`, and committing at once leaves the
 change worktree clean for the next merge.
 
+<!-- part: groups | when a group's tasks are complete: work added during apply, a delta edited after propose, merging and pushing a group, wave 2 and a blocked group -->
 **Work added during apply is recorded against the plan.**
 
 Every fix (a task's fix round, a merge fix, the final-review fix, the sweep's consolidation) is
@@ -435,11 +443,20 @@ continues and merges. Only the wave-2 groups that depend on it wait. Apply concl
 every group worktree is merged and removed; a blocked group pauses apply, with its worktree
 kept for the developer.
 
+<!-- part: finish | when every group is merged, and at the start of an apply round after a verify FAIL: the final review's command, the reuse sweep, the DUP grammar, the apply round, the whole suite, worktree preparation -->
 **The code reuse sweep: two passes per apply round, over the merged branch.** An apply round,
 below, runs them once more, over the round's diff.
 
-When every group is merged, every task ticked and the final review's fixes are in, issue the
-two sweep dispatches `sweep p1` and `sweep p2` in parallel, their prompts alike but for the
+When every group is merged and every task ticked, dispatch the final review with exactly these
+two commands, the attempt first; its question file says what to look at across the whole
+branch, and the script reads the range:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" attempt --change <change> --name "final-review" --root <root>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <change> --role final-review --question-file <file> --root <root>
+```
+
+Once the final review's fixes are in, issue the two sweep dispatches `sweep p1` and `sweep p2` in parallel, their prompts alike but for the
 name and the reply file, once per apply round, before the whole-suite run; a consolidation's re-sweep is a dispatch of its own, below.
 One sweep misses duplicates a second one finds, so the two passes are read as one sweep: their
 findings are joined, a finding of `sweep p2` that names the same files and overlapping lines as
@@ -619,6 +636,7 @@ verify reads, and `--commit` commits that file alone. Run it as apply's final co
 every tick and any documentation commit: verify reads the commits after this record, and a
 record written earlier leaves work it does not cover.
 
+<!-- part: records | with start, before anything is dispatched, and again at every group boundary: the execution ledger, the handoff, a failed skill invocation -->
 **The execution ledger records what only the executing agent knows.**
 
 Write it only through `ledger.mjs <kind> --change <change> --root <root>`, never by editing the

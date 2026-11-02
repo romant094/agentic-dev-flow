@@ -9,7 +9,7 @@ group by task group, in the change's worktree. Apply implements; it writes no ar
 and review come after it.
 
 The rules this command follows are stated in full in the apply instruction,
-`${CLAUDE_PLUGIN_ROOT}/schema/instructions/apply.md`, which step 3 delivers as `instruction`.
+`${CLAUDE_PLUGIN_ROOT}/schema/instructions/apply.md`, which step 3 delivers in parts.
 What a dispatched agent is told is stated in full in the prompt skeletons under
 `${CLAUDE_PLUGIN_ROOT}/schema/prompts/`, filled by `dispatch.mjs prompt`. Change selection is
 stated in full in `${CLAUDE_PLUGIN_ROOT}/schema/instructions/resolve.md`.
@@ -57,18 +57,21 @@ names is passed as the name; otherwise the active change answers in step 1.
    ```
 
    Read every file listed under `contextFiles`, and `guides`; never assume a file name.
-   `instruction` is the procedure for step 5.
+   `instruction` is the first part of the procedure for step 5, `part` its name. `parts` lists
+   every part, with `when` it is read and the `command` that prints it: read each part at that
+   point, one command per part, the same command with `--part <name>`. Read `records` now too.
+   Never print the instruction file whole, and never filter a part through another command.
 
 4. **Show the progress.** Run
    `node "${CLAUDE_PLUGIN_ROOT}/scripts/apply-status.mjs" --change <name> --root <root>` and
    show the schema (`schemaName` from step 3), "N/M tasks complete" from `progress`, the
    `remaining` tasks, and the test-driven tasks from `testFirst`.
 
-5. **Implement.** Follow `instruction` to the end: invoke
+5. **Implement.** Follow the instruction's parts to the end: invoke
    `superpowers:subagent-driven-development`, dispatch by wave into the group worktrees under the
    tree guard, validate every reply, tick each task as it completes, merge, review and finish
-   each group, then run the final review, the reuse sweep and the whole suite, and commit the
-   test record last. Do not implement a task yourself. Stop where the skill would invoke
+   each group, then run the final review (its exact commands are in the `finish` part), the
+   reuse sweep and the whole suite, and commit the test record last. Do not implement a task yourself. Stop where the skill would invoke
    `superpowers:finishing-a-development-branch`.
 
    Keep each change within its task's **Files:** block. Keep going until every task is done or

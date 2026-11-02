@@ -219,7 +219,7 @@ export function buildRecord({ root, change, branch, base, now = new Date(), proj
     // A ledger that does not parse is the ledger group's gap, named by its reader.
   }
   const commonDir = git('rev-parse', '--path-format=absolute', '--git-common-dir')
-  const tx = readTranscripts({ repoPath: root, commonDir, branch, ledger, projectsDir })
+  const tx = readTranscripts({ repoPath: root, commonDir, branch, base, ledger, projectsDir })
   const facts = computeFacts(tx.value, { ledger, maxTurns: maxTurnsOf(pluginRoot), rulings: sdd.ledger?.rulings ?? null })
   for (const g of TRANSCRIPT_GROUPS) coverage[g] = facts ? 'record' : none(`transcripts: ${scrub(tx.reason)}`)
   if (facts) warnings.push(...facts.warnings)
