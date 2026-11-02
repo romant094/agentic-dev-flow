@@ -20,7 +20,9 @@ exploration.
 The Capabilities section is the contract between the proposal and the specs: every capability
 listed here gets a spec file. A capability listed without a spec, or a spec under a new name for
 an existing capability, forks the spec corpus at archive. The `specs` gate `specs-capabilities`
-checks the contract; which capabilities the change has, and their scope, is yours.
+checks the contract; which capabilities the change has, and their scope, is yours. A change
+that modifies no requirement skips `specs` (the specs instruction) and still lists the capability
+it touches under Modified Capabilities; no gate checks that list then.
 
 Keep it concise (1-2 pages). Focus on the "why", not the "how".
 

@@ -234,6 +234,39 @@ test('an optional artifact can be skipped, a required one cannot', async () => {
   assert.equal((await nextArtifact(root, 'add-thing', schema)).artifact, 'proposal')
 })
 
+test('a change that skips specs with a reason goes on to tasks and commits with no delta spec', async () => {
+  const { root, dir } = started()
+  write(dir, 'brainstorm.md', '# B\n')
+  write(dir, 'proposal.md', PROPOSAL())
+  assert.equal((await markDone(root, 'add-thing', 'proposal', schema)).ok, true)
+  assert.equal(node('changes.mjs', ['skip', 'design', '--root', root], root).code, 0)
+  assert.equal((await nextArtifact(root, 'add-thing', schema)).artifact, 'specs')
+  assert.match(node('changes.mjs', ['skip', 'specs', '--root', root], root).out.error, /skip it only with a reason/)
+  const skipped = node('changes.mjs', ['skip', 'specs', '--reason', 'a refactor; no requirement changes', '--root', root], root)
+  assert.deepEqual([skipped.code, skipped.out.skipped, skipped.out.reason], [0, ['design', 'specs'], 'a refactor; no requirement changes'])
+  assert.equal((await nextArtifact(root, 'add-thing', schema)).artifact, 'tasks')
+  write(dir, 'tasks.md', TASKS)
+  assert.equal((await markDone(root, 'add-thing', 'tasks', schema)).ok, true)
+  write(dir, 'plan.md', PLAN)
+  assert.equal((await markDone(root, 'add-thing', 'plan', schema)).ok, true)
+  assert.deepEqual(await nextArtifact(root, 'add-thing', schema), { ok: true, done: true, change: 'add-thing' })
+  const commit = await proposeCli(['commit', '--root', root])
+  assert.equal(commit.code, 0, JSON.stringify(commit.result))
+  const report = node('changes.mjs', ['status', '--report', '--root', root], root).out.report
+  assert.match(report, /- specs: skipped \(a refactor; no requirement changes\)\n/)
+  assert.match(report, /Next: \/adf:apply$/)
+
+  // A delta spec written after the skip blocks next and the commit until unskip settles it.
+  write(dir, 'specs/thing-export/spec.md', DELTA)
+  const blocked = await nextArtifact(root, 'add-thing', schema)
+  assert.deepEqual([blocked.ok, blocked.blockedBy], [false, 'specs'])
+  assert.match(blocked.refusal, /specs is skipped, yet specs\/\*\*\/\*\.md is written: delete it, or run changes\.mjs unskip specs/)
+  assert.match((await proposeCli(['commit', '--root', root])).result.refusal, /run changes\.mjs unskip specs/)
+  const unskipped = node('changes.mjs', ['unskip', 'specs', '--root', root], root)
+  assert.deepEqual([unskipped.code, unskipped.out.skipped], [0, ['design']])
+  assert.equal(node('changes.mjs', ['status', '--root', root], root).out.artifacts.find((a) => a.id === 'specs').status, 'done')
+})
+
 test('done refuses a project rule copied into the artifact, and a missing output', async () => {
   const { root, dir } = started()
   write(root, 'openspec/rules/proposal.md', '- Name every capability after the domain, never after a screen.\n')

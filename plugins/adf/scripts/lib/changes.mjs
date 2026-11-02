@@ -131,9 +131,19 @@ function readMeta(dir) {
   }
 }
 
+// The artifacts a change's metadata records as skipped: id -> its reason, or null without one.
+export function skippedArtifacts(meta) {
+  return new Map((meta?.skipped ?? []).map((id) => [id, meta.skipReasons?.[id] ?? null]))
+}
+
 export function changeStatus(root, name, schema) {
   const dir = requireChange(root, name)
   const done = completedArtifacts(schema, dir)
+  const meta = readMeta(dir)
+  const skipped = skippedArtifacts(meta)
+  // A skipped artifact meets what requires it. One both skipped and written is a conflict, which
+  // meets nothing until its output is deleted or the skip is undone.
+  const met = (id) => done.has(id) !== skipped.has(id)
   const order = buildOrder(schema)
   const byId = new Map(schema.artifacts.map((a) => [a.id, a]))
   const artifactPaths = {}
@@ -144,11 +154,12 @@ export function changeStatus(root, name, schema) {
       resolvedOutputPath: join(dir, artifact.generates),
       existingOutputPaths: resolveOutputs(dir, artifact.generates)
     }
-    const missingDeps = artifact.requires.filter((r) => !done.has(r)).sort()
-    const status = done.has(id) ? 'done' : missingDeps.length === 0 ? 'ready' : 'blocked'
-    return { id, outputPath: artifact.generates, status, ...(status === 'blocked' ? { missingDeps } : {}) }
+    const missingDeps = artifact.requires.filter((r) => !met(r)).sort()
+    const status = done.has(id) && skipped.has(id) ? 'conflict' : done.has(id) ? 'done' : skipped.has(id) ? 'skipped' : missingDeps.length === 0 ? 'ready' : 'blocked'
+    const reason = status === 'skipped' ? skipped.get(id) : null
+    const conflict = status === 'conflict' ? `${id} is skipped, yet ${artifact.generates} is written: delete it, or run changes.mjs unskip ${id}` : null
+    return { id, outputPath: artifact.generates, status, ...(status === 'blocked' ? { missingDeps } : {}), ...(reason ? { reason } : {}), ...(conflict ? { conflict } : {}) }
   })
-  const meta = readMeta(dir)
   return {
     changeName: name,
     schemaName: schema.name,
@@ -158,7 +169,7 @@ export function changeStatus(root, name, schema) {
       : {}),
     changeRoot: dir,
     artifactPaths,
-    isComplete: done.size === schema.artifacts.length,
+    isComplete: order.every(met),
     applyRequires: schema.apply?.requires ?? order,
     artifacts
   }
@@ -181,6 +192,7 @@ export function artifactInstructions(root, name, artifactId, schema) {
     throw new Error(`no artifact "${artifactId}" in schema ${schema.name}; known: ${schema.artifacts.map((a) => a.id).join(', ')}, apply`)
   }
   const done = completedArtifacts(schema, dir)
+  const skipped = skippedArtifacts(readMeta(dir))
   const byId = new Map(schema.artifacts.map((a) => [a.id, a]))
   return {
     changeName: name,
@@ -197,6 +209,7 @@ export function artifactInstructions(root, name, artifactId, schema) {
     dependencies: artifact.requires.map((id) => ({
       id,
       done: done.has(id),
+      ...(!done.has(id) && skipped.has(id) ? { skipped: skipped.get(id) ?? true } : {}),
       path: byId.get(id).generates,
       description: byId.get(id).description
     })),
@@ -298,15 +311,37 @@ export function requiredArtifacts(schema) {
   return need
 }
 
-// An artifact the change will not have, recorded in its metadata so `next` stops offering it.
-// Only an optional artifact can be skipped.
-export function skipArtifact(root, name, artifactId, schema) {
+// An artifact the change will not have, recorded in its metadata so `next` stops offering it and
+// status shows it `skipped`. An optional artifact is skipped with or without a reason; one apply
+// needs only when the schema marks it `skippable`, and only with a reason (`skipReasons`), which
+// verify and archive read. An artifact already written is not skipped.
+export function skipArtifact(root, name, artifactId, schema, { reason } = {}) {
   const dir = requireChange(root, name)
-  if (!schema.artifacts.some((a) => a.id === artifactId)) throw new Error(`no artifact "${artifactId}" in schema ${schema.name}`)
-  if (requiredArtifacts(schema).has(artifactId)) throw new Error(`${artifactId} is required before apply and cannot be skipped`)
+  const artifact = schema.artifacts.find((a) => a.id === artifactId)
+  if (!artifact) throw new Error(`no artifact "${artifactId}" in schema ${schema.name}`)
+  const why = reason?.trim() || null
+  if (requiredArtifacts(schema).has(artifactId)) {
+    if (!artifact.skippable) throw new Error(`${artifactId} is required before apply and cannot be skipped`)
+    if (!why) throw new Error(`${artifactId} is required before apply; skip it only with a reason: --reason "<why>"`)
+  }
+  if (resolveOutputs(dir, artifact.generates).length > 0) throw new Error(`${artifactId} is already written; delete ${artifact.generates} before skipping it`)
   const meta = readMeta(dir) ?? {}
   const skipped = [...new Set([...(meta.skipped ?? []), artifactId])].sort()
-  writeFileSync(join(dir, META_FILE), `${JSON.stringify({ ...meta, skipped }, null, 2)}\n`)
+  const skipReasons = why ? { skipReasons: { ...meta.skipReasons, [artifactId]: why } } : {}
+  writeFileSync(join(dir, META_FILE), `${JSON.stringify({ ...meta, skipped, ...skipReasons }, null, 2)}\n`)
+  return { changeName: name, skipped, ...(why ? { reason: why } : {}) }
+}
+
+// Undoes a skip: the artifact leaves `skipped` and `skipReasons`, so it is written again.
+export function unskipArtifact(root, name, artifactId, schema) {
+  const dir = requireChange(root, name)
+  if (!schema.artifacts.some((a) => a.id === artifactId)) throw new Error(`no artifact "${artifactId}" in schema ${schema.name}`)
+  const meta = readMeta(dir) ?? {}
+  if (!(meta.skipped ?? []).includes(artifactId)) throw new Error(`${artifactId} is not skipped`)
+  const skipped = meta.skipped.filter((id) => id !== artifactId)
+  const { [artifactId]: _, ...reasons } = meta.skipReasons ?? {}
+  const { skipReasons, ...rest } = meta
+  writeFileSync(join(dir, META_FILE), `${JSON.stringify({ ...rest, skipped, ...(Object.keys(reasons).length ? { skipReasons: reasons } : {}) }, null, 2)}\n`)
   return { changeName: name, skipped }
 }
 
@@ -350,8 +385,8 @@ export function findChoices({ changes, unresolved }) {
 // next step. The merge request is the forge call's own `report` (forge.mjs), shown beside it.
 export function statusReport(status, { branch = null, root, base = null } = {}) {
   const lines = [`Change: ${status.changeName}`, `Branch: ${branch ?? 'unknown'}`, `Worktree: ${root}`, `Base: ${base ?? 'not recorded'}`, 'Artifacts:']
-  for (const a of status.artifacts) lines.push(`- ${a.id}: ${a.status}${a.missingDeps ? ` (needs ${a.missingDeps.join(', ')})` : ''}`)
-  const ready = status.applyRequires.every((id) => status.artifacts.find((a) => a.id === id)?.status === 'done')
+  for (const a of status.artifacts) lines.push(`- ${a.id}: ${a.status}${a.missingDeps ? ` (needs ${a.missingDeps.join(', ')})` : ''}${a.reason ? ` (${a.reason})` : ''}${a.conflict ? `: ${a.conflict}` : ''}`)
+  const ready = status.applyRequires.every((id) => ['done', 'skipped'].includes(status.artifacts.find((a) => a.id === id)?.status))
   lines.push(`Next: ${ready ? '/adf:apply' : `/adf:propose ${status.changeName} to finish its artifacts`}`)
   return lines.join('\n')
 }

@@ -18,7 +18,6 @@ import { fileURLToPath } from 'node:url'
 import {
   artifactInstructions,
   changeDir,
-  changeMeta,
   changeStatus,
   META_FILE,
   newChange,
@@ -211,21 +210,25 @@ function laterPhase(schema) {
   return new Set(schema.artifacts.filter((a) => !applyNeeds.has(a.id) && reaches(a.id)).map((a) => a.id))
 }
 
+// The states in which an artifact apply needs counts as met.
+const MET = ['done', 'skipped']
+
 export async function nextArtifact(root, change, schema) {
   const status = changeStatus(root, change, schema)
   const required = requiredArtifacts(schema)
   const later = laterPhase(schema)
-  const skipped = new Set(changeMeta(root, change).skipped ?? [])
   const byId = new Map(schema.artifacts.map((a) => [a.id, a]))
+  const conflict = status.artifacts.find((a) => a.status === 'conflict')
+  if (conflict) return { ok: false, done: false, change, blockedBy: conflict.id, refusal: conflict.conflict }
   for (const a of status.artifacts.filter((x) => x.status === 'done' && !later.has(x.id))) {
     const gates = await runGates(root, change, byId.get(a.id))
     if (gates.some((g) => !g.ok)) {
       return { ok: false, done: false, change, blockedBy: a.id, gates, refusal: `${a.id} fails its gate(s) ${gates.filter((g) => !g.ok).map((g) => g.gate).join(', ')}; fix it, then run ${doneCommand(root, change, a.id)}` }
     }
   }
-  const pick = status.artifacts.find((a) => a.status === 'ready' && !later.has(a.id) && (required.has(a.id) || !skipped.has(a.id)))
+  const pick = status.artifacts.find((a) => a.status === 'ready' && !later.has(a.id))
   if (!pick) {
-    const left = status.applyRequires.filter((id) => status.artifacts.find((a) => a.id === id)?.status !== 'done')
+    const left = status.applyRequires.filter((id) => !MET.includes(status.artifacts.find((a) => a.id === id)?.status))
     if (left.length === 0) return { ok: true, done: true, change }
     return { ok: false, done: false, change, refusal: `no artifact is ready, yet ${left.join(', ')} is not done; run changes.mjs status` }
   }
@@ -278,7 +281,9 @@ export const proposeMessage = (change) => `docs(openspec): propose ${change}`
 // written artifact passes; then only the change directory is committed.
 export async function commitChange(root, change, schema) {
   const status = changeStatus(root, change, schema)
-  const left = status.applyRequires.filter((id) => status.artifacts.find((a) => a.id === id)?.status !== 'done')
+  const conflict = status.artifacts.find((a) => a.status === 'conflict')
+  if (conflict) return { ok: false, refusal: `${conflict.conflict}; nothing was committed` }
+  const left = status.applyRequires.filter((id) => !MET.includes(status.artifacts.find((a) => a.id === id)?.status))
   if (left.length) return { ok: false, refusal: `${left.join(', ')} is not done; run changes.mjs next` }
   const later = laterPhase(schema)
   const byId = new Map(schema.artifacts.map((a) => [a.id, a]))

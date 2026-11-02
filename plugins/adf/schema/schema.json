@@ -1,7 +1,7 @@
 {
   "name": "adf",
   "version": 1,
-  "description": "Spec-driven change workflow on Superpowers skills: brainstorm, proposal, specs, tasks, plan, verify, review. design is optional: produced from brainstorm, required by nothing.",
+  "description": "Spec-driven change workflow on Superpowers skills: brainstorm, proposal, specs, tasks, plan, verify, review. design is optional: produced from brainstorm, required by nothing. specs is skippable: a change that modifies no requirement skips it with a reason.",
   "artifacts": [
     {
       "id": "brainstorm",
@@ -35,6 +35,7 @@
       "template": "spec.md",
       "instruction": "specs.md",
       "gates": ["specs-validate", "specs-capabilities", "specs-against-main", "specs-base"],
+      "skippable": true,
       "requires": ["proposal"]
     },
     {

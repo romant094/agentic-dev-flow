@@ -398,6 +398,14 @@ test('check warns of unchecked tasks and of an artifact not done, but not of one
   assert.deepEqual(call(skipped, ['check']).detail.warnings, [])
 })
 
+test('check refuses a change with no metadata file', () => {
+  const h = archiveHost()
+  rmSync(join(h.wt, h.dir, '.adf.json'))
+  const out = call(h, ['check'])
+  assert.equal(out.ok, false)
+  assert.match(out.refusal, /cannot read .*\.adf\.json; the change records its base there/)
+})
+
 test('a missing or uncommitted record, and a reviewed commit not in the history, refuse', () => {
   const h = archiveHost()
   writeFileSync(join(h.wt, h.dir, 'review.md'), reviewRecord('0123456789abcdef0123456789abcdef01234567'))
@@ -540,6 +548,21 @@ test('with nothing learned the resolved debt ids still get a log entry of their 
   assert.equal(ingest.ok, true, ingest.refusal)
   assert.deepEqual(logged, [{ type: 'ingest', title: 'Resolved debt of add-x', bullets: ["Resolved debt, moved to its block's resolved.md in the debt tree: snmp-01, snmp-03."] }])
   assert.equal(ingest.detail.nothingLearned, true)
+})
+
+test('merge of a change that skipped specs writes nothing and reports the reason; a delta spec refuses it', () => {
+  const meta = { skipped: ['specs'], skipReasons: { specs: 'a refactor; no requirement changes' } }
+  const h = archiveHost({ delta: {}, meta })
+  for (const step of ['check', 'placements']) assert.equal(call(h, [step]).ok, true, step)
+  const out = call(h, ['merge'])
+  assert.equal(out.ok, true, out.refusal)
+  assert.deepEqual([out.detail.noChanges, out.detail.written, out.detail.specsSkipped], [true, [], 'a refactor; no requirement changes'])
+  assert.equal(git(h.wt, 'status', '--porcelain'), '')
+  const withDelta = archiveHost({ meta })
+  for (const step of ['check', 'placements']) assert.equal(call(withDelta, [step]).ok, true, step)
+  const refused = call(withDelta, ['merge'])
+  assert.equal(refused.ok, false)
+  assert.match(refused.refusal, /specs skipped \(a refactor; no requirement changes\), yet the change has delta specs: widgets; nothing was written/)
 })
 
 test('merge refuses a new capability\'s placeholder Purpose until --purpose gives it, and writes nothing before', () => {
