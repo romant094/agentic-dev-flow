@@ -14,10 +14,12 @@
 //            why); it always gets its comment
 //
 // start and handoff without `apply` build the plan in input.stateDir and send nothing
-// (`held`); with `apply: <plan id>` they run that plan. Each write of an issue is its own row
-// (`step`: transition, assignee, comment), each with its own status check, so a rerun with the
-// same id applies only the rows not done yet; a comment row also skips a comment already
-// posted. An issue moved by hand meanwhile is skipped, not failed.
+// (`held`, with a digest of its rows); with `apply: <plan id>` they run that plan, refused when
+// its rows no longer match the digest. Each write of an issue is its own row (`step`), each with
+// its own status check: start takes the issue first (assignee, transition, comment), hand-off
+// gives it away last (transition, comment, assignee). A rerun with the same id applies only
+// the rows not done yet; a comment row also skips a comment already posted. An issue moved by
+// hand meanwhile is skipped, not failed.
 //
 // Every result is one object with `state`: done, degraded (nothing sent; `tool` and `hint`)
 // or refused (`error`). No result carries a secret: the env is described by name, layer and
@@ -30,7 +32,7 @@ import { mainCheckout, normalizeConfig } from './config.mjs'
 import { EnvError, resolveEnv } from './env.mjs'
 import { applyPlan } from './apply.mjs'
 import { solvePath } from './paths.mjs'
-import { assertAllowlist, assertConfiguredAllowlist, loadPlan, projectOf, writePlan } from './plan.mjs'
+import { assertAllowlist, assertConfiguredAllowlist, digestMismatch, loadPlan, projectOf, rowsDigest, writePlan } from './plan.mjs'
 import { assertResolvable, placeholderValues, placeholdersIn, resolvePlaceholders } from './placeholders.mjs'
 import { MAX_AGE_DAYS, isStale, profilePaths, readDiscovered } from './profile.mjs'
 import { commentRow, readAllComments } from './readers.mjs'
@@ -438,7 +440,7 @@ async function loginValues(ctx, plan) {
 
 async function held(ctx, kind, plan) {
   const values = await loginValues(ctx, plan)
-  const { id, file } = savePlanIn(ctx.input.stateDir, kind, plan, ctx.now())
+  const { id, file } = savePlanIn(ctx.input.stateDir, kind, { ...plan, digest: rowsDigest(plan.rows) }, ctx.now())
   return done({ held: true, plan: id, file, preview: previewOf(plan, values) })
 }
 
@@ -454,6 +456,9 @@ async function applyHeld(ctx, kind) {
     assertConfiguredAllowlist(plan, env.allowedProjects)
   } catch (error) {
     throw new Refusal(`${error.message}; ${NOTHING_SENT}.`)
+  }
+  if (digestMismatch(plan) !== null) {
+    throw new Refusal(`plan ${input.apply}: its rows changed since the plan was held; run ${kind} again without apply for a new plan; ${NOTHING_SENT}.`)
   }
   if (new Date(plan.discoveredAt).getTime() < new Date(facts.discoveredAt).getTime()) {
     throw new Refusal(
@@ -483,16 +488,20 @@ async function applyHeld(ctx, kind) {
   return done({ plan: input.apply, applied, skipped, failed, aborted: outcome.abortedAfterConsecutiveFailures })
 }
 
-// One issue's rows: the transition from its status, the assignee and the comment, each checked
-// against the status it expects when it runs. A row without `from` (a partial hand-off's
-// comment with no initial status configured) is not checked.
-function issueRows({ key, summary, from, hops, target, assignee, body }) {
+// One issue's rows, each checked against the status it expects when it runs. Taking an issue
+// (`takeFirst`, start) assigns it before moving it, since a workflow may offer the start
+// transition to the assignee only: assignee, transition, comment. Handing it over does every
+// action on the issue first and gives it away last: transition, comment, assignee. A row
+// without `from` (a partial hand-off's comment with no initial status configured) is not checked.
+function issueRows({ key, summary, from, hops, target, assignee, body, takeFirst = false }) {
   const rows = []
   const row = (step, steps, expected) => rows.push({ key, summary, step, ...(expected === undefined ? {} : { from: expected }), steps, state: 'pending' })
-  if (hops.length > 0) row('transition', hops, from)
   const after = hops.length > 0 ? target : from
-  if (assignee) row('assignee', [{ fields: { assignee: { name: assignee } } }], after)
+  const assign = (expected) => assignee && row('assignee', [{ fields: { assignee: { name: assignee } } }], expected)
+  if (takeFirst) assign(from)
+  if (hops.length > 0) row('transition', hops, from)
   if (body !== undefined) row('comment', [{ comment: { action: 'add', body, once: true } }], after)
+  if (!takeFirst) assign(after)
   return rows
 }
 
@@ -533,6 +542,7 @@ async function start(ctx) {
       hops: way.steps,
       target,
       assignee: issue.fields.assignee?.name !== login ? '<JIRA_ASSIGNEE>' : null,
+      takeFirst: true,
       body: item ? renderCorrection(template, Array.isArray(item.corrections) ? item.corrections : [], Array.isArray(item.answers) ? item.answers : []) : undefined
     })
     if (own.length === 0) {

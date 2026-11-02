@@ -6,7 +6,8 @@
 //
 // Refuses a plan git does not ignore (plans are local, in .adf/jira/<skill>/), a plan outside
 // the allowlist (its own, and the configured one), a plan built against an older profile, and a
-// profile more than 7 days old. Login placeholders (<JIRA_ASSIGNEE>,
+// profile more than 7 days old. Printing the summary holds the plan: it records a digest of the
+// rows, and --confirm refuses a plan whose summary was never printed or whose rows changed since. Login placeholders (<JIRA_ASSIGNEE>,
 // <JIRA_PM>, <JIRA_QA>) are resolved here, from the env file this process reads; the plan file
 // keeps them, and the summary prints the resolved login.
 import { writeFileSync } from 'node:fs'
@@ -15,7 +16,7 @@ import { resolve } from 'node:path'
 import { JiraClient } from './lib/client.mjs'
 import { loadContext } from './lib/context.mjs'
 import { applyPlan } from './lib/apply.mjs'
-import { assertAllowlist, assertConfiguredAllowlist, assertPlanIgnored, loadPlan } from './lib/plan.mjs'
+import { assertAllowlist, assertConfiguredAllowlist, assertPlanIgnored, digestMismatch, loadPlan, rowsDigest } from './lib/plan.mjs'
 import { assertResolvable, placeholderValues, resolvePlaceholders } from './lib/placeholders.mjs'
 import { MAX_AGE_DAYS, isStale, readDiscovered } from './lib/profile.mjs'
 import { renderPlan } from './lib/report.mjs'
@@ -53,9 +54,17 @@ export async function main(argv, deps = {}) {
   const title = `adf-jira:apply — ${plan.operation}, ${plan.rows.length} row(s)`
 
   if (!confirm) {
+    plan.digest = rowsDigest(plan.rows)
+    writeFileSync(path, `${JSON.stringify(plan, null, 2)}\n`, 'utf8')
     out(renderPlan({ plan: resolvePlaceholders(plan, values), planPath: path, title }))
     out('\nRe-run with --confirm to apply.')
     return 1
+  }
+
+  const mismatch = digestMismatch(plan)
+  if (mismatch !== null) {
+    const why = mismatch === 'never held' ? 'its summary was never printed' : 'its rows changed since its summary was printed'
+    throw new Error(`Refusing to apply ${path}: ${why}. Run apply-plan.mjs ${path} without --confirm, show the developer the summary, and confirm again; nothing was sent.`)
   }
 
   plan.confirmedAt = now().toISOString()
