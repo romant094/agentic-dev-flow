@@ -18,6 +18,8 @@
 //                                            place in the registry
 //   extensions.mjs remove <name|id>          disable a plugin
 //   extensions.mjs check                     validate the registry and every plugin
+//   extensions.mjs where                     the plugin root the scripts run from:
+//                                            { root, version, cached, warning }
 //
 // config and remove name a plugin by its name or its id (`name@marketplace`). add and config
 // return `missingConfig`, the keys of the declaration's `requiredConfig` the config lacks, as
@@ -42,6 +44,7 @@ import { detectIntegration, readBranches, setBranches } from './lib/branches.mjs
 import { createPlanningGuide, createReviewPrompt, ignoreLocalDirs } from './lib/host-files.mjs'
 import { addExtension, addReport, branchesReport, checkRegistry, configExtension, configReport, initRegistry, initReport, readDebtRoot, removeExtension, removeReport } from './lib/registry.mjs'
 import { checkSuperpowers, claudeHome } from './lib/superpowers.mjs'
+import { pluginRoot } from './lib/plugin-root.mjs'
 import { trackerCall } from './lib/tracker.mjs'
 import { isMain } from './lib/main.mjs'
 
@@ -121,8 +124,10 @@ export function run(argv) {
     }
     case 'check':
       return checkRegistry(root, { ...core, home })
+    case 'where':
+      return pluginRoot({ home, scriptUrl: new URL('./lib/plugin-root.mjs', import.meta.url).href })
     default:
-      throw new Error('usage: extensions.mjs init|branches|add|config|remove|check [--root <dir>]')
+      throw new Error('usage: extensions.mjs init|branches|add|config|remove|check|where [--root <dir>]')
   }
 }
 

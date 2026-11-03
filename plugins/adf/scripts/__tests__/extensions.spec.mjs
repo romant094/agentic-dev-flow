@@ -274,3 +274,10 @@ test('init and add show the debt check once the debt root is set; with no root t
   assert.deepEqual(added.out.debt, { root: 'docs/tech-debt', ok: true, errors: [] })
   assert.match(added.out.report, /\nRegistry check: ok\nDebt check: ok \(docs\/tech-debt\)\n/)
 })
+
+test('where reports the plugin root the scripts run from', () => {
+  const out = JSON.parse(execFileSync('node', [cli, 'where', '--home', home], { encoding: 'utf8' }))
+  assert.equal(out.root, join(here, '..', '..'))
+  assert.equal(out.cached, false)
+  assert.match(out.warning, /^the adf scripts run from .* not from an installed release$/)
+})

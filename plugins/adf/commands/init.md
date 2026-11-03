@@ -13,6 +13,9 @@ missing and changes nothing that exists.
 
    On exit code 1, show `error` and stop.
 
+   Then run `node "${CLAUDE_PLUGIN_ROOT}/scripts/extensions.mjs" where` and show its `warning`
+   when it is not null.
+
 2. If `branches` is null, set the branch policy. Ask the developer, in one question:
    - which branch is the integration branch, the one a change forks from and merges into.
      Offer `detectedIntegration` when it is not null;
