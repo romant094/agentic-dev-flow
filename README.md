@@ -75,6 +75,7 @@ Then, in the host project:
 /adf:retro [--change <name> | --from <date> --to <date>]
 /adf:add <plugin id or path> [config as JSON]
 /adf:remove <plugin name or id>
+/adf:update [--to <tag>]
 ```
 
 A plugin is installed for the project, then enabled by its id. For example, GitLab merge
@@ -141,7 +142,7 @@ of `adf-jira` in `.adf/jira/<skill>/`.
 ```
 .claude-plugin/marketplace.json   the marketplace: the core and every plugin
 plugins/adf/                      the core
-  commands/                       /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply, /adf:verify, /adf:review, /adf:archive, /adf:land, /adf:retro
+  commands/                       /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply, /adf:verify, /adf:review, /adf:archive, /adf:land, /adf:retro, /adf:update
   agents/                         the capability-level subagents apply, verify, review and archive dispatch
   contract/                       the extension contract and its version
   schema/                         the artifact graph (schema.json), templates, instructions

@@ -17,7 +17,7 @@ function readJson(path) {
   }
 }
 
-function indentOf(text) {
+export function indentOf(text) {
   const line = /\n([ \t]+)\S/.exec(text)
   return line ? line[1] : '\t'
 }

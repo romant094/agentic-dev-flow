@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// CLI over lib/update.mjs: what /adf:update reads. Prints one JSON object on stdout; exit 1 on a
-// refusal, 2 on a usage error. Nothing is committed.
+// CLI over lib/update.mjs: what /adf:update reads and writes. Prints one JSON object on stdout;
+// exit 1 on a refusal, 2 on a usage error. Only apply and commit commit, on the update branch.
 //
 //   update.mjs check [--root <dir>] [--home <dir>]
 //       { scope: "project"|"user"|"none", ref, pinned, installed, latest, behind, pull,
@@ -15,25 +15,63 @@
 //       plugin install <id> --scope <scope>` for each enabled package plugin, in the main
 //       directory. Scope defaults to what `check` reports. Project scope refuses when
 //       .claude/settings.json has uncommitted changes, and restores it after the installs
+//   update.mjs plan [--to <tag>] [--root <dir>]
+//       { from, to, upToDate, plugins, log: { [plugin]: subjects }, hostFiles: [{ path, class }],
+//       contract: { from, to, compatible }, inFlight, clones: { old, new, repo } }. `to` defaults
+//       to the latest tag; when it is not newer, only { from, to, upToDate: true }. The clones are
+//       temporary and left in place: apply reads them, the command removes them
+//   update.mjs apply --to <tag> --clones <json> [--choices <json>] [--root <dir>]
+//       run from the new clone. { worktree, branch, written, manual, conflicts, dropped, ran,
+//       committed }: the branch chore/adf-update-<version> and its worktree with the new ref,
+//       the migrated registry and the host files; `choices` maps each edited host file to keep,
+//       replace or manual. Committed when no merge conflicts and no manual file remain
+//   update.mjs commit --worktree <dir> --to <tag>
+//       { worktree, branch, committed }: stages the files apply wrote and the manual ones, and
+//       commits; refuses while one holds a conflict marker
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { isMain } from './lib/main.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
-import { checkUpdate, latestTag, noticeMessage, pull, quietGit, remoteTags } from './lib/update.mjs'
+import { applyUpdate, checkUpdate, commitUpdate, latestTag, noticeMessage, planUpdate, pull, quietGit, remoteTags } from './lib/update.mjs'
 
-export const USAGE = 'usage: update.mjs check [--root <dir>] [--home <dir>] | update.mjs notice [--root <dir>] [--home <dir>] | update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>]'
+export const USAGE =
+  'usage: update.mjs check [--root <dir>] [--home <dir>] | update.mjs notice [--root <dir>] [--home <dir>] | update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>] | update.mjs plan [--to <tag>] [--root <dir>] | update.mjs apply --to <tag> --clones <json> [--choices <json>] [--root <dir>] | update.mjs commit --worktree <dir> --to <tag>'
 
 export class UsageError extends Error {}
 
 const DAY = 24 * 60 * 60 * 1000
-const ALLOWED = { check: [], notice: [], pull: ['scope'] }
+const ALLOWED = { check: [], notice: [], pull: ['scope'], plan: ['to'], apply: ['to', 'clones', 'choices'], commit: ['worktree', 'to'] }
+const REQUIRED = { apply: ['to', 'clones'], commit: ['worktree', 'to'] }
+const CHOICES = ['keep', 'replace', 'manual']
+
+function json(name, text) {
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new UsageError(`--${name} is not valid JSON`)
+  }
+}
+
+function clonesOption(text) {
+  const clones = json('clones', text)
+  if (!['old', 'new'].every((k) => typeof clones?.[k] === 'string')) throw new UsageError('--clones is { "old": <dir>, "new": <dir>, "repo": <dir> } as plan prints it')
+  return clones
+}
+
+function choicesOption(text) {
+  const choices = json('choices', text ?? '{}')
+  if (choices === null || typeof choices !== 'object' || Array.isArray(choices)) throw new UsageError('--choices is an object of path to keep, replace or manual')
+  const bad = Object.entries(choices).find(([, choice]) => !CHOICES.includes(choice))
+  if (bad) throw new UsageError(`--choices: ${bad[0]} is "${bad[1]}"; a choice is keep, replace or manual`)
+  return choices
+}
 
 function parse(argv) {
   const values = {}
   const rest = []
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    if (!['--root', '--home', '--scope'].includes(arg)) {
+    if (!['--root', '--home', '--scope', '--to', '--clones', '--choices', '--worktree'].includes(arg)) {
       if (arg.startsWith('--')) throw new UsageError(`unknown option ${arg}`)
       rest.push(arg)
       continue
@@ -77,6 +115,9 @@ export function run(argv, { cwd = process.cwd(), git, now = Date.now(), claude }
   if (values.scope !== undefined && !['project', 'user'].includes(values.scope)) throw new UsageError('--scope is project or user')
   const stray = Object.keys(values).filter((k) => k !== 'root' && k !== 'home' && !ALLOWED[sub].includes(k))
   if (stray.length) throw new UsageError(`--${stray[0]} does not belong to ${sub}`)
+  const absent = (REQUIRED[sub] ?? []).filter((k) => values[k] === undefined)
+  if (absent.length) throw new UsageError(`${sub} needs --${absent[0]}`)
+  if (values.to !== undefined && !/^v\d+\.\d+\.\d+$/.test(values.to)) throw new UsageError('--to is a release tag v<x.y.z>')
   const root = resolve(cwd, values.root ?? '.')
   const home = values.home ? resolve(cwd, values.home) : claudeHome()
   switch (sub) {
@@ -87,6 +128,12 @@ export function run(argv, { cwd = process.cwd(), git, now = Date.now(), claude }
       if (scope === 'none') throw new Error('no ADF install found for this project or user; nothing to pull')
       return pull({ root, scope, home, ...(claude ? { claude } : {}) })
     }
+    case 'plan':
+      return planUpdate(root, { to: values.to ?? null, ...(git ? { git } : {}) })
+    case 'apply':
+      return applyUpdate(root, { to: values.to, clones: clonesOption(values.clones), choices: choicesOption(values.choices) })
+    case 'commit':
+      return commitUpdate(resolve(cwd, values.worktree), { to: values.to })
     case 'notice': {
       try {
         const message = noticeMessage(checkUpdate(root, { home, fetchLatest: cachedLatest(home, git, now) }))
@@ -108,7 +155,8 @@ if (isMain(import.meta.url)) {
     process.exit(0)
   }
   try {
-    const result = run(process.argv.slice(2))
+    // apply migrates through each plugin's own steps, which may be async.
+    const result = await run(process.argv.slice(2))
     if (result !== null) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
     process.exitCode = 0
   } catch (error) {

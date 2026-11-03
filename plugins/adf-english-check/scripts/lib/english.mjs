@@ -282,7 +282,11 @@ export const CORE_COMMIT_SCRIPTS = {
   },
   // retro.mjs record --root <retro worktree>: the retrospective's report and sidecar. The
   // hook resolves them under --root, so the run names the retro worktree, where they are.
-  'retro.mjs': (args) => (args[0] === 'record' ? ['.adf/retro'] : null)
+  'retro.mjs': (args) => (args[0] === 'record' ? ['.adf/retro'] : null),
+  // update.mjs apply and commit: none. Apply writes its files after the hook runs, from the
+  // release's templates and the project's own files, and both commit in the update worktree,
+  // which neither names with --root.
+  'update.mjs': () => null
 }
 
 function coreCommit(words, dir) {

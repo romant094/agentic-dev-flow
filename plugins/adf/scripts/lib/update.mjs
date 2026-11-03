@@ -1,11 +1,17 @@
 // Versions for /adf:update: the plugin version this machine has, the tag the marketplace has
 // at most, and the ref a project pins.
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
-import { MARKETPLACE, SETTINGS_PATH } from './host-settings.mjs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { requireBranches } from './branches.mjs'
+import { classify, hostFiles, mergeKeep, replaceFromUpdate } from './host-merge.mjs'
+import { indentOf, MARKETPLACE, SETTINGS_PATH } from './host-settings.mjs'
 import { mainCheckout, selectInstall } from './installed.mjs'
+import { migrateConfig } from './migrate.mjs'
+import { DECLARATION_FILE, parseVersion, REGISTRY_PATH, readRegistry } from './registry.mjs'
 import { claudeHome, mergeSettings, readJson } from './superpowers.mjs'
+import { create } from './workspace.mjs'
 
 const VERSION = /^\d+\.\d+\.\d+$/
 const TAG = /^v(\d+\.\d+\.\d+)$/
@@ -202,4 +208,195 @@ export function pull({ root, scope, home = claudeHome(), claude = defaultClaude 
   }
   restore()
   return { ran, restored }
+}
+
+// ---------------------------------------------------------------- /adf:update: plan, apply, commit
+
+const MARKETPLACE_FILE = '.claude-plugin/marketplace.json'
+const CONTRACT_FILE = 'plugins/adf/contract/contract.json'
+const CONVENTIONAL = /^[a-z]+(\([^)]*\))?!?: \S/
+const bare = (tag) => TAG.exec(tag)[1]
+const readText = (path) => (existsSync(path) ? readFileSync(path, 'utf8') : null)
+const nameOf = (id) => id.slice(0, id.lastIndexOf('@'))
+
+export const updateChange = (version) => `adf-update-${version}`
+export const updateBranch = (version) => `chore/${updateChange(version)}`
+export const updateRecord = (version) => `.adf/update-${version}.json`
+export const updateTitle = (version) => `chore(adf): update to v${version}`
+
+function contractCheck(registry, clone) {
+  const from = registry?.contract ?? null
+  const to = readJson(join(clone, CONTRACT_FILE))?.version ?? null
+  const [a, b] = [parseVersion(from), parseVersion(to)]
+  return { from, to, compatible: Boolean(a && b && a.major === b.major) }
+}
+
+// Compares the project's pinned release with `to` (the latest tag by default). When `to` is
+// newer, clones the repository once into a temporary directory and checks the two tags out
+// beside it; the clones are left for apply and for the command to remove.
+export function planUpdate(root, { to = null, git = defaultGit } = {}) {
+  const main = mainCheckout(root)
+  const { ref, pinned } = projectRef(root)
+  if (!pinned) throw new Error(`${SETTINGS_PATH} pins no release of ${MARKETPLACE} (ref: ${ref ?? 'none'}); pin a tag v<x.y.z> first`)
+  const url = remoteUrl(root, 'project')
+  if (!url) throw new Error(`${SETTINGS_PATH} declares no url for the ${MARKETPLACE} marketplace`)
+  const target = to ?? latestTag(remoteTags(url, { git }))
+  if (!target) throw new Error(`${url} has no release tag v<x.y.z>`)
+  if (compareVersions(bare(target), bare(ref)) <= 0) return { from: ref, to: target, upToDate: true }
+  const tmp = mkdtempSync(join(tmpdir(), 'adf-update-'))
+  const clones = { old: join(tmp, 'old'), new: join(tmp, 'new'), repo: join(tmp, 'repo') }
+  try {
+    git(['clone', '--quiet', '--filter=blob:none', '--no-checkout', url, clones.repo])
+    git(['-C', clones.repo, 'worktree', 'add', '--detach', clones.old, ref])
+    git(['-C', clones.repo, 'worktree', 'add', '--detach', clones.new, target])
+  } catch (error) {
+    rmSync(tmp, { recursive: true, force: true })
+    throw new Error(`cannot clone ${url} at ${ref} and ${target}: ${String(error.stderr ?? error.message).trim()}`)
+  }
+  const registry = readRegistry(main)
+  const plugins = changedPlugins(registry, readJson(join(clones.old, MARKETPLACE_FILE)), readJson(join(clones.new, MARKETPLACE_FILE)))
+  const log = {}
+  for (const name of ['adf', ...plugins.filter((p) => p.changed && p.to !== null).map((p) => nameOf(p.id))]) {
+    log[name] = git(['-C', clones.repo, 'log', '--format=%s', `${ref}..${target}`, '--', `plugins/${name}`])
+      .split('\n')
+      .filter((subject) => CONVENTIONAL.test(subject))
+  }
+  const files = hostFiles(clones.old, clones.new, registry).map((file) => ({
+    path: file.path,
+    class: classify({ ...file, ours: readText(join(main, file.path)) })
+  }))
+  return { from: ref, to: target, upToDate: false, plugins, log, hostFiles: files, contract: contractCheck(registry, clones.new), inFlight: inFlight(root), clones }
+}
+
+// The integration branch as the update branch will fork from it (lib/workspace.mjs create).
+function integrationRef(main, integration) {
+  const git = (...args) => execFileSync('git', ['-C', main, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  try {
+    git('remote', 'get-url', 'origin')
+  } catch {
+    return integration
+  }
+  git('fetch', 'origin', integration)
+  return `origin/${integration}`
+}
+
+function showAt(main, ref) {
+  return (path) => {
+    try {
+      return execFileSync('git', ['-C', main, 'show', `${ref}:${path}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+    } catch {
+      return null
+    }
+  }
+}
+
+function commitFiles(worktree, files, version) {
+  const git = (...args) => execFileSync('git', ['-C', worktree, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  git('add', '--', ...files)
+  git('commit', '--quiet', '-m', updateTitle(version))
+  return git('branch', '--show-current').trim()
+}
+
+// Runs from the new release's clone. Everything is computed from the integration branch and the
+// two clones first, so a refusal writes nothing; then the branch chore/adf-update-<version> and
+// its worktree are made, the files written, and, with no conflict and no manual file, committed.
+// `choices` maps each edited host file to keep | replace | manual.
+export async function applyUpdate(root, { to, clones, choices = {} }) {
+  const version = bare(to)
+  const main = mainCheckout(root)
+  const show = showAt(main, integrationRef(main, requireBranches(main).integration))
+  const settingsText = show(SETTINGS_PATH)
+  const settings = settingsText === null ? null : JSON.parse(settingsText)
+  const source = settings?.extraKnownMarketplaces?.[MARKETPLACE]?.source
+  if (!source) throw new Error(`the integration branch's ${SETTINGS_PATH} declares no ${MARKETPLACE} marketplace`)
+  const registryText = show(REGISTRY_PATH)
+  if (registryText === null) throw new Error(`the integration branch has no ${REGISTRY_PATH}; run /adf:init`)
+  const registry = JSON.parse(registryText)
+  const newMarketplace = readJson(join(clones.new, MARKETPLACE_FILE))
+  if (!newMarketplace) throw new Error(`${clones.new} holds no ${MARKETPLACE_FILE}; run plan again`)
+
+  const contract = contractCheck(registry, clones.new)
+  if (!contract.compatible) {
+    throw new Error(`v${version} moves the extension contract from ${contract.from} to ${contract.to}, a major change: the update is refused; every plugin must move to contract ${contract.to} first`)
+  }
+  const files = hostFiles(clones.old, clones.new, registry).map((file) => {
+    const ours = show(file.path)
+    return { ...file, ours, class: classify({ ...file, ours }) }
+  })
+  const missing = files.filter((f) => f.class === 'edited' && !Object.hasOwn(choices, f.path)).map((f) => f.path)
+  if (missing.length) throw new Error(`no choice for ${missing.join(', ')}: each edited host file needs keep, replace or manual`)
+
+  source.ref = to
+  const writes = new Map([[SETTINGS_PATH, `${JSON.stringify(settings, null, indentOf(settingsText))}\n`]])
+  const dropped = []
+  const ran = {}
+  for (const row of changedPlugins(registry, readJson(join(clones.old, MARKETPLACE_FILE)), newMarketplace)) {
+    if (row.to === null) {
+      dropped.push(row.id)
+      continue
+    }
+    const entry = registry.extensions.find((e) => e.plugin === row.id)
+    if (row.changed) {
+      const dir = join(clones.new, 'plugins', nameOf(row.id))
+      const declaration = readJson(join(dir, DECLARATION_FILE)) ?? { name: nameOf(row.id) }
+      const migrated = await migrateConfig(entry, declaration, dir, { from: row.from, to: row.to })
+      if (migrated.ran.length) {
+        entry.config = migrated.config
+        ran[row.id] = migrated.ran
+      }
+    }
+    entry.version = row.to
+  }
+  registry.contract = contract.to
+  const registryNew = `${JSON.stringify(registry, null, 2)}\n`
+  if (registryNew !== registryText) writes.set(REGISTRY_PATH, registryNew)
+
+  const manual = []
+  const conflicts = []
+  for (const file of files) {
+    if (['new', 'replace'].includes(file.class)) writes.set(file.path, file.theirs)
+    if (file.class !== 'edited') continue
+    const choice = choices[file.path]
+    if (choice === 'manual') manual.push(file.path)
+    else if (choice === 'replace') writes.set(file.path, replaceFromUpdate(file.path, file.ours, file.theirs))
+    else {
+      const merged = mergeKeep(file.base, file.ours, file.theirs)
+      if (merged.conflicts) conflicts.push(file.path)
+      writes.set(file.path, merged.text)
+    }
+  }
+
+  const change = updateChange(version)
+  const branch = updateBranch(version)
+  let worktree
+  try {
+    worktree = create(main, { change, branch, base: 'integration' }).root
+  } catch (error) {
+    if (error.message.startsWith('uncommitted changes')) throw new Error(`the main directory has ${error.message}`)
+    throw new Error(`cannot make the update branch: ${error.message}`)
+  }
+  for (const [path, text] of writes) {
+    mkdirSync(dirname(join(worktree, path)), { recursive: true })
+    writeFileSync(join(worktree, path), text)
+  }
+  const written = [...writes.keys()]
+  const record = join(worktree, updateRecord(version))
+  mkdirSync(dirname(record), { recursive: true })
+  writeFileSync(record, `${JSON.stringify({ to, written, manual, conflicts }, null, 2)}\n`)
+  const committed = conflicts.length === 0 && manual.length === 0
+  if (committed) commitFiles(worktree, written, version)
+  return { worktree, branch, written, manual, conflicts, dropped, ran, committed }
+}
+
+// Finishes an update apply left uncommitted: stages the files it wrote and the manual ones, once
+// none holds a conflict marker, and commits.
+export function commitUpdate(worktree, { to }) {
+  const version = bare(to)
+  const record = readJson(join(worktree, updateRecord(version)))
+  if (!record) throw new Error(`${worktree} holds no ${updateRecord(version)}; run apply first`)
+  const files = [...record.written, ...record.manual]
+  const marked = files.filter((path) => /^<<<<<<< /m.test(readText(join(worktree, path)) ?? ''))
+  if (marked.length) throw new Error(`${marked.join(', ')} still hold conflict markers; resolve them, then commit again`)
+  const branch = commitFiles(worktree, files, version)
+  return { worktree, branch, committed: true }
 }

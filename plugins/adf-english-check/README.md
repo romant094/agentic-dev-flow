@@ -42,6 +42,7 @@ command line's sight, when they are run with `node <path>/<script>` or directly:
 | `plan.mjs added [--change <name>] ... --commit` | with `--commit` | `openspec/changes/<name>/plan.md`; without `--change`, every change directory |
 | `archive.mjs commit-specs --change <name>` | always | `openspec/changes/<name>/`, `openspec/changes/archive/` and `openspec/specs/` |
 | `archive.mjs commit-memory --change <name>` | always | every uncommitted file: the hook cannot read where the knowledge base and the debt tree are, and archive refuses any uncommitted file there that it did not write |
+| `update.mjs apply ...`, `update.mjs commit --worktree <w> ...` | apply with no conflict and no manual file; commit always | none: apply writes the files after the hook runs, from the release's templates and the project's own files, and both commit in the update worktree, which the hook cannot root |
 
 Paths resolve against `--root`, or the command's directory without it. The list is
 `CORE_COMMIT_SCRIPTS` in `scripts/lib/english.mjs`: a future core script that commits must be
