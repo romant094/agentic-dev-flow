@@ -58,7 +58,7 @@ on the forge state.
 | `openspec/config.yaml` | `openspec/planning.md`; removed (developer decision) |
 | Commands guard and its `openspec update` deny rules, workflow shape check, flow regression scripts, flow digest skill, the flow's memory pages | nothing; obsolete with the origin's flow |
 | Pre-commit English check (lefthook) | `adf-english-check`, in the flow only (developer decision) |
-| Price script called by the CI review job | nothing; the flow counts the whole cost (developer decision) |
+| Price script called by the CI review job | kept with the CI review job until review is a stage of its own (F5); developer decision 2026-11-03, replacing the rehearsal's removal |
 | Project skills, device plugin, user guide, corpus lint | kept (corpus lint reworded to `/adf:*`) |
 
 ## Findings
