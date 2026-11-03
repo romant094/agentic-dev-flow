@@ -96,10 +96,25 @@ test('notice prints the system message when behind or pull', () => {
 
 test('notice is silent when ls-remote fails', () => {
   const { root, home } = setup({ ref: 'v0.9.0', installedProject: '0.9.0' })
+  const now = Date.now()
+  let calls = 0
   const failing = () => {
+    calls++
     throw new Error('network down')
   }
-  assert.equal(run(['notice', '--root', root, '--home', home], { git: failing }), null)
+  assert.equal(run(['notice', '--root', root, '--home', home], { git: failing, now }), null)
+  assert.equal(calls, 1)
+  const cache = JSON.parse(readFileSync(join(home, 'adf', 'update-check.json'), 'utf8'))
+  assert.deepEqual(cache[URL], { checkedAt: now, latest: null })
+  assert.equal(run(['notice', '--root', root, '--home', home], { git: failing, now: now + 3600_000 }), null)
+  assert.equal(calls, 1)
+})
+
+test('notice for a user-scope install names the installed version', () => {
+  const { root, home } = setup({ user: '0.9.0' })
+  assert.deepEqual(run(['notice', '--root', root, '--home', home], { git: git(TAGS) }), {
+    systemMessage: 'ADF v0.10.0 is available; v0.9.0 is installed. Run /adf:update.'
+  })
 })
 
 test('notice reads the cache within a day', () => {

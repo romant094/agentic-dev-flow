@@ -14,7 +14,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { isMain } from './lib/main.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
-import { checkUpdate, latestTag, noticeMessage, remoteTags } from './lib/update.mjs'
+import { checkUpdate, latestTag, noticeMessage, quietGit, remoteTags } from './lib/update.mjs'
 
 export const USAGE = 'usage: update.mjs check [--root <dir>] [--home <dir>] | update.mjs notice [--root <dir>] [--home <dir>]'
 
@@ -52,7 +52,11 @@ function cachedLatest(home, git, now) {
   return (url) => {
     const hit = cache[url]
     if (hit && now - hit.checkedAt < DAY && now >= hit.checkedAt) return hit.latest ?? null
-    const latest = latestTag(remoteTags(url, git ? { git } : {}))
+    // A failed ask is cached too, as no answer, so an offline machine asks once a day.
+    let latest = null
+    try {
+      latest = latestTag(remoteTags(url, { git: git ?? quietGit }))
+    } catch {}
     try {
       mkdirSync(dirname(path), { recursive: true })
       writeFileSync(path, `${JSON.stringify({ ...cache, [url]: { checkedAt: now, latest } })}\n`)
@@ -84,6 +88,14 @@ export function run(argv, { cwd = process.cwd(), git, now = Date.now() } = {}) {
 }
 
 if (isMain(import.meta.url)) {
+  // The notice runs at session start: whatever goes wrong, it prints nothing and exits 0.
+  if (process.argv[2] === 'notice') {
+    try {
+      const result = run(process.argv.slice(2))
+      if (result !== null) process.stdout.write(`${JSON.stringify(result)}\n`)
+    } catch {}
+    process.exit(0)
+  }
   try {
     const result = run(process.argv.slice(2))
     if (result !== null) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)

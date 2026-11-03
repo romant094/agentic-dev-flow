@@ -37,6 +37,15 @@ export function projectRef(root) {
 
 const defaultGit = (args) => execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 
+// For the session-start notice: never waits long, never prompts for a credential.
+export const quietGit = (args) =>
+  execFileSync('git', args, {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 5000,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes' }
+  })
+
 export function remoteTags(url, { git = defaultGit } = {}) {
   return git(['ls-remote', '--tags', url])
     .split('\n')

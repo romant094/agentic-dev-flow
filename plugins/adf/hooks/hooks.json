@@ -6,7 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/update.mjs\" notice"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/update.mjs\" notice",
+            "timeout": 10
           }
         ]
       }
