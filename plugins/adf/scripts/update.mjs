@@ -112,7 +112,7 @@ if (isMain(import.meta.url)) {
     if (result !== null) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
     process.exitCode = 0
   } catch (error) {
-    process.stdout.write(`${JSON.stringify({ ok: false, error: error.message, ...(error.ran ? { ran: error.ran } : {}), ...(error instanceof UsageError ? { usage: USAGE } : {}) })}\n`)
+    process.stdout.write(`${JSON.stringify({ ok: false, error: error.message, ...(error.ran ? { ran: error.ran, restored: error.restored } : {}), ...(error instanceof UsageError ? { usage: USAGE } : {}) })}\n`)
     process.exitCode = error instanceof UsageError ? 2 : 1
   }
 }

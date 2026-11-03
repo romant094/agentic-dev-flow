@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { run } from '../update.mjs'
+import { run, UsageError } from '../update.mjs'
 
 const ID = 'adf@agentic-dev-flow'
 const URL = 'https://example.com/adf.git'
@@ -198,7 +198,7 @@ test('pull refuses when settings.json had uncommitted changes', () => {
   assert.equal(calls.length, 0)
 })
 
-test('pull at user scope installs with --scope user and runs no git', () => {
+test('pull at user scope installs with --scope user and reports restored false', () => {
   const { root, home } = setup({ user: '0.9.0' })
   writeFileSync(join(home, 'settings.json'), JSON.stringify({ enabledPlugins: { 'adf@agentic-dev-flow': true } }))
   const { fn } = fakeClaude()
@@ -222,4 +222,23 @@ test('pull stops on a failing claude call and names the calls made', () => {
 test('pull refuses scope none', () => {
   const { root, home } = setup({})
   assert.throws(() => run(['pull', '--root', root, '--home', home], { claude: fakeClaude().fn }), /nothing to pull/)
+})
+
+test('pull restores settings.json when a later call fails', () => {
+  const { root, home } = gitProject()
+  const before = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
+  const { fn } = fakeClaude({ failOn: 3, onCall: (args) => args[1] === 'install' && writeFileSync(join(root, '.claude', 'settings.json'), '{}') })
+  try {
+    run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
+    assert.fail('should throw')
+  } catch (error) {
+    assert.equal(error.restored, true)
+    assert.equal(error.ran.length, 2)
+  }
+  assert.equal(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'), before)
+})
+
+test('pull with an invalid --scope is a usage error', () => {
+  const { root, home } = setup({})
+  assert.throws(() => run(['pull', '--scope', 'team', '--root', root, '--home', home]), UsageError)
 })

@@ -169,7 +169,7 @@ function enabledPackagePlugins(main, scope, home) {
 
 // Refreshes the marketplace, then installs every enabled package plugin, in the main directory.
 // Installing at project scope rewrites .claude/settings.json; the file is restored afterwards, so
-// it must be clean before. A failing `claude` call stops the pull: the error carries `ran`.
+// it must be clean before. A failing `claude` call stops the pull, after the restore: the error carries `ran` and `restored`.
 export function pull({ root, scope, home = claudeHome(), claude = defaultClaude }) {
   if (scope !== 'project' && scope !== 'user') throw new Error(`cannot pull for scope ${scope}`)
   const main = mainCheckout(root)
@@ -180,21 +180,26 @@ export function pull({ root, scope, home = claudeHome(), claude = defaultClaude 
   const calls = [['plugin', 'marketplace', 'update', MARKETPLACE]]
   for (const id of enabledPackagePlugins(main, scope, home)) calls.push(['plugin', 'install', id, '--scope', scope])
   const ran = []
+  let restored = false
+  const restore = () => {
+    if (scope === 'project' && gitOut(['status', '--porcelain', '--', SETTINGS_PATH]).trim() !== '') {
+      gitOut(['checkout', '--', SETTINGS_PATH])
+      restored = true
+    }
+  }
   for (const args of calls) {
     try {
       claude(args, { cwd: main })
     } catch (cause) {
+      restore()
       const stderr = String(cause.stderr ?? cause.message ?? '').trim()
       const error = new Error(`claude ${args.join(' ')} failed: ${stderr}`)
       error.ran = ran
+      error.restored = restored
       throw error
     }
     ran.push(args)
   }
-  let restored = false
-  if (scope === 'project' && gitOut(['status', '--porcelain', '--', SETTINGS_PATH]).trim() !== '') {
-    gitOut(['checkout', '--', SETTINGS_PATH])
-    restored = true
-  }
+  restore()
   return { ran, restored }
 }
