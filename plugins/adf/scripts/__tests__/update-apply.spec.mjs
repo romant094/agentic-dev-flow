@@ -86,13 +86,15 @@ function planned(options) {
   return { root, plan: run(['plan', '--root', root]) }
 }
 
-const apply = (root, plan, choices = {}) => run(['apply', '--root', root, '--to', plan.to, '--clones', JSON.stringify(plan.clones), '--choices', JSON.stringify(choices)])
+const apply = (root, plan, choices = {}, classes = plan.hostFiles) =>
+  run(['apply', '--root', root, '--to', plan.to, '--clones', JSON.stringify(plan.clones), '--classes', JSON.stringify(classes), '--choices', JSON.stringify(choices)])
 
 test('plan lists the changed plugins and their log', () => {
   const { plan } = planned({ review: 'R1\nR2\nR3\nR4\nR5 mine\n' })
   assert.equal(plan.from, 'v0.1.0')
   assert.equal(plan.to, 'v0.2.0')
   assert.equal(plan.upToDate, false)
+  assert.equal(plan.base, 'main')
   assert.deepEqual(plan.plugins, [
     { id: 'adf-demo@agentic-dev-flow', from: '0.1.0', to: '0.2.0', changed: true },
     { id: 'adf-gone@agentic-dev-flow', from: '0.1.0', to: null, changed: true }
@@ -114,7 +116,8 @@ test('plan on the latest tag reports upToDate and clones nothing', () => {
   const root = hostProject(repo)
   const settings = join(root, '.claude', 'settings.json')
   writeFileSync(settings, readFileSync(settings, 'utf8').replace('v0.1.0', 'v0.2.0'))
-  assert.deepEqual(run(['plan', '--root', root]), { from: 'v0.2.0', to: 'v0.2.0', upToDate: true })
+  git(root, 'commit', '-q', '-am', 'chore: pin v0.2.0')
+  assert.deepEqual(run(['plan', '--root', root]), { from: 'v0.2.0', to: 'v0.2.0', base: 'main', upToDate: true })
 })
 
 test('apply writes the ref, the migrated config and the versions, and commits on its own branch', async () => {
@@ -195,4 +198,59 @@ test('a manual file is left untouched and listed, and commit stages it', async (
   writeFileSync(join(out.worktree, 'openspec/review-prompt.md'), 'R1 decided\n')
   run(['commit', '--worktree', out.worktree, '--to', 'v0.2.0'])
   assert.equal(git(out.worktree, 'status', '--porcelain').trim(), '')
+})
+
+test('plan reads the integration branch at origin, not a main directory behind it', async () => {
+  const root = hostProject(repo)
+  const bare = mkdtempSync(join(tmpdir(), 'adf-ua-origin-'))
+  git(bare, 'init', '-q', '--bare', '-b', 'main')
+  git(root, 'remote', 'add', 'origin', bare)
+  git(root, 'push', '-q', 'origin', 'main')
+  const mate = mkdtempSync(join(tmpdir(), 'adf-ua-mate-'))
+  git(mate, 'clone', '-q', bare, '.')
+  writeFileSync(join(mate, 'openspec/review-prompt.md'), 'R1\nR2\nR3\nR4\nR5 mine\n')
+  git(mate, 'commit', '-q', '-am', 'docs: tune the review prompt')
+  git(mate, 'push', '-q', 'origin', 'main')
+  const plan = run(['plan', '--root', root])
+  assert.equal(plan.base, 'origin/main')
+  assert.equal(plan.hostFiles.find((f) => f.path === 'openspec/review-prompt.md').class, 'edited')
+  const stale = plan.hostFiles.map((f) => (f.path === 'openspec/review-prompt.md' ? { ...f, class: 'replace' } : f))
+  await assert.rejects(apply(root, plan, {}, stale), /openspec\/review-prompt\.md \(replace at plan, edited now\)/)
+  assert.equal(existsSync(join(root, '.claude', 'worktrees')), false)
+  const out = await apply(root, plan, { 'openspec/review-prompt.md': 'keep' })
+  assert.equal(out.committed, true)
+  assert.equal(readFileSync(join(out.worktree, 'openspec/review-prompt.md'), 'utf8'), 'R1 new\nR2\nR3\nR4\nR5 mine\n')
+})
+
+test('plan removes its clones when it fails after cloning', () => {
+  const root = hostProject(repo)
+  let target = null
+  const failing = (args) => {
+    if (args[0] === 'clone') target = args.at(-1)
+    if (args.includes('log')) throw new Error('log failed')
+    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  }
+  assert.throws(() => run(['plan', '--root', root, '--to', 'v0.2.0'], { git: failing }), /log failed/)
+  assert.ok(target)
+  assert.equal(existsSync(dirname(target)), false)
+})
+
+test('apply refuses clones whose new release is not at --to', async () => {
+  const { root, plan } = planned()
+  await assert.rejects(apply(root, { ...plan, clones: { ...plan.clones, new: plan.clones.old } }), /is not at v0\.2\.0; run plan again/)
+  assert.equal(existsSync(join(root, '.claude', 'worktrees')), false)
+})
+
+test('a failing commit leaves apply uncommitted, and commit finishes it; a second commit is refused', async () => {
+  const { root, plan } = planned()
+  const hook = join(root, '.git', 'hooks', 'pre-commit')
+  writeFileSync(hook, '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+  const out = await apply(root, plan)
+  assert.equal(out.committed, false)
+  assert.equal(typeof out.commitError, 'string')
+  assert.ok(existsSync(join(out.worktree, '.claude/settings.json')))
+  writeFileSync(hook, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  const commit = () => run(['commit', '--worktree', out.worktree, '--to', 'v0.2.0'])
+  assert.equal(commit().committed, true)
+  assert.throws(commit, /nothing to commit/)
 })

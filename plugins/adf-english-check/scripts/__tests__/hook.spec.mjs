@@ -384,6 +384,22 @@ test('retro.mjs record checks the retrospective it commits, under the retro work
   assert.equal(hook(`node /p/scripts/retro.mjs render --root ${r.root}`, '/').code, 0)
 })
 
+test('update.mjs commit checks the files its record lists, under the --worktree it names', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'adf-english-check', contract: '1.1', provides: {} }))
+  r.write('.claude/adf-extensions.json', JSON.stringify({ contract: '1.1', extensions: [{ path: 'vendor/ec', config: { include: ['openspec/**'], exclude: [] } }] }))
+  r.write('.adf/update-0.2.0.json', JSON.stringify({ to: 'v0.2.0', written: ['openspec/planning.md'], manual: ['openspec/review-prompt.md'], conflicts: [] }))
+  r.write('openspec/planning.md', 'fine\n')
+  r.write('openspec/review-prompt.md', `ok\n${RU}\n`)
+  r.write('openspec/other.md', `${RU}\n`)
+  const commit = hook(`node /p/scripts/update.mjs commit --worktree ${r.root} --to v0.2.0`, '/')
+  assert.equal(commit.code, 2)
+  assert.match(commit.stderr, /openspec\/review-prompt\.md:2: /)
+  assert.doesNotMatch(commit.stderr, /other\.md/)
+  assert.equal(hook(`node /p/scripts/update.mjs apply --to v0.2.0 --root ${r.root}`, '/').code, 0)
+})
+
 test('suite.mjs, dup.mjs and plan.mjs check what they commit only with --commit', (t) => {
   const r = repo()
   t.after(() => rmSync(r.root, { recursive: true, force: true }))

@@ -218,7 +218,9 @@ function optionValues(args, name) {
 }
 
 // The ADF core's scripts that commit by path, and the paths each commits, relative to its
-// --root. A new core script that commits must be added here, or its commits go unchecked.
+// --root; an entry may return { root, paths } instead, for a script that names its repository
+// another way. `dir` is the command's directory. A new core script that commits must be added
+// here, or its commits go unchecked.
 export const CORE_COMMIT_SCRIPTS = {
   // commit.mjs --root <r> --only <path> [--only <path> ...] --message <m>
   'commit.mjs': (args) => optionValues(args, '--only'),
@@ -283,18 +285,31 @@ export const CORE_COMMIT_SCRIPTS = {
   // retro.mjs record --root <retro worktree>: the retrospective's report and sidecar. The
   // hook resolves them under --root, so the run names the retro worktree, where they are.
   'retro.mjs': (args) => (args[0] === 'record' ? ['.adf/retro'] : null),
-  // update.mjs apply and commit: none. Apply writes its files after the hook runs, from the
-  // release's templates and the project's own files, and both commit in the update worktree,
-  // which neither names with --root.
-  'update.mjs': () => null
+  // update.mjs commit --worktree <w> --to <tag>: the files apply wrote and the manual ones, as
+  // the record <w>/.adf/update-<version>.json lists them, under <w>. apply: none; it commits the
+  // release's templates and files merged from already-checked text, written after the hook runs.
+  'update.mjs': (args, dir) => {
+    const worktree = optionValues(args, '--worktree')[0]
+    const version = /^v(\d+\.\d+\.\d+)$/.exec(optionValues(args, '--to')[0] ?? '')?.[1]
+    if (args[0] !== 'commit' || !worktree || !version) return null
+    const root = resolve(dir, worktree)
+    let record
+    try {
+      record = JSON.parse(readFileSync(join(root, '.adf', `update-${version}.json`), 'utf8'))
+    } catch {
+      return null
+    }
+    return { root, paths: [...(record.written ?? []), ...(record.manual ?? [])] }
+  }
 }
 
 function coreCommit(words, dir) {
   const call = scriptCall(words)
   const pathsOf = call && Object.hasOwn(CORE_COMMIT_SCRIPTS, call.script) ? CORE_COMMIT_SCRIPTS[call.script] : null
-  const paths = pathsOf?.(call.args)
+  const found = pathsOf?.(call.args, dir)
+  const paths = Array.isArray(found) ? found : found?.paths
   if (!paths?.length) return null
-  const root = resolve(dir, optionValues(call.args, '--root')[0] ?? '.')
+  const root = found.root ?? resolve(dir, optionValues(call.args, '--root')[0] ?? '.')
   // verify.mjs skill-edit --diff-file <f> applies the diff after this hook runs: the text it
   // adds is in the diff, not yet in the files.
   const diffFile = call.script === 'verify.mjs' && call.args[0] === 'skill-edit' ? optionValues(call.args, '--diff-file')[0] : undefined

@@ -29,11 +29,15 @@ Never merge it: the developer merges it.
    node "${CLAUDE_PLUGIN_ROOT}/scripts/update.mjs" plan --to <tag>
    ```
 
-   On exit code 1, show `error` and stop. When `upToDate` is true, say the project already is on
-   `from`, and stop. Keep `clones`: every later step needs it, and step 9 removes the clones.
+   On exit code 1, show `error` and stop; plan left no clones. When `upToDate` is true, say the
+   project already is on `from`, and stop. Keep `clones`, `base` and `hostFiles`: later steps
+   need them. From here on, every stop first removes the clones (step 9).
+
+   `plan` reads the project at `base`, the tip of the integration branch the update branch forks
+   from (`origin/<integration>` when the project has a remote), not the main directory.
 
 4. Show the plan:
-   - `from` → `to`;
+   - `from` → `to`, read at `base`;
    - each plugin of `plugins` with `changed`: its versions, and its subjects from `log` (the key
      is the plugin's name, `adf` for the core);
    - the dropped plugins, those with `to: null`: the new release no longer ships them, and their
@@ -48,7 +52,8 @@ Never merge it: the developer merges it.
    Ask the developer whether to go on. On a no, remove the clones (step 9) and stop.
 
 5. For each host file with class `edited`, show its three versions: the old release's template
-   (`<clones.old>/<template path>`), the project's file, and the new release's template
+   (`<clones.old>/<template path>`), the project's file at `base` (`git show <base>:<path>`, not
+   the main directory's copy), and the new release's template
    (`<clones.new>/<template path>`). The core's templates are `plugins/adf/host/planning.md` for
    `openspec/planning.md` and `plugins/adf/host/review-prompt.md` for the review prompt; a
    plugin's are the `hostFiles` of `plugins/<name>/adf-extension.json`. Ask "How to merge?":
@@ -58,19 +63,24 @@ Never merge it: the developer merges it.
      `openspec/planning.md` the flow's scripts write are kept);
    - **manual** (choice `manual`): the file is left as it is, for the developer.
 
-6. Run the new release's code, from the new clone, with the choices as one JSON object of path to
-   choice:
+6. Run the new release's code, from the new clone, with plan's `hostFiles` as `--classes` and the
+   choices as one JSON object of path to choice:
 
    ```bash
-   node "<clones.new>/plugins/adf/scripts/update.mjs" apply --to <to> --clones '<clones as JSON>' --choices '<choices as JSON>'
+   node "<clones.new>/plugins/adf/scripts/update.mjs" apply --to <to> --clones '<clones as JSON>' --classes '<hostFiles as JSON>' --choices '<choices as JSON>'
    ```
 
-   On exit code 1, show `error` and stop; nothing was written. The usual causes are uncommitted
-   changes to tracked files in the main directory, an update branch that already exists, or an
-   edited file with no choice.
+   On exit code 1 nothing was written:
+   - when `error` starts with `no choice for`, ask "How to merge?" (step 5) for each file it
+     names, and run `apply` again with every choice;
+   - on any other `error`, show it, remove the clones (step 9) and stop. The usual causes are
+     uncommitted changes to tracked files in the main directory, an update branch that already
+     exists, a major contract change, or a host file the integration branch changed since
+     `plan` (run `/adf:update` again).
 
    Show `written`, `dropped` and `ran` (the config migrations each plugin ran). When
-   `committed` is false:
+   `committed` is false (`commitError`, when present, is why apply's own commit failed: show it
+   and fix its cause):
    - for each file of `conflicts`, resolve the conflict markers in `<worktree>/<path>` yourself:
      keep the project's edits and carry the template's changes. Show the developer the result;
    - for each file of `manual`, tell the developer to finish `<worktree>/<path>`, and wait until
@@ -81,7 +91,8 @@ Never merge it: the developer merges it.
      node "<clones.new>/plugins/adf/scripts/update.mjs" commit --worktree <worktree> --to <to>
      ```
 
-     On exit code 1, show `error`, fix what it names, and run it again.
+     On exit code 1 with `error` starting `nothing to commit`, the update is committed already:
+     go on. On another exit code 1, show `error`, fix what it names, and run it again.
 
 7. Open the merge request. Read `branches` from `.claude/adf-extensions.json`: `integration`,
    and `protected` with the integration branch added to it. Write a description that lists

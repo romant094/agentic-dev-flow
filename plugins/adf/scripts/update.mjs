@@ -16,18 +16,22 @@
 //       directory. Scope defaults to what `check` reports. Project scope refuses when
 //       .claude/settings.json has uncommitted changes, and restores it after the installs
 //   update.mjs plan [--to <tag>] [--root <dir>]
-//       { from, to, upToDate, plugins, log: { [plugin]: subjects }, hostFiles: [{ path, class }],
-//       contract: { from, to, compatible }, inFlight, clones: { old, new, repo } }. `to` defaults
-//       to the latest tag; when it is not newer, only { from, to, upToDate: true }. The clones are
-//       temporary and left in place: apply reads them, the command removes them
-//   update.mjs apply --to <tag> --clones <json> [--choices <json>] [--root <dir>]
+//       { from, to, base, upToDate, plugins, log: { [plugin]: subjects }, hostFiles: [{ path,
+//       class }], contract: { from, to, compatible }, inFlight, clones: { old, new, repo } }.
+//       Reads the project at `base`, the integration branch's tip (fetched first when the host
+//       has a remote). `to` defaults to the latest tag; when it is not newer, only { from, to,
+//       base, upToDate: true }. The clones are temporary and left in place: apply reads them,
+//       the command removes them; plan removes them itself when it fails after cloning
+//   update.mjs apply --to <tag> --clones <json> --classes <json> [--choices <json>] [--root <dir>]
 //       run from the new clone. { worktree, branch, written, manual, conflicts, dropped, ran,
-//       committed }: the branch chore/adf-update-<version> and its worktree with the new ref,
-//       the migrated registry and the host files; `choices` maps each edited host file to keep,
-//       replace or manual. Committed when no merge conflicts and no manual file remain
+//       committed[, commitError] }: the branch chore/adf-update-<version> and its worktree with
+//       the new ref, the migrated registry and the host files. `classes` is plan's `hostFiles`;
+//       a file whose class changed since is refused. `choices` maps each edited host file to
+//       keep, replace or manual. Committed when no merge conflicts and no manual file remain; a
+//       commit that fails leaves committed false, with commitError, for `commit` to finish
 //   update.mjs commit --worktree <dir> --to <tag>
 //       { worktree, branch, committed }: stages the files apply wrote and the manual ones, and
-//       commits; refuses while one holds a conflict marker
+//       commits; refuses while one holds a conflict marker, or when nothing is left to commit
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { isMain } from './lib/main.mjs'
@@ -35,13 +39,13 @@ import { claudeHome } from './lib/superpowers.mjs'
 import { applyUpdate, checkUpdate, commitUpdate, latestTag, noticeMessage, planUpdate, pull, quietGit, remoteTags } from './lib/update.mjs'
 
 export const USAGE =
-  'usage: update.mjs check [--root <dir>] [--home <dir>] | update.mjs notice [--root <dir>] [--home <dir>] | update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>] | update.mjs plan [--to <tag>] [--root <dir>] | update.mjs apply --to <tag> --clones <json> [--choices <json>] [--root <dir>] | update.mjs commit --worktree <dir> --to <tag>'
+  'usage: update.mjs check [--root <dir>] [--home <dir>] | update.mjs notice [--root <dir>] [--home <dir>] | update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>] | update.mjs plan [--to <tag>] [--root <dir>] | update.mjs apply --to <tag> --clones <json> --classes <json> [--choices <json>] [--root <dir>] | update.mjs commit --worktree <dir> --to <tag>'
 
 export class UsageError extends Error {}
 
 const DAY = 24 * 60 * 60 * 1000
-const ALLOWED = { check: [], notice: [], pull: ['scope'], plan: ['to'], apply: ['to', 'clones', 'choices'], commit: ['worktree', 'to'] }
-const REQUIRED = { apply: ['to', 'clones'], commit: ['worktree', 'to'] }
+const ALLOWED = { check: [], notice: [], pull: ['scope'], plan: ['to'], apply: ['to', 'clones', 'classes', 'choices'], commit: ['worktree', 'to'] }
+const REQUIRED = { apply: ['to', 'clones', 'classes'], commit: ['worktree', 'to'] }
 const CHOICES = ['keep', 'replace', 'manual']
 
 function json(name, text) {
@@ -58,6 +62,14 @@ function clonesOption(text) {
   return clones
 }
 
+function classesOption(text) {
+  const classes = json('classes', text)
+  if (!Array.isArray(classes) || !classes.every((f) => typeof f?.path === 'string' && typeof f?.class === 'string')) {
+    throw new UsageError('--classes is plan\'s hostFiles: [{ "path": <path>, "class": <class> }]')
+  }
+  return classes
+}
+
 function choicesOption(text) {
   const choices = json('choices', text ?? '{}')
   if (choices === null || typeof choices !== 'object' || Array.isArray(choices)) throw new UsageError('--choices is an object of path to keep, replace or manual')
@@ -71,7 +83,7 @@ function parse(argv) {
   const rest = []
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    if (!['--root', '--home', '--scope', '--to', '--clones', '--choices', '--worktree'].includes(arg)) {
+    if (!['--root', '--home', '--scope', '--to', '--clones', '--choices', '--classes', '--worktree'].includes(arg)) {
       if (arg.startsWith('--')) throw new UsageError(`unknown option ${arg}`)
       rest.push(arg)
       continue
@@ -131,7 +143,7 @@ export function run(argv, { cwd = process.cwd(), git, now = Date.now(), claude }
     case 'plan':
       return planUpdate(root, { to: values.to ?? null, ...(git ? { git } : {}) })
     case 'apply':
-      return applyUpdate(root, { to: values.to, clones: clonesOption(values.clones), choices: choicesOption(values.choices) })
+      return applyUpdate(root, { to: values.to, clones: clonesOption(values.clones), classes: classesOption(values.classes), choices: choicesOption(values.choices) })
     case 'commit':
       return commitUpdate(resolve(cwd, values.worktree), { to: values.to })
     case 'notice': {

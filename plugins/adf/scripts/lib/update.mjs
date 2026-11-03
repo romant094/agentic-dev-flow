@@ -9,7 +9,7 @@ import { classify, hostFiles, mergeKeep, replaceFromUpdate } from './host-merge.
 import { indentOf, MARKETPLACE, SETTINGS_PATH } from './host-settings.mjs'
 import { mainCheckout, selectInstall } from './installed.mjs'
 import { migrateConfig } from './migrate.mjs'
-import { DECLARATION_FILE, parseVersion, REGISTRY_PATH, readRegistry } from './registry.mjs'
+import { DECLARATION_FILE, parseVersion, REGISTRY_PATH } from './registry.mjs'
 import { claudeHome, mergeSettings, readJson } from './superpowers.mjs'
 import { create } from './workspace.mjs'
 
@@ -231,44 +231,8 @@ function contractCheck(registry, clone) {
   return { from, to, compatible: Boolean(a && b && a.major === b.major) }
 }
 
-// Compares the project's pinned release with `to` (the latest tag by default). When `to` is
-// newer, clones the repository once into a temporary directory and checks the two tags out
-// beside it; the clones are left for apply and for the command to remove.
-export function planUpdate(root, { to = null, git = defaultGit } = {}) {
-  const main = mainCheckout(root)
-  const { ref, pinned } = projectRef(root)
-  if (!pinned) throw new Error(`${SETTINGS_PATH} pins no release of ${MARKETPLACE} (ref: ${ref ?? 'none'}); pin a tag v<x.y.z> first`)
-  const url = remoteUrl(root, 'project')
-  if (!url) throw new Error(`${SETTINGS_PATH} declares no url for the ${MARKETPLACE} marketplace`)
-  const target = to ?? latestTag(remoteTags(url, { git }))
-  if (!target) throw new Error(`${url} has no release tag v<x.y.z>`)
-  if (compareVersions(bare(target), bare(ref)) <= 0) return { from: ref, to: target, upToDate: true }
-  const tmp = mkdtempSync(join(tmpdir(), 'adf-update-'))
-  const clones = { old: join(tmp, 'old'), new: join(tmp, 'new'), repo: join(tmp, 'repo') }
-  try {
-    git(['clone', '--quiet', '--filter=blob:none', '--no-checkout', url, clones.repo])
-    git(['-C', clones.repo, 'worktree', 'add', '--detach', clones.old, ref])
-    git(['-C', clones.repo, 'worktree', 'add', '--detach', clones.new, target])
-  } catch (error) {
-    rmSync(tmp, { recursive: true, force: true })
-    throw new Error(`cannot clone ${url} at ${ref} and ${target}: ${String(error.stderr ?? error.message).trim()}`)
-  }
-  const registry = readRegistry(main)
-  const plugins = changedPlugins(registry, readJson(join(clones.old, MARKETPLACE_FILE)), readJson(join(clones.new, MARKETPLACE_FILE)))
-  const log = {}
-  for (const name of ['adf', ...plugins.filter((p) => p.changed && p.to !== null).map((p) => nameOf(p.id))]) {
-    log[name] = git(['-C', clones.repo, 'log', '--format=%s', `${ref}..${target}`, '--', `plugins/${name}`])
-      .split('\n')
-      .filter((subject) => CONVENTIONAL.test(subject))
-  }
-  const files = hostFiles(clones.old, clones.new, registry).map((file) => ({
-    path: file.path,
-    class: classify({ ...file, ours: readText(join(main, file.path)) })
-  }))
-  return { from: ref, to: target, upToDate: false, plugins, log, hostFiles: files, contract: contractCheck(registry, clones.new), inFlight: inFlight(root), clones }
-}
-
-// The integration branch as the update branch will fork from it (lib/workspace.mjs create).
+// The integration branch as the update branch will fork from it (lib/workspace.mjs create):
+// `origin/<integration>` after a fetch when the host has a remote, else the local branch.
 function integrationRef(main, integration) {
   const git = (...args) => execFileSync('git', ['-C', main, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
   try {
@@ -290,9 +254,80 @@ function showAt(main, ref) {
   }
 }
 
+// What plan and apply read of the project: the settings, the registry and the host files at the
+// integration branch's tip (`base`), never the main directory's working tree, which may be behind
+// or on another branch.
+function integrationState(root) {
+  const main = mainCheckout(root)
+  const base = integrationRef(main, requireBranches(main).integration)
+  const show = showAt(main, base)
+  const settingsText = show(SETTINGS_PATH)
+  const settings = settingsText === null ? null : JSON.parse(settingsText)
+  const source = settings?.extraKnownMarketplaces?.[MARKETPLACE]?.source
+  if (!source) throw new Error(`${base}:${SETTINGS_PATH} declares no ${MARKETPLACE} marketplace`)
+  const registryText = show(REGISTRY_PATH)
+  if (registryText === null) throw new Error(`${base} has no ${REGISTRY_PATH}; run /adf:init`)
+  return { main, base, show, settingsText, settings, source, registryText, registry: JSON.parse(registryText) }
+}
+
+// The host files with the project's copy at the integration branch and their class.
+function classified(state, clones) {
+  return hostFiles(clones.old, clones.new, state.registry).map((file) => {
+    const ours = state.show(file.path)
+    return { ...file, ours, class: classify({ ...file, ours }) }
+  })
+}
+
+// Compares the integration branch's pinned release with `to` (the latest tag by default). When
+// `to` is newer, clones the repository once into a temporary directory and checks the two tags
+// out beside it; the clones are left for apply and for the command to remove.
+export function planUpdate(root, { to = null, git = defaultGit } = {}) {
+  const state = integrationState(root)
+  const ref = state.source.ref ?? null
+  if (typeof ref !== 'string' || !TAG.test(ref)) throw new Error(`${state.base}:${SETTINGS_PATH} pins no release of ${MARKETPLACE} (ref: ${ref ?? 'none'}); pin a tag v<x.y.z> first`)
+  const url = state.source.url
+  if (!url) throw new Error(`${state.base}:${SETTINGS_PATH} declares no url for the ${MARKETPLACE} marketplace`)
+  const target = to ?? latestTag(remoteTags(url, { git }))
+  if (!target) throw new Error(`${url} has no release tag v<x.y.z>`)
+  if (compareVersions(bare(target), bare(ref)) <= 0) return { from: ref, to: target, base: state.base, upToDate: true }
+  const tmp = mkdtempSync(join(tmpdir(), 'adf-update-'))
+  const clones = { old: join(tmp, 'old'), new: join(tmp, 'new'), repo: join(tmp, 'repo') }
+  try {
+    try {
+      git(['clone', '--quiet', '--filter=blob:none', '--no-checkout', url, clones.repo])
+      git(['-C', clones.repo, 'worktree', 'add', '--detach', clones.old, ref])
+      git(['-C', clones.repo, 'worktree', 'add', '--detach', clones.new, target])
+    } catch (error) {
+      throw new Error(`cannot clone ${url} at ${ref} and ${target}: ${String(error.stderr ?? error.message).trim()}`)
+    }
+    const plugins = changedPlugins(state.registry, readJson(join(clones.old, MARKETPLACE_FILE)), readJson(join(clones.new, MARKETPLACE_FILE)))
+    const log = {}
+    for (const name of ['adf', ...plugins.filter((p) => p.changed && p.to !== null).map((p) => nameOf(p.id))]) {
+      log[name] = git(['-C', clones.repo, 'log', '--format=%s', `${ref}..${target}`, '--', `plugins/${name}`])
+        .split('\n')
+        .filter((subject) => CONVENTIONAL.test(subject))
+    }
+    const files = classified(state, clones).map((file) => ({ path: file.path, class: file.class }))
+    return { from: ref, to: target, base: state.base, upToDate: false, plugins, log, hostFiles: files, contract: contractCheck(state.registry, clones.new), inFlight: inFlight(root), clones }
+  } catch (error) {
+    rmSync(tmp, { recursive: true, force: true })
+    throw error
+  }
+}
+
+function gitAt(dir) {
+  return (...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+}
+
 function commitFiles(worktree, files, version) {
-  const git = (...args) => execFileSync('git', ['-C', worktree, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  const git = gitAt(worktree)
   git('add', '--', ...files)
+  try {
+    git('diff', '--cached', '--quiet')
+    throw new Error(`nothing to commit in ${worktree}: the update's files are already committed or unchanged`)
+  } catch (error) {
+    if (error.status !== 1) throw error
+  }
   git('commit', '--quiet', '-m', updateTitle(version))
   return git('branch', '--show-current').trim()
 }
@@ -300,18 +335,18 @@ function commitFiles(worktree, files, version) {
 // Runs from the new release's clone. Everything is computed from the integration branch and the
 // two clones first, so a refusal writes nothing; then the branch chore/adf-update-<version> and
 // its worktree are made, the files written, and, with no conflict and no manual file, committed.
+// `classes` is plan's `hostFiles`: a host file whose class changed since plan is refused.
 // `choices` maps each edited host file to keep | replace | manual.
-export async function applyUpdate(root, { to, clones, choices = {} }) {
+export async function applyUpdate(root, { to, clones, classes, choices = {} }) {
   const version = bare(to)
-  const main = mainCheckout(root)
-  const show = showAt(main, integrationRef(main, requireBranches(main).integration))
-  const settingsText = show(SETTINGS_PATH)
-  const settings = settingsText === null ? null : JSON.parse(settingsText)
-  const source = settings?.extraKnownMarketplaces?.[MARKETPLACE]?.source
-  if (!source) throw new Error(`the integration branch's ${SETTINGS_PATH} declares no ${MARKETPLACE} marketplace`)
-  const registryText = show(REGISTRY_PATH)
-  if (registryText === null) throw new Error(`the integration branch has no ${REGISTRY_PATH}; run /adf:init`)
-  const registry = JSON.parse(registryText)
+  let atTo = false
+  try {
+    const git = gitAt(clones.new)
+    atTo = git('rev-parse', 'HEAD').trim() === git('rev-parse', `${to}^{commit}`).trim()
+  } catch {}
+  if (!atTo) throw new Error(`${clones.new} is not at ${to}; run plan again`)
+  const state = integrationState(root)
+  const { main, settings, settingsText, source, registry, registryText } = state
   const newMarketplace = readJson(join(clones.new, MARKETPLACE_FILE))
   if (!newMarketplace) throw new Error(`${clones.new} holds no ${MARKETPLACE_FILE}; run plan again`)
 
@@ -319,10 +354,10 @@ export async function applyUpdate(root, { to, clones, choices = {} }) {
   if (!contract.compatible) {
     throw new Error(`v${version} moves the extension contract from ${contract.from} to ${contract.to}, a major change: the update is refused; every plugin must move to contract ${contract.to} first`)
   }
-  const files = hostFiles(clones.old, clones.new, registry).map((file) => {
-    const ours = show(file.path)
-    return { ...file, ours, class: classify({ ...file, ours }) }
-  })
+  const files = classified(state, clones)
+  const planned = new Map(classes.map((file) => [file.path, file.class]))
+  const moved = files.filter((f) => planned.get(f.path) !== f.class).map((f) => `${f.path} (${planned.get(f.path) ?? 'not listed'} at plan, ${f.class} now)`)
+  if (moved.length) throw new Error(`${state.base} changed since plan: ${moved.join(', ')}; run plan again`)
   const missing = files.filter((f) => f.class === 'edited' && !Object.hasOwn(choices, f.path)).map((f) => f.path)
   if (missing.length) throw new Error(`no choice for ${missing.join(', ')}: each edited host file needs keep, replace or manual`)
 
@@ -383,9 +418,17 @@ export async function applyUpdate(root, { to, clones, choices = {} }) {
   const record = join(worktree, updateRecord(version))
   mkdirSync(dirname(record), { recursive: true })
   writeFileSync(record, `${JSON.stringify({ to, written, manual, conflicts }, null, 2)}\n`)
-  const committed = conflicts.length === 0 && manual.length === 0
-  if (committed) commitFiles(worktree, written, version)
-  return { worktree, branch, written, manual, conflicts, dropped, ran, committed }
+  const result = { worktree, branch, written, manual, conflicts, dropped, ran, committed: false }
+  if (conflicts.length === 0 && manual.length === 0) {
+    // A failing commit (a hook, say) leaves the files written: `commit` finishes it.
+    try {
+      commitFiles(worktree, written, version)
+      result.committed = true
+    } catch (error) {
+      result.commitError = String(error.stderr || error.message).trim()
+    }
+  }
+  return result
 }
 
 // Finishes an update apply left uncommitted: stages the files it wrote and the manual ones, once
