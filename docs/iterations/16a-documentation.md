@@ -3,20 +3,23 @@
 ## Goal
 
 A user guide in the repository, nested by section, from which a developer who has never seen the
-flow installs it, runs a change from propose to land, adds a plugin and updates the flow. The
-guide stays current: every later change of the flow updates it in the same commit, and a script
-in `npm test` fails when a part of the flow has no page.
+flow installs it, runs a change from propose to land, adds a plugin and updates the flow with
+`/adf:update`. The guide stays current in two stages: a script in `npm test` fails when a part of
+the flow has no page, and an agent in every release step checks that the pages still say what
+the changed code does.
 
 ## Structure
 
-`docs/guide/` (the user guide). `docs/iterations/`, `docs/lessons/` and `docs/roadmap.md` stay the
-maintainer's records and are not part of it.
+`docs/` holds the user guide and nothing else. The maintainer's records move to `.claude/`:
+`docs/iterations/` to `.claude/iterations/`, `docs/lessons/` to `.claude/lessons/`,
+`docs/roadmap.md` to `.claude/roadmap.md`. `docs/switching.md` becomes a guide page.
 
 ```
-docs/guide/
+docs/
   README.md                  the index: what the flow is, where to start, the section map
   getting-started/
     install.md               marketplace, project scope, /adf:init
+    switching.md             a project with a flow of its own moves to the plugins
     first-change.md          one small change from propose to land
   cycle/
     README.md                the cycle on one page, the artifacts and where they live
@@ -35,24 +38,32 @@ docs/guide/
   projects/
     several-projects.md      several projects on one machine (inputs below)
     team.md                  what a teammate does after the merge request that installs the flow
-  update.md                  /adf:update, the registry migration
+  update.md                  /adf:update, the only update path
   troubleshooting.md         the refusals a developer meets and what to do
 ```
 
 A plugin's own `README.md` stays short: what it provides and a link to its guide page, so each
 fact has one place.
 
+Each page names the files it describes in a front matter list, `sources:` (paths or globs under
+`plugins/`). The script check and the agent check both read it.
+
+The flow has no public release, so there is no update path before `/adf:update`: the guide
+documents only the command.
+
 ## Steps
 
 | # | Step | Check |
 |---|---|---|
-| 1 | `docs/guide/` with the index and the section skeleton above | `check-guide.mjs` |
-| 2 | `getting-started/` and `cycle/`: each command page says what the command asks, writes, commits and how it resumes after a stop | each page matches its file in `plugins/adf/commands/` |
-| 3 | `concepts/`, `plugins/` (the plugin READMEs move here and shrink to a link), `projects/`, `update.md`, `troubleshooting.md` | each claim names the file or the record that shows it |
-| 4 | `README.md` of the repository: the current state (the plugin-first flow on `main`, the monolithic one on `adf-legacy`) and a link to the guide in place of the status table | read by the developer |
-| 5 | `scripts/check-guide.mjs` in `npm test`: every command in `plugins/adf/commands/`, every plugin in `.claude-plugin/marketplace.json`, every contract role and every registry key has a page that names it; every relative link in `docs/guide/` resolves | unit tests; a removed page fails `npm test` |
-| 6 | The upkeep rule: `docs/roadmap.md`, `## Checks after every iteration`, gets a third check: the guide describes the iteration's change, in the same commit as the change | read by the developer |
-| 7 | A scratch repository and a clean `CLAUDE_CONFIG_DIR` follow `getting-started/` to a passing `extensions.mjs check` and one change to land | the run's notes in the `## Result` |
+| 1 | Move `docs/iterations/`, `docs/lessons/` and `docs/roadmap.md` to `.claude/`, and every path that names them (`scripts/check-lessons.mjs`, `scripts/parity/`, `README.md`, the records themselves) | `npm test`, `npm run parity -- <origin>`, `git grep -E 'docs/(iterations\|lessons\|roadmap)'` prints nothing |
+| 2 | `docs/` with the index and the section skeleton above; `docs/switching.md` moves to `getting-started/` | `check-guide.mjs` |
+| 3 | `getting-started/` and `cycle/`: each command page says what the command asks, writes, commits and how it resumes after a stop | the agent check (step 7) |
+| 4 | `concepts/`, `plugins/` (the plugin READMEs move here and shrink to a link), `projects/`, `update.md`, `troubleshooting.md` | the agent check (step 7) |
+| 5 | `README.md` of the repository: the current state (the plugin-first flow on `main`, the monolithic one on `adf-legacy`) and a link to the guide in place of the status table | read by the developer |
+| 6 | Stage 1, by script: `scripts/check-guide.mjs` in `npm test`. Every command in `plugins/adf/commands/`, every plugin in `.claude-plugin/marketplace.json`, every contract role and every registry key has a page that names it; every file under `plugins/*/commands/`, `plugins/*/skills/` and `plugins/*/contract/` is in some page's `sources:`; every `sources:` entry and every relative link resolves | unit tests; a removed page or a new command without a page fails `npm test` |
+| 7 | Stage 2, by reasoning: `scripts/guide-review.mjs` in every release step, next to parity. The script takes the diff since the previous release tag, selects the pages whose `sources:` it touches, and builds one package; one read-only agent replies in JSON under a schema the port owns (a finding: page, claim, the source line that contradicts it, the fix), checked by script. A release goes out with no open finding | unit tests of the package and the reply check; one run on the release that adds the guide |
+| 8 | The upkeep rule in `.claude/roadmap.md`, `## Checks after every iteration`: 3. `check-guide.mjs` (in `npm test`); 4. `guide-review.mjs` with no open finding. A flow change updates its pages in the same commit | read by the developer |
+| 9 | A scratch repository and a clean `CLAUDE_CONFIG_DIR` follow `getting-started/` to a passing `extensions.mjs check` and one change to land | the run's notes in the `## Result` |
 
 ## Inputs: several projects at project scope
 
@@ -85,7 +96,11 @@ Settled by the developer on 2026-11-03.
   instructions for the current state, so the guide is not urgent, and after 16 it documents the
   update command too.
 - The guide is nested by section in the repository, not one long page.
-- Every flow change updates the guide; a script check enforces the parts it can see.
-- The switch's findings stay in `docs/switching.md` and the iteration 15 record; the guide does
-  not repeat them.
+- No update path before `/adf:update`: the flow has no public release, so every update goes
+  through the command, and the guide documents only it.
+- The maintainer's records (iterations, lessons, roadmap) move to `.claude/`; `docs/` is the
+  user guide only.
+- The guide is checked in two stages: a script finds a part of the flow with no page or a dead
+  link, and an agent finds a page that no longer says what the code does.
+- The switch's findings stay in the iteration 15 record; the guide does not repeat them.
 - English only, STE style, like every other artifact.
