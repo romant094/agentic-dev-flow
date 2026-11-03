@@ -10,25 +10,30 @@
 //       the SessionStart hook: prints { "systemMessage": "..." } when the project or the user
 //       install is behind, or when the pinned release is not installed; else nothing. Asks the
 //       remote once a day (<home>/adf/update-check.json). Any error: nothing printed, exit 0
+//   update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>]
+//       { ran: [[...claude args]], restored }: `claude plugin marketplace update`, then `claude
+//       plugin install <id> --scope <scope>` for each enabled package plugin, in the main
+//       directory. Scope defaults to what `check` reports. Project scope refuses when
+//       .claude/settings.json has uncommitted changes, and restores it after the installs
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { isMain } from './lib/main.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
-import { checkUpdate, latestTag, noticeMessage, quietGit, remoteTags } from './lib/update.mjs'
+import { checkUpdate, latestTag, noticeMessage, pull, quietGit, remoteTags } from './lib/update.mjs'
 
-export const USAGE = 'usage: update.mjs check [--root <dir>] [--home <dir>] | update.mjs notice [--root <dir>] [--home <dir>]'
+export const USAGE = 'usage: update.mjs check [--root <dir>] [--home <dir>] | update.mjs notice [--root <dir>] [--home <dir>] | update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>]'
 
 export class UsageError extends Error {}
 
 const DAY = 24 * 60 * 60 * 1000
-const ALLOWED = { check: [], notice: [] }
+const ALLOWED = { check: [], notice: [], pull: ['scope'] }
 
 function parse(argv) {
   const values = {}
   const rest = []
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    if (!['--root', '--home'].includes(arg)) {
+    if (!['--root', '--home', '--scope'].includes(arg)) {
       if (arg.startsWith('--')) throw new UsageError(`unknown option ${arg}`)
       rest.push(arg)
       continue
@@ -65,10 +70,11 @@ function cachedLatest(home, git, now) {
   }
 }
 
-export function run(argv, { cwd = process.cwd(), git, now = Date.now() } = {}) {
+export function run(argv, { cwd = process.cwd(), git, now = Date.now(), claude } = {}) {
   const { values, rest } = parse(argv)
   const [sub, ...extra] = rest
   if (extra.length > 0 || !Object.hasOwn(ALLOWED, sub)) throw new UsageError(USAGE)
+  if (values.scope !== undefined && !['project', 'user'].includes(values.scope)) throw new UsageError('--scope is project or user')
   const stray = Object.keys(values).filter((k) => k !== 'root' && k !== 'home' && !ALLOWED[sub].includes(k))
   if (stray.length) throw new UsageError(`--${stray[0]} does not belong to ${sub}`)
   const root = resolve(cwd, values.root ?? '.')
@@ -76,6 +82,11 @@ export function run(argv, { cwd = process.cwd(), git, now = Date.now() } = {}) {
   switch (sub) {
     case 'check':
       return checkUpdate(root, { home, ...(git ? { git } : {}) })
+    case 'pull': {
+      const scope = values.scope ?? checkUpdate(root, { home, ...(git ? { git } : {}), fetchLatest: () => null }).scope
+      if (scope === 'none') throw new Error('no ADF install found for this project or user; nothing to pull')
+      return pull({ root, scope, home, ...(claude ? { claude } : {}) })
+    }
     case 'notice': {
       try {
         const message = noticeMessage(checkUpdate(root, { home, fetchLatest: cachedLatest(home, git, now) }))
@@ -101,7 +112,7 @@ if (isMain(import.meta.url)) {
     if (result !== null) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
     process.exitCode = 0
   } catch (error) {
-    process.stdout.write(`${JSON.stringify({ ok: false, error: error.message, ...(error instanceof UsageError ? { usage: USAGE } : {}) })}\n`)
+    process.stdout.write(`${JSON.stringify({ ok: false, error: error.message, ...(error.ran ? { ran: error.ran } : {}), ...(error instanceof UsageError ? { usage: USAGE } : {}) })}\n`)
     process.exitCode = error instanceof UsageError ? 2 : 1
   }
 }

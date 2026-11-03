@@ -5,7 +5,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { MARKETPLACE, SETTINGS_PATH } from './host-settings.mjs'
 import { mainCheckout, selectInstall } from './installed.mjs'
-import { claudeHome, readJson } from './superpowers.mjs'
+import { claudeHome, mergeSettings, readJson } from './superpowers.mjs'
 
 const VERSION = /^\d+\.\d+\.\d+$/
 const TAG = /^v(\d+\.\d+\.\d+)$/
@@ -152,4 +152,49 @@ export function noticeMessage(check) {
     lines.push(`ADF v${bare(check.latest)} is available; ${on}. Run /adf:update.`)
   }
   return lines.length ? lines.join('\n') : null
+}
+
+const defaultClaude = (args, { cwd }) => execFileSync('claude', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+
+// The package plugins enabled for a scope: ids ending `@agentic-dev-flow` set to true.
+function enabledPackagePlugins(main, scope, home) {
+  const merged =
+    scope === 'project'
+      ? mergeSettings(readJson(join(main, SETTINGS_PATH)), readJson(join(main, '.claude', 'settings.local.json')))
+      : mergeSettings(readJson(join(home, 'settings.json')))
+  return Object.entries(merged.enabledPlugins)
+    .filter(([id, on]) => on === true && id.endsWith(`@${MARKETPLACE}`))
+    .map(([id]) => id)
+}
+
+// Refreshes the marketplace, then installs every enabled package plugin, in the main directory.
+// Installing at project scope rewrites .claude/settings.json; the file is restored afterwards, so
+// it must be clean before. A failing `claude` call stops the pull: the error carries `ran`.
+export function pull({ root, scope, home = claudeHome(), claude = defaultClaude }) {
+  if (scope !== 'project' && scope !== 'user') throw new Error(`cannot pull for scope ${scope}`)
+  const main = mainCheckout(root)
+  const gitOut = (args) => execFileSync('git', ['-C', main, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  if (scope === 'project' && gitOut(['status', '--porcelain', '--', SETTINGS_PATH]).trim() !== '') {
+    throw new Error(`${SETTINGS_PATH} has uncommitted changes; commit or revert them first`)
+  }
+  const calls = [['plugin', 'marketplace', 'update', MARKETPLACE]]
+  for (const id of enabledPackagePlugins(main, scope, home)) calls.push(['plugin', 'install', id, '--scope', scope])
+  const ran = []
+  for (const args of calls) {
+    try {
+      claude(args, { cwd: main })
+    } catch (cause) {
+      const stderr = String(cause.stderr ?? cause.message ?? '').trim()
+      const error = new Error(`claude ${args.join(' ')} failed: ${stderr}`)
+      error.ran = ran
+      throw error
+    }
+    ran.push(args)
+  }
+  let restored = false
+  if (scope === 'project' && gitOut(['status', '--porcelain', '--', SETTINGS_PATH]).trim() !== '') {
+    gitOut(['checkout', '--', SETTINGS_PATH])
+    restored = true
+  }
+  return { ran, restored }
 }

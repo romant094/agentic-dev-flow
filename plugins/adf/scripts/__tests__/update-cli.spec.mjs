@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { run } from '../update.mjs'
 
 const ID = 'adf@agentic-dev-flow'
@@ -143,4 +144,82 @@ test('usage errors', () => {
   assert.throws(() => run(['bogus']), /usage/)
   assert.throws(() => run(['check', '--nope', 'x']), /unknown option/)
   assert.throws(() => run(['check', '--root']), /needs a value/)
+})
+
+function gitProject(settings = { enabledPlugins: { 'adf@agentic-dev-flow': true, 'x@other': true } }) {
+  const { root, home } = setup({ ref: 'v0.10.0', installedProject: '0.9.0' })
+  writeFileSync(join(root, '.claude', 'settings.json'), JSON.stringify({ ...settings, extraKnownMarketplaces: { 'agentic-dev-flow': { source: { source: 'git', url: URL, ref: 'v0.10.0' } } } }))
+  writeFileSync(join(root, '.claude', 'settings.local.json'), JSON.stringify({ enabledPlugins: { 'adf-jira@agentic-dev-flow': true, 'adf-off@agentic-dev-flow': false } }))
+  const sh = (...a) => execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { stdio: 'ignore' })
+  sh('init', '-q')
+  sh('add', '.claude/settings.json')
+  sh('commit', '-q', '-m', 'init')
+  return { root, home, sh }
+}
+
+function fakeClaude({ onCall, failOn } = {}) {
+  const calls = []
+  const fn = (args, opts) => {
+    calls.push({ args, cwd: opts.cwd })
+    if (failOn === calls.length) throw Object.assign(new Error('boom'), { stderr: 'no network' })
+    onCall?.(args, opts)
+    return ''
+  }
+  return { fn, calls }
+}
+
+test('pull runs the marketplace update, then one install per enabled plugin', () => {
+  const { root, home } = gitProject()
+  const { fn, calls } = fakeClaude()
+  const r = run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
+  assert.deepEqual(r.ran, [
+    ['plugin', 'marketplace', 'update', 'agentic-dev-flow'],
+    ['plugin', 'install', 'adf@agentic-dev-flow', '--scope', 'project'],
+    ['plugin', 'install', 'adf-jira@agentic-dev-flow', '--scope', 'project']
+  ])
+  assert.deepEqual(calls.map((c) => c.args), r.ran)
+  assert.equal(r.restored, false)
+})
+
+test('pull restores a settings file it changed', () => {
+  const { root, home } = gitProject()
+  const before = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
+  const { fn } = fakeClaude({ onCall: (args) => args[1] === 'install' && writeFileSync(join(root, '.claude', 'settings.json'), '{}') })
+  const r = run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
+  assert.equal(r.restored, true)
+  assert.equal(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'), before)
+})
+
+test('pull refuses when settings.json had uncommitted changes', () => {
+  const { root, home } = gitProject()
+  writeFileSync(join(root, '.claude', 'settings.json'), '{"dirty":true}')
+  const { fn, calls } = fakeClaude()
+  assert.throws(() => run(['pull', '--scope', 'project', '--root', root, '--home', home], { claude: fn, git: git(TAGS) }), /\.claude\/settings\.json has uncommitted changes; commit or revert them first/)
+  assert.equal(calls.length, 0)
+})
+
+test('pull at user scope installs with --scope user and runs no git', () => {
+  const { root, home } = setup({ user: '0.9.0' })
+  writeFileSync(join(home, 'settings.json'), JSON.stringify({ enabledPlugins: { 'adf@agentic-dev-flow': true } }))
+  const { fn } = fakeClaude()
+  const r = run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
+  assert.deepEqual(r.ran[1], ['plugin', 'install', 'adf@agentic-dev-flow', '--scope', 'user'])
+  assert.equal(r.restored, false)
+})
+
+test('pull stops on a failing claude call and names the calls made', () => {
+  const { root, home } = gitProject()
+  const { fn } = fakeClaude({ failOn: 2 })
+  try {
+    run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
+    assert.fail('should throw')
+  } catch (error) {
+    assert.match(error.message, /plugin install adf@agentic-dev-flow --scope project.*no network/)
+    assert.equal(error.ran.length, 1)
+  }
+})
+
+test('pull refuses scope none', () => {
+  const { root, home } = setup({})
+  assert.throws(() => run(['pull', '--root', root, '--home', home], { claude: fakeClaude().fn }), /nothing to pull/)
 })
