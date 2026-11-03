@@ -31,7 +31,12 @@ function absent(message, id, reason) {
   return error
 }
 
-export function installedPath(id, root, { home = claudeHome(), exists = existsSync } = {}) {
+export function installedPath(id, root, opts = {}) {
+  return selectInstall(id, root, opts).path
+}
+
+// The install installedPath uses: its directory and, when known, its version.
+export function selectInstall(id, root, { home = claudeHome(), exists = existsSync } = {}) {
   const main = mainCheckout(root)
   const records = readJson(join(home, 'plugins', 'installed_plugins.json'))?.plugins?.[id]
   const here = Array.isArray(records) ? records.filter((r) => countsHere(r, [main, root])) : []
@@ -46,19 +51,19 @@ export function installedPath(id, root, { home = claudeHome(), exists = existsSy
   const found = here
     .filter((r) => r.installPath && exists(r.installPath))
     .sort((a, b) => (rank[a.scope] ?? 2) - (rank[b.scope] ?? 2))[0]
-  if (found) return found.installPath
+  if (found) return { path: found.installPath, version: found.version ?? null }
   // Project trust enables a plugin with no record of its own; its cache directory is the install.
   if (settings.enabledPlugins[id] === true) {
-    const cached = cachedPath(id, home)
-    if (cached && exists(cached)) return cached
+    const cached = cachedInstall(id, home)
+    if (cached && exists(cached.path)) return cached
   }
   throw absent(`${id} is not installed for this project; run: claude plugin install ${id} --scope project; run it from ${main}`, id, 'not-installed')
 }
 
 // The cache directory of the version the marketplace clone lists for the plugin.
-function cachedPath(id, home) {
+function cachedInstall(id, home) {
   const [name, marketplace] = id.split('@')
   const listed = readJson(join(home, 'plugins', 'marketplaces', marketplace, '.claude-plugin', 'marketplace.json'))
   const version = listed?.plugins?.find((p) => p.name === name)?.version
-  return version ? join(home, 'plugins', 'cache', marketplace, name, version) : null
+  return version ? { path: join(home, 'plugins', 'cache', marketplace, name, version), version } : null
 }

@@ -333,3 +333,19 @@ test('setDebtRoot records debt.root, readDebtRoot reads it, and a registry is re
   assert.throws(() => setDebtRoot(root, ' x'), /debt\.root must be a path/)
   assert.equal(readDebtRoot(root), 'docs/debt')
 })
+
+test("addExtension writes the plugin's version from its plugin.json", () => {
+  const root = host()
+  initRegistry(root, CORE)
+  plugin(root, 'versioned', { name: 'versioned', contract: '1.0', provides: {} })
+  mkdirSync(join(root, 'plugins', 'versioned', '.claude-plugin'))
+  writeFileSync(join(root, 'plugins', 'versioned', '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'versioned', version: '1.4.2' }))
+  addExtension(root, 'plugins/versioned', { coreContract: CORE, points: [] })
+  assert.equal(readRegistry(root).extensions[0].version, '1.4.2')
+})
+
+test('a registry entry without version is valid, and a malformed one is reported', () => {
+  assert.deepEqual(validateRegistry({ contract: '1.0', extensions: [{ path: 'a' }] }), [])
+  assert.deepEqual(validateRegistry({ contract: '1.0', extensions: [{ path: 'a', version: '1.2.3' }] }), [])
+  assert.deepEqual(validateRegistry({ contract: '1.0', extensions: [{ path: 'a', version: '1.2' }] }), ['extensions[0].version must be x.y.z'])
+})

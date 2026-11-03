@@ -97,6 +97,9 @@ export function validateRegistry(registry) {
     if (entry.points !== undefined && !(Array.isArray(entry.points) && entry.points.every((p) => typeof p === 'string'))) {
       errors.push(`extensions[${i}].points must be a list of point names`)
     }
+    if (entry.version !== undefined && !/^\d+\.\d+\.\d+$/.test(entry.version)) {
+      errors.push(`extensions[${i}].version must be x.y.z`)
+    }
     const key = byId ? entry.plugin : normalize(entry.path)
     if (seen.has(key)) errors.push(`extensions[${i}] repeats ${entry.path}`)
     seen.add(key)
@@ -205,6 +208,16 @@ export function pluginDir(root, entry, { home } = {}) {
   return isAbsolute(entry.path) ? entry.path : join(root, entry.path)
 }
 
+// The version in the plugin's own manifest, or null when it names none.
+function pluginVersion(dir) {
+  try {
+    const { version } = JSON.parse(readFileSync(join(dir, '.claude-plugin', 'plugin.json'), 'utf8'))
+    return /^\d+\.\d+\.\d+$/.test(version) ? version : null
+  } catch {
+    return null
+  }
+}
+
 const label = (entry) => entry.plugin ?? entry.path
 
 function readDeclaration(root, entry, opts) {
@@ -281,6 +294,8 @@ export function addExtension(root, target, { config, coreContract, points, home 
   // The points are recorded so that the core can name this entry for the right point when the
   // plugin is absent on a machine, without reading its declaration.
   entry.points = Object.keys(declaration.provides)
+  const version = pluginVersion(pluginDir(root, entry, { home }))
+  if (version) entry.version = version
   if (config !== undefined) entry.config = config
   writeRegistry(root, { ...registry, extensions: [...registry.extensions, entry] })
   const hostFiles = copyHostFiles(root, entry, declaration, { home })
