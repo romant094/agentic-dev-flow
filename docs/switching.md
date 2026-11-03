@@ -50,6 +50,11 @@ Paths and names below are examples. `develop` stands for the project's integrati
    | Memory pages that describe the old flow or name its removed scripts | reworded or removed |
    | Project skills and plugins that are not part of the flow | kept; reword any that name the old commands |
 
+   Never remove the changes themselves: `openspec/changes/` keeps every change in flight and the
+   archive. A change in flight continues with the `/adf:*` command of its next phase (steps 3, 4
+   and 15); removing its directory loses its artifacts. The removal touches only the flow's tools,
+   never a change's content.
+
    Search the whole repository for the old command names and script paths before you close the
    inventory. Every hit is a part to remove or reword.
 8. Reword the host's agent instructions (for example `CLAUDE.md`) that describe the old flow.

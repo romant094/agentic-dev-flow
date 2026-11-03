@@ -89,6 +89,7 @@ was checked in code where a file:line is given. `#n` is the port's issue that al
 | N25 | Land hands off although the merge request's base is not the integration branch | `scripts/lib/land.mjs:221` | Name the difference in the hand-off preview |
 | N26 | With no forge, land decides "merged" by ancestry and cannot see a squash merge (not hit) | `lib/land.mjs:266` | Compare patch ids, or require a forge where merges squash |
 | F2 | Nothing tells the host how to reword its own agent instructions (`CLAUDE.md`) that describe the old flow; three sections were rewritten by hand | — | A switch checklist in the README; init names the host files that mention the old flow |
+| F10 | The rehearsal's removal commit also deleted the seven changes in flight under `openspec/changes/`; nothing in the switch list forbade it. Found after the release, 2026-11-03 | `2e827e07c` in the rehearsal clone | `docs/switching.md` step 7: the removal never touches `openspec/changes/` |
 | F3, F6, F7 | The switch list misses the flow capability specs, the old merge request template, `openspec/config.yaml` and the memory pages that name removed scripts | — | The inventory table above becomes the switch checklist |
 
 ### Hooks
