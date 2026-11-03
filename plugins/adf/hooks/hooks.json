@@ -1,0 +1,15 @@
+{
+  "description": "Tells at session start when a newer ADF release exists, or when the pinned one is not installed yet",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/update.mjs\" notice"
+          }
+        ]
+      }
+    ]
+  }
+}
