@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -154,7 +154,20 @@ function gitProject(settings = { enabledPlugins: { 'adf@agentic-dev-flow': true,
   sh('init', '-q')
   sh('add', '.claude/settings.json')
   sh('commit', '-q', '-m', 'init')
-  return { root, home, sh }
+  // The main directory as git reports it (the temp directory's real path).
+  const file = join(home, 'plugins', 'installed_plugins.json')
+  const records = JSON.parse(readFileSync(file, 'utf8'))
+  for (const record of records.plugins[ID]) if (record.scope === 'project') record.projectPath = realpathSync(root)
+  writeFileSync(file, JSON.stringify(records))
+  // What a real `claude plugin install adf@...` does to the install record: the pinned version.
+  const installPinned = (args) => {
+    if (args[1] !== 'install' || args[2] !== ID) return
+    const file = join(home, 'plugins', 'installed_plugins.json')
+    const records = JSON.parse(readFileSync(file, 'utf8'))
+    for (const record of records.plugins[ID]) if (record.scope === 'project') record.version = '0.10.0'
+    writeFileSync(file, JSON.stringify(records))
+  }
+  return { root, home, sh, installPinned }
 }
 
 function fakeClaude({ onCall, failOn } = {}) {
@@ -169,8 +182,8 @@ function fakeClaude({ onCall, failOn } = {}) {
 }
 
 test('pull runs the marketplace update, then one install per enabled plugin', () => {
-  const { root, home } = gitProject()
-  const { fn, calls } = fakeClaude()
+  const { root, home, installPinned } = gitProject()
+  const { fn, calls } = fakeClaude({ onCall: installPinned })
   const r = run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
   assert.deepEqual(r.ran, [
     ['plugin', 'marketplace', 'update', 'agentic-dev-flow'],
@@ -179,12 +192,24 @@ test('pull runs the marketplace update, then one install per enabled plugin', ()
   ])
   assert.deepEqual(calls.map((c) => c.args), r.ran)
   assert.equal(r.restored, false)
+  assert.deepEqual([r.installed, r.ref], ['0.10.0', 'v0.10.0'])
+})
+
+test('pull refuses, naming both versions, when the installed release is still older than the ref', () => {
+  const { root, home } = gitProject()
+  try {
+    run(['pull', '--root', root, '--home', home], { claude: fakeClaude().fn, git: git(TAGS) })
+    assert.fail('should throw')
+  } catch (error) {
+    assert.match(error.message, /v0\.9\.0 installed .*older than the pinned v0\.10\.0/)
+    assert.equal(error.ran.length, 3)
+  }
 })
 
 test('pull restores a settings file it changed', () => {
-  const { root, home } = gitProject()
+  const { root, home, installPinned } = gitProject()
   const before = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
-  const { fn } = fakeClaude({ onCall: (args) => args[1] === 'install' && writeFileSync(join(root, '.claude', 'settings.json'), '{}') })
+  const { fn } = fakeClaude({ onCall: (args) => (installPinned(args), args[1] === 'install' && writeFileSync(join(root, '.claude', 'settings.json'), '{}')) })
   const r = run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
   assert.equal(r.restored, true)
   assert.equal(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'), before)
@@ -205,6 +230,7 @@ test('pull at user scope installs with --scope user and reports restored false',
   const r = run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
   assert.deepEqual(r.ran[1], ['plugin', 'install', 'adf@agentic-dev-flow', '--scope', 'user'])
   assert.equal(r.restored, false)
+  assert.equal(r.installed, '0.9.0')
 })
 
 test('pull stops on a failing claude call and names the calls made', () => {
@@ -241,4 +267,11 @@ test('pull restores settings.json when a later call fails', () => {
 test('pull with an invalid --scope is a usage error', () => {
   const { root, home } = setup({})
   assert.throws(() => run(['pull', '--scope', 'team', '--root', root, '--home', home]), UsageError)
+})
+
+test('the notice hook runs at session startup only', () => {
+  const hooks = JSON.parse(readFileSync(new globalThis.URL('../../hooks/hooks.json', import.meta.url), 'utf8'))
+  const [entry] = hooks.hooks.SessionStart
+  assert.equal(entry.matcher, 'startup')
+  assert.match(entry.hooks[0].command, /update\.mjs" notice$/)
 })

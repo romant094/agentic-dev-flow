@@ -5,13 +5,13 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { requireBranches } from './branches.mjs'
-import { classify, hostFiles, mergeKeep, replaceFromUpdate } from './host-merge.mjs'
+import { classify, hostFiles, keepFromUpdate, replaceFromUpdate } from './host-merge.mjs'
 import { indentOf, MARKETPLACE, SETTINGS_PATH } from './host-settings.mjs'
 import { mainCheckout, selectInstall } from './installed.mjs'
 import { migrateConfig } from './migrate.mjs'
 import { DECLARATION_FILE, parseVersion, REGISTRY_PATH } from './registry.mjs'
 import { claudeHome, mergeSettings, readJson } from './superpowers.mjs'
-import { create } from './workspace.mjs'
+import { create, worktreePath } from './workspace.mjs'
 
 const VERSION = /^\d+\.\d+\.\d+$/
 const TAG = /^v(\d+\.\d+\.\d+)$/
@@ -117,12 +117,19 @@ export function inFlight(root) {
   return result
 }
 
+// A marketplace source's git URL: its `url`, or for a `github` source its repository on GitHub.
+export function sourceUrl(source) {
+  if (typeof source?.url === 'string') return source.url
+  if (source?.source === 'github' && typeof source.repo === 'string') return `https://github.com/${source.repo}.git`
+  return null
+}
+
 // Where the update comes from: the project's declared marketplace, else this machine's record.
 function remoteUrl(root, scope, home) {
   if (scope === 'project') {
-    return readJson(join(mainCheckout(root), SETTINGS_PATH))?.extraKnownMarketplaces?.[MARKETPLACE]?.source?.url ?? null
+    return sourceUrl(readJson(join(mainCheckout(root), SETTINGS_PATH))?.extraKnownMarketplaces?.[MARKETPLACE]?.source)
   }
-  return readJson(join(home, 'plugins', 'known_marketplaces.json'))?.[MARKETPLACE]?.source?.url ?? null
+  return sourceUrl(readJson(join(home, 'plugins', 'known_marketplaces.json'))?.[MARKETPLACE]?.source)
 }
 
 // Scope: `project` when the main directory's settings declare the marketplace with a ref (pinned
@@ -130,7 +137,7 @@ function remoteUrl(root, scope, home) {
 // is compared against its ref; a user-scope install against its installed version. An unpinned
 // ref is never compared, and its latest tag is not asked for.
 // `fetchLatest(url)` gives the newest tag name or null; tests and the notice replace it.
-export function checkUpdate(root, { git = defaultGit, home = claudeHome(), fetchLatest = (url) => latestTag(remoteTags(url, { git })) } = {}) {
+export function checkUpdate(root, { git = quietGit, home = claudeHome(), fetchLatest = (url) => latestTag(remoteTags(url, { git })) } = {}) {
   const { ref, pinned } = projectRef(root)
   const record = userRecord(home)
   const scope = ref !== null ? 'project' : record ? 'user' : 'none'
@@ -176,6 +183,8 @@ function enabledPackagePlugins(main, scope, home) {
 // Refreshes the marketplace, then installs every enabled package plugin, in the main directory.
 // Installing at project scope rewrites .claude/settings.json; the file is restored afterwards, so
 // it must be clean before. A failing `claude` call stops the pull, after the restore: the error carries `ran` and `restored`.
+// Afterwards the install is read again: `installed`, and for a project `ref`. A project whose
+// installed release is still older than its pinned ref is a refusal naming both.
 export function pull({ root, scope, home = claudeHome(), claude = defaultClaude }) {
   if (scope !== 'project' && scope !== 'user') throw new Error(`cannot pull for scope ${scope}`)
   const main = mainCheckout(root)
@@ -207,7 +216,19 @@ export function pull({ root, scope, home = claudeHome(), claude = defaultClaude 
     ran.push(args)
   }
   restore()
-  return { ran, restored }
+  if (scope === 'user') {
+    const version = userRecord(home)?.version
+    return { ran, restored, installed: VERSION.test(version ?? '') ? version : null }
+  }
+  const { ref, pinned } = projectRef(main)
+  const installed = installedVersion(PLUGIN_KEY_ID, main, { home })
+  if (pinned && (installed === null || compareVersions(installed, TAG.exec(ref)[1]) < 0)) {
+    const error = new Error(`after the pull ADF ${installed ? `v${installed}` : 'is not'} installed for this project, older than the pinned ${ref}; run claude plugin install ${PLUGIN_KEY_ID} --scope project and check its output`)
+    error.ran = ran
+    error.restored = restored
+    throw error
+  }
+  return { ran, restored, installed, ref }
 }
 
 // ---------------------------------------------------------------- /adf:update: plan, apply, commit
@@ -224,11 +245,19 @@ export const updateBranch = (version) => `chore/${updateChange(version)}`
 export const updateRecord = (version) => `.adf/update-${version}.json`
 export const updateTitle = (version) => `chore(adf): update to v${version}`
 
+// `reason` says why an incompatible contract refuses the update.
 function contractCheck(registry, clone) {
   const from = registry?.contract ?? null
   const to = readJson(join(clone, CONTRACT_FILE))?.version ?? null
   const [a, b] = [parseVersion(from), parseVersion(to)]
-  return { from, to, compatible: Boolean(a && b && a.major === b.major) }
+  const compatible = Boolean(a && b && a.major === b.major)
+  if (compatible) return { from, to, compatible }
+  const reason = !a
+    ? `${REGISTRY_PATH} has no valid "contract" field (${JSON.stringify(from)}); set it to the contract version the project runs`
+    : !b
+      ? `the new release has no contract version in ${CONTRACT_FILE}`
+      : `the update moves the extension contract from ${from} to ${to}, a major change; every plugin must move to contract ${to} first`
+  return { from, to, compatible, reason }
 }
 
 // The integration branch as the update branch will fork from it (lib/workspace.mjs create):
@@ -260,36 +289,56 @@ function showAt(main, ref) {
 function integrationState(root) {
   const main = mainCheckout(root)
   const base = integrationRef(main, requireBranches(main).integration)
-  const show = showAt(main, base)
+  const baseCommit = execFileSync('git', ['-C', main, 'rev-parse', `${base}^{commit}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  const show = showAt(main, baseCommit)
   const settingsText = show(SETTINGS_PATH)
   const settings = settingsText === null ? null : JSON.parse(settingsText)
   const source = settings?.extraKnownMarketplaces?.[MARKETPLACE]?.source
   if (!source) throw new Error(`${base}:${SETTINGS_PATH} declares no ${MARKETPLACE} marketplace`)
   const registryText = show(REGISTRY_PATH)
   if (registryText === null) throw new Error(`${base} has no ${REGISTRY_PATH}; run /adf:init`)
-  return { main, base, show, settingsText, settings, source, registryText, registry: JSON.parse(registryText) }
+  return { main, base, baseCommit, show, settingsText, settings, source, registryText, registry: JSON.parse(registryText) }
 }
 
 // The host files with the project's copy at the integration branch and their class.
 function classified(state, clones) {
   return hostFiles(clones.old, clones.new, state.registry).map((file) => {
     const ours = state.show(file.path)
-    return { ...file, ours, class: classify({ ...file, ours }) }
+    return { ...file, ours, class: classify({ ...file, ours, path: file.path }) }
   })
+}
+
+// What would stop apply making the update branch, found before anything is cloned: uncommitted
+// changes to tracked files in the main directory, or a branch or worktree of the same update.
+function blockers(main, version) {
+  const git = gitAt(main)
+  const found = []
+  const dirty = git('status', '--porcelain', '--untracked-files=no').trimEnd()
+  if (dirty) found.push(`the main directory has uncommitted changes to tracked files:\n${dirty}`)
+  try {
+    git('rev-parse', '--verify', '--quiet', `refs/heads/${updateBranch(version)}`)
+    found.push(`branch ${updateBranch(version)} already exists`)
+  } catch {}
+  if (existsSync(worktreePath(main, updateChange(version)))) found.push(`${worktreePath(main, updateChange(version))} already exists`)
+  return found
 }
 
 // Compares the integration branch's pinned release with `to` (the latest tag by default). When
 // `to` is newer, clones the repository once into a temporary directory and checks the two tags
-// out beside it; the clones are left for apply and for the command to remove.
+// out beside it; the clones are left for apply and for the command to remove. `baseCommit` is
+// the integration commit read; apply refuses when the branch moved since.
 export function planUpdate(root, { to = null, git = defaultGit } = {}) {
   const state = integrationState(root)
   const ref = state.source.ref ?? null
   if (typeof ref !== 'string' || !TAG.test(ref)) throw new Error(`${state.base}:${SETTINGS_PATH} pins no release of ${MARKETPLACE} (ref: ${ref ?? 'none'}); pin a tag v<x.y.z> first`)
-  const url = state.source.url
+  const url = sourceUrl(state.source)
   if (!url) throw new Error(`${state.base}:${SETTINGS_PATH} declares no url for the ${MARKETPLACE} marketplace`)
   const target = to ?? latestTag(remoteTags(url, { git }))
   if (!target) throw new Error(`${url} has no release tag v<x.y.z>`)
-  if (compareVersions(bare(target), bare(ref)) <= 0) return { from: ref, to: target, base: state.base, upToDate: true }
+  const base = { base: state.base, baseCommit: state.baseCommit }
+  if (compareVersions(bare(target), bare(ref)) <= 0) return { from: ref, to: target, ...base, upToDate: true }
+  const blocked = blockers(state.main, bare(target))
+  if (blocked.length) throw new Error(`the update to ${target} cannot start: ${blocked.join('; ')}`)
   const tmp = mkdtempSync(join(tmpdir(), 'adf-update-'))
   const clones = { old: join(tmp, 'old'), new: join(tmp, 'new'), repo: join(tmp, 'repo') }
   try {
@@ -308,7 +357,7 @@ export function planUpdate(root, { to = null, git = defaultGit } = {}) {
         .filter((subject) => CONVENTIONAL.test(subject))
     }
     const files = classified(state, clones).map((file) => ({ path: file.path, class: file.class }))
-    return { from: ref, to: target, base: state.base, upToDate: false, plugins, log, hostFiles: files, contract: contractCheck(state.registry, clones.new), inFlight: inFlight(root), clones }
+    return { from: ref, to: target, ...base, upToDate: false, plugins, log, hostFiles: files, contract: contractCheck(state.registry, clones.new), inFlight: inFlight(root), clones }
   } catch (error) {
     rmSync(tmp, { recursive: true, force: true })
     throw error
@@ -335,9 +384,10 @@ function commitFiles(worktree, files, version) {
 // Runs from the new release's clone. Everything is computed from the integration branch and the
 // two clones first, so a refusal writes nothing; then the branch chore/adf-update-<version> and
 // its worktree are made, the files written, and, with no conflict and no manual file, committed.
-// `classes` is plan's `hostFiles`: a host file whose class changed since plan is refused.
+// `base` is plan's `baseCommit`: an integration branch that moved since is refused, so apply
+// merges exactly what plan showed. The classes are this release's own.
 // `choices` maps each edited host file to keep | replace | manual.
-export async function applyUpdate(root, { to, clones, classes, choices = {} }) {
+export async function applyUpdate(root, { to, clones, base, choices = {} }) {
   const version = bare(to)
   let atTo = false
   try {
@@ -346,18 +396,14 @@ export async function applyUpdate(root, { to, clones, classes, choices = {} }) {
   } catch {}
   if (!atTo) throw new Error(`${clones.new} is not at ${to}; run plan again`)
   const state = integrationState(root)
+  if (state.baseCommit !== base) throw new Error(`the integration branch moved since plan (${state.base} is ${state.baseCommit}, plan read ${base}); run plan again`)
   const { main, settings, settingsText, source, registry, registryText } = state
   const newMarketplace = readJson(join(clones.new, MARKETPLACE_FILE))
   if (!newMarketplace) throw new Error(`${clones.new} holds no ${MARKETPLACE_FILE}; run plan again`)
 
   const contract = contractCheck(registry, clones.new)
-  if (!contract.compatible) {
-    throw new Error(`v${version} moves the extension contract from ${contract.from} to ${contract.to}, a major change: the update is refused; every plugin must move to contract ${contract.to} first`)
-  }
+  if (!contract.compatible) throw new Error(`the update to v${version} is refused: ${contract.reason}`)
   const files = classified(state, clones)
-  const planned = new Map(classes.map((file) => [file.path, file.class]))
-  const moved = files.filter((f) => planned.get(f.path) !== f.class).map((f) => `${f.path} (${planned.get(f.path) ?? 'not listed'} at plan, ${f.class} now)`)
-  if (moved.length) throw new Error(`${state.base} changed since plan: ${moved.join(', ')}; run plan again`)
   const missing = files.filter((f) => f.class === 'edited' && !Object.hasOwn(choices, f.path)).map((f) => f.path)
   if (missing.length) throw new Error(`no choice for ${missing.join(', ')}: each edited host file needs keep, replace or manual`)
 
@@ -389,13 +435,14 @@ export async function applyUpdate(root, { to, clones, classes, choices = {} }) {
   const manual = []
   const conflicts = []
   for (const file of files) {
-    if (['new', 'replace'].includes(file.class)) writes.set(file.path, file.theirs)
+    if (file.class === 'new') writes.set(file.path, file.theirs)
+    if (file.class === 'replace') writes.set(file.path, replaceFromUpdate(file.path, file.ours, file.theirs))
     if (file.class !== 'edited') continue
     const choice = choices[file.path]
     if (choice === 'manual') manual.push(file.path)
     else if (choice === 'replace') writes.set(file.path, replaceFromUpdate(file.path, file.ours, file.theirs))
     else {
-      const merged = mergeKeep(file.base, file.ours, file.theirs)
+      const merged = keepFromUpdate(file.path, file.base, file.ours, file.theirs)
       if (merged.conflicts) conflicts.push(file.path)
       writes.set(file.path, merged.text)
     }

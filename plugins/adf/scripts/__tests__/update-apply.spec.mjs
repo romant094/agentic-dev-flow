@@ -21,6 +21,7 @@ const REVIEW_V1 = 'R1\nR2\nR3\nR4\nR5\n'
 const REVIEW_V2 = 'R1 new\nR2\nR3\nR4\nR5\n'
 const PLANNING_V1 = '# Planning\n\nintro A\n\n## Whole-suite command\n\nTODO\n'
 const PLANNING_V2 = '# Planning\n\nintro B\n\n## Whole-suite command\n\nTODO\n'
+const PLANNING_FILLED = PLANNING_V1.replace('TODO', 'npm test')
 
 // v0.1.0: adf, adf-demo and adf-gone at 0.1.0. v0.2.0: adf-demo 0.2.0 with a migration and a
 // new host file, adf-gone dropped, both core templates changed.
@@ -72,7 +73,8 @@ function hostProject(url, { review = REVIEW_V1 } = {}) {
       { path: 'local/plugin' }
     ]
   }, null, 2)}\n`)
-  put(root, 'openspec/planning.md', PLANNING_V1)
+  // The template with its managed section filled in: a value, not an edit.
+  put(root, 'openspec/planning.md', PLANNING_FILLED)
   put(root, 'openspec/review-prompt.md', review)
   git(root, 'add', '-A')
   git(root, 'commit', '-q', '-m', 'chore: init')
@@ -86,8 +88,8 @@ function planned(options) {
   return { root, plan: run(['plan', '--root', root]) }
 }
 
-const apply = (root, plan, choices = {}, classes = plan.hostFiles) =>
-  run(['apply', '--root', root, '--to', plan.to, '--clones', JSON.stringify(plan.clones), '--classes', JSON.stringify(classes), '--choices', JSON.stringify(choices)])
+const apply = (root, plan, choices = {}) =>
+  run(['apply', '--root', root, '--to', plan.to, '--clones', JSON.stringify(plan.clones), '--base', plan.baseCommit, '--choices', JSON.stringify(choices)])
 
 test('plan lists the changed plugins and their log', () => {
   const { plan } = planned({ review: 'R1\nR2\nR3\nR4\nR5 mine\n' })
@@ -117,7 +119,7 @@ test('plan on the latest tag reports upToDate and clones nothing', () => {
   const settings = join(root, '.claude', 'settings.json')
   writeFileSync(settings, readFileSync(settings, 'utf8').replace('v0.1.0', 'v0.2.0'))
   git(root, 'commit', '-q', '-am', 'chore: pin v0.2.0')
-  assert.deepEqual(run(['plan', '--root', root]), { from: 'v0.2.0', to: 'v0.2.0', base: 'main', upToDate: true })
+  assert.deepEqual(run(['plan', '--root', root]), { from: 'v0.2.0', to: 'v0.2.0', base: 'main', baseCommit: git(root, 'rev-parse', 'HEAD').trim(), upToDate: true })
 })
 
 test('apply writes the ref, the migrated config and the versions, and commits on its own branch', async () => {
@@ -139,7 +141,7 @@ test('apply writes the ref, the migrated config and the versions, and commits on
   assert.deepEqual(registry.extensions[1], { plugin: 'adf-gone@agentic-dev-flow', version: '0.1.0' })
   assert.deepEqual(registry.extensions[2], { path: 'local/plugin' })
   assert.equal(registry.contract, '1.9')
-  assert.equal(readFileSync(join(wt, 'openspec/planning.md'), 'utf8'), PLANNING_V2)
+  assert.equal(readFileSync(join(wt, 'openspec/planning.md'), 'utf8'), PLANNING_V2.replace('TODO', 'npm test'))
   assert.equal(readFileSync(join(wt, 'openspec/review-prompt.md'), 'utf8'), 'R1 new\nR2\nR3\nR4\nR5 mine\n')
   assert.equal(readFileSync(join(wt, '.demo/mr.md'), 'utf8'), 'template\n')
   assert.equal(git(wt, 'log', '-1', '--format=%s').trim(), 'chore(adf): update to v0.2.0')
@@ -214,9 +216,7 @@ test('plan reads the integration branch at origin, not a main directory behind i
   const plan = run(['plan', '--root', root])
   assert.equal(plan.base, 'origin/main')
   assert.equal(plan.hostFiles.find((f) => f.path === 'openspec/review-prompt.md').class, 'edited')
-  const stale = plan.hostFiles.map((f) => (f.path === 'openspec/review-prompt.md' ? { ...f, class: 'replace' } : f))
-  await assert.rejects(apply(root, plan, {}, stale), /openspec\/review-prompt\.md \(replace at plan, edited now\)/)
-  assert.equal(existsSync(join(root, '.claude', 'worktrees')), false)
+  assert.equal(plan.baseCommit, git(mate, 'rev-parse', 'HEAD').trim())
   const out = await apply(root, plan, { 'openspec/review-prompt.md': 'keep' })
   assert.equal(out.committed, true)
   assert.equal(readFileSync(join(out.worktree, 'openspec/review-prompt.md'), 'utf8'), 'R1 new\nR2\nR3\nR4\nR5 mine\n')
@@ -253,4 +253,52 @@ test('a failing commit leaves apply uncommitted, and commit finishes it; a secon
   const commit = () => run(['commit', '--worktree', out.worktree, '--to', 'v0.2.0'])
   assert.equal(commit().committed, true)
   assert.throws(commit, /nothing to commit/)
+})
+
+test('apply refuses when the integration branch moved since plan', async () => {
+  const root = hostProject(repo)
+  const plan = run(['plan', '--root', root])
+  writeFileSync(join(root, 'openspec/review-prompt.md'), 'R1 later\nR2\nR3\nR4\nR5\n')
+  git(root, 'commit', '-q', '-am', 'docs: a later edit')
+  await assert.rejects(apply(root, plan, { 'openspec/review-prompt.md': 'keep' }), /the integration branch moved since plan .*run plan again/)
+  assert.equal(existsSync(join(root, '.claude', 'worktrees')), false)
+})
+
+test('plan refuses before cloning a dirty main directory or an existing update branch or worktree', () => {
+  const root = hostProject(repo)
+  let cloned = false
+  const spy = (args) => {
+    if (args[0] === 'clone') cloned = true
+    return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  }
+  const plan = () => run(['plan', '--root', root, '--to', 'v0.2.0'], { git: spy })
+  writeFileSync(join(root, 'openspec/planning.md'), 'dirty\n')
+  assert.throws(plan, /cannot start: the main directory has uncommitted changes to tracked files/)
+  git(root, 'checkout', '-q', '--', '.')
+  git(root, 'branch', 'chore/adf-update-0.2.0')
+  assert.throws(plan, /branch chore\/adf-update-0\.2\.0 already exists/)
+  git(root, 'branch', '-q', '-D', 'chore/adf-update-0.2.0')
+  mkdirSync(join(root, '.claude', 'worktrees', 'adf-update-0.2.0'), { recursive: true })
+  assert.throws(plan, /adf-update-0\.2\.0 already exists/)
+  assert.equal(cloned, false)
+})
+
+test('a github source is read as its repository on GitHub', () => {
+  const root = hostProject(repo)
+  const settings = join(root, '.claude', 'settings.json')
+  const text = readFileSync(settings, 'utf8')
+  const parsed = JSON.parse(text)
+  parsed.extraKnownMarketplaces['agentic-dev-flow'].source = { source: 'github', repo: 'owner/agentic-dev-flow', ref: 'v0.1.0' }
+  writeFileSync(settings, JSON.stringify(parsed))
+  git(root, 'commit', '-q', '-am', 'chore: github source')
+  const asked = []
+  const fake = (args) => {
+    asked.push(args)
+    if (args[0] === 'ls-remote') return 'a\trefs/tags/v0.1.0\n'
+    throw new Error('unexpected')
+  }
+  assert.equal(run(['plan', '--root', root], { git: fake }).upToDate, true)
+  assert.deepEqual(asked, [['ls-remote', '--tags', 'https://github.com/owner/agentic-dev-flow.git']])
+  assert.equal(run(['check', '--root', root, '--home', mkdtempSync(join(tmpdir(), 'adf-ua-home-'))], { git: fake }).latest, 'v0.1.0')
+  assert.equal(asked.at(-1)[2], 'https://github.com/owner/agentic-dev-flow.git')
 })

@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
-import { MANAGED, classify, hostFiles, mergeKeep, replaceFromUpdate } from '../lib/host-merge.mjs'
+import { MANAGED, classify, hostFiles, keepFromUpdate, mergeKeep, replaceFromUpdate } from '../lib/host-merge.mjs'
 
 function put(root, path, text) {
   mkdirSync(dirname(join(root, path)), { recursive: true })
@@ -108,4 +108,29 @@ test('hostFiles names a malformed extension declaration', () => {
     () => hostFiles(join(root, 'old'), join(root, 'new'), { extensions: [{ plugin: 'adf-gitlab@agentic-dev-flow' }] }),
     /adf-extension\.json is not valid JSON/
   )
+})
+
+test('planning.md whose only edits are its managed sections is replace, and replace keeps them', () => {
+  const base = '# Guide\n\nintro A\n\n## Whole-suite command\n\nTODO\n\n## Other\n\nold\n'
+  const ours = '# Guide\n\nintro A\n\n## Whole-suite command\n\nnpm test\n\n## Other\n\nold\n\n## Format command\n\nnpm run fmt\n'
+  const theirs = '# Guide\n\nintro B\n\n## Whole-suite command\n\nTODO\n\n## Other\n\nold\n'
+  const path = 'openspec/planning.md'
+  assert.equal(classify({ base, ours, theirs, path }), 'replace')
+  assert.equal(classify({ base, ours, theirs }), 'edited')
+  assert.equal(classify({ base, ours: ours.replace('old', 'mine'), theirs: base, path }), 'kept')
+  assert.equal(classify({ base, ours: theirs.replace('TODO', 'npm test'), theirs, path }), 'same')
+  assert.equal(replaceFromUpdate(path, ours, theirs), '# Guide\n\nintro B\n\n## Whole-suite command\n\nnpm test\n\n## Other\n\nold\n\n## Format command\n\nnpm run fmt\n')
+})
+
+test('keep on planning.md merges the rest and keeps the managed values, also where the template changed them', () => {
+  const path = 'openspec/planning.md'
+  const base = '# Guide\n\nintro A\n\n## Whole-suite command\n\nTODO\n\n## Other\n\none\ntwo\nthree\nfour\n'
+  const ours = '# Guide\n\nintro A\n\n## Whole-suite command\n\nnpm test\n\n## Other\n\none\ntwo\nthree\nmine\n'
+  const theirs = '# Guide\n\nintro B\n\n## Whole-suite command\n\nTODO: set it\n\n## Other\n\none\ntwo\nthree\nfour\n'
+  assert.equal(classify({ base, ours, theirs, path }), 'edited')
+  assert.deepEqual(keepFromUpdate(path, base, ours, theirs), {
+    text: '# Guide\n\nintro B\n\n## Whole-suite command\n\nnpm test\n\n## Other\n\none\ntwo\nthree\nmine\n',
+    conflicts: false
+  })
+  assert.deepEqual(keepFromUpdate('openspec/review-prompt.md', 'a\n', 'a\n', 'b\n'), { text: 'b\n', conflicts: false })
 })

@@ -2,6 +2,11 @@
 // CLI over lib/update.mjs: what /adf:update reads and writes. Prints one JSON object on stdout;
 // exit 1 on a refusal, 2 on a usage error. Only apply and commit commit, on the update branch.
 //
+// A cross-release interface: /adf:update runs plan from the installed (old) release and apply
+// and commit from the new release's clone, so the old release's update.md drives the new
+// release's scripts. The options of apply and commit, and the output fields of plan, apply and
+// commit, change only additively: never rename or remove one, never make a new one required.
+//
 //   update.mjs check [--root <dir>] [--home <dir>]
 //       { scope: "project"|"user"|"none", ref, pinned, installed, latest, behind, pull,
 //       inFlight: [{ change, worktree }] }. `pull` is true when the installed release is older
@@ -11,24 +16,28 @@
 //       install is behind, or when the pinned release is not installed; else nothing. Asks the
 //       remote once a day (<home>/adf/update-check.json). Any error: nothing printed, exit 0
 //   update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>]
-//       { ran: [[...claude args]], restored }: `claude plugin marketplace update`, then `claude
-//       plugin install <id> --scope <scope>` for each enabled package plugin, in the main
-//       directory. Scope defaults to what `check` reports. Project scope refuses when
-//       .claude/settings.json has uncommitted changes, and restores it after the installs
+//       { ran: [[...claude args]], restored, installed[, ref] }: `claude plugin marketplace
+//       update`, then `claude plugin install <id> --scope <scope>` for each enabled package
+//       plugin, in the main directory. Scope defaults to what `check` reports. Project scope
+//       refuses when .claude/settings.json has uncommitted changes, restores it after the
+//       installs, and refuses when the installed release is still older than the pinned ref
 //   update.mjs plan [--to <tag>] [--root <dir>]
-//       { from, to, base, upToDate, plugins, log: { [plugin]: subjects }, hostFiles: [{ path,
-//       class }], contract: { from, to, compatible }, inFlight, clones: { old, new, repo } }.
-//       Reads the project at `base`, the integration branch's tip (fetched first when the host
-//       has a remote). `to` defaults to the latest tag; when it is not newer, only { from, to,
-//       base, upToDate: true }. The clones are temporary and left in place: apply reads them,
-//       the command removes them; plan removes them itself when it fails after cloning
-//   update.mjs apply --to <tag> --clones <json> --classes <json> [--choices <json>] [--root <dir>]
+//       { from, to, base, baseCommit, upToDate, plugins, log: { [plugin]: subjects }, hostFiles:
+//       [{ path, class }], contract: { from, to, compatible[, reason] }, inFlight, clones: { old,
+//       new, repo } }. Reads the project at `baseCommit`, the tip of `base`, the integration
+//       branch (fetched first when the host has a remote). `to` defaults to the latest tag; when
+//       it is not newer, only { from, to, base, baseCommit, upToDate: true }. Refuses before
+//       cloning when the main directory has uncommitted tracked changes, or the update's branch
+//       or worktree exists. The clones are temporary and left in place: apply reads them, the
+//       command removes them; plan removes them itself when it fails after cloning
+//   update.mjs apply --to <tag> --clones <json> --base <commit> [--choices <json>] [--root <dir>]
 //       run from the new clone. { worktree, branch, written, manual, conflicts, dropped, ran,
 //       committed[, commitError] }: the branch chore/adf-update-<version> and its worktree with
-//       the new ref, the migrated registry and the host files. `classes` is plan's `hostFiles`;
-//       a file whose class changed since is refused. `choices` maps each edited host file to
-//       keep, replace or manual. Committed when no merge conflicts and no manual file remain; a
-//       commit that fails leaves committed false, with commitError, for `commit` to finish
+//       the new ref, the migrated registry and the host files. `base` is plan's `baseCommit`:
+//       apply refuses when the integration branch moved since. The host files are classified by
+//       this release's code; `choices` maps each edited one to keep, replace or manual.
+//       Committed when no merge conflicts and no manual file remain; a commit that fails leaves
+//       committed false, with commitError, for `commit` to finish
 //   update.mjs commit --worktree <dir> --to <tag>
 //       { worktree, branch, committed }: stages the files apply wrote and the manual ones, and
 //       commits; refuses while one holds a conflict marker, or when nothing is left to commit
@@ -39,13 +48,13 @@ import { claudeHome } from './lib/superpowers.mjs'
 import { applyUpdate, checkUpdate, commitUpdate, latestTag, noticeMessage, planUpdate, pull, quietGit, remoteTags } from './lib/update.mjs'
 
 export const USAGE =
-  'usage: update.mjs check [--root <dir>] [--home <dir>] | update.mjs notice [--root <dir>] [--home <dir>] | update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>] | update.mjs plan [--to <tag>] [--root <dir>] | update.mjs apply --to <tag> --clones <json> --classes <json> [--choices <json>] [--root <dir>] | update.mjs commit --worktree <dir> --to <tag>'
+  'usage: update.mjs check [--root <dir>] [--home <dir>] | update.mjs notice [--root <dir>] [--home <dir>] | update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>] | update.mjs plan [--to <tag>] [--root <dir>] | update.mjs apply --to <tag> --clones <json> --base <commit> [--choices <json>] [--root <dir>] | update.mjs commit --worktree <dir> --to <tag>'
 
 export class UsageError extends Error {}
 
 const DAY = 24 * 60 * 60 * 1000
-const ALLOWED = { check: [], notice: [], pull: ['scope'], plan: ['to'], apply: ['to', 'clones', 'classes', 'choices'], commit: ['worktree', 'to'] }
-const REQUIRED = { apply: ['to', 'clones', 'classes'], commit: ['worktree', 'to'] }
+const ALLOWED = { check: [], notice: [], pull: ['scope'], plan: ['to'], apply: ['to', 'clones', 'base', 'choices'], commit: ['worktree', 'to'] }
+const REQUIRED = { apply: ['to', 'clones', 'base'], commit: ['worktree', 'to'] }
 const CHOICES = ['keep', 'replace', 'manual']
 
 function json(name, text) {
@@ -62,14 +71,6 @@ function clonesOption(text) {
   return clones
 }
 
-function classesOption(text) {
-  const classes = json('classes', text)
-  if (!Array.isArray(classes) || !classes.every((f) => typeof f?.path === 'string' && typeof f?.class === 'string')) {
-    throw new UsageError('--classes is plan\'s hostFiles: [{ "path": <path>, "class": <class> }]')
-  }
-  return classes
-}
-
 function choicesOption(text) {
   const choices = json('choices', text ?? '{}')
   if (choices === null || typeof choices !== 'object' || Array.isArray(choices)) throw new UsageError('--choices is an object of path to keep, replace or manual')
@@ -83,7 +84,7 @@ function parse(argv) {
   const rest = []
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    if (!['--root', '--home', '--scope', '--to', '--clones', '--choices', '--classes', '--worktree'].includes(arg)) {
+    if (!['--root', '--home', '--scope', '--to', '--clones', '--choices', '--base', '--worktree'].includes(arg)) {
       if (arg.startsWith('--')) throw new UsageError(`unknown option ${arg}`)
       rest.push(arg)
       continue
@@ -129,6 +130,7 @@ export function run(argv, { cwd = process.cwd(), git, now = Date.now(), claude }
   if (stray.length) throw new UsageError(`--${stray[0]} does not belong to ${sub}`)
   const absent = (REQUIRED[sub] ?? []).filter((k) => values[k] === undefined)
   if (absent.length) throw new UsageError(`${sub} needs --${absent[0]}`)
+  if (values.base !== undefined && !/^[0-9a-f]{40,64}$/.test(values.base)) throw new UsageError('--base is the full commit id plan prints as baseCommit')
   if (values.to !== undefined && !/^v\d+\.\d+\.\d+$/.test(values.to)) throw new UsageError('--to is a release tag v<x.y.z>')
   const root = resolve(cwd, values.root ?? '.')
   const home = values.home ? resolve(cwd, values.home) : claudeHome()
@@ -143,7 +145,7 @@ export function run(argv, { cwd = process.cwd(), git, now = Date.now(), claude }
     case 'plan':
       return planUpdate(root, { to: values.to ?? null, ...(git ? { git } : {}) })
     case 'apply':
-      return applyUpdate(root, { to: values.to, clones: clonesOption(values.clones), classes: classesOption(values.classes), choices: choicesOption(values.choices) })
+      return applyUpdate(root, { to: values.to, clones: clonesOption(values.clones), base: values.base, choices: choicesOption(values.choices) })
     case 'commit':
       return commitUpdate(resolve(cwd, values.worktree), { to: values.to })
     case 'notice': {
@@ -164,15 +166,16 @@ if (isMain(import.meta.url)) {
       const result = run(process.argv.slice(2))
       if (result !== null) process.stdout.write(`${JSON.stringify(result)}\n`)
     } catch {}
-    process.exit(0)
-  }
-  try {
-    // apply migrates through each plugin's own steps, which may be async.
-    const result = await run(process.argv.slice(2))
-    if (result !== null) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
     process.exitCode = 0
-  } catch (error) {
-    process.stdout.write(`${JSON.stringify({ ok: false, error: error.message, ...(error.ran ? { ran: error.ran, restored: error.restored } : {}), ...(error instanceof UsageError ? { usage: USAGE } : {}) })}\n`)
-    process.exitCode = error instanceof UsageError ? 2 : 1
+  } else {
+    try {
+      // apply migrates through each plugin's own steps, which may be async.
+      const result = await run(process.argv.slice(2))
+      if (result !== null) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
+      process.exitCode = 0
+    } catch (error) {
+      process.stdout.write(`${JSON.stringify({ ok: false, error: error.message, ...(error.ran ? { ran: error.ran, restored: error.restored } : {}), ...(error instanceof UsageError ? { usage: USAGE } : {}) })}\n`)
+      process.exitCode = error instanceof UsageError ? 2 : 1
+    }
   }
 }

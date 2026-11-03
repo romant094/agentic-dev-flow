@@ -46,3 +46,12 @@ test('a declaration with a malformed migrations entry is refused', () => {
     assert.match(validateDeclaration({ ...base, migrations }, [])[0], /migrations/)
   }
 })
+
+test('a step that returns anything but a plain object is refused naming the plugin and version', async () => {
+  for (const body of ['export default () => undefined', 'export default () => null', 'export default () => [1]', 'export default () => 5', 'export default () => new Map()']) {
+    const dir = plugin({ '0.2.0.mjs': body })
+    await assert.rejects(migrateConfig({ config: {} }, { name: 'p', migrations: [step('0.2.0')] }, dir, { from: '0.1.0', to: '0.2.0' }), /^Error: p: migration 0\.2\.0 .*not a plain config object/)
+  }
+  const dir = plugin({ '0.2.0.mjs': 'export default async (c) => Object.assign(Object.create(null), c, { x: 1 })' })
+  assert.deepEqual({ ...(await migrateConfig({ config: {} }, { name: 'p', migrations: [step('0.2.0')] }, dir, { from: '0.1.0', to: '0.2.0' })).config }, { x: 1 })
+})

@@ -65,10 +65,12 @@ export function hostFiles(oldClone, newClone, registry) {
 //   kept     the release did not change the template: nothing to do, whatever the project did
 //   replace  the project did not touch the old template: take the new one
 //   edited   both changed: merge
-// A null base (the old release did not ship it) matches nothing.
-export function classify({ base, ours, theirs }) {
+// A null base (the old release did not ship it) matches nothing. For openspec/planning.md (with
+// `path` given) the MANAGED sections are values, not edits: all three are compared without them.
+export function classify({ base, ours, theirs, path }) {
   if (theirs === null) return 'absent'
   if (ours === null) return 'new'
+  if (path === PLANNING_GUIDE) [base, ours, theirs] = [base, ours, theirs].map((text) => (text === null ? null : unmanaged(text)))
   if (ours === theirs) return 'same'
   if (base !== null && base === theirs) return 'kept'
   if (base !== null && ours === base) return 'replace'
@@ -93,6 +95,13 @@ function sections(text) {
 
 const sectionText = (section) => section.lines.join('\n')
 const named = (section, heading) => section.heading !== null && section.heading.trimEnd() === heading
+
+function unmanaged(text) {
+  return sections(text)
+    .filter((section) => !MANAGED.some((heading) => named(section, heading)))
+    .map(sectionText)
+    .join('\n')
+}
 
 // The new template, with the project's own MANAGED sections of openspec/planning.md carried over.
 export function replaceFromUpdate(path, ours, theirs) {
@@ -137,4 +146,13 @@ export function mergeKeep(base, ours, theirs, run = execFileSync) {
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+}
+
+// *Keep everything* for one file: mergeKeep, except that openspec/planning.md's MANAGED
+// sections are the project's values. The merge runs with ours' MANAGED sections set to the old
+// template's, so a template change there merges cleanly, and ours' are put back afterwards.
+export function keepFromUpdate(path, base, ours, theirs) {
+  if (path !== PLANNING_GUIDE || base === null) return mergeKeep(base, ours, theirs)
+  const merged = mergeKeep(base, replaceFromUpdate(path, base, ours), theirs)
+  return { text: replaceFromUpdate(path, ours, merged.text), conflicts: merged.conflicts }
 }

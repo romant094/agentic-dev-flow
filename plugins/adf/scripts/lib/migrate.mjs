@@ -24,6 +24,10 @@ export async function migrateConfig(entry, declaration, pluginDir, { from, to })
       throw new Error(`${declaration.name}: migration ${step.version} (${step.script}) does not export a function`)
     }
     config = await migrate(config)
+    const proto = config !== null && typeof config === 'object' ? Object.getPrototypeOf(config) : undefined
+    if (proto !== Object.prototype && proto !== null) {
+      throw new Error(`${declaration.name}: migration ${step.version} (${step.script}) returned ${Array.isArray(config) ? 'an array' : config === null ? 'null' : typeof config}, not a plain config object`)
+    }
     ran.push(step.version)
   }
   return { config, ran }
