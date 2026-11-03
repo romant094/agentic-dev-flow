@@ -4,6 +4,9 @@
   "owner": {
     "name": "Anton Romankov"
   },
+  "metadata": {
+    "version": "0.18.1"
+  },
   "allowCrossMarketplaceDependenciesOn": [
     "claude-plugins-official"
   ],
