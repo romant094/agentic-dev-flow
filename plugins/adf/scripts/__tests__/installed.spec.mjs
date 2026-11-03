@@ -51,3 +51,39 @@ test('a disabled or absent plugin is refused with the reason', () => {
   assert.throws(() => installedPath(ID, root, { home: home(user, { enabledPlugins: { [ID]: false } }), exists: always }), /installed but disabled/)
   assert.throws(() => installedPath(ID, root, { home: home(user), exists: () => false }), /not installed for this project; run: claude plugin install tool@market/)
 })
+
+function worktreeOf(main) {
+  const git = (...args) => execFileSync('git', ['-C', main, ...args], { stdio: 'ignore' })
+  git('init', '-q', '-b', 'develop')
+  git('-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '--allow-empty', '-m', 'init')
+  const tree = join(realpathSync(tmpdir()), `adf-tree-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+  git('worktree', 'add', '-q', tree)
+  return tree
+}
+
+test('a project record for the current worktree counts', () => {
+  const main = realpathSync(mkdtempSync(join(tmpdir(), 'adf-main-')))
+  const tree = worktreeOf(main)
+  const records = [{ scope: 'project', projectPath: tree, installPath: '/worktree-install' }]
+  assert.equal(installedPath(ID, tree, { home: home(records), exists: always }), '/worktree-install')
+})
+
+test('a plugin enabled in project settings and present in the cache counts with no record', () => {
+  const main = realpathSync(mkdtempSync(join(tmpdir(), 'adf-main-')))
+  const tree = worktreeOf(main)
+  mkdirSync(join(main, '.claude'))
+  writeFileSync(join(main, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { [ID]: true } }))
+  const h = home([])
+  const market = join(h, 'plugins', 'marketplaces', 'market', '.claude-plugin')
+  mkdirSync(market, { recursive: true })
+  writeFileSync(join(market, 'marketplace.json'), JSON.stringify({ plugins: [{ name: 'tool', version: '1.2.3' }] }))
+  const cached = join(h, 'plugins', 'cache', 'market', 'tool', '1.2.3')
+  mkdirSync(cached, { recursive: true })
+  assert.equal(installedPath(ID, tree, { home: h }), cached)
+})
+
+test('the refusal names the main directory', () => {
+  const main = realpathSync(mkdtempSync(join(tmpdir(), 'adf-main-')))
+  const tree = worktreeOf(main)
+  assert.throws(() => installedPath(ID, tree, { home: home([]), exists: () => false }), (e) => e.message.includes(`run it from ${main}`))
+})

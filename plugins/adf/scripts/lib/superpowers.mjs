@@ -31,9 +31,11 @@ export function mergeSettings(...layers) {
 
 // A user-scope record counts everywhere. A project- or local-scope record counts only in the
 // project it was installed for: Claude Code records one per checkout, worktrees included.
-export function countsHere(record, root) {
+// `roots` is one directory or a list of them (the main directory and the worktree).
+export function countsHere(record, roots) {
   if (record.scope === 'user' || record.scope === undefined) return true
-  return typeof record.projectPath === 'string' && resolve(record.projectPath) === resolve(root)
+  if (typeof record.projectPath !== 'string') return false
+  return [roots].flat().some((root) => resolve(record.projectPath) === resolve(root))
 }
 
 export function isAvailable({ installedPlugins, settings, exists, root }) {
