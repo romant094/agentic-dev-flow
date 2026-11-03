@@ -40,7 +40,7 @@ test('replace appends a managed section the new template lacks', () => {
   const ours = '## Format command\n\nnpm run fmt\n'
   const text = replaceFromUpdate('openspec/planning.md', ours, '# Guide\n\n## Other\n\nnew\n')
   assert.equal(text, '# Guide\n\n## Other\n\nnew\n\n## Format command\n\nnpm run fmt\n')
-  assert.deepEqual(MANAGED.length, 4)
+  assert.equal(MANAGED.length, 4)
 })
 
 test('mergeKeep carries a template change and keeps a project edit', () => {
@@ -83,4 +83,29 @@ test('hostFiles reads the core files and each plugin declaration from both clone
     { path: '.gitlab/mr.md', base: 'm1\n', theirs: 'm2\n' },
   ])
   assert.equal(hostFiles(oldClone, newClone, {})[1].path, 'openspec/review-prompt.md')
+})
+
+test('mergeKeep throws on a git error instead of reporting conflicts', () => {
+  const failing = () => {
+    throw Object.assign(new Error('failed'), { status: 255, stdout: Buffer.from(''), stderr: Buffer.from('Could not stat') })
+  }
+  assert.throws(() => mergeKeep('a\n', 'b\n', 'c\n', failing), /Could not stat/)
+})
+
+test('replace carries a managed section from the middle of ours to the end of theirs', () => {
+  const ours = '## Format command\n\nnpm run fmt\n\n## Other\n\nold\n'
+  const theirs = '## Other\n\nnew\n\n## Format command\n\nTODO\n'
+  assert.equal(
+    replaceFromUpdate('openspec/planning.md', ours, theirs),
+    '## Other\n\nnew\n\n## Format command\n\nnpm run fmt\n'
+  )
+})
+
+test('hostFiles names a malformed extension declaration', () => {
+  const root = mkdtempSync(join(tmpdir(), 'adf-hf-'))
+  put(join(root, 'old'), 'plugins/adf-gitlab/adf-extension.json', '{')
+  assert.throws(
+    () => hostFiles(join(root, 'old'), join(root, 'new'), { extensions: [{ plugin: 'adf-gitlab@agentic-dev-flow' }] }),
+    /adf-extension\.json is not valid JSON/
+  )
 })

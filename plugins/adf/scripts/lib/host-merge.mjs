@@ -36,7 +36,12 @@ export function hostFiles(oldClone, newClone, registry) {
     const dir = `plugins/${name}`
     const declared = (clone) => {
       const text = read(join(clone, dir, 'adf-extension.json'))
-      return text === null ? [] : (JSON.parse(text).hostFiles ?? [])
+      if (text === null) return []
+      try {
+        return JSON.parse(text).hostFiles ?? []
+      } catch (error) {
+        throw new Error(`${join(clone, dir, 'adf-extension.json')} is not valid JSON: ${error.message}`)
+      }
     }
     const byTarget = new Map()
     for (const clone of [oldClone, newClone]) {
@@ -77,7 +82,7 @@ function sections(text) {
   let current = { heading: null, lines: [] }
   for (const line of text.split('\n')) {
     if (line.startsWith('## ')) {
-      parts.push(current)
+      if (current.heading !== null || current.lines.length > 0) parts.push(current)
       current = { heading: line, lines: [] }
     }
     current.lines.push(line)
@@ -111,7 +116,7 @@ export function replaceFromUpdate(path, ours, theirs) {
 
 // A three-way merge of the project's copy with the new template over the old one. `git
 // merge-file` exits with the number of conflicts; a negative status or another error throws.
-export function mergeKeep(base, ours, theirs) {
+export function mergeKeep(base, ours, theirs, run = execFileSync) {
   const dir = mkdtempSync(join(tmpdir(), 'adf-merge-'))
   try {
     const write = (name, text) => {
@@ -121,12 +126,13 @@ export function mergeKeep(base, ours, theirs) {
     }
     const files = [write('ours', ours), write('base', base), write('theirs', theirs)]
     try {
-      return { text: execFileSync('git', ['merge-file', '-p', ...files], { encoding: 'utf8' }), conflicts: false }
+      return { text: run('git', ['merge-file', '-p', ...files], { encoding: 'utf8' }), conflicts: false }
     } catch (error) {
-      if (typeof error.status === 'number' && error.status > 0) {
+      // A conflict count is 1..127; an error is negative, which the process shows as 255.
+      if (Number.isInteger(error.status) && error.status >= 1 && error.status <= 127) {
         return { text: error.stdout.toString(), conflicts: true }
       }
-      throw error
+      throw new Error(`git merge-file failed: ${error.stderr?.toString().trim() || error.message}`)
     }
   } finally {
     rmSync(dir, { recursive: true, force: true })
