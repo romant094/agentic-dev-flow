@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { compareVersions, latestTag, projectRef, remoteTags, installedVersion } from '../lib/update.mjs'
+import { changedPlugins, compareVersions, latestTag, projectRef, remoteTags, installedVersion } from '../lib/update.mjs'
 
 const ID = 'adf@agentic-dev-flow'
 
@@ -64,4 +64,27 @@ test('installedVersion follows the record installedPath uses, or the cache fallb
   writeFileSync(join(bare, 'plugins', 'marketplaces', 'agentic-dev-flow', '.claude-plugin', 'marketplace.json'), JSON.stringify({ plugins: [{ name: 'adf', version: '0.3.0' }] }))
   writeFileSync(join(bare, 'settings.json'), JSON.stringify({ enabledPlugins: { [ID]: true } }))
   assert.equal(installedVersion(ID, root, { home: bare }), '0.3.0')
+})
+
+const market = (plugins) => ({ plugins: Object.entries(plugins).map(([name, version]) => ({ name, version })) })
+
+test('unknown version reads from the old manifest; a new plugin migrates nothing', () => {
+  const registry = {
+    extensions: [
+      { plugin: 'adf-gitlab@agentic-dev-flow', version: '0.5.0' },
+      { plugin: 'adf-jira@agentic-dev-flow' },
+      { plugin: 'adf-new@agentic-dev-flow' },
+      { plugin: 'adf-gone@agentic-dev-flow', version: '0.1.0' },
+      { plugin: 'other@elsewhere' },
+      { path: 'plugins/local' }
+    ]
+  }
+  const oldM = market({ 'adf-gitlab': '0.4.0', 'adf-jira': '0.2.0' })
+  const newM = market({ 'adf-gitlab': '0.6.0', 'adf-jira': '0.2.0', 'adf-new': '0.1.0' })
+  assert.deepEqual(changedPlugins(registry, oldM, newM), [
+    { id: 'adf-gitlab@agentic-dev-flow', from: '0.5.0', to: '0.6.0', changed: true },
+    { id: 'adf-jira@agentic-dev-flow', from: '0.2.0', to: '0.2.0', changed: false },
+    { id: 'adf-new@agentic-dev-flow', from: null, to: '0.1.0', changed: true },
+    { id: 'adf-gone@agentic-dev-flow', from: '0.1.0', to: null, changed: true }
+  ])
 })

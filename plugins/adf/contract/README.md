@@ -31,7 +31,8 @@ the `forge` operations' `ci` field and the `upstream` role; `1.5` gives `upstrea
 `check` takes the repository, and `file` takes the findings and the ADF debt themselves; `1.6`
 adds the first hooks, `provision`, `teardown` and `verify-check`; `1.7` adds the `tracker` role
 and the `forge` operation `state`, and checks a declaration against the operations of its own
-contract version. `1.8` adds the optional declaration field `requiredConfig`.
+contract version. `1.8` adds the optional declaration field `requiredConfig`. `1.9` adds the optional declaration
+field `migrations`.
 
 ## Calling convention
 
@@ -322,3 +323,11 @@ operations need, for example `["prefix", "url"]`. The core does not check them w
 plugin: the plugin validates its own config. `/adf:add` and `extensions.mjs config` name the keys
 the config lacks as a warning and never refuse, because an operation that needs none of them
 still works. A core that does not know the field ignores it.
+
+`migrations` (optional, since 1.9) lists config migration steps: `[{ "version": "0.3.0",
+"script": "migrations/0.3.0.mjs" }]`, the script a path inside the plugin. Its default export is
+`(config) => config`, sync or async, and receives the registry entry's `config`. When
+`/adf:update` moves the plugin from version `from` to `to`, the core runs, in version order,
+the steps with `from < version <= to`, each over the result of the one before, and stores the
+final config. A plugin whose previous version is unknown runs no step. A core that does not
+know the field ignores it.

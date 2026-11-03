@@ -54,3 +54,21 @@ export function installedVersion(id, root, { home = claudeHome() } = {}) {
     throw error
   }
 }
+
+// The package plugins a registry enables (ids ending `@agentic-dev-flow`), each with the version
+// it was configured at and the one the new marketplace offers. `from` is the entry's own
+// version, else the old marketplace's, else null (a plugin the old marketplace lacked). A plugin
+// the new marketplace dropped is reported with `to: null`, changed.
+export function changedPlugins(registry, oldMarketplace, newMarketplace) {
+  const versionOf = (marketplace, name) => marketplace?.plugins?.find((p) => p.name === name)?.version ?? null
+  const result = []
+  for (const entry of registry?.extensions ?? []) {
+    if (typeof entry?.plugin !== 'string' || !entry.plugin.endsWith(`@${MARKETPLACE}`)) continue
+    const id = entry.plugin
+    const name = id.slice(0, id.lastIndexOf('@'))
+    const from = entry.version ?? versionOf(oldMarketplace, name)
+    const to = versionOf(newMarketplace, name)
+    result.push({ id, from, to, changed: from !== to })
+  }
+  return result
+}

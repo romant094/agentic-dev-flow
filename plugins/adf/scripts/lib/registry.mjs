@@ -72,6 +72,13 @@ export function validateDeclaration(declaration, points) {
   if (required !== undefined && !(Array.isArray(required) && required.every((key) => typeof key === 'string' && key !== ''))) {
     errors.push('requiredConfig must be a list of config key names')
   }
+  const migrations = declaration.migrations
+  if (
+    migrations !== undefined &&
+    !(Array.isArray(migrations) && migrations.every((m) => /^\d+\.\d+\.\d+$/.test(m?.version ?? '') && inside(m?.script)))
+  ) {
+    errors.push('migrations must be a list of { version: x.y.z, script } with a path inside the plugin')
+  }
   return errors
 }
 
