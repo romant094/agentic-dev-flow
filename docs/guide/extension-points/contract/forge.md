@@ -7,18 +7,47 @@
 
 # The forge role
 
+The Codex form of each command is in [the Codex page](../../getting-started/codex.md).
+
 ## What the point is
 
-What `forge` is.
+`forge` is a role. The provider pushes the change branch and keeps the merge request of the change. The core never names a forge. The contract is in [the contract README](../../../../plugins/adf/contract/README.md#forge-role-since-11-push-since-12-ci-since-14-state-since-17).
+
+| Operation | What it does |
+|---|---|
+| `check` | Reports whether the forge tool is ready. |
+| `open` | Pushes the branch and opens a merge request into the base branch. It reuses an open one. |
+| `push` | Pushes the branch. Nothing else changes. |
+| `finalize` | Writes the description, takes the request out of draft, then pushes. |
+| `state` | Reads the state of the merge request: `open`, `draft`, `merged` or `closed`. It sends nothing. |
+
+The provider never forces a push. It refuses an empty branch and a protected branch.
+
+`open`, `push` and `finalize` take an optional `ci` field. With `ci: false`, the provider asks the forge to start no pipeline. `/adf:archive --no-ci` sets it. A provider whose forge cannot skip CI refuses.
 
 ## When it acts
 
-The stage of the cycle where it acts.
+| Stage | Operation |
+|---|---|
+| [/adf:propose](../../cycle/propose.md) | `open`: a draft merge request after the artifacts are committed. |
+| [/adf:apply](../../cycle/apply.md) | `push`: after each group merge and after the suite record. |
+| [/adf:archive](../../cycle/archive.md) | `finalize`: the `mr` step. |
+| [/adf:retro](../../cycle/retro.md) | `open`, not a draft, with no CI run. |
+| [/adf:land](tracker.md) | `state`: the check that the merge happened. |
+
+The core calls `check` before the other operations.
 
 ## With no provider
 
-What the core does without it.
+- Nothing is pushed. No merge request exists. Each report says so.
+- `/adf:archive` offers to merge the change into its base branch. It merges only after your yes (the `merge-local` step).
+- The local merge runs `git merge --no-ff <branch>` in the main checkout. The main checkout must be clean and have the base branch checked out. The branch stays. A failed merge is aborted.
+- For `state`, the core decides "merged" from git. The branch tip must be an ancestor of the local base or of `origin/<base>`. The core fetches nothing.
+
+A provider that does not declare an operation is not called for it. The core applies the same default.
 
 ## Providers
 
-The plugins that provide it.
+| Plugin | Notes |
+|---|---|
+| [`adf-gitlab`](../../plugins/adf-gitlab.md) | Provides `check`, `open`, `push`, `finalize` and `state`. Its `hostFiles` entry copies a merge request template into `.gitlab/merge_request_templates/adf.md`. |
