@@ -576,9 +576,10 @@ function readQuestion(file) {
 // The plan as printed: Claude Code names the agent; Codex gets the level's effort and preamble.
 function forRuntime(plan, runtime) {
   if (runtime !== 'codex') return plan
+  if (plan.agent === undefined) return plan
   const { agent, ...rest } = plan
   const level = agent.replace(/^adf:/, '')
-  return { ...rest, level, ...dispatchAgent(level, runtime, join(PLUGIN_ROOT, 'agents')) }
+  return { ...rest, level, ...dispatchAgent(level, runtime) }
 }
 
 export function run(argv, { cwd = process.cwd(), main, env = process.env, runtime = detectRuntime({ env, scriptPath: PLUGIN_ROOT }) } = {}) {

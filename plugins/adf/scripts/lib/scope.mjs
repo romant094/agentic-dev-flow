@@ -42,7 +42,7 @@ import { fileURLToPath } from 'node:url'
 import { readBranches } from './branches.mjs'
 import { listTree } from './debt.mjs'
 import { findChangeDir } from './ingest.mjs'
-import { SCOPE_KEY, SCOPE_ROLES, scopeCheckName, sddDir } from './dispatch.mjs'
+import { dispatchFields, SCOPE_KEY, SCOPE_ROLES, scopeCheckName, sddDir, withPreamble } from './dispatch.mjs'
 import { mainCheckout } from './installed.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { readDebtRoot, readRegistry } from './registry.mjs'
@@ -554,7 +554,7 @@ function precedentsOf(scope, item) {
 
 const CHANGE_FILES = ['proposal.md', 'design.md', 'tasks.md']
 
-export function checkInput(root, change, { key = null, core }) {
+export function checkInput(root, change, { key = null, core, runtime = 'claude-code' }) {
   const { main, scope } = requireScope(root, change)
   const undecided = scope.items.filter((i) => i.state === 'candidate').map((i) => i.key)
   if (undecided.length) refuse(`decide ${undecided.join(', ')} first: scope.mjs select`)
@@ -617,8 +617,9 @@ export function checkInput(root, change, { key = null, core }) {
     }
     writeFileSync(inputFile, `${JSON.stringify(input, null, 2)}\n`)
     const level = SCOPE_ROLES['scope-check'].level
-    writeFileSync(promptFile, renderSkeleton(PROMPT, { name, level, key: item.key, change, inputFile, replyFile, schema: SCOPE_SCHEMA }))
-    dispatches.push({ name, key: item.key, agent: `adf:${level}`, worktree: main, inputFile, promptFile, replyFile })
+    const agent = dispatchFields(level, runtime)
+    writeFileSync(promptFile, withPreamble(renderSkeleton(PROMPT, { name, level, key: item.key, change, inputFile, replyFile, schema: SCOPE_SCHEMA }), agent.preamble))
+    dispatches.push({ name, key: item.key, ...agent.fields, worktree: main, inputFile, promptFile, replyFile })
   }
   writeScope(main, change, scope)
   return {

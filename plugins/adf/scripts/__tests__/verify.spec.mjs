@@ -1094,3 +1094,11 @@ test('verify-check with no commit range calls no provider; each is a not-run sec
   assert.match(ext[0].summary, /^no commit range: /)
   assert.equal(existsSync(log), false)
 })
+
+test('codex: prompts carries level and reasoningEffort, and each prompt starts with the level text', () => {
+  const { root } = host()
+  runChecks(root, { change: CHANGE })
+  const result = verifyCli(['prompts', '--change', CHANGE, '--root', root], { env: {}, runtime: 'codex' })
+  assert.deepEqual(result.dispatches.map((d) => [d.check, d.agent, d.level, d.reasoningEffort]), [['c4', undefined, 'architecture', 'high'], ['c8', undefined, 'integration', 'medium']])
+  assert.match(result.dispatches[1].prompt, /^You are a subagent of an ADF change workflow, dispatched at its \*\*integration\*\*/)
+})

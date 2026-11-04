@@ -1234,3 +1234,7 @@ test('every runtime reference has the same section headings', () => {
   assert.equal(first.length, 4)
   for (const other of others) assert.deepEqual(other, first)
 })
+
+test('the agent files name no runtime-specific agent id, so their body is right as a Codex preamble', () => {
+  for (const level of ['mechanical', 'integration', 'architecture']) assert.doesNotMatch(dispatchAgent(level, 'codex', AGENTS).preamble, /adf:/)
+})

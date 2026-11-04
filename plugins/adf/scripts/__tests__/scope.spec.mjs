@@ -487,3 +487,16 @@ test('the CLI prints one JSON result: exit 1 on a refusal, exit 2 on a usage err
   const ok = cli('gather', '--change', 'fix-pool', '--text', 'session pool', '--home', home)
   assert.deepEqual([ok.code, ok.out.ok, ok.out.items.length], [0, true, 2])
 })
+
+test('codex: check-input prints level and reasoningEffort, and the prompt file starts with the level text', () => {
+  const root = host()
+  scope(root, 'gather', '--change', 'fix-pool', '--keys', 'PROJ-1')
+  scope(root, 'select', '--change', 'fix-pool', '--take', 'PROJ-1,snmp-01', '--partial', 'PROJ-2: the metrics only')
+  const out = run(['check-input', '--change', 'fix-pool', '--root', root, '--home', home], { runtime: 'codex' })
+  const [first] = out.dispatches
+  assert.equal(first.agent, undefined)
+  assert.deepEqual([first.level, first.reasoningEffort], ['integration', 'medium'])
+  const prompt = readFileSync(first.promptFile, 'utf8')
+  assert.match(prompt, /^You are a subagent of an ADF change workflow, dispatched at its \*\*integration\*\* capability/)
+  assert.ok(prompt.includes('You are dispatched as `scope-check PROJ-1`'))
+})

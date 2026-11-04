@@ -525,3 +525,19 @@ test('the CLI prints one JSON result: exit 1 on a refusal, exit 2 on a usage err
   const ok = cli('check', '--change', CHANGE, '--home', home)
   assert.deepEqual([ok.code, ok.out.state], [0, 'skipped'])
 })
+
+test('codex: comment-input prints level and reasoningEffort, and the prompt file starts with the level text', () => {
+  const root = landHost({ merged: false })
+  const codex = (...args) => run([...args, '--change', CHANGE, '--root', root, ...(['check', 'wait', 'handoff'].includes(args[0]) ? ['--home', home] : [])], { deps: { runtime: 'codex' } })
+  codex('check')
+  codex('wait')
+  git(root, 'merge', '-q', '--no-ff', '--no-edit', BRANCH)
+  codex('wait')
+  const input = codex('comment-input')
+  const [first] = input.dispatches
+  assert.equal(first.agent, undefined)
+  assert.deepEqual([first.level, first.reasoningEffort], ['integration', 'medium'])
+  const prompt = readFileSync(first.promptFile, 'utf8')
+  assert.match(prompt, /^You are a subagent of an ADF change workflow, dispatched at its \*\*integration\*\* capability/)
+  assert.ok(prompt.includes('You are dispatched as `land-comment PROJ-1`'))
+})

@@ -6,7 +6,9 @@ How the flow's words map to Codex's tools. Read it when a skill sends you here.
 
 Dispatch a subagent with `spawn_agent`. Codex does not load the plugin's agent files, so the
 flow carries the level itself: `dispatch.mjs prompt` prints `reasoningEffort`, and its `prompt`
-already starts with the level's text.
+already starts with the level's text. The printed dispatch has no `agent` field in Codex. Where
+the flow says "the agent of its level" or "dispatch ... at `agent`", call `spawn_agent` with the
+printed `reasoningEffort` and the printed `prompt`.
 
 1. Call `spawn_agent` with `reasoning_effort` set to the printed `reasoningEffort`, and the
    printed `prompt` as the message.

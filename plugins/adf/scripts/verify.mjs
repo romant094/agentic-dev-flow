@@ -54,8 +54,10 @@
 //       remove the c4 section, which judged what was exercised without it, and list it as `stale`
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { run as dispatchCli } from './dispatch.mjs'
 import { isMain } from './lib/main.mjs'
+import { detectRuntime } from './lib/runtime.mjs'
 import { loadSchema } from './lib/schema.mjs'
 import { runSuite, SECTION_ID } from './lib/suite.mjs'
 import { assemble, computeVerdict, REQUIRED_SECTIONS, renderReport, runChecks, skillCandidates, skillEdit, verifyDir, writeDeveloper } from './lib/verify.mjs'
@@ -123,7 +125,7 @@ function withSuite(root, change, result) {
   return { ...result, suite, ok: !verdicts.includes('fail') }
 }
 
-export function run(argv, { cwd = process.cwd(), env = process.env } = {}) {
+export function run(argv, { cwd = process.cwd(), env = process.env, runtime = detectRuntime({ env, scriptPath: fileURLToPath(import.meta.url) }) } = {}) {
   const { values, rest } = parse(argv)
   const [command, ...extra] = rest
   const { change, root = cwd } = values
@@ -158,8 +160,9 @@ export function run(argv, { cwd = process.cwd(), env = process.env } = {}) {
     case 'prompts': {
       const candidates = skillCandidates(root, { change })
       const dispatches = REQUIRED_SECTIONS.map((check) => {
-        const { name, agent, replyFile, prompt } = dispatchCli(['prompt', '--change', change, '--role', 'verify', '--check', check, '--root', resolve(cwd, root)], { cwd })
-        return { check, name, agent, replyFile, prompt }
+        // The runtime's agent fields (`agent`, or `level` and `reasoningEffort`) pass through.
+        const { name, agent, level, reasoningEffort, replyFile, prompt } = dispatchCli(['prompt', '--change', change, '--role', 'verify', '--check', check, '--root', resolve(cwd, root)], { cwd, env, runtime })
+        return { check, name, ...(agent === undefined ? { level, reasoningEffort } : { agent }), replyFile, prompt }
       })
       return { ok: true, candidates, dispatches }
     }
