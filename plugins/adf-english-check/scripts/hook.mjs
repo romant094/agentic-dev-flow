@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-// Claude Code PreToolUse hook (matcher Bash): reads the hook input JSON on stdin and, when the
+// PreToolUse hook (matcher Bash), the same input in Claude Code and Codex: reads the hook input JSON on stdin and, when the
 // command commits, checks the files the commit takes (lib/english.mjs).
+// Both runtimes send tool_name Bash and the command in tool_input.command, the only fields read.
 //
 // Exit codes: 0 the call runs (not a commit, or nothing found); 2 the call is blocked and
 // stderr, one `path:line: text` per finding, goes to the agent; 1 the check itself failed,

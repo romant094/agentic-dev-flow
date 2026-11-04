@@ -4,7 +4,7 @@
 // or a result with ok false, exit 2 on a usage error. --root is any checkout of the host (default:
 // the current directory); the state lives in the main checkout's
 // .superpowers/sdd/<change>/scope/, the tracker's files in .superpowers/sdd/<change>/tracker/.
-// --home names the Claude Code home where the plugins are found.
+// --home names the runtime's home where the plugins are found.
 //
 //   scope.mjs gather --change <name> [--keys K1,K2] [--text "<phrase>"] [--skip-tracker "<reason>"]
 //       the tracker's check, then its gather of the keys and the phrase, a debt id among the
@@ -22,7 +22,7 @@
 //       rank ({ key, token }), a tie ({ tie: [keys] }) or null
 //   scope.mjs check-input --change <name> [--key <KEY>]
 //       one input file and one prompt per taken or partial item (or the one named), the base
-//       commit recorded. { ok, base, dispatches: [{ name, key, agent, worktree, inputFile,
+//       commit recorded. { ok, base, dispatches: [{ name, key, agent (in Codex level and reasoningEffort), worktree, inputFile,
 //       promptFile, replyFile }] }: dispatch each as `scope-check <KEY>`, read-only
 //   scope.mjs check --change <name> --key <KEY> --file <reply json>
 //       the reply checked against schema/scope-check.schema.json and the script's rules, and
@@ -45,11 +45,12 @@
 //   scope.mjs state --change <name>
 //       the record, read-only. { ok, file, scope, branch, recordable }
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { isMain } from './lib/main.mjs'
+import { detectRuntime, runtimeHome } from './lib/runtime.mjs'
 import { CORE } from './lib/roles.mjs'
 import { answer, check, checkInput, gather, Refusal, render, retest, select, start, state } from './lib/scope.mjs'
-import { claudeHome } from './lib/superpowers.mjs'
 
 export const USAGE = `usage:
   scope.mjs gather --change <name> [--keys K1,K2] [--text "<phrase>"] [--skip-tracker "<reason>"] [--root <dir>] [--home <dir>]
@@ -109,7 +110,7 @@ function withReason(flag, values) {
   })
 }
 
-export function run(argv, { cwd = process.cwd() } = {}) {
+export function run(argv, { cwd = process.cwd(), env = process.env, runtime = detectRuntime({ env, scriptPath: fileURLToPath(import.meta.url) }) } = {}) {
   let parsed
   try {
     parsed = parseArgs({ args: argv, options: OPTIONS, strict: true, allowPositionals: true })
@@ -124,14 +125,14 @@ export function run(argv, { cwd = process.cwd() } = {}) {
   if (!values.change) usage(`${command} needs --change <name>`)
   const root = resolve(cwd, values.root ?? '.')
   const change = values.change
-  const core = { ...CORE, home: values.home ?? claudeHome() }
+  const core = { ...CORE, home: values.home ?? runtimeHome(runtime, env) }
   switch (command) {
     case 'gather':
       return gather(root, change, { keys: list(values.keys === undefined ? [] : [values.keys]), text: values.text ?? null, skipTracker: values['skip-tracker'] ?? null, core })
     case 'select':
       return select(root, change, { take: list(values.take), partial: withReason('partial', values.partial), exclude: withReason('exclude', values.exclude), rest: values.rest ?? null })
     case 'check-input':
-      return checkInput(root, change, { key: values.key ?? null, core })
+      return checkInput(root, change, { key: values.key ?? null, core, runtime })
     case 'check':
       if (!values.key || !values.file) usage('check needs --key and --file')
       return check(root, change, { key: values.key, file: resolve(cwd, values.file) })

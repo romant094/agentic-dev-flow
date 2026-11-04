@@ -1,8 +1,11 @@
 ---
+name: land
 description: Land a merged change - write the hand-off comment of each tracker issue it took and hand each to its tester. Triggers on "land the change", "hand off the issues", "the merge request is merged". Triggers may be phrased in any language.
 argument-hint: <change-name>
 effort: medium
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name. Outside Claude Code, read `${CLAUDE_PLUGIN_ROOT}/schema/runtimes/<runtime>.md` first: it maps this text's dispatches and questions to your tools.
+
 
 Land a change after its merge: each tracker issue the change took gets one comment, rendered by
 the tracker plugin from fields an agent writes and the script checks, and goes to its tester. A

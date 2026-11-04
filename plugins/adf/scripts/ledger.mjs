@@ -35,7 +35,7 @@
 //   ledger.mjs list --change <name> [--unresolved-debt]      the records, or the open debt
 //
 // --root <dir> names the host project (default: the current directory); --repo <dir> is
-// kept as its older spelling. The session id is read from CLAUDE_CODE_SESSION_ID.
+// kept as its older spelling. The session id is read from CLAUDE_CODE_SESSION_ID (CODEX_THREAD_ID in Codex).
 import { appendRecord, KINDS, listRecords, parseFlags } from './lib/ledger.mjs'
 import { isMain } from './lib/main.mjs'
 

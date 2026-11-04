@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { mainCheckout, normalizeConfig, readRegistryConfig } from '../lib/config.mjs'
@@ -134,6 +134,66 @@ describe('findCore', () => {
   it('takes the core beside this plugin in a checkout', () => {
     const exists = (p) => p === join('/m', 'plugins', 'adf', 'scripts', 'debt.mjs')
     assert.equal(findCore({ pluginRoot: '/m/plugins/adf-jira', home: '/none', exists }), join('/m/plugins/adf-jira', '..', 'adf'))
+  })
+
+  it('takes the highest adf version from a plugin cache by its layout, with no install records', (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'adf-jira-cache-'))
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+    const core = (v) => {
+      mkdirSync(join(root, 'plugins', 'cache', 'mk', 'adf', v, 'scripts'), { recursive: true })
+      writeFileSync(join(root, 'plugins', 'cache', 'mk', 'adf', v, 'scripts', 'debt.mjs'), '')
+    }
+    for (const v of ['0.9.0', '0.18.1', '0.10.0', 'local']) core(v)
+    mkdirSync(join(root, 'plugins', 'cache', 'mk', 'adf', '9.9.9'), { recursive: true }) // no debt.mjs
+    const pluginRoot = join(root, 'plugins', 'cache', 'mk', 'adf-jira', '0.5.0')
+    mkdirSync(pluginRoot, { recursive: true })
+    assert.equal(findCore({ pluginRoot, home: join(root, 'none') }), join(root, 'plugins', 'cache', 'mk', 'adf', '0.18.1'))
+  })
+
+  it('takes the core beside this plugin before the cache layout', (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'adf-jira-sibling-'))
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+    for (const dir of [join(root, 'a', 'adf'), join(root, 'adf', '1.0.0')]) {
+      mkdirSync(join(dir, 'scripts'), { recursive: true })
+      writeFileSync(join(dir, 'scripts', 'debt.mjs'), '')
+    }
+    const pluginRoot = join(root, 'a', 'adf-jira')
+    mkdirSync(pluginRoot, { recursive: true })
+    assert.equal(findCore({ pluginRoot, home: join(root, 'none') }), join(pluginRoot, '..', 'adf'))
+  })
+
+  it('takes the core of an install record before a higher version in the cache layout', (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'adf-jira-pinned-'))
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+    for (const v of ['0.13.0', '0.18.1']) {
+      mkdirSync(join(root, 'plugins', 'cache', 'mk', 'adf', v, 'scripts'), { recursive: true })
+      writeFileSync(join(root, 'plugins', 'cache', 'mk', 'adf', v, 'scripts', 'debt.mjs'), '')
+    }
+    const pluginRoot = join(root, 'plugins', 'cache', 'mk', 'adf-jira', '0.5.0')
+    mkdirSync(pluginRoot, { recursive: true })
+    const pinned = join(root, 'plugins', 'cache', 'mk', 'adf', '0.13.0')
+    writeFileSync(
+      join(root, 'plugins', 'installed_plugins.json'),
+      JSON.stringify({
+        plugins: {
+          'adf-jira@mk': [{ scope: 'project', projectPath: '/work/host', installPath: pluginRoot }],
+          'adf@mk': [{ scope: 'project', projectPath: '/work/host', installPath: pinned }]
+        }
+      })
+    )
+    assert.equal(findCore({ pluginRoot, home: root, projectDir: '/work/host' }), pinned)
+  })
+
+  it('breaks a tie of version numbers in the cache layout on the whole name, the same on every run', (t) => {
+    const root = mkdtempSync(join(tmpdir(), 'adf-jira-tie-'))
+    t.after(() => rmSync(root, { recursive: true, force: true }))
+    for (const v of ['1.0.0-alpha', '1.0.0-beta']) {
+      mkdirSync(join(root, 'plugins', 'cache', 'mk', 'adf', v, 'scripts'), { recursive: true })
+      writeFileSync(join(root, 'plugins', 'cache', 'mk', 'adf', v, 'scripts', 'debt.mjs'), '')
+    }
+    const pluginRoot = join(root, 'plugins', 'cache', 'mk', 'adf-jira', '0.5.0')
+    mkdirSync(pluginRoot, { recursive: true })
+    assert.equal(findCore({ pluginRoot, home: join(root, 'none') }), join(root, 'plugins', 'cache', 'mk', 'adf', '1.0.0-beta'))
   })
 
   it('takes the core of the same marketplace from the install records, the project install first', () => {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // CLI over lib/archive.mjs: /adf:archive's deterministic steps, each resumable. Prints one JSON
 // object on stdout; exit 1 on a refusal or a failed step, exit 2 on a usage error. --root is the
-// change worktree (default: the current directory); --home names the Claude Code home where the
+// change worktree (default: the current directory); --home names the runtime's home where the
 // knowledge and forge plugins are found.
 //
 // The steps, in this order; each runs once every step before it is settled (done, degraded or
@@ -108,7 +108,7 @@ import {
   STEPS
 } from './lib/archive.mjs'
 import { isMain } from './lib/main.mjs'
-import { claudeHome } from './lib/superpowers.mjs'
+import { defaultHome } from './lib/runtime.mjs'
 
 export const USAGE = `usage:
   archive.mjs check|placements|move|commit-specs|commit-memory|metrics|commit-metrics|remove --change <name> [--no-ci] [--root <dir>] [--home <dir>]
@@ -181,7 +181,7 @@ export function run(argv, { cwd = process.cwd(), deps = {} } = {}) {
   if (stray.length > 0) throw new UsageError(`${command} takes no --${stray[0]}\n${USAGE}`)
   if (values.yes && values.no) throw new UsageError('merge-local takes --yes or --no, not both')
   if (values.title && values.summary) throw new UsageError('mr takes --title or --summary, not both')
-  const ctx = archiveContext(values.root ?? cwd, values.change, { home: values.home ?? claudeHome(), ...deps })
+  const ctx = archiveContext(values.root ?? cwd, values.change, { home: values.home ?? defaultHome(), ...deps })
   if (values['no-ci']) setNoCi(ctx.main, ctx.change)
   switch (command) {
     case 'check':

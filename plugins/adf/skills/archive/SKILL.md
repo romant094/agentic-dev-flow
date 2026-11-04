@@ -1,8 +1,11 @@
 ---
+name: archive
 description: Archive a change - merge its specs, place its debt, ingest what it taught, finalize the merge request and remove the worktree. Triggers may be phrased in any language.
 argument-hint: <change-name> [--no-ci]
 effort: medium
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name. Outside Claude Code, read `${CLAUDE_PLUGIN_ROOT}/schema/runtimes/<runtime>.md` first: it maps this text's dispatches and questions to your tools.
+
 
 Archive a reviewed change: merge its delta specs into the main specs, place every recorded
 finding and debt, move the change into the archive, ingest what it taught into the knowledge

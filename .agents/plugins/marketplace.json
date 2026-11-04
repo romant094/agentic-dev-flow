@@ -1,0 +1,134 @@
+{
+  "name": "agentic-dev-flow",
+  "interface": {
+    "displayName": "Agentic Dev Flow"
+  },
+  "plugins": [
+    {
+      "name": "adf",
+      "version": "0.20.0",
+      "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
+      "source": {
+        "source": "local",
+        "path": "./plugins/adf"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "adf-gitlab",
+      "version": "0.6.1",
+      "description": "GitLab forge for the Agentic Dev Flow: pushes a change branch, opens its merge request and finalizes it through glab",
+      "source": {
+        "source": "local",
+        "path": "./plugins/adf-gitlab"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "adf-english-check",
+      "version": "0.8.1",
+      "description": "Stops an agent's git commit when the files in scope hold non-English text",
+      "source": {
+        "source": "local",
+        "path": "./plugins/adf-english-check"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "adf-memory",
+      "version": "0.2.2",
+      "description": "Wiki memory for the Agentic Dev Flow: an indexed knowledge base, a log rotated monthly, and the ingest, query and lint workflows",
+      "source": {
+        "source": "local",
+        "path": "./plugins/adf-memory"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "adf-maintainer",
+      "version": "0.1.1",
+      "description": "Upstream for the Agentic Dev Flow maintainer: files a retrospective's flow findings and the open ADF debt as GitHub issues through gh",
+      "source": {
+        "source": "local",
+        "path": "./plugins/adf-maintainer"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "adf-npm-workspaces",
+      "version": "0.2.1",
+      "description": "Provisions an ADF worktree of an npm-workspaces monorepo: its own node_modules, linked to the main checkout's third-party packages and to its own workspace packages; blocks npm install in a linked worktree",
+      "source": {
+        "source": "local",
+        "path": "./plugins/adf-npm-workspaces"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "adf-postgres",
+      "version": "0.2.1",
+      "description": "A disposable PostgreSQL database for each change and group worktree of the Agentic Dev Flow: creates it from the branch name, points the worktree's env file at it, and drops it at teardown",
+      "source": {
+        "source": "local",
+        "path": "./plugins/adf-postgres"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "adf-prisma",
+      "version": "0.1.1",
+      "description": "Prisma for ADF worktrees: gives a worktree its own generated client when the change can alter it, migrates and seeds a worktree's own database, and checks the migration order at verify",
+      "source": {
+        "source": "local",
+        "path": "./plugins/adf-prisma"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    },
+    {
+      "name": "adf-jira",
+      "version": "0.5.1",
+      "description": "Jira tracker for the Agentic Dev Flow: gathers issues at propose, starts them and hands them to the tester after the merge, plus guarded two-phase Jira skills for bulk changes, comments, epics, tasks, worklogs and the debt mirror",
+      "source": {
+        "source": "local",
+        "path": "./plugins/adf-jira"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

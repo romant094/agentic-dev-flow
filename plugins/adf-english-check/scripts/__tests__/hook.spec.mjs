@@ -51,6 +51,33 @@ test('a staged foreign line in a change artifact blocks the commit with path and
   assert.equal(out.stdout, '')
 })
 
+// The exact field set of Codex's PreToolUse command input (openai/codex, codex-rs/hooks/src/schema.rs
+// `PreToolUseCommandInput`, line 279; codex-rs/hooks/schema/generated/pre-tool-use.command.input.schema.json).
+function codexInput(command, cwd) {
+  return {
+    session_id: '019a0000-0000-7000-8000-000000000000',
+    turn_id: 't1',
+    transcript_path: null,
+    cwd,
+    hook_event_name: 'PreToolUse',
+    model: 'gpt-5-codex',
+    permission_mode: 'default',
+    tool_name: 'Bash',
+    tool_input: { command },
+    tool_use_id: 'call_1',
+  }
+}
+
+test('the English check blocks a non-English commit from Codex input', (t) => {
+  const r = repo()
+  t.after(() => rmSync(r.root, { recursive: true, force: true }))
+  r.write('openspec/changes/x/proposal.md', `# Why\n\nok\n${RU} text\n`)
+  r.git('add', '.')
+  const run = spawnSync('node', [HOOK], { input: JSON.stringify(codexInput('git commit -m x', r.root)), encoding: 'utf8' })
+  assert.equal(run.status, 2)
+  assert.match(run.stderr, new RegExp(`openspec/changes/x/proposal.md:4: ${RU} text`))
+})
+
 test('every offending line of every file is reported', (t) => {
   const r = repo()
   t.after(() => rmSync(r.root, { recursive: true, force: true }))

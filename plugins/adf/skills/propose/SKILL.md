@@ -1,8 +1,11 @@
 ---
+name: propose
 description: Propose a change - make its branch and worktree, then write every artifact up to the plan. Triggers may be phrased in any language.
 argument-hint: <change-name or description>
 effort: high
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name. Outside Claude Code, read `${CLAUDE_PLUGIN_ROOT}/schema/runtimes/<runtime>.md` first: it maps this text's dispatches and questions to your tools.
+
 
 Propose a change: the single entry point for a feature or for a change to what the system does.
 Its brainstorm covers exploration. A fix that restores already-specified behaviour, a typo,

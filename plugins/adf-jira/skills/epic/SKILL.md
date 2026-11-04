@@ -2,6 +2,8 @@
 name: epic
 description: Use to create an epic and decompose it into sub-tasks with estimates, or to add sub-tasks to an epic that already exists. Proposes the decomposition and the estimates for the developer to confirm, and reports the epic's rollup — estimated, logged, and the gap — read from Jira's own sum fields. Triggers on "create an epic", "decompose this epic", "add tasks to the epic". Triggers may be phrased in any language.
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name.
+
 
 # Jira Epic
 

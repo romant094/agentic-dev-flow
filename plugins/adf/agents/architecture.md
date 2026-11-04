@@ -12,5 +12,5 @@ prompt asks for, in the shape it asks for.
 
 The turn ceiling is an emergency stop, not a budget to spend. If you reach it, the runtime
 returns your work marked partial and the orchestrator can resume you. If you dispatch agents
-yourself, choose the agent of the level that work needs: `adf:mechanical`, `adf:integration` or
-`adf:architecture`.
+yourself, choose the agent of the level that work needs: mechanical, integration or architecture.
+The runtime reference, `schema/runtimes/<runtime>.md` in the plugin, says how to dispatch one.

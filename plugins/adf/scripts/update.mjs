@@ -19,7 +19,10 @@
 //       { ran: [[...claude args]], restored, installed[, ref] }: `claude plugin marketplace
 //       update`, then for each enabled package plugin `claude plugin update <id> --scope <scope>`
 //       when it has an install record for the scope, else `claude plugin install`, in the main
-//       directory. Scope defaults to what `check` reports. Project scope refuses when
+//       directory. In Codex: `codex plugin marketplace upgrade`, then `codex plugin add <id>` for
+//       each enabled package plugin; a project that pins a ref first moves the user's marketplace
+//       record to it (`marketplace remove` when it is on another ref, then `marketplace add
+//       romant094/agentic-dev-flow --ref <ref>`). Scope defaults to what `check` reports. Project scope refuses when
 //       .claude/settings.json has uncommitted changes, restores it after the calls, and refuses
 //       when the installed release is still older than the pinned ref
 //   update.mjs plan [--to <tag>] [--root <dir>]
@@ -47,8 +50,9 @@
 //       gone already); refuses any other directory
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { isMain } from './lib/main.mjs'
-import { claudeHome } from './lib/superpowers.mjs'
+import { detectRuntime, runtimeHome } from './lib/runtime.mjs'
 import { applyUpdate, checkUpdate, commitUpdate, latestTag, noticeMessage, planUpdate, pull, quietGit, remoteTags, removeClones } from './lib/update.mjs'
 
 export const USAGE =
@@ -125,7 +129,7 @@ function cachedLatest(home, git, now) {
   }
 }
 
-export function run(argv, { cwd = process.cwd(), git, now = Date.now(), claude } = {}) {
+export function run(argv, { cwd = process.cwd(), git, now = Date.now(), runtime = detectRuntime({ scriptPath: fileURLToPath(import.meta.url) }), run: runCli } = {}) {
   const { values, rest } = parse(argv)
   const [sub, ...extra] = rest
   if (extra.length > 0 || !Object.hasOwn(ALLOWED, sub)) throw new UsageError(USAGE)
@@ -137,14 +141,14 @@ export function run(argv, { cwd = process.cwd(), git, now = Date.now(), claude }
   if (values.base !== undefined && !/^[0-9a-f]{40,64}$/.test(values.base)) throw new UsageError('--base is the full commit id plan prints as baseCommit')
   if (values.to !== undefined && !/^v\d+\.\d+\.\d+$/.test(values.to)) throw new UsageError('--to is a release tag v<x.y.z>')
   const root = resolve(cwd, values.root ?? '.')
-  const home = values.home ? resolve(cwd, values.home) : claudeHome()
+  const home = values.home ? resolve(cwd, values.home) : runtimeHome(runtime)
   switch (sub) {
     case 'check':
-      return checkUpdate(root, { home, ...(git ? { git } : {}) })
+      return checkUpdate(root, { home, runtime, ...(git ? { git } : {}) })
     case 'pull': {
-      const scope = values.scope ?? checkUpdate(root, { home, ...(git ? { git } : {}), fetchLatest: () => null }).scope
+      const scope = values.scope ?? checkUpdate(root, { home, runtime, ...(git ? { git } : {}), fetchLatest: () => null }).scope
       if (scope === 'none') throw new Error('no ADF install found for this project or user; nothing to pull')
-      return pull({ root, scope, home, ...(claude ? { claude } : {}) })
+      return pull({ root, scope, home, runtime, ...(runCli ? { run: runCli } : {}) })
     }
     case 'plan':
       return planUpdate(root, { to: values.to ?? null, ...(git ? { git } : {}) })
@@ -159,7 +163,7 @@ export function run(argv, { cwd = process.cwd(), git, now = Date.now(), claude }
     }
     case 'notice': {
       try {
-        const message = noticeMessage(checkUpdate(root, { home, fetchLatest: cachedLatest(home, git, now) }))
+        const message = noticeMessage(checkUpdate(root, { home, runtime, fetchLatest: cachedLatest(home, git, now) }), { runtime })
         return message ? { systemMessage: message } : null
       } catch {
         return null

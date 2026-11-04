@@ -24,7 +24,7 @@ import { mainCheckout } from './installed.mjs'
 import { baseRef } from './plan-symbols.mjs'
 import { callHook, CORE } from './roles.mjs'
 import { prepareWorktree } from './prepare.mjs'
-import { claudeHome } from './superpowers.mjs'
+import { defaultHome } from './runtime.mjs'
 
 export const KINDS = ['change', 'group', 'base-check', 'proof']
 // The kinds a change's needs go to; a base-check or proof tree gets none.
@@ -32,7 +32,7 @@ export const NEEDS_KINDS = ['change', 'group']
 export const COPIES_HEADING = '## Worktree copies'
 const GUIDE = 'openspec/planning.md'
 
-const defaultCore = () => ({ ...CORE, home: claudeHome() })
+const defaultCore = () => ({ ...CORE, home: defaultHome() })
 
 function attempt(fn) {
   try {

@@ -3,8 +3,10 @@
 // knows the format, never a plugin by name.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, normalize } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { validateBranches } from './branches.mjs'
 import { installedPath, PLUGIN_ID } from './installed.mjs'
+import { detectRuntime, installCommand } from './runtime.mjs'
 import { trackerReport } from './roles.mjs'
 
 export const REGISTRY_PATH = '.claude/adf-extensions.json'
@@ -398,8 +400,9 @@ export function checkRegistry(root, { coreContract, points, home }) {
     } catch (error) {
       // A plugin that is not installed or is disabled is optional: the flow runs without it, so it only warns.
       const { id, reason } = error.absent ?? {}
-      if (reason === 'not-installed') warnings.push(`${id} is in the registry but not installed; its points are skipped (run: claude plugin install ${id} --scope project)`)
-      else if (reason === 'disabled') warnings.push(`${id} is in the registry but disabled; its points are skipped (run: claude plugin enable ${id})`)
+      const runtime = detectRuntime({ scriptPath: fileURLToPath(import.meta.url) })
+      if (reason === 'not-installed') warnings.push(`${id} is in the registry but not installed; its points are skipped (run: ${installCommand(runtime, id, 'project')})`)
+      else if (reason === 'disabled') warnings.push(`${id} is in the registry but disabled; its points are skipped (run: ${runtime === 'codex' ? `set enabled = true under [plugins."${id}"] in config.toml` : `claude plugin enable ${id}`})`)
       else errors.push(error.message)
     }
   }

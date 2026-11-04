@@ -28,6 +28,7 @@ person. A plugin reads records; it never writes one.
 | `change`, `branch`, `base` | the change's name, its branch, the branch it merges into |
 | `range` | `{ base, head }`: the commits the git figures come from |
 | `generatedAt` | when the record was built (ISO 8601, UTC) |
+| `runtime` | the runtime that ran the change, `claude-code` or `codex` (optional: a record without it was made by `claude-code`). Transcripts are read for `claude-code` only: in `codex` every transcript group is `null` and its coverage entry is `{ "none": "transcripts: transcripts of runtime codex are not read" }` |
 | `generator` | `{ plugin: "adf", version, plugins: { <name>: <version> } }`: the core's version and every enabled plugin's, from their manifests |
 | `sources` | see below |
 | the groups | see below |

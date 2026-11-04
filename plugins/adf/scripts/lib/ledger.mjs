@@ -8,6 +8,8 @@
 // timings) are not written here.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { detectRuntime, sessionId as runtimeSessionId } from './runtime.mjs'
 
 // Each kind and the fields a record of it must carry; `optional` fields may be omitted.
 export const KINDS = {
@@ -52,7 +54,11 @@ export const SUBJECT = /^(T[1-9]\d*|[A-Z]|final|sweep)$/
 export const RESOLVE_FINDING = { required: ['finding', 'as', 'where'], optional: [] }
 const FINDING_ID = /^F\d+$/
 const SHA = /^[0-9a-f]{7,40}$/
-export const SESSION_ENV = 'CLAUDE_CODE_SESSION_ID'
+// The session id of the runtime running the script: CODEX_THREAD_ID in Codex, else
+// CLAUDE_CODE_SESSION_ID (lib/runtime.mjs).
+const SELF = fileURLToPath(import.meta.url)
+export const sessionOf = (env) => runtimeSessionId(detectRuntime({ env, scriptPath: SELF }), env)
+const sessionEnvName = (env) => (detectRuntime({ env, scriptPath: SELF }) === 'codex' ? 'CODEX_THREAD_ID' : 'CLAUDE_CODE_SESSION_ID')
 
 export const ledgerPath = (root, change) => join(root, '.superpowers', 'sdd', change, 'ledger.jsonl')
 
@@ -99,7 +105,7 @@ export function buildRecord(kind, fields, { existing = [], sessionId = null, now
     throw new Error(`--task must be a task number, got "${fields.task}"`)
   }
   if (kind === 'session' && !sessionId) {
-    throw new Error(`session needs ${SESSION_ENV} in the environment; it is read, never typed`)
+    throw new Error('session needs CLAUDE_CODE_SESSION_ID (CODEX_THREAD_ID in Codex) in the environment; it is read, never typed')
   }
   if (kind === 'resolve') {
     if (!RESOLUTIONS.includes(fields.as)) throw new Error(`--as must be one of: ${RESOLUTIONS.join(', ')}`)
@@ -152,7 +158,7 @@ export function listRecords(root, change, { unresolvedOnly = false } = {}) {
 export function appendRecord(root, change, kind, fields, { env = process.env, now } = {}) {
   const path = ledgerPath(root, change)
   const existing = readRecords(root, change)
-  const record = buildRecord(kind, fields, { existing, sessionId: env[SESSION_ENV] ?? null, ...(now ? { now } : {}) })
+  const record = buildRecord(kind, fields, { existing, sessionId: sessionOf(env), ...(now ? { now } : {}) })
   mkdirSync(dirname(path), { recursive: true })
   appendFileSync(path, `${JSON.stringify(record)}\n`, 'utf8')
   return { record, path }
@@ -168,7 +174,7 @@ export const ATTEMPT_RESET = 'attempt-reset'
 export function appendAttemptReset(root, change, fields, { env = process.env, now = new Date().toISOString() } = {}) {
   const path = ledgerPath(root, change)
   const n = readRecords(root, change).filter((r) => r.kind === ATTEMPT_RESET).length + 1
-  const sessionId = env[SESSION_ENV] ?? null
+  const sessionId = sessionOf(env)
   const record = { id: `${ATTEMPT_RESET}-${n}`, kind: ATTEMPT_RESET, at: now, ...(sessionId ? { sessionId } : {}), by: 'developer', ...fields }
   mkdirSync(dirname(path), { recursive: true })
   appendFileSync(path, `${JSON.stringify(record)}\n`, 'utf8')
@@ -215,7 +221,7 @@ export function appendScripted(root, change, kind, fields, { env = process.env, 
   if (extra.length) throw new Error(`${kind} takes no ${extra.join(', ')}`)
   const path = ledgerPath(root, change)
   const n = readRecords(root, change).filter((r) => r.kind === kind).length + 1
-  const sessionId = env[SESSION_ENV] ?? null
+  const sessionId = sessionOf(env)
   const record = { id: `${kind}-${n}`, kind, at: now, ...(sessionId ? { sessionId } : {}), ...Object.fromEntries(keys.map((k) => [k, fields[k]])) }
   mkdirSync(dirname(path), { recursive: true })
   appendFileSync(path, `${JSON.stringify(record)}\n`, 'utf8')
@@ -227,8 +233,8 @@ export function appendScripted(root, change, kind, fields, { env = process.env, 
 // when it makes the change and again whenever it continues one, so both routes call this. The
 // result says why nothing was written; a missing session id is not an error of the caller's.
 export function recordSessionOnce(root, change, phase, { env = process.env, now } = {}) {
-  const sessionId = env[SESSION_ENV] ?? null
-  if (!sessionId) return { recorded: false, error: `session needs ${SESSION_ENV} in the environment; it is read, never typed` }
+  const sessionId = sessionOf(env)
+  if (!sessionId) return { recorded: false, error: `session needs ${sessionEnvName(env)} in the environment; it is read, never typed` }
   const existing = readRecords(root, change).find((r) => r.kind === 'session' && r.phase === phase && r.sessionId === sessionId)
   if (existing) return { recorded: false, id: existing.id, already: true }
   const { record, path } = appendRecord(root, change, 'session', { phase }, { env, ...(now ? { now } : {}) })

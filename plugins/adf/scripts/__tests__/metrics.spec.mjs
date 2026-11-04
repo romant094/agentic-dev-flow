@@ -99,6 +99,24 @@ test('a record built from SDD records, transcripts and git validates', () => {
   for (const g of GROUPS) assert.ok(r.sources.coverage[g] === 'record' || r.sources.coverage[g].none, g)
 })
 
+test('metrics in codex: transcript figures null with the reason, record has runtime codex', () => {
+  const h = measuredHost()
+  const r = buildRecord({ root: h.change, change: CHANGE, now: NOW, projectsDir: h.projectsDir, runtime: 'codex' })
+  assert.deepEqual(validateRecord(JSON.parse(JSON.stringify(r))), [])
+  assert.equal(r.runtime, 'codex')
+  assert.equal(r.sources.transcripts, null)
+  assert.equal(r.tokens, null)
+  assert.match(r.sources.coverage.tokens.none, /transcripts of runtime codex are not read/)
+  assert.equal(buildRecord({ root: h.change, change: CHANGE, now: NOW, projectsDir: h.projectsDir }).runtime, 'claude-code')
+})
+
+test('a record without runtime still validates', () => {
+  const h = measuredHost()
+  const r = JSON.parse(JSON.stringify(buildRecord({ root: h.change, change: CHANGE, now: NOW, projectsDir: h.projectsDir })))
+  delete r.runtime
+  assert.deepEqual(validateRecord(r), [])
+})
+
 test('a source absent is null with its coverage reason, never 0, and no machine path', () => {
   const h = host()
   const empty = realpathSync(mkdtempSync(join(tmpdir(), 'adf-metrics-none-')))

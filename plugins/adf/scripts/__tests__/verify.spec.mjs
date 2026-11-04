@@ -653,6 +653,15 @@ test('run clears the sections of another session by itself; --fresh still forces
   assert.equal(existsSync(join(dir, 'c4.json')), false)
 })
 
+test('verify compares the session by the runtime\'s id', () => {
+  const { root } = host()
+  const codex = (id) => ({ ADF_RUNTIME: 'codex', CODEX_THREAD_ID: id, CLAUDE_CODE_SESSION_ID: 'same' })
+  assert.equal(runChecks(root, { change: CHANGE, env: codex('t1') }).session, 't1')
+  section(root, 'c4', 'pass')
+  assert.equal(runChecks(root, { change: CHANGE, env: codex('t1') }).cleared, null)
+  assert.equal(runChecks(root, { change: CHANGE, env: codex('t2') }).cleared, 'new session')
+})
+
 // A section describes the HEAD it was written at, and the verify replies' count restarts with the
 // session: HEAD moved by code opens a new one in the same harness session; a commit no review
 // reads (the change's own directory, filtered files) does not.
@@ -1093,4 +1102,12 @@ test('verify-check with no commit range calls no provider; each is a not-run sec
   assert.deepEqual(ext.map((c) => [c.id, c.verdict]), [['ext:db:verify-check', 'not-run']])
   assert.match(ext[0].summary, /^no commit range: /)
   assert.equal(existsSync(log), false)
+})
+
+test('codex: prompts carries level and reasoningEffort, and each prompt starts with the level text', () => {
+  const { root } = host()
+  runChecks(root, { change: CHANGE })
+  const result = verifyCli(['prompts', '--change', CHANGE, '--root', root], { env: {}, runtime: 'codex' })
+  assert.deepEqual(result.dispatches.map((d) => [d.check, d.agent, d.level, d.reasoningEffort]), [['c4', undefined, 'architecture', 'high'], ['c8', undefined, 'integration', 'medium']])
+  assert.match(result.dispatches[1].prompt, /^You are a subagent of an ADF change workflow, dispatched at its \*\*integration\*\*/)
 })

@@ -5,7 +5,8 @@
 //   {"ok":false,"reason":"...","install":"claude plugin install ..."}
 //
 // --root <dir> names the host project (default: the current directory); --home <dir> the
-// Claude Code home (default: $CLAUDE_CONFIG_DIR, else ~/.claude).
+// runtime's home (default: $CLAUDE_CONFIG_DIR, else ~/.claude; in Codex $CODEX_HOME, else
+// ~/.codex).
 import { checkSuperpowers } from './lib/superpowers.mjs'
 import { isMain } from './lib/main.mjs'
 

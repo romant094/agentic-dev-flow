@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { test } from 'node:test'
-import { pluginRoot } from '../lib/plugin-root.mjs'
+import { pluginRoot, substituteRoot } from '../lib/plugin-root.mjs'
 
 function plugin(dir) {
   mkdirSync(join(dir, '.claude-plugin'), { recursive: true })
@@ -37,4 +37,16 @@ test('a cached root counts when the home is a symlink and the script path is res
   const result = pluginRoot({ home, scriptUrl: plugin(root) })
   assert.equal(result.cached, true)
   assert.equal(result.warning, null)
+})
+
+test('without a home, the Codex cache counts for a script under CODEX_HOME', () => {
+  const codexHome = mkdtempSync(join(tmpdir(), 'adf-codex-home-'))
+  const root = join(codexHome, 'plugins', 'cache', 'market', 'adf', '1.2.3')
+  const result = pluginRoot({ scriptUrl: plugin(root), env: { CODEX_HOME: codexHome } })
+  assert.equal(result.cached, true)
+  assert.equal(result.warning, null)
+})
+
+test('substituteRoot replaces every ${CLAUDE_PLUGIN_ROOT}', () => {
+  assert.equal(substituteRoot('a ${CLAUDE_PLUGIN_ROOT}/x and "${CLAUDE_PLUGIN_ROOT}/y"', '/p'), 'a /p/x and "/p/y"')
 })

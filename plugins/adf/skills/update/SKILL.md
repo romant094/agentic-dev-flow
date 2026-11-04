@@ -1,7 +1,10 @@
 ---
+name: update
 description: Update this project's ADF to the latest release, or to a given tag, in one merge request that pins the new release, migrates the registry and merges the host files. Triggers on "update ADF", "update the flow", "upgrade adf". Triggers may be phrased in any language.
 argument-hint: [--to <tag>]
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name. Outside Claude Code, read `${CLAUDE_PLUGIN_ROOT}/schema/runtimes/<runtime>.md` first: it maps this text's dispatches and questions to your tools.
+
 
 Update the project's ADF package to the latest release, or to the tag given with `--to`. The
 update is one branch, `chore/adf-update-<version>`, in its own worktree, and one merge request.
@@ -20,7 +23,10 @@ Never merge it: the developer merges it.
    - `project` with `pull` true: the installed release is older than the one the project pins.
      Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/update.mjs" pull`. Show what it ran and `installed`
      against `ref`, or its `error` (it names both versions when the install is still older).
-     Tell the developer to restart the session so the pinned release loads, and stop;
+     Tell the developer to restart the session so the pinned release loads, and stop. In Codex
+     `pull` runs `codex plugin marketplace upgrade` and `codex plugin add <id>` (first moving the
+     user's marketplace record to the pinned ref), and the user's record is the only one Codex
+     has: say that it now follows this project's ref;
    - `user` with `behind` true: this is a user-scope install outside a project that pins a
      release. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/update.mjs" pull --scope user`, and show
      `installed` against `latest` (or its `error`). Say that the global marketplace record is

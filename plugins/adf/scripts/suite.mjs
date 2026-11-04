@@ -45,7 +45,7 @@ import { fileURLToPath } from 'node:url'
 import { commitPaths } from './lib/commit.mjs'
 import { pushChange } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
-import { claudeHome } from './lib/superpowers.mjs'
+import { defaultHome } from './lib/runtime.mjs'
 import { DEFAULT_TIMEOUT_MINUTES, readCommand, recordMessage, recordName, runCovering, runSuite, SECTIONS, SET_MESSAGE, writeCommand } from './lib/suite.mjs'
 
 export const USAGE =
@@ -57,7 +57,7 @@ export class UsageError extends Error {}
 const here = dirname(fileURLToPath(import.meta.url))
 function core() {
   const c = JSON.parse(readFileSync(join(here, '..', 'contract', 'contract.json'), 'utf8'))
-  return { coreContract: c.version, points: c.points, home: claudeHome() }
+  return { coreContract: c.version, points: c.points, home: defaultHome() }
 }
 
 const VALUED = ['--change', '--root', '--command', '--section', '--timeout', '--name', '--worktree']

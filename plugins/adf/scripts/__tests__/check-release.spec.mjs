@@ -30,3 +30,10 @@ test('a v-tag on HEAD must equal v<metadata.version>', () => {
   assert.equal(checkRelease({ ...base, headTags: ['v0.19.0'] }).length, 1)
   assert.deepEqual(checkRelease({ ...base, headTags: ['v0.18.1'] }), [])
 })
+
+test('a generated Codex manifest that differs fails the check', () => {
+  const base = { marketplace: marketplace('0.18.1'), manifests: { adf: '0.18.1' }, headTags: [] }
+  const errors = checkRelease({ ...base, differ: ['plugins/adf/plugin.json'] })
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /plugins\/adf\/plugin\.json/)
+})

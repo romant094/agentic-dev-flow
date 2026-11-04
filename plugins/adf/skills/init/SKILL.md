@@ -1,6 +1,9 @@
 ---
+name: init
 description: Set up ADF in this project, or report what is missing if it is already set up. Triggers may be phrased in any language.
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name. Outside Claude Code, read `${CLAUDE_PLUGIN_ROOT}/schema/runtimes/<runtime>.md` first: it maps this text's dispatches and questions to your tools.
+
 
 Set up the ADF core in the current project. Running it again is safe: it creates only what is
 missing and changes nothing that exists.
@@ -116,6 +119,9 @@ missing and changes nothing that exists.
    If `suite.current` is not null, change nothing for the command; if `copies.candidates` is
    empty, change nothing for the copies.
 
+   If `trustHooks` is true, tell the developer: "Open /hooks once and trust the ADF hooks; Codex
+   does not run a hook it has not trusted." Show it again in step 9.
+
 7. Read the `## Format command` section of `openspec/planning.md`. If it holds no command, read
    the project's format scripts (the `package.json` scripts, the `Makefile`, the git hook
    configuration such as `lefthook.yml` or `.husky/`) and propose one command that formats the
@@ -144,7 +150,8 @@ missing and changes nothing that exists.
    `Worktree preparation: <n> step(s)`, one line `Whole-suite command: <command>` or
    `Whole-suite command: none; apply asks for it`, one line `Worktree copies: <paths>` or
    `Worktree copies: none`, and one line `Format command: <command>` or
-   `Format command: none`. Then the `report` of step 8 as it is. The report includes the
+   `Format command: none`. Then the `report` of step 8 as it is. When `trustHooks` was true in step 6, the
+   hook-trust message of step 6. The report includes the
    tracker's check and its notes when a plugin
    provides the tracker; act on a note, for example
    run `/adf-jira:setup`. When Superpowers is not available, continue: setup does not need

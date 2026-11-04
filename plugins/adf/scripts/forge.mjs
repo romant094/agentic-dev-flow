@@ -22,7 +22,7 @@ import { changeDir, inferChange, readChangeMeta, refuseMainCheckout } from './li
 import { readBranches } from './lib/branches.mjs'
 import { loadSchema } from './lib/schema.mjs'
 import { execFileSync } from 'node:child_process'
-import { claudeHome } from './lib/superpowers.mjs'
+import { defaultHome } from './lib/runtime.mjs'
 import { isMain } from './lib/main.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -50,7 +50,7 @@ function readState(root, change) {
 export function run(argv) {
   const args = [...argv]
   const root = option(args, '--root') ?? process.cwd()
-  const home = option(args, '--home') ?? claudeHome()
+  const home = option(args, '--home') ?? defaultHome()
   const text = option(args, '--input')
   const file = option(args, '--input-file')
   const change = option(args, '--change')

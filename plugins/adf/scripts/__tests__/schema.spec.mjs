@@ -89,7 +89,7 @@ test('the shipped schema gates specs, tasks and plan with the checks propose use
 
 test('the core text an agent copies from is written in English', () => {
   const root = join(SCHEMA_DIR, '..')
-  const files = ['schema', 'commands', 'host'].flatMap((folder) =>
+  const files = ['schema', 'skills', 'host'].flatMap((folder) =>
     readdirSync(join(root, folder), { recursive: true }).map((f) => join(root, folder, f)).filter((f) => f.endsWith('.md') || f.endsWith('.json'))
   )
   assert.ok(files.length > 10)
@@ -102,15 +102,15 @@ test('no dispatch-facing text asks for a repository-wide git mutation', () => {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
   const files = [
     'schema/instructions/apply.md',
-    'commands/apply.md',
+    'skills/apply/SKILL.md',
     'schema/instructions/verify.md',
-    'commands/verify.md',
+    'skills/verify/SKILL.md',
     'schema/instructions/review.md',
-    'commands/review.md',
+    'skills/review/SKILL.md',
     'schema/instructions/archive.md',
-    'commands/archive.md',
+    'skills/archive/SKILL.md',
     'schema/instructions/retro.md',
-    'commands/retro.md',
+    'skills/retro/SKILL.md',
     ...readdirSync(join(root, 'agents')).map((f) => `agents/${f}`),
     ...readdirSync(join(root, 'schema', 'prompts')).map((f) => `schema/prompts/${f}`)
   ]
@@ -165,7 +165,7 @@ test('the archive block points at an instruction naming every archive.mjs step, 
   assert.deepEqual(schema.artifacts.filter((a) => a.id === 'archive' || /ledger/.test(a.generates)), [])
   const instruction = readFileSync(join(SCHEMA_DIR, 'instructions', 'archive.md'), 'utf8')
   for (const step of STEPS) assert.match(instruction, new RegExp(`^\\s*\\d+\\. \\*\\*\`${step}\``, 'm'), `the instruction gives no rule for ${step}`)
-  const command = readFileSync(join(SCHEMA_DIR, '..', 'commands', 'archive.md'), 'utf8')
+  const command = readFileSync(join(SCHEMA_DIR, '..', 'skills', 'archive', 'SKILL.md'), 'utf8')
   assert.match(command, /^effort: medium$/m)
   assert.match(command, /preflight\.mjs --phase archive/)
   assert.match(command, /archive\.mjs" next --change/)
@@ -182,7 +182,7 @@ test('the archive instruction states --no-ci and every report line; the command 
   assert.match(instruction, /`\/adf:retro --change <change>`/)
   assert.match(instruction, /from the states, from git and from\s+the change's metrics record/)
   assert.doesNotMatch(instruction, /from the states alone/)
-  const command = readFileSync(join(SCHEMA_DIR, '..', 'commands', 'archive.md'), 'utf8')
+  const command = readFileSync(join(SCHEMA_DIR, '..', 'skills', 'archive', 'SKILL.md'), 'utf8')
   assert.match(command, /`--no-ci`/)
   assert.match(command, /`\/adf:retro --change`/)
 })
@@ -198,7 +198,7 @@ test('the retro block points at an instruction naming every retro.mjs step, and 
   for (const step of RETRO_STEPS) assert.match(instruction, new RegExp(`^\\s*\\d+\\. \\*\\*\`${step}\``, 'm'), `the instruction gives no rule for ${step}`)
   assert.match(instruction, /writes no debt/)
   assert.match(instruction, /`retro <id>`/)
-  const command = readFileSync(join(SCHEMA_DIR, '..', 'commands', 'retro.md'), 'utf8')
+  const command = readFileSync(join(SCHEMA_DIR, '..', 'skills', 'retro', 'SKILL.md'), 'utf8')
   assert.match(command, /^effort: medium$/m)
   assert.match(command, /schema\/instructions\/retro\.md/)
   const order = RETRO_STEPS.map((step) => command.search(new RegExp(`retro\\.mjs["\`]? ${step}\\b`)))

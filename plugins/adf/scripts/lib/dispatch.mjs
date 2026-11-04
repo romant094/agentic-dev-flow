@@ -21,8 +21,11 @@
 //   retro <id>     (the retrospective, lib/retro.mjs; no change; <id> is <date>-window,
 //                  <date>-period or <date>-<change>)
 //
-// Pure: every read of the tree is done by the caller and passed in.
-import { join } from 'node:path'
+// Pure: every read of the tree is done by the caller and passed in; only `dispatchAgent` reads
+// an agent file.
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 export const LEVELS = ['mechanical', 'integration', 'architecture']
 export const TASK_ROLES = ['impl', 'review', 're-review', 'fix']
@@ -466,6 +469,31 @@ export function planDispatch(inputs, { root, main, planText, exists }) {
   out.replyFile = replyFile(root, change, name, exists)
   return out
 }
+
+// ---------------------------------------------------------------- the agent, by runtime
+
+// How a runtime dispatches a capability level. Claude Code names the plugin's agent. Codex loads
+// no plugin agent, so the flow passes the level's `effort` as `reasoning_effort` and puts the
+// agent file's body in front of the prompt.
+export function dispatchAgent(level, runtime, agentsDir = AGENTS_DIR) {
+  if (runtime !== 'codex') return { agent: `adf:${level}` }
+  const text = readFileSync(join(agentsDir, `${level}.md`), 'utf8')
+  const match = text.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)
+  const effort = match?.[1].match(/^effort:\s*(\S+)\s*$/m)?.[1]
+  if (!effort) throw new Error(`${join(agentsDir, `${level}.md`)} has no effort`)
+  return { reasoningEffort: effort, preamble: match[2].trim() }
+}
+
+const AGENTS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'agents')
+
+// What a script that writes its own prompt file prints for a dispatch, and the text it puts in
+// front of that prompt: { fields: { agent } | { level, reasoningEffort }, preamble: string|null }.
+export function dispatchFields(level, runtime, agentsDir = AGENTS_DIR) {
+  const { preamble, ...rest } = dispatchAgent(level, runtime, agentsDir)
+  return preamble === undefined ? { fields: rest, preamble: null } : { fields: { level, ...rest }, preamble }
+}
+
+export const withPreamble = (text, preamble) => (preamble === null ? text : `${preamble}\n\n${text}`)
 
 // ---------------------------------------------------------------- the prompt
 

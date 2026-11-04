@@ -1,13 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   DEFAULT_PRICES_URL,
   RUNTIME,
   autonomyOf,
+  commandsOf,
   encodeKeys,
+  parseRecords,
   projectKeys,
   readTranscripts,
   responses,
@@ -152,6 +154,10 @@ test('sessions: the ledger first, then the branch, marked by source; unresolved 
   assert.deepEqual(value.unresolved, ['s9'])
 })
 
+test('transcripts of another runtime are not read', () => {
+  assert.deepEqual(readTranscripts({ repoPath: REPO, branch: BRANCH, ledger, projectsDir: fixture(), runtime: 'codex' }), { value: null, reason: 'transcripts of runtime codex are not read' })
+})
+
 test('a session is measured on its branch records; a sidechain record is kept apart', () => {
   const { value } = readTranscripts({ repoPath: REPO, branch: BRANCH, ledger, projectsDir: fixture() })
   const s1 = value.sessions.find((s) => s.id === 's1')
@@ -264,4 +270,12 @@ test('sessions and their subagents are measured from the change\'s first ledger 
   assert.deepEqual(p1.responses.map((r) => r.id), ['m2', 'm3'])
   assert.equal(p1.foreignRecords, 0, 'the lead-in is the change\'s own, not foreign')
   assert.deepEqual(p1.subagents.map((a) => a.agentId), ['b1'])
+})
+
+// Recorded by `claude -p "/adf:init"` in Claude Code (iteration 17, Task 11) and trimmed to two records: the skill invocation is
+// a `<command-name>` user record, followed by a meta record that holds the skill body.
+test('a skill invocation is marked like a command', () => {
+  const records = parseRecords(readFileSync(join(import.meta.dirname, 'fixtures', 'skill-invocation.jsonl'), 'utf8'))
+  assert.deepEqual(commandsOf(records), [{ at: '2026-11-04T10:24:52.479Z', name: 'adf:init' }])
+  assert.deepEqual(autonomyOf(records), { developerMessages: 0, askUserQuestion: 0, clears: 0 })
 })

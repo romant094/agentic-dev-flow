@@ -2,6 +2,8 @@
 name: comment
 description: Use to write a comment on a Jira issue, or to correct one already written — one issue or a selection. Drafts the text, shows it, and posts it only after confirmation. Also drafts without posting, for when the wording needs agreeing first. Triggers on "comment on this issue", "add a note to the ticket", "fix my last comment". Triggers may be phrased in any language.
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name.
+
 
 # Jira Comment
 

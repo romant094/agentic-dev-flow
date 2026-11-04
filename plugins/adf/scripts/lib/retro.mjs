@@ -44,7 +44,8 @@ import { installedPath } from './installed.mjs'
 import { generatorOf, RECORD_FILE } from './metrics.mjs'
 import { LAYERS } from './metrics-records.mjs'
 import { checkReply, replyContext } from './reply.mjs'
-import { claudeHome, readJson } from './superpowers.mjs'
+import { defaultHome } from './runtime.mjs'
+import { readJson } from './superpowers.mjs'
 import { readBlobs, recordOf } from './window.mjs'
 
 export const INPUT_VERSION = 1
@@ -112,7 +113,7 @@ export function prematureDone(events) {
 
 // The plugins a finding may name: the core, each enabled plugin and each plugin installed for
 // this project, with the version its manifest gives. An enabled plugin's manifest wins.
-export function pluginsInForce(root, { home = claudeHome() } = {}) {
+export function pluginsInForce(root, { home = defaultHome() } = {}) {
   const out = new Map()
   const generator = generatorOf(root, { home }).value
   if (generator) {
@@ -180,8 +181,8 @@ function changeInput(c, record, events, put) {
 }
 
 // The retro agent's input.json from a sidecar. `root` is a checkout holding the sidecar's ref,
-// whose tree gives each change's record and attempts log; `home` the Claude Code home.
-export function input(sidecar, { root, home = claudeHome() } = {}) {
+// whose tree gives each change's record and attempts log; `home` the runtime's home.
+export function input(sidecar, { root, home = defaultHome() } = {}) {
   const values = {}
   const put = (key, value) => {
     if (value !== null && value !== undefined && (typeof value === 'string' || num(value))) values[key] = value

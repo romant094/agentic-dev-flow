@@ -451,6 +451,18 @@ test('a commit made by a run that failed before saving its state is adopted, not
   assert.equal(g(h.wt, ['rev-parse', 'HEAD']), head)
 })
 
+test('in Codex the retro dispatch names the level and its effort, and its prompt starts with the agent body', () => {
+  const h = host()
+  const deps = { ...NONE, runtime: 'codex' }
+  call(h, ['start', '--date', DATE], deps)
+  const plan = call(h, ['window'], deps).detail.dispatch
+  assert.equal(plan.agent, undefined)
+  assert.deepEqual([plan.name, plan.level, plan.reasoningEffort], [`retro ${ID}`, 'architecture', 'high'])
+  const body = readFileSync(join(here, '..', '..', 'agents', 'architecture.md'), 'utf8').split(/^---$/m).slice(2).join('---').trim()
+  const prompt = readFileSync(plan.promptFile, 'utf8')
+  assert.ok(prompt.startsWith(`${body}\n\nYou are dispatched as \`retro ${ID}\``), prompt.slice(0, 200))
+})
+
 test('an invalid reply is retried once; a second stops the retrospective and nothing after it runs', () => {
   const h = host()
   call(h, ['start', '--date', DATE])

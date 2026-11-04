@@ -2,6 +2,8 @@
 name: task
 description: Use to create one Jira issue from a description — a task, a bug, a story — with the fields its type actually requires, optionally attached to an epic. Drafts the text, shows it, and creates it only after confirmation. Also drafts without creating, for when the wording needs agreeing first or there is no token. Triggers on "create a task", "raise a bug", "new issue for this". Triggers may be phrased in any language.
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name.
+
 
 # Jira Task
 

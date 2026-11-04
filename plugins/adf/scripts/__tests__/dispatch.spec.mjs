@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { schedule } from '../lib/plan.mjs'
-import { dispatchName, MAX_ROUNDS, normalize, parseGraph, parseName, planDispatch, renderPrompt, ROLES, roundOf, ruleSkeletons, verbatimBlocks } from '../lib/dispatch.mjs'
+import { dispatchAgent, dispatchName, MAX_ROUNDS, normalize, parseGraph, parseName, planDispatch, renderPrompt, ROLES, roundOf, ruleSkeletons, verbatimBlocks } from '../lib/dispatch.mjs'
 import { frameTools, renderSkeleton } from '../lib/scope.mjs'
 import { PLUGIN_ROOT, PROMPTS_DIR, run } from '../dispatch.mjs'
 import { appendRecord, appendScripted } from '../lib/ledger.mjs'
@@ -17,10 +17,12 @@ import { subjectState, writeDeferred } from '../lib/loop.mjs'
 import { readLedger as readMetricsLedger, readReplies } from '../lib/metrics-records.mjs'
 import { ROLES as REPLY_ROLES } from '../lib/reply.mjs'
 import { superpowersHome } from './git-host.mjs'
+import { RUNTIMES } from '../lib/runtime.mjs'
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'dispatch.mjs')
 const CHANGE = 'add-x'
 const MAIN = '/main'
+const AGENTS = join(PLUGIN_ROOT, 'agents')
 
 const task = (n, level, extra = '') => `### Task ${n}: thing ${n}
 
@@ -652,7 +654,7 @@ test('every prompt skeleton reaches its agent through the frame or renderSkeleto
 // none of their sentences: a rule an agent is told lives in its skeleton alone.
 test('the apply instruction and command restate no sentence of an apply prompt skeleton', () => {
   const pluginRoot = join(PROMPTS_DIR, '..', '..')
-  const surfaces = ['schema/instructions/apply.md', 'commands/apply.md'].map((p) => normalize(readFileSync(join(pluginRoot, p), 'utf8')))
+  const surfaces = ['schema/instructions/apply.md', 'skills/apply/SKILL.md'].map((p) => normalize(readFileSync(join(pluginRoot, p), 'utf8')))
   const skeletons = readdirSync(PROMPTS_DIR).filter((f) => f.endsWith('.md') && !f.startsWith('verify'))
   assert.ok(skeletons.length >= 8, skeletons.join(', '))
   const restated = []
@@ -1190,4 +1192,49 @@ test('land-comment <KEY> is a fixed-form name: parsed with its key, refused with
   assert.equal(landCommentName('PROJ-12'), 'land-comment PROJ-12')
   assert.throws(() => landCommentName('a b'), /is not a scope key/)
   assert.deepEqual(LAND_ROLES['land-comment'], { level: 'integration', schema: 'land-comment.schema.json' })
+})
+
+function writeQuestion(root) {
+  const q = join(root, 'q.txt')
+  writeFileSync(q, 'Implement Task 2.')
+  return q
+}
+
+test('prompt output names no ${CLAUDE_PLUGIN_ROOT}, in either runtime', () => {
+  const root = host()
+  for (const runtime of ['claude-code', 'codex']) {
+    const out = run(['prompt', '--role', 'impl', '--task', '2', '--question-file', writeQuestion(root), '--change', CHANGE, '--root', root], { main: MAIN, runtime })
+    assert.doesNotMatch(JSON.stringify(out), /\$\{CLAUDE_PLUGIN_ROOT\}/)
+  }
+})
+
+test('claude-code dispatch names adf:integration', () => {
+  assert.deepEqual(dispatchAgent('integration', 'claude-code', AGENTS), { agent: 'adf:integration' })
+  const out = run(['plan', '--role', 'impl', '--task', '2', '--change', CHANGE, '--root', host()], { main: MAIN, runtime: 'claude-code' })
+  assert.equal(out.agent, 'adf:integration')
+})
+
+test('codex dispatch carries effort medium and the integration body, and the prompt file starts with it', () => {
+  const agent = dispatchAgent('integration', 'codex', AGENTS)
+  const body = readFileSync(join(AGENTS, 'integration.md'), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '').trim()
+  assert.deepEqual(agent, { reasoningEffort: 'medium', preamble: body })
+  assert.match(body, /^You are a subagent of an ADF change workflow/)
+  const root = host()
+  const out = run(['prompt', '--role', 'impl', '--task', '2', '--question-file', writeQuestion(root), '--change', CHANGE, '--root', root], { main: MAIN, runtime: 'codex' })
+  assert.equal(out.agent, undefined)
+  assert.equal(out.reasoningEffort, 'medium')
+  assert.equal(out.preamble, body)
+  assert.ok(out.prompt.startsWith(`${body}\n\n`))
+})
+
+test('every runtime reference has the same section headings', () => {
+  const dir = join(PLUGIN_ROOT, 'schema', 'runtimes')
+  const headings = (runtime) => readFileSync(join(dir, `${runtime}.md`), 'utf8').split('\n').filter((l) => l.startsWith('## '))
+  const [first, ...others] = RUNTIMES.map(headings)
+  assert.equal(first.length, 4)
+  for (const other of others) assert.deepEqual(other, first)
+})
+
+test('the agent files name no runtime-specific agent id, so their body is right as a Codex preamble', () => {
+  for (const level of ['mechanical', 'integration', 'architecture']) assert.doesNotMatch(dispatchAgent(level, 'codex', AGENTS).preamble, /adf:/)
 })

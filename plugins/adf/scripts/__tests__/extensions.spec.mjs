@@ -281,3 +281,13 @@ test('where reports the plugin root the scripts run from', () => {
   assert.equal(out.cached, false)
   assert.match(out.warning, /^the adf scripts run from .* not from an installed release$/)
 })
+
+test('where judges cached against the home of the runtime the script runs under', () => {
+  const codexHome = mkdtempSync(join(tmpdir(), 'adf-codex-'))
+  const installed = join(codexHome, 'plugins', 'cache', 'mk', 'adf', '1.0.0')
+  cpSync(join(here, '..', '..'), installed, { recursive: true })
+  const where = (...args) => JSON.parse(execFileSync('node', [join(installed, 'scripts', 'extensions.mjs'), 'where', ...args], { encoding: 'utf8', env: { ...process.env, CODEX_HOME: codexHome } }))
+  assert.equal(where().cached, true)
+  // An explicit --home still wins: the Claude Code home holds no such cache.
+  assert.equal(where('--home', home).cached, false)
+})

@@ -1,8 +1,11 @@
 ---
+name: verify
 description: Verify a change - check that the implementation matches its artifacts, and commit the record. Triggers may be phrased in any language.
 argument-hint: <change-name>
 effort: medium
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name. Outside Claude Code, read `${CLAUDE_PLUGIN_ROOT}/schema/runtimes/<runtime>.md` first: it maps this text's dispatches and questions to your tools.
+
 
 Verify a change: check that what apply built matches the change's specs, tasks and design, and
 write `verify.md`, the record the review reads. Verify runs after apply and before the review.

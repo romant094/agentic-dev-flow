@@ -72,6 +72,24 @@ test('a provider that prints no result, or an unknown operation, is refused with
   assert.match(usage.report, /^Merge request: refused; --input needs a value/)
 })
 
+// Under Codex an entry script finds a registry plugin in the Codex home: the default home is the
+// runtime's, not Claude Code's.
+test('in Codex, an entry script with no --home finds a registry plugin installed in the Codex home', () => {
+  const codexHome = mkdtempSync(join(tmpdir(), 'adf-codex-home-'))
+  writeFileSync(join(codexHome, 'config.toml'), '[plugins."fake@market"]\nenabled = true\n')
+  const dir = join(codexHome, 'plugins', 'cache', 'market', 'fake', '1.0.0')
+  mkdirSync(join(dir, 'scripts'), { recursive: true })
+  writeFileSync(join(dir, 'adf-extension.json'), JSON.stringify({ name: 'fake', contract: '1.2', provides: { forge: { script: 'scripts/f.mjs', operations: ['check', 'open', 'push', 'finalize'] } } }))
+  writeFileSync(join(dir, 'scripts', 'f.mjs'), ECHO)
+  const root = host()
+  writeRegistry(root, { ...readRegistry(root), extensions: [{ plugin: 'fake@market', config: { host: 'h' } }] })
+  const env = { ...process.env, ADF_RUNTIME: 'codex', CODEX_HOME: codexHome, CLAUDE_CONFIG_DIR: mkdtempSync(join(tmpdir(), 'adf-claude-home-')) }
+  const out = JSON.parse(execFileSync('node', [cli, 'check', '--root', root], { encoding: 'utf8', env }))
+  assert.equal(out.state, 'done', JSON.stringify(out))
+  assert.equal(out.plugin, 'fake')
+  assert.deepEqual(out.config, { host: 'h' })
+})
+
 test('callRole refuses an operation the point does not declare, before looking for a provider', () => {
   const core = { points: { forge: { operations: ['check'] } } }
   assert.throws(() => callRole(host(), 'forge', 'merge', {}, core), /forge has no operation merge/)

@@ -4,7 +4,7 @@
 // .superpowers/sdd/<change>/land/land.json, so a rerun resumes: a step done or skipped returns
 // what it recorded, with `already`. Prints one JSON object on stdout; exit 1 on a refusal or a
 // result with ok false, exit 2 on a usage error. --root is any checkout of the host (default: the
-// current directory); --home names the Claude Code home where the plugins are found. Land never
+// current directory); --home names the runtime's home where the plugins are found. Land never
 // merges and never pushes.
 //
 //   land.mjs check --change <name>
@@ -18,7 +18,7 @@
 //       else from patch ids (a squash merge)
 //   land.mjs comment-input --change <name>
 //       one input file and one prompt per taken or partial tracker issue: { dispatches: [{ name,
-//       key, state, agent, worktree, inputFile, promptFile, replyFile }] }; dispatch each as
+//       key, state, agent (in Codex level and reasoningEffort), worktree, inputFile, promptFile, replyFile }] }; dispatch each as
 //       `land-comment <KEY>`, read-only. A change the main checkout lacks is read from the merge
 //       commit, fetched when it is not local; the main checkout is never pulled
 //   land.mjs comment --change <name> --key <KEY> --file <reply json>
@@ -31,10 +31,11 @@
 //   land.mjs report --change <name>
 //       read-only: { ok, complete, skipped, stopped, done, next, file, steps, report }
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { checkStep, commentInputStep, commentStep, handoffStep, landContext, Refusal, report, waitStep } from './lib/land.mjs'
 import { isMain } from './lib/main.mjs'
-import { claudeHome } from './lib/superpowers.mjs'
+import { defaultHome, detectRuntime } from './lib/runtime.mjs'
 
 export const USAGE = `usage:
   land.mjs check|wait --change <name> [--root <dir>] [--home <dir>]
@@ -79,7 +80,7 @@ export function run(argv, { cwd = process.cwd(), deps = {} } = {}) {
   const stray = Object.keys(values).filter((k) => !['change', 'root'].includes(k) && !TAKES[command].includes(k))
   if (stray.length > 0) usage(`${command} takes no --${stray[0]}`)
   if (!values.change) usage(`${command} needs --change <name>`)
-  const ctx = landContext(resolve(cwd, values.root ?? '.'), values.change, { home: values.home ?? claudeHome(), ...deps })
+  const ctx = landContext(resolve(cwd, values.root ?? '.'), values.change, { home: values.home ?? defaultHome(), runtime: detectRuntime({ scriptPath: fileURLToPath(import.meta.url) }), ...deps })
   switch (command) {
     case 'check':
       return checkStep(ctx)

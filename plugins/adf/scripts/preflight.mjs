@@ -19,8 +19,8 @@
 // the branch policy from `workspace.mjs suggest` under `workspace`, with `exists` for a change
 // already in flight; uncommitted tracked work refuses.
 //
-// --root defaults to the current directory; --home names the Claude Code home (default:
-// $CLAUDE_CONFIG_DIR, else ~/.claude).
+// --root defaults to the current directory; --home names the runtime's home (default:
+// $CLAUDE_CONFIG_DIR, else ~/.claude; in Codex $CODEX_HOME, else ~/.codex).
 //
 //   {"ok", "refusal"?, "phase", "change", "main", "root", "branch", "protected", "base", "state",
 //    "progress", "sdd", "planFindings"?, "verify"?, "archive"?, "archived"?, "ledger", "workspace"?}

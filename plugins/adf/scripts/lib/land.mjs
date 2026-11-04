@@ -60,7 +60,7 @@ import { fileURLToPath } from 'node:url'
 import { readArchiveState } from './archive.mjs'
 import { readBranches } from './branches.mjs'
 import { ARCHIVE, CHANGES_DIR, META_FILE, readChangeMeta } from './changes.mjs'
-import { LAND_ROLES, landCommentName, sddDir } from './dispatch.mjs'
+import { dispatchFields, LAND_ROLES, landCommentName, sddDir, withPreamble } from './dispatch.mjs'
 import { listTree } from './debt.mjs'
 import { findChangeDir } from './ingest.mjs'
 import { mainCheckout } from './installed.mjs'
@@ -121,11 +121,11 @@ export function landFinished(main, change) {
 }
 
 // deps: { now() -> Date, home }. The roles are the registry's: the tests enable fixture plugins.
-export function landContext(rootArg, change, { now = () => new Date(), home } = {}) {
+export function landContext(rootArg, change, { now = () => new Date(), home, runtime = 'claude-code' } = {}) {
   if (!CHANGE.test(change ?? '')) refuse(`"${change ?? ''}" is not a kebab-case change name`)
   if (!existsSync(rootArg)) refuse(`${rootArg} does not exist; pass a checkout of the host as --root`)
   const main = realpathSync(mainCheckout(realpathSync(rootArg)))
-  return { main, change, now, core: { ...CORE, ...(home ? { home } : {}) } }
+  return { main, change, now, runtime, core: { ...CORE, ...(home ? { home } : {}) } }
 }
 
 const result = (ctx, step, record, extra = {}) => ({
@@ -393,6 +393,7 @@ export function commentInputStep(ctx) {
     mkdirSync(join(out, 'replies'), { recursive: true })
     const abs = (rel) => (isAbsolute(rel) ? rel : join(ctx.main, rel))
     const level = LAND_ROLES['land-comment'].level
+    const agent = dispatchFields(level, ctx.runtime)
     const dispatches = [...trackerTargets(scope), ...debt].map((item) => {
       const name = landCommentName(item.key)
       const inputFile = join(out, 'comment', `${fileKey(item.key)}.json`)
@@ -419,8 +420,8 @@ export function commentInputStep(ctx) {
         schema: LAND_SCHEMA
       }
       writeFileSync(inputFile, `${JSON.stringify(input, null, 2)}\n`)
-      writeFileSync(promptFile, renderSkeleton(PROMPT, { name, level, key: item.key, change: ctx.change, state: item.state, fields: fields.join(', '), inputFile, replyFile, schema: LAND_SCHEMA }))
-      return { name, key: item.key, state: item.state, agent: `adf:${level}`, worktree: ctx.main, inputFile, promptFile, replyFile }
+      writeFileSync(promptFile, withPreamble(renderSkeleton(PROMPT, { name, level, key: item.key, change: ctx.change, state: item.state, fields: fields.join(', '), inputFile, replyFile, schema: LAND_SCHEMA }), agent.preamble))
+      return { name, key: item.key, state: item.state, ...agent.fields, worktree: ctx.main, inputFile, promptFile, replyFile }
     })
     return {
       state: 'done',

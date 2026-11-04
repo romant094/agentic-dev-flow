@@ -315,7 +315,8 @@ function buildSession({ id, key, source, records, branch, window, projectsDir })
 // change's ledger records: a session's records count from the ledger's first entry
 // (sliceByBranch). Returns `{ value: { runtime, projectsDir, keys, sessions, unresolved }, reason:
 // null }`, or `{ value: null, reason }` when no session resolves.
-export function readTranscripts({ repoPath, commonDir = null, branch = null, base = null, ledger = [], projectsDir = defaultProjectsDir() }) {
+export function readTranscripts({ repoPath, commonDir = null, branch = null, base = null, ledger = [], projectsDir = defaultProjectsDir(), runtime = RUNTIME }) {
+  if (runtime !== RUNTIME) return absent(`transcripts of runtime ${runtime} are not read`)
   if (!existsSync(projectsDir)) return absent(`no transcript directory ${projectsDir}`)
   const entries = readdirSync(projectsDir)
   const keys = projectKeys({ repoPath, commonDir, entries }).filter((k) => entries.includes(k))

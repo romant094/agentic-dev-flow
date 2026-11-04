@@ -42,6 +42,26 @@ function guard(command, cwd, extra = {}) {
   return { code: r.status, stderr: r.stderr, stdout: r.stdout }
 }
 
+test('the guard blocks npm install in a worktree from Codex input', (t) => {
+  const r = repo(t)
+  // The field set of openai/codex codex-rs/hooks/src/schema.rs `PreToolUseCommandInput`, line 279.
+  const input = {
+    session_id: '019a0000-0000-7000-8000-000000000000',
+    turn_id: 't1',
+    transcript_path: null,
+    cwd: r.worktree,
+    hook_event_name: 'PreToolUse',
+    model: 'gpt-5-codex',
+    permission_mode: 'default',
+    tool_name: 'Bash',
+    tool_input: { command: 'npm install' },
+    tool_use_id: 'call_1',
+  }
+  const out = spawnSync('node', [GUARD], { input: JSON.stringify(input), encoding: 'utf8' })
+  assert.equal(out.status, 2)
+  assert.match(out.stderr, /^adf-npm-workspaces: `npm install` is blocked/)
+})
+
 test('npm install and its kin are blocked in a linked worktree', (t) => {
   const r = repo(t)
   for (const command of ['npm install', 'npm i left-pad', 'npm ci', 'npm add x', 'npm update', 'npm uninstall x', 'npm install-ci-test']) {

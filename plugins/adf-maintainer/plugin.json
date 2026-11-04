@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "adf-maintainer",
+  "version": "0.1.1",
+  "description": "Upstream for the Agentic Dev Flow maintainer: files a retrospective's flow findings and the open ADF debt as GitHub issues through gh",
+  "author": {
+    "name": "Anton Romankov"
+  },
+  "license": "MIT",
+  "keywords": [
+    "github",
+    "issues",
+    "retrospective",
+    "workflow"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "adf-maintainer",
+        "shortDescription": "Upstream for the Agentic Dev Flow maintainer: files a retrospective's flow findings and the open ADF debt as GitHub issues through gh"
+      }
+    }
+  }
+}

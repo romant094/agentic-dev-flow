@@ -4,17 +4,19 @@
 //
 // - `metadata.version` is x.y.z;
 // - each plugin entry's version equals its `plugins/<name>/.claude-plugin/plugin.json`;
-// - a `v<x.y.z>` tag on HEAD equals `v<metadata.version>`.
+// - a `v<x.y.z>` tag on HEAD equals `v<metadata.version>`;
+// - the files `manifests.mjs` generates for Codex match `manifests.mjs --check`.
 import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isMain } from './lib/main.mjs'
+import { syncManifests } from './manifests.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const semver = /^\d+\.\d+\.\d+$/
 
-export function checkRelease({ marketplace, manifests, headTags }) {
+export function checkRelease({ marketplace, manifests, headTags, differ = [] }) {
   const errors = []
   const version = marketplace.metadata?.version
   if (typeof version !== 'string' || !semver.test(version)) errors.push('metadata.version must be x.y.z')
@@ -26,6 +28,7 @@ export function checkRelease({ marketplace, manifests, headTags }) {
   for (const tag of headTags) {
     if (tag !== `v${version}`) errors.push(`tag ${tag} on HEAD must equal v${version}`)
   }
+  for (const path of differ) errors.push(`${path} differs from .claude-plugin/: run node scripts/manifests.mjs`)
   return errors
 }
 
@@ -38,7 +41,7 @@ if (isMain(import.meta.url)) {
   const headTags = execFileSync('git', ['tag', '--points-at', 'HEAD'], { cwd: root, encoding: 'utf8' })
     .split('\n')
     .filter((tag) => /^v\d+\.\d+\.\d+$/.test(tag))
-  const errors = checkRelease({ marketplace, manifests, headTags })
+  const errors = checkRelease({ marketplace, manifests, headTags, differ: syncManifests({ check: true }).differ })
   process.stdout.write(`${JSON.stringify({ ok: errors.length === 0, errors }, null, 2)}\n`)
   process.exitCode = errors.length === 0 ? 0 : 1
 }

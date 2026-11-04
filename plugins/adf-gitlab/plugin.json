@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "adf-gitlab",
+  "version": "0.6.1",
+  "description": "GitLab forge for the Agentic Dev Flow: pushes a change branch, opens its merge request and finalizes it through glab",
+  "author": {
+    "name": "Anton Romankov"
+  },
+  "license": "MIT",
+  "keywords": [
+    "gitlab",
+    "merge-request",
+    "workflow"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "adf-gitlab",
+        "shortDescription": "GitLab forge for the Agentic Dev Flow: pushes a change branch, opens its merge request and finalizes it through glab"
+      }
+    }
+  }
+}

@@ -8,6 +8,9 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { selectInstall } from './installed.mjs'
+import { detectRuntime, installCommand, runtimeHome } from './runtime.mjs'
 
 export const PLUGIN_ID = 'superpowers@claude-plugins-official'
 export const INSTALL_COMMAND = `claude plugin install ${PLUGIN_ID}`
@@ -53,7 +56,18 @@ export function isAvailable({ installedPlugins, settings, exists, root }) {
   return { ok: true, reason: null }
 }
 
-export function checkSuperpowers(root, { home = claudeHome() } = {}) {
+// In Codex the gate is the install lookup: enabled in config.toml and present in the cache.
+export function checkSuperpowers(root, { runtime = detectRuntime({ scriptPath: fileURLToPath(import.meta.url) }), home = runtimeHome(runtime) } = {}) {
+  if (runtime === 'codex') {
+    try {
+      selectInstall(PLUGIN_ID, root, { runtime, home })
+      return { ok: true, reason: null }
+    } catch (error) {
+      if (!error.absent) throw error
+      const reason = error.absent.reason === 'disabled' ? `${PLUGIN_ID} is installed but disabled` : `${PLUGIN_ID} is not installed for this project`
+      return { ok: false, reason, install: installCommand(runtime, PLUGIN_ID, 'user') }
+    }
+  }
   const settings = mergeSettings(
     readJson(join(home, 'settings.json')),
     readJson(join(root, '.claude', 'settings.json')),

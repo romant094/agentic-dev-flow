@@ -1,8 +1,11 @@
 ---
+name: review
 description: Review a change - run the project's tuned code review, fix what blocks, and commit the record. Triggers may be phrased in any language.
 argument-hint: <change-name>
 effort: medium
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name. Outside Claude Code, read `${CLAUDE_PLUGIN_ROOT}/schema/runtimes/<runtime>.md` first: it maps this text's dispatches and questions to your tools.
+
 
 Review a change: run the project's tuned code review over the verified branch, fix its blocking
 findings in bounded rounds, and write `review.md`, the record archive reads. Review runs after

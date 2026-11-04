@@ -22,6 +22,7 @@ import {
 import { setBranches } from '../lib/branches.mjs'
 import { initRegistry } from '../lib/registry.mjs'
 import { loadSchema } from '../lib/schema.mjs'
+import { run } from '../changes.mjs'
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'changes.mjs')
 const schema = loadSchema()
@@ -317,4 +318,14 @@ test('changes.mjs archive moves the change and refuses the main checkout of a re
     refused = JSON.parse(error.stdout)
   }
   assert.match(refused.error, /is the main checkout/)
+})
+
+test('instructions output names no ${CLAUDE_PLUGIN_ROOT}', () => {
+  const root = host()
+  newChange(root, 'c', schema)
+  const plain = readFileSync(join(schema.dir, 'instructions', 'plan.md'), 'utf8')
+  assert.match(plain, /\$\{CLAUDE_PLUGIN_ROOT\}/)
+  const { instruction } = run(['instructions', 'plan', '--change', 'c', '--root', root])
+  assert.doesNotMatch(instruction, /\$\{CLAUDE_PLUGIN_ROOT\}/)
+  assert.ok(instruction.includes(join(dirname(fileURLToPath(import.meta.url)), '..', '..')))
 })
