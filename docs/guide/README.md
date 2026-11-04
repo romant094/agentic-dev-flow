@@ -2,15 +2,17 @@
 
 ## What the flow is
 
-One paragraph on the flow and its cycle.
+ADF (agentic dev flow) is a set of plugins for Claude Code and Codex. It runs a change through one cycle: propose, apply, verify, review and archive. Each phase writes a record in the project, so the next phase and the next developer can read it.
 
 ## Where to start
 
-Links to the install pages and the first change.
+1. Install ADF in your agent: [Claude Code](getting-started/claude-code.md) or [Codex](getting-started/codex.md).
+2. Make one small change: [Your first change](getting-started/first-change.md).
+3. A project that already runs its own change flow: [Switching a project to the plugins](getting-started/switching.md).
 
 ## Section map
 
-The list of the sections below.
+The sections of this guide, in reading order.
 
 - [Install in Claude Code](getting-started/claude-code.md)
 - [Install in Codex](getting-started/codex.md)
