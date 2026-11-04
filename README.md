@@ -30,7 +30,7 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Project stack: the core provisions every worktree it makes through the `provision` and `teardown` hooks and runs extension checks at verify (contract `1.6`); the plugins `adf-npm-workspaces`, `adf-postgres` and `adf-prisma` | done (iteration 12) |
 | Tracker: the `tracker` role and the `forge` operation `state` (contract `1.7`); propose gathers the scope from a key or a phrase (the tracker and the debt store), checks each taken issue by a read-only agent and starts the taken ones; `/adf:land` hands them to the tester after the merge; the plugin `adf-jira` | done (iteration 13) |
 | `/adf:quick`, a small fix or feature without the full artifact set | not started |
-| `/adf:update` | not started |
+| Update: one package version and its tag; the session-start notice of a newer or a pinned release; `/adf:update`, one merge request with the new `ref`, the plugins' `config` migrations (contract `1.9`) and the host files merged by the developer's choice; `pull` for a teammate or a user-scope install | done (iteration 16) |
 
 The order is in `docs/roadmap.md`.
 
@@ -161,7 +161,7 @@ plugins/adf-maintainer/           the upstream role on GitHub, through gh: the m
 scripts/parity/                   dev tools: compare the ported scripts with the origin's and the
                                   openspec CLI on the origin project, and replay its archived
                                   changes through the whole cycle in a sandbox
-                                  (npm run parity -- <root>)
+                                  (npm run parity -- <root>; retired from releases since 16)
 test/fixtures/                    a host project and a plugin for end-to-end tests
 docs/roadmap.md                   the porting order
 docs/switching.md                 the switch from a project's own flow; the developer's migration guide

@@ -97,8 +97,9 @@ touches several files whose rules nobody remembers.
   The merge base is the template at the project's current `ref`.
 - *What is new* comes from `git log` between the two tags, one list per plugin by its path, from
   the Conventional Commits subjects; no changelog file.
-- A user-scope install's version is its install record's version; its update pins the new tag in
-  the user's marketplace record. When a project pins a `ref`, the project's notice and update
+- A user-scope install's version is its install record's version; its update refreshes the
+  marketplace as the user's record declares it and reinstalls (it does not edit Claude Code's
+  `known_marketplaces.json`, so a user marketplace pinned to a ref stays on it). When a project pins a `ref`, the project's notice and update
   apply in it, and the user-scope ones only outside such projects.
 - Issues #12 and #14 are fixed in this iteration, before step 1.
 
@@ -127,4 +128,4 @@ touches several files whose rules nobody remembers.
 | 5 | Registry migration: the declaration's migration steps, run in order between two versions | unit tests |
 | 6 | Host file merge: unedited replaced; edited shows the three versions and takes the developer's choice | unit tests; the agent's automatic merge checked on one edited file |
 | 7 | `/adf:update`: steps 6.1–6.5 above; the merge request through the forge, or a local branch with no forge | a scratch project from `v0.18.1` to the new tag |
-| 8 | Release adf with the new tag | `npm test`, `npm run parity -- <origin>` |
+| 8 | Release adf with the new tag | `npm test`, the scratch run of step 7 (parity is retired, `docs/roadmap.md`) |
