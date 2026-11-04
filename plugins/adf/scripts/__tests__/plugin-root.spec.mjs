@@ -38,3 +38,11 @@ test('a cached root counts when the home is a symlink and the script path is res
   assert.equal(result.cached, true)
   assert.equal(result.warning, null)
 })
+
+test('without a home, the Codex cache counts for a script under CODEX_HOME', () => {
+  const codexHome = mkdtempSync(join(tmpdir(), 'adf-codex-home-'))
+  const root = join(codexHome, 'plugins', 'cache', 'market', 'adf', '1.2.3')
+  const result = pluginRoot({ scriptUrl: plugin(root), env: { CODEX_HOME: codexHome } })
+  assert.equal(result.cached, true)
+  assert.equal(result.warning, null)
+})
