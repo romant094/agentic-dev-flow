@@ -353,7 +353,7 @@ test('codex: pull re-points the marketplace to the pinned ref first', () => {
   const r = run(['pull', '--root', root, '--home', home], { runtime: 'codex', run: fn, git: git(TAGS) })
   assert.deepEqual(r.ran, [
     ['plugin', 'marketplace', 'remove', 'agentic-dev-flow'],
-    ['plugin', 'marketplace', 'add', 'romant094/agentic-dev-flow', '--ref', 'v0.10.0'],
+    ['plugin', 'marketplace', 'add', URL, '--ref', 'v0.10.0'],
     ['plugin', 'marketplace', 'upgrade', 'agentic-dev-flow'],
     ['plugin', 'add', 'adf@agentic-dev-flow']
   ])
@@ -361,10 +361,64 @@ test('codex: pull re-points the marketplace to the pinned ref first', () => {
   // A record already on the ref is added again without a remove (Codex treats it as a no-op).
   const same = codexSetup({ ref: 'v0.10.0', record: stale.replace('v0.9.0', 'v0.10.0'), installed: '0.10.0' })
   const again = run(['pull', '--root', same.root, '--home', same.home], { runtime: 'codex', run: fakeRun().fn, git: git(TAGS) })
-  assert.deepEqual(again.ran[0], ['plugin', 'marketplace', 'add', 'romant094/agentic-dev-flow', '--ref', 'v0.10.0'])
+  assert.deepEqual(again.ran[0], ['plugin', 'marketplace', 'add', URL, '--ref', 'v0.10.0'])
 })
 
 test('codex: pull refuses, naming both versions, when the pinned release is still not installed', () => {
   const { root, home } = codexSetup({ ref: 'v0.10.0' })
   assert.throws(() => run(['pull', '--root', root, '--home', home], { runtime: 'codex', run: fakeRun().fn, git: git(TAGS) }), /v0\.9\.0 installed .*older than the pinned v0\.10\.0.*codex plugin add/)
+})
+
+const STALE = '[marketplaces.agentic-dev-flow]\nsource_type = "git"\nsource = "https://example.com/adf.git"\nref = "v0.9.0"\n'
+
+test('codex: a failed re-point restores the previous marketplace record', () => {
+  const { root, home } = codexSetup({ ref: 'v0.10.0', record: STALE })
+  const { fn, calls } = fakeRun({ failOn: 2 })
+  try {
+    run(['pull', '--root', root, '--home', home], { runtime: 'codex', run: fn, git: git(TAGS) })
+    assert.fail('should throw')
+  } catch (error) {
+    assert.match(error.message, /marketplace add .* failed: no network; the re-point to v0\.10\.0 failed and the previous marketplace record was restored/)
+  }
+  assert.deepEqual(calls.map((c) => c.args), [
+    ['plugin', 'marketplace', 'remove', 'agentic-dev-flow'],
+    ['plugin', 'marketplace', 'add', URL, '--ref', 'v0.10.0'],
+    ['plugin', 'marketplace', 'add', 'https://example.com/adf.git', '--ref', 'v0.9.0']
+  ])
+})
+
+test('codex: a failed restore names the command to run', () => {
+  const { root, home } = codexSetup({ ref: 'v0.10.0', record: STALE })
+  const fn = (_cli, args) => {
+    if (args[2] === 'add') throw Object.assign(new Error('boom'), { stderr: 'offline' })
+  }
+  assert.throws(() => run(['pull', '--root', root, '--home', home], { runtime: 'codex', run: fn, git: git(TAGS) }), /NOT restored: run codex plugin marketplace add https:\/\/example\.com\/adf\.git --ref v0\.9\.0$/)
+})
+
+test('codex: a pinned project with no record adds without a remove, from its declared source', () => {
+  const { root, home } = codexSetup({ ref: 'v0.10.0', record: '', installed: '0.10.0' })
+  const r = run(['pull', '--root', root, '--home', home], { runtime: 'codex', run: fakeRun().fn, git: git(TAGS) }).ran ?? []
+  assert.deepEqual(r[0], ['plugin', 'marketplace', 'add', URL, '--ref', 'v0.10.0'])
+})
+
+test('codex: the add takes a github declaration as owner/repo, and falls back to this repository', () => {
+  const settings = (root, source) => writeFileSync(join(root, '.claude', 'settings.json'), JSON.stringify({ extraKnownMarketplaces: { 'agentic-dev-flow': { source } } }))
+  const github = codexSetup({ ref: 'v0.10.0', record: '', installed: '0.10.0' })
+  settings(github.root, { source: 'github', repo: 'acme/flow', ref: 'v0.10.0' })
+  assert.deepEqual(run(['pull', '--root', github.root, '--home', github.home], { runtime: 'codex', run: fakeRun().fn, git: git(TAGS) }).ran[0], ['plugin', 'marketplace', 'add', 'acme/flow', '--ref', 'v0.10.0'])
+  const bare = codexSetup({ ref: 'v0.10.0', record: '', installed: '0.10.0' })
+  settings(bare.root, { source: 'git', ref: 'v0.10.0' })
+  assert.deepEqual(run(['pull', '--root', bare.root, '--home', bare.home], { runtime: 'codex', run: fakeRun().fn, git: git(TAGS) }).ran[0], ['plugin', 'marketplace', 'add', 'romant094/agentic-dev-flow', '--ref', 'v0.10.0'])
+})
+
+test('codex: an unpinned project-scope pull only upgrades and adds', () => {
+  const { root, home } = codexSetup({ ref: 'develop' })
+  const r = run(['pull', '--scope', 'project', '--root', root, '--home', home], { runtime: 'codex', run: fakeRun().fn, git: git(TAGS) })
+  assert.deepEqual(r.ran, [['plugin', 'marketplace', 'upgrade', 'agentic-dev-flow'], ['plugin', 'add', 'adf@agentic-dev-flow']])
+})
+
+test('codex: the notice is silent when config.toml is missing', () => {
+  const { root, home } = codexSetup()
+  rmSync(join(home, 'config.toml'))
+  assert.equal(run(['notice', '--root', root, '--home', home], { runtime: 'codex', git: git(TAGS) }), null)
 })

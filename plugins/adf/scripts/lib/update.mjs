@@ -181,8 +181,18 @@ export function noticeMessage(check, { runtime = detected() } = {}) {
 
 const defaultRun = (command, args, { cwd }) => execFileSync(command, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 
-// Where Codex's marketplace is added from when a project pins a ref: the repository, not the user's record.
+// Where Codex's marketplace is added from when a project pins a ref: the project's declared
+// marketplace (owner/repo or a git URL, the forms Codex takes), else this repository.
 const CODEX_SOURCE = 'romant094/agentic-dev-flow'
+function codexSource(main) {
+  const source = readJson(join(main, SETTINGS_PATH))?.extraKnownMarketplaces?.[MARKETPLACE]?.source
+  if (typeof source?.url === 'string') return source.url
+  if (source?.source === 'github' && typeof source.repo === 'string') return source.repo
+  return CODEX_SOURCE
+}
+
+// `marketplace add` arguments that bring a marketplace record back.
+const addArgs = (source, ref) => ['plugin', 'marketplace', 'add', source, ...(ref ? ['--ref', ref] : [])]
 
 // The package plugins enabled for a scope: ids ending `@agentic-dev-flow` set to true.
 function enabledPackagePlugins(main, scope, home, runtime) {
@@ -219,7 +229,7 @@ function pullCalls({ main, scope, home, runtime, ref, pinned }) {
   if (pinned) {
     const record = codexMarketplace(MARKETPLACE, home)
     if (record && record.ref !== ref) calls.push(['plugin', 'marketplace', 'remove', MARKETPLACE])
-    calls.push(['plugin', 'marketplace', 'add', CODEX_SOURCE, '--ref', ref])
+    calls.push(addArgs(codexSource(main), ref))
   }
   calls.push(['plugin', 'marketplace', 'upgrade', MARKETPLACE], ...plugins.map((id) => ['plugin', 'add', id]))
   return calls
@@ -244,6 +254,7 @@ export function pull({ root, scope, runtime = detected(), home = runtimeHome(run
   const calls = pullCalls({ main, scope, home, runtime, ref, pinned: pinned && scope === 'project' })
   const ran = []
   let restored = false
+  const previous = runtime === 'codex' ? codexMarketplace(MARKETPLACE, home) : null
   const restore = () => {
     if (touchesSettings && gitOut(['status', '--porcelain', '--', SETTINGS_PATH]).trim() !== '') {
       gitOut(['checkout', '--', SETTINGS_PATH])
@@ -256,7 +267,18 @@ export function pull({ root, scope, runtime = detected(), home = runtimeHome(run
     } catch (cause) {
       restore()
       const stderr = String(cause.stderr ?? cause.message ?? '').trim()
-      const error = new Error(`${command} ${args.join(' ')} failed: ${stderr}`)
+      let message = `${command} ${args.join(' ')} failed: ${stderr}`
+      // A failure after the user's marketplace record was removed must not leave Codex with none.
+      if (ran.some((c) => c[2] === 'remove') && typeof previous?.source === 'string') {
+        const back = addArgs(previous.source, previous.ref)
+        try {
+          run(command, back, { cwd: main })
+          message += `; the re-point to ${ref} failed and the previous marketplace record was restored`
+        } catch {
+          message += `; the re-point to ${ref} failed and the previous marketplace record was NOT restored: run ${command} ${back.join(' ')}`
+        }
+      }
+      const error = new Error(message)
       error.ran = ran
       error.restored = restored
       throw error
