@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/plugin/v1.json",
+  "name": "adf-jira",
+  "version": "0.5.0",
+  "description": "Jira tracker for the Agentic Dev Flow: gathers issues at propose, starts them and hands them to the tester after the merge, plus guarded two-phase Jira skills for bulk changes, comments, epics, tasks, worklogs and the debt mirror",
+  "author": {
+    "name": "Anton Romankov"
+  },
+  "license": "MIT",
+  "keywords": [
+    "jira",
+    "tracker",
+    "worklog",
+    "workflow"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "adf-jira",
+        "shortDescription": "Jira tracker for the Agentic Dev Flow: gathers issues at propose, starts them and hands them to the tester after the merge, plus guarded two-phase Jira skills for bulk changes, comments, epics, tasks, worklogs and the debt mirror"
+      }
+    }
+  }
+}

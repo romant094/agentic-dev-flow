@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/plugin/v1.json",
+  "name": "adf",
+  "version": "0.19.0",
+  "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
+  "author": {
+    "name": "Anton Romankov"
+  },
+  "repository": "https://github.com/romant094/agentic-dev-flow",
+  "license": "MIT",
+  "keywords": [
+    "workflow",
+    "spec-driven",
+    "agents"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "adf",
+        "shortDescription": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend"
+      }
+    }
+  }
+}

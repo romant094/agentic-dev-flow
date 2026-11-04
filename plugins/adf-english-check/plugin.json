@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/plugin/v1.json",
+  "name": "adf-english-check",
+  "version": "0.8.0",
+  "description": "Stops an agent's git commit when the files in scope hold non-English text",
+  "author": {
+    "name": "Anton Romankov"
+  },
+  "license": "MIT",
+  "keywords": [
+    "english",
+    "commit",
+    "hook"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "adf-english-check",
+        "shortDescription": "Stops an agent's git commit when the files in scope hold non-English text"
+      }
+    }
+  }
+}
