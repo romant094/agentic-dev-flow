@@ -39,8 +39,19 @@ The repository's `README.md` becomes the product page, on the pattern of
    links to the extension points and the concepts.
 6. **Why ADF**: full control of a change, from the gathered context, the plans and the
    decomposition to the review, the verification and the delivery of the code; and flexibility,
-   because a project enables only the plugins it needs. No cost figures and no comparison with
-   other tools: the measured figures come from test runs.
+   because a project enables only the plugins it needs. ADF is built on two foundations, and the
+   section says in one line each what each gives:
+   - **OpenSpec**: the spec-driven model. The specs say what the system must do, and each change
+     carries its proposal, design, delta specs and tasks in `openspec/changes/`. ADF ships its
+     own engine and schema for this model, with no openspec CLI (iteration 03).
+   - **Superpowers**: the agent's working skills, a dependency of `adf` — brainstorming, writing
+     plans, test-driven development, subagent-driven execution, worktrees, code review and
+     verification before completion.
+   - **ADF** joins them into one cycle and adds what neither has: the gates between the stages,
+     scripts for every deterministic step, structured agent replies checked by script, the
+     review rounds, the delivery through a forge, metrics, and the extension points.
+   No cost figures and no comparison with other tools: the measured figures come from test
+   runs.
 7. **Documentation**: link to `docs/guide/README.md` and to `CHANGELOG.md`.
 8. **Contributing** (issues and pull requests are welcome; link to `docs/guide/contributing.md`)
    and **License**.
@@ -208,6 +219,7 @@ Settled by the developer on 2026-11-04.
 - ASD-STE100 for the guide.
 - *Why ADF* says: full control from the context, the plans and the decomposition to the review,
   the verification and the delivery; and flexibility. No cost figures: they come from test runs.
+- *Why ADF* also says that ADF is built on OpenSpec and Superpowers, and what each gives.
 - Outside pull requests are welcome.
 - The iteration makes no release; it is documentation only.
 
