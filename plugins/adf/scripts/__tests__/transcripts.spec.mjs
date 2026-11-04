@@ -272,7 +272,7 @@ test('sessions and their subagents are measured from the change\'s first ledger 
   assert.deepEqual(p1.subagents.map((a) => a.agentId), ['b1'])
 })
 
-// Recorded by `claude -p "/adf:init"` in Claude Code (iteration 17, Task 11): the skill invocation is
+// Recorded by `claude -p "/adf:init"` in Claude Code (iteration 17, Task 11) and trimmed to two records: the skill invocation is
 // a `<command-name>` user record, followed by a meta record that holds the skill body.
 test('a skill invocation is marked like a command', () => {
   const records = parseRecords(readFileSync(join(import.meta.dirname, 'fixtures', 'skill-invocation.jsonl'), 'utf8'))

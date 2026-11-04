@@ -19,7 +19,7 @@ the few scripts that read Claude Code's state, and leaves the flow itself as it 
 
 1. Codex comes before the guide (18); after 17 the package supports both Claude Code and Codex
    (2026-11-04).
-2. A root `plugin.json` in the agent-plugins.org schema is needed. Reference shape:
+2. A root `plugin.json` in the agent-plugins.org schema is needed (note: the plugins that ship hooks get `.codex-plugin/plugin.json` instead, see `## Result`). Reference shape:
    `addyosmani/agent-skills` (root `plugin.json`, plus `.claude-plugin/plugin.json` and
    `.claude-plugin/marketplace.json`).
 3. A teammate tests it on a real project; the run collects a log for the fixes.
@@ -217,7 +217,7 @@ files need no change.
 | # | Step | Check |
 |---|---|---|
 | 1 | `lib/runtime.mjs`: detection, homes, commands, session id | unit tests |
-| 2 | Root `plugin.json` per plugin and `.agents/plugins/marketplace.json`, written by `scripts/manifests.mjs`; `check-release.mjs` fails on a difference | `npm test`; `codex plugin marketplace add` of a local clone lists every plugin |
+| 2 | Root `plugin.json` per plugin (`.codex-plugin/plugin.json` for a plugin with hooks, see `## Result`) and `.agents/plugins/marketplace.json`, written by `scripts/manifests.mjs`; `check-release.mjs` fails on a difference | `npm test`; `codex plugin marketplace add` of a local clone lists every plugin |
 | 3 | `adf` commands move to skills, with the two lines for the tokens; `adf-jira` skills get the two lines; `triggers.spec.mjs` reads skills | `npm test`; Claude Code: `/adf:init` runs as a skill in a scratch project |
 | 4 | Scripts that print instructions and prompts substitute the plugin's directory | unit tests |
 | 5 | `dispatch.mjs` prints the agent by runtime (Claude Code agent, or Codex effort and body); `schema/runtimes/claude-code.md` and `codex.md` | unit tests |
@@ -244,9 +244,9 @@ Checked, with the outcome:
 - Skill name form: the model's skill listing names the skills `adf:init`, `adf:land` and so on
   (`- adf:init: Set up ADF ... (file: r2/init/SKILL.md)`). A `codex exec` prompt that says "Invoke the skill
   adf:init" made the model read `skills/init/SKILL.md` and `schema/runtimes/codex.md` from the plugin cache and
-  run `extensions.mjs init`. The `$adf:init` mention form is not run: `codex exec` has no way to type it
-  in this budget; the README's form matches the listing, so it stays.
-- `/adf:init` in Codex: exit 0, one turn. It wrote `.claude/adf-extensions.json` (contract 1.9, integration
+  run `extensions.mjs init`. `$adf:init` was not run. The listing shows `adf:init` (no `$`), and the prompt
+  "Invoke the skill adf:init" worked; the README's `$adf:init` is the mention form of that name, unconfirmed.
+- `/adf:init` in Codex: exit 0. It wrote `.claude/adf-extensions.json` (contract 1.9, integration
   `master`, debt root `docs/tech-debt`), `.claude/settings.json`, `.gitignore` lines, `openspec/planning.md`
   and `openspec/review-prompt.md`. It wrote no `.codex/config.toml`.
 - `extensions.mjs add adf-english-check@agentic-dev-flow` run from the Codex plugin cache with `CODEX_HOME`
@@ -292,5 +292,16 @@ Facts the run showed:
 
 Defects found and fixed: the hooks manifest, above. Left: `runlog collect` skips `codex --version` when `codex` is not on `PATH`.
 
-Not checked: the Codex desktop app; the full propose-to-archive cycle (the teammate's run, returned by
-`runlog.mjs collect`); the `$adf:init` mention form; a Codex session that shows the update notice (needs a marketplace with a ref and a newer tag); the Codex `/hooks` screen.
+Not checked:
+
+- the Codex desktop app;
+- the full propose-to-archive cycle (the teammate's run, returned by `runlog.mjs collect`);
+- `/adf:propose` in Claude Code (only `/adf:init` ran);
+- the `$adf:init` mention form;
+- the tag, release and update-notice path: there was no bare repository and no test tag, and the notice was
+  silent with a local marketplace and no ref;
+- Claude Code ran with `--plugin-dir`, not from a marketplace install;
+- the Codex block was seen with `--dangerously-bypass-hook-trust`, so the `/hooks` trust path is unverified;
+- `adf-memory` was installed but not exercised;
+- the npm guard in Codex;
+- the Codex `/hooks` screen.
