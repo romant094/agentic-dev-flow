@@ -18,3 +18,9 @@ export function pluginRoot({ home, scriptUrl, env = process.env }) {
   const cached = real(root).startsWith(cacheDir(runtime, real(home)) + sep)
   return { root, version, cached, warning: cached ? null : `the adf scripts run from ${root}, not from an installed release` }
 }
+
+// The text a script prints names the plugin's real directory where the schema files say
+// `${CLAUDE_PLUGIN_ROOT}`, so an agent in either runtime reads a path it can run.
+export function substituteRoot(text, root) {
+  return text.split('${CLAUDE_PLUGIN_ROOT}').join(root)
+}

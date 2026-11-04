@@ -190,3 +190,9 @@ test('the CLI: suggest, copies, seed and scan', () => {
   assert.throws(() => run(['copies', '--root', root]), /needs at least one --path/)
   assert.throws(() => run(['nope', '--root', root]), /usage/)
 })
+
+test('suggest prints trustHooks true in codex and false in claude-code', () => {
+  const root = repo()
+  assert.equal(run(['suggest', '--root', root], { runtime: 'codex' }).trustHooks, true)
+  assert.equal(run(['suggest', '--root', root], { runtime: 'claude-code' }).trustHooks, false)
+})

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { test } from 'node:test'
-import { pluginRoot } from '../lib/plugin-root.mjs'
+import { pluginRoot, substituteRoot } from '../lib/plugin-root.mjs'
 
 function plugin(dir) {
   mkdirSync(join(dir, '.claude-plugin'), { recursive: true })
@@ -45,4 +45,8 @@ test('without a home, the Codex cache counts for a script under CODEX_HOME', () 
   const result = pluginRoot({ scriptUrl: plugin(root), env: { CODEX_HOME: codexHome } })
   assert.equal(result.cached, true)
   assert.equal(result.warning, null)
+})
+
+test('substituteRoot replaces every ${CLAUDE_PLUGIN_ROOT}', () => {
+  assert.equal(substituteRoot('a ${CLAUDE_PLUGIN_ROOT}/x and "${CLAUDE_PLUGIN_ROOT}/y"', '/p'), 'a /p/x and "/p/y"')
 })

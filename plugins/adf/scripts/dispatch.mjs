@@ -7,7 +7,9 @@
 //                        [--round <k>] [--pass 1|2] [--topic <word>] [--check c4|c8]
 //                        [--root <change worktree>]
 //       { ok, name, role, agent, worktree, replyFile, ... }; a verify dispatch also names the
-//       sectionFile its recorded reply becomes
+//       sectionFile its recorded reply becomes. In Codex, which loads no plugin agent, `agent` is
+//       replaced by `level`, `reasoningEffort` (the agent file's `effort`) and `preamble` (its
+//       body), and `prompt` starts with the preamble
 //       --round names a task's fix round, or a fix or re-review round after a merge review or
 //       the final review (fix B r2); with --subject sweep, a fix or re-review of a sweep
 //       finding's consolidation round (fix sweep r1), and on sweep the round's re-sweep
@@ -118,6 +120,7 @@ import { fileURLToPath } from 'node:url'
 import { readArchiveState } from './lib/archive.mjs'
 import { attemptsFile, recordDispatch, recordReply, resetAttempts, runSince, standingOf } from './lib/attempts.mjs'
 import {
+  dispatchAgent,
   ARCHIVE_ROLES,
   DispatchError,
   parseName,
@@ -132,6 +135,7 @@ import {
 import { changeArtifacts, checkIngestFile, findChangeDir, ingestInputFile } from './lib/ingest.mjs'
 import { mainCheckout } from './lib/installed.mjs'
 import { isMain } from './lib/main.mjs'
+import { detectRuntime } from './lib/runtime.mjs'
 import { unplannedIn } from './lib/plan.mjs'
 import { parsePlanTasks } from './lib/plan-symbols.mjs'
 import { checkReply, replyContext, ROLES as REPLY_ROLES } from './lib/reply.mjs'
@@ -569,7 +573,15 @@ function readQuestion(file) {
   }
 }
 
-export function run(argv, { cwd = process.cwd(), main } = {}) {
+// The plan as printed: Claude Code names the agent; Codex gets the level's effort and preamble.
+function forRuntime(plan, runtime) {
+  if (runtime !== 'codex') return plan
+  const { agent, ...rest } = plan
+  const level = agent.replace(/^adf:/, '')
+  return { ...rest, level, ...dispatchAgent(level, runtime, join(PLUGIN_ROOT, 'agents')) }
+}
+
+export function run(argv, { cwd = process.cwd(), main, env = process.env, runtime = detectRuntime({ env, scriptPath: PLUGIN_ROOT }) } = {}) {
   const { values, rest } = parse(argv)
   const [command, ...extra] = rest
   if (extra.length > 0 || !['plan', 'prompt', 'attempt', 'reset', 'round', 'reply'].includes(command) || !values.change) throw new UsageError(USAGE)
@@ -625,17 +637,19 @@ export function run(argv, { cwd = process.cwd(), main } = {}) {
   const planText = readOr(join(root, 'openspec', 'changes', change, 'plan.md'))
   const checkout = main ?? mainCheckout(root)
   const plan = planDispatch(inputs, { root, main: checkout, planText, exists: existsSync })
-  if (command === 'plan') return { ok: true, ...plan }
+  const shown = forRuntime(plan, runtime)
+  if (command === 'plan') return { ok: true, ...shown }
   const cut = {}
-  const prompt = promptFor(inputs, plan, values, root, planText, checkout, cut)
-  if (inputs.role !== 're-review' || !values.base) return { ok: true, ...plan, prompt, ...cut }
+  const body = promptFor(inputs, plan, values, root, planText, checkout, cut)
+  const prompt = shown.preamble === undefined ? body : `${shown.preamble}\n\n${body}`
+  if (inputs.role !== 're-review' || !values.base) return { ok: true, ...shown, prompt, ...cut }
   let found
   try {
     found = unplannedIn(root, change, planText, { range: `${values.base}..${values.head}`, owner: inputs.task })
   } catch (error) {
     throw new DispatchError(`cannot read the fix's range ${values.base}..${values.head}: ${error.message}`)
   }
-  return { ok: true, ...plan, prompt, ...cut, unplanned: found.files.map(({ file, verb, owner }) => ({ file, verb, owner })) }
+  return { ok: true, ...shown, prompt, ...cut, unplanned: found.files.map(({ file, verb, owner }) => ({ file, verb, owner })) }
 }
 
 if (isMain(import.meta.url)) {

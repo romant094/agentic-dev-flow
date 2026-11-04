@@ -8,7 +8,8 @@
 //       [{ command, source, why }] }, copies: { current, candidates } }. The suite candidates come
 //       from the CI configuration, then the package scripts; the copy candidates are the `.env*`
 //       files git ignores in the main checkout. Nothing is written; `suite.mjs set` writes a
-//       confirmed command
+//       confirmed command. `trustHooks` is true in Codex, which runs a hook only after the
+//       developer trusts it in `/hooks`
 //   init.mjs copies --path <p> [--path <p> ...] [--root <dir>]
 //       add confirmed paths to `## Worktree copies`, creating the guide or the section when
 //       absent: { file, copies }
@@ -21,8 +22,10 @@
 //       the lines of the host's agent instruction files that name a previous flow's commands;
 //       changes nothing: { mentions: [{ file, line, text, kinds }], report }
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { copyCandidates, oldFlowMentions, oldFlowReport, suiteCandidates, writeCopies } from './lib/init.mjs'
 import { isMain } from './lib/main.mjs'
+import { detectRuntime } from './lib/runtime.mjs'
 import { readCopies } from './lib/provision.mjs'
 import { readCommand } from './lib/suite.mjs'
 import { seedWindow } from './lib/window.mjs'
@@ -53,7 +56,7 @@ function parse(argv) {
   return { values, rest }
 }
 
-export function run(argv, { cwd = process.cwd() } = {}) {
+export function run(argv, { cwd = process.cwd(), env = process.env, runtime = detectRuntime({ env, scriptPath: fileURLToPath(import.meta.url) }) } = {}) {
   const { values, rest } = parse(argv)
   const [sub, ...extra] = rest
   if (extra.length > 0 || !Object.hasOwn(ALLOWED, sub)) throw new UsageError(USAGE)
@@ -64,7 +67,8 @@ export function run(argv, { cwd = process.cwd() } = {}) {
     case 'suggest':
       return {
         suite: { current: readCommand(root).command, candidates: suiteCandidates(root) },
-        copies: { current: readCopies(root), candidates: copyCandidates(root) }
+        copies: { current: readCopies(root), candidates: copyCandidates(root) },
+        trustHooks: runtime === 'codex'
       }
     case 'copies':
       if (values.path.length === 0) throw new UsageError('copies needs at least one --path')

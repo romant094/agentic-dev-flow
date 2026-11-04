@@ -87,6 +87,7 @@ import { recordSessionOnce } from './lib/ledger.mjs'
 import { markDone, nextArtifact } from './lib/propose.mjs'
 import { callRole, CORE, knowledgeReport } from './lib/roles.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
+import { pluginRoot, substituteRoot } from './lib/plugin-root.mjs'
 
 function option(args, name) {
   const i = args.indexOf(name)
@@ -166,9 +167,15 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
     case 'instructions':
       if (!target) throw new Error('usage: instructions <artifact|apply> [--change <name>] [--part <name>]')
       if (part !== undefined && target !== 'apply') throw new Error('--part belongs to instructions apply')
-      return target === 'apply'
+    {
+      const result = target === 'apply'
         ? applyInstructions(root, change(), schema, { part: part ?? null })
         : artifactInstructions(root, change(), target, schema)
+      // The instruction names the plugin's real directory, not ${CLAUDE_PLUGIN_ROOT}.
+      return typeof result.instruction === 'string'
+        ? { ...result, instruction: substituteRoot(result.instruction, pluginRoot({ scriptUrl: new URL('./lib/plugin-root.mjs', import.meta.url).href, env }).root) }
+        : result
+    }
     case 'next': {
       writing()
       const name = change()
