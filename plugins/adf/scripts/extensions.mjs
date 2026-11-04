@@ -34,7 +34,8 @@
 // return it as `debt`, its errors in `report`; a failing debt check is reported, never a failure.
 //
 // --root <dir> names the host project (default: the current directory); --home <dir> the
-// Claude Code home (default: $CLAUDE_CONFIG_DIR, else ~/.claude).
+// home of the runtime that runs the script (Claude Code: $CLAUDE_CONFIG_DIR, else ~/.claude;
+// Codex: $CODEX_HOME, else ~/.codex).
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { checkTree } from './lib/debt.mjs'
@@ -43,7 +44,8 @@ import { declareInHost, marketplaceSource } from './lib/host-settings.mjs'
 import { detectIntegration, readBranches, setBranches } from './lib/branches.mjs'
 import { createPlanningGuide, createReviewPrompt, ignoreLocalDirs } from './lib/host-files.mjs'
 import { addExtension, addReport, branchesReport, checkRegistry, configExtension, configReport, initRegistry, initReport, readDebtRoot, removeExtension, removeReport } from './lib/registry.mjs'
-import { checkSuperpowers, claudeHome } from './lib/superpowers.mjs'
+import { checkSuperpowers } from './lib/superpowers.mjs'
+import { detectRuntime, runtimeHome } from './lib/runtime.mjs'
 import { pluginRoot } from './lib/plugin-root.mjs'
 import { trackerCall } from './lib/tracker.mjs'
 import { isMain } from './lib/main.mjs'
@@ -75,7 +77,8 @@ export function run(argv) {
   const args = [...argv]
   const root = option(args, '--root') ?? process.cwd()
   const config = option(args, '--config')
-  const home = option(args, '--home') ?? claudeHome()
+  const runtime = detectRuntime({ env: process.env, scriptPath: fileURLToPath(import.meta.url) })
+  const home = option(args, '--home') ?? runtimeHome(runtime, process.env)
   const integration = option(args, '--integration')
   const protectedList = option(args, '--protected')
   const [command, target] = args

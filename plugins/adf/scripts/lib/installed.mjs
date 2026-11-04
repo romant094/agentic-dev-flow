@@ -6,9 +6,12 @@
 // included, and a change worktree is rarely opened as a session of its own. The plugin is
 // therefore looked up for the main checkout, whatever worktree the core runs in.
 import { execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { claudeHome, countsHere, mergeSettings, readJson } from './superpowers.mjs'
+import { fileURLToPath } from 'node:url'
+import { detectRuntime, installCommand, runtimeHome } from './runtime.mjs'
+import { countsHere, mergeSettings, readJson } from './superpowers.mjs'
+import { readToml } from './toml.mjs'
 
 export const PLUGIN_ID = /^[a-z0-9][a-z0-9-]*@[a-z0-9][a-z0-9-]*$/
 
@@ -35,9 +38,11 @@ export function installedPath(id, root, opts = {}) {
   return selectInstall(id, root, opts).path
 }
 
-// The install installedPath uses: its directory and, when known, its version.
-export function selectInstall(id, root, { home = claudeHome(), exists = existsSync } = {}) {
+// The install installedPath uses: its directory and, when known, its version. The runtime is
+// the one that runs this script unless the caller names it; the home is that runtime's.
+export function selectInstall(id, root, { runtime = detectRuntime({ scriptPath: fileURLToPath(import.meta.url) }), home = runtimeHome(runtime), exists = existsSync } = {}) {
   const main = mainCheckout(root)
+  if (runtime === 'codex') return selectCodexInstall(id, main, { home, exists })
   const records = readJson(join(home, 'plugins', 'installed_plugins.json'))?.plugins?.[id]
   const here = Array.isArray(records) ? records.filter((r) => countsHere(r, [main, root])) : []
   const settings = mergeSettings(
@@ -57,7 +62,7 @@ export function selectInstall(id, root, { home = claudeHome(), exists = existsSy
     const cached = cachedInstall(id, home)
     if (cached && exists(cached.path)) return cached
   }
-  throw absent(`${id} is not installed for this project; run: claude plugin install ${id} --scope project; run it from ${main}`, id, 'not-installed')
+  throw absent(`${id} is not installed for this project; run: ${installCommand('claude-code', id, 'project')}; run it from ${main}`, id, 'not-installed')
 }
 
 // The cache directory of the version the marketplace clone lists for the plugin.
@@ -66,4 +71,57 @@ function cachedInstall(id, home) {
   const listed = readJson(join(home, 'plugins', 'marketplaces', marketplace, '.claude-plugin', 'marketplace.json'))
   const version = listed?.plugins?.find((p) => p.name === name)?.version
   return version ? { path: join(home, 'plugins', 'cache', marketplace, name, version), version } : null
+}
+
+// Codex: `[plugins."<id>"] enabled` from the user's config.toml, then the project's own
+// <main>/.codex/config.toml (the later layer wins; Codex loads the project's only when it is
+// trusted, the core reads it regardless). An enabled plugin's install is its cache directory.
+function codexEnabled(id, main, home) {
+  const layers = [join(home, 'config.toml'), join(main, '.codex', 'config.toml')]
+  return Object.assign({}, ...layers.map((path) => readTomlFile(path)[`plugins.${id}`]))
+}
+
+function readTomlFile(path) {
+  try {
+    return readToml(readFileSync(path, 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
+function selectCodexInstall(id, main, { home, exists }) {
+  const { enabled } = codexEnabled(id, main, home)
+  if (enabled === false) throw absent(`${id} is installed but disabled`, id, 'disabled')
+  if (enabled === true) {
+    const cached = codexCachedInstall(id, home)
+    if (cached && exists(cached.path)) return cached
+  }
+  throw absent(`${id} is not installed for this project; run: ${installCommand('codex', id, 'user')}`, id, 'not-installed')
+}
+
+// The cache directory of the version the marketplace clone lists for the plugin, else the only
+// version directory in the cache. A git marketplace is cloned to <home>/.tmp/marketplaces/<name>.
+function codexCachedInstall(id, home) {
+  const [name, marketplace] = id.split('@')
+  const cache = join(home, 'plugins', 'cache', marketplace, name)
+  const version = listedVersion(join(home, '.tmp', 'marketplaces', marketplace), name) ?? onlyVersion(cache)
+  return version ? { path: join(cache, version), version } : null
+}
+
+function listedVersion(clone, name) {
+  const listing = readJson(join(clone, '.agents', 'plugins', 'marketplace.json')) ?? readJson(join(clone, '.claude-plugin', 'marketplace.json'))
+  const entry = listing?.plugins?.find((p) => p.name === name)
+  if (!entry) return null
+  const source = typeof entry.source === 'string' ? entry.source : entry.source?.path
+  const dir = join(clone, source ?? '')
+  return readJson(join(dir, '.claude-plugin', 'plugin.json'))?.version ?? readJson(join(dir, 'plugin.json'))?.version ?? entry.version ?? null
+}
+
+function onlyVersion(dir) {
+  try {
+    const versions = readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory())
+    return versions.length === 1 ? versions[0].name : null
+  } catch {
+    return null
+  }
 }

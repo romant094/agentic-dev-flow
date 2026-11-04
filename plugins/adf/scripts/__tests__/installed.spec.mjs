@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { installedPath, mainCheckout, PLUGIN_ID } from '../lib/installed.mjs'
+import { installedPath, mainCheckout, PLUGIN_ID, selectInstall } from '../lib/installed.mjs'
 
 const ID = 'tool@market'
 const always = () => true
@@ -86,4 +86,57 @@ test('the refusal names the main directory', () => {
   const main = realpathSync(mkdtempSync(join(tmpdir(), 'adf-main-')))
   const tree = worktreeOf(main)
   assert.throws(() => installedPath(ID, tree, { home: home([]), exists: () => false }), (e) => e.message.includes(`run it from ${main}`))
+})
+
+// A Codex home: the user's config.toml, a marketplace clone listing tool 1.2.3, a cached version.
+function codexHome({ config = '[plugins."tool@market"]\nenabled = true\n', cached = ['1.2.3'], listed = '1.2.3' } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'adf-codex-'))
+  writeFileSync(join(dir, 'config.toml'), config)
+  if (listed) {
+    const clone = join(dir, '.tmp', 'marketplaces', 'market', '.agents', 'plugins')
+    mkdirSync(clone, { recursive: true })
+    writeFileSync(join(clone, 'marketplace.json'), JSON.stringify({ plugins: [{ name: 'tool', source: './plugins/tool' }] }))
+    const manifest = join(dir, '.tmp', 'marketplaces', 'market', 'plugins', 'tool', '.claude-plugin')
+    mkdirSync(manifest, { recursive: true })
+    writeFileSync(join(manifest, 'plugin.json'), JSON.stringify({ name: 'tool', version: listed }))
+  }
+  for (const v of cached) mkdirSync(join(dir, 'plugins', 'cache', 'market', 'tool', v), { recursive: true })
+  return dir
+}
+
+test('codex: an enabled plugin resolves to its cache directory', () => {
+  const root = mkdtempSync(join(tmpdir(), 'adf-host-'))
+  const h = codexHome({ cached: ['1.2.3', '0.9.0'] })
+  const found = selectInstall(ID, root, { runtime: 'codex', home: h })
+  assert.deepEqual(found, { path: join(h, 'plugins', 'cache', 'market', 'tool', '1.2.3'), version: '1.2.3' })
+  // With no marketplace clone, the single cached version is the install.
+  const single = codexHome({ listed: null })
+  assert.equal(installedPath(ID, root, { runtime: 'codex', home: single }), join(single, 'plugins', 'cache', 'market', 'tool', '1.2.3'))
+  // Two cached versions and nothing to choose by: not installed.
+  assert.throws(() => installedPath(ID, root, { runtime: 'codex', home: codexHome({ listed: null, cached: ['1', '2'] }) }), /not installed/)
+})
+
+test('codex: enabled = false is disabled', () => {
+  const root = mkdtempSync(join(tmpdir(), 'adf-host-'))
+  const h = codexHome({ config: '[plugins."tool@market"]\nenabled = false\n' })
+  assert.throws(() => installedPath(ID, root, { runtime: 'codex', home: h }), (e) => /installed but disabled/.test(e.message) && e.absent.reason === 'disabled')
+})
+
+test('codex: the project config overrides the user config', () => {
+  const root = mkdtempSync(join(tmpdir(), 'adf-host-'))
+  const h = codexHome()
+  mkdirSync(join(root, '.codex'))
+  writeFileSync(join(root, '.codex', 'config.toml'), '[plugins."tool@market"]\nenabled = false\n')
+  assert.throws(() => installedPath(ID, root, { runtime: 'codex', home: h }), /installed but disabled/)
+  const off = codexHome({ config: '[plugins."tool@market"]\nenabled = false\n' })
+  writeFileSync(join(root, '.codex', 'config.toml'), '[plugins."tool@market"]\nenabled = true\n')
+  assert.match(installedPath(ID, root, { runtime: 'codex', home: off }), /1\.2\.3$/)
+})
+
+test('codex: the refusal names codex plugin add', () => {
+  const root = mkdtempSync(join(tmpdir(), 'adf-host-'))
+  const h = codexHome({ config: '' })
+  assert.throws(() => installedPath(ID, root, { runtime: 'codex', home: h }), (e) => /run: codex plugin add tool@market$/.test(e.message) && e.absent.reason === 'not-installed')
+  // Enabled but absent from the cache is not installed either.
+  assert.throws(() => installedPath(ID, root, { runtime: 'codex', home: codexHome({ cached: [] }) }), /codex plugin add tool@market/)
 })

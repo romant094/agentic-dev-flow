@@ -1,0 +1,39 @@
+model = "gpt-5"
+notify = ["node", "notify.mjs"]
+approvals = [
+  "a",
+  ["nested"],
+]
+
+[marketplaces.claude-plugins-official]
+source_type = "git"
+source = "https://github.com/anthropics/claude-plugins-official.git"
+last_revision = "abc123"
+
+[plugins."superpowers@claude-plugins-official"]
+enabled = true
+
+[plugins."adf@agentic-dev-flow"]
+enabled = false # off for now
+
+[features]
+hooks = true
+
+[mcp_servers.node_repl]
+args = []
+
+[mcp_servers.node_repl.env]
+NODE_PATH = "/x"
+
+[hooks.state."superpowers@claude-plugins-official:hooks/hooks.json:session_start:0:0"]
+trusted_hash = "sha256:aa"
+
+[projects."/abs/path"]
+trust_level = "trusted"
+
+[desktop.appearanceDarkChromeTheme]
+contrast = 60
+opaqueWindows = false
+
+[[array.of.tables]]
+skipped = 1

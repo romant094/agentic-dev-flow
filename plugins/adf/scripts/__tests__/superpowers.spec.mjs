@@ -94,3 +94,28 @@ test('the CLI prints JSON and exits 1 with the install command', () => {
   writeFileSync(join(host, '.claude', 'settings.local.json'), JSON.stringify({ enabledPlugins: { [PLUGIN_ID]: false } }))
   assert.match(run().out.reason, /disabled/)
 })
+
+test('superpowers gate passes in codex with superpowers@claude-plugins-official enabled and cached', () => {
+  const home = mkdtempSync(join(tmpdir(), 'adf-codex-'))
+  const host = mkdtempSync(join(tmpdir(), 'adf-host-'))
+  const run = () => {
+    try {
+      return { code: 0, out: JSON.parse(execFileSync('node', [cli, '--root', host, '--home', home], { encoding: 'utf8', env: { ...process.env, ADF_RUNTIME: 'codex' } })) }
+    } catch (error) {
+      return { code: error.status, out: JSON.parse(error.stdout) }
+    }
+  }
+  const missing = run()
+  assert.equal(missing.code, 1)
+  assert.equal(missing.out.install, `codex plugin add ${PLUGIN_ID}`)
+
+  writeFileSync(join(home, 'config.toml'), `[plugins."${PLUGIN_ID}"]\nenabled = true\n`)
+  assert.match(run().out.reason, /not installed/)
+
+  mkdirSync(join(home, 'plugins', 'cache', 'claude-plugins-official', 'superpowers', '6.1.1'), { recursive: true })
+  assert.deepEqual(run(), { code: 0, out: { ok: true, reason: null } })
+
+  mkdirSync(join(host, '.codex'))
+  writeFileSync(join(host, '.codex', 'config.toml'), `[plugins."${PLUGIN_ID}"]\nenabled = false\n`)
+  assert.match(run().out.reason, /disabled/)
+})
