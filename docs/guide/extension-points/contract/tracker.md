@@ -69,7 +69,7 @@ Each step is one `land.mjs` call or one dispatch. Each step records its result i
 |---|---|---|
 | 1 | Resume | `land.mjs report`. When the state is `complete` or `skipped`, land shows the report and stops. When it is `stopped`, the merge request was closed without a merge. Land shows the report and stops. |
 | 2 | Check | `land.mjs check`. When it is `skipped`, land shows why and stops. The reasons are no tracker plugin, a tracker skipped for this change, or no issue and no tracked debt. When it is `degraded`, land shows the hint and asks you to fix the tracker. |
-| 3 | Wait | `land.mjs wait`. When the change is merged, land goes on. When it is not, land shows the report and stops. When the merge request is closed, land shows the refusal and hands off nothing. |
+| 3 | Wait | `land.mjs wait`. When the change is merged, land goes on. When it is not, land shows the report and stops. When the merge request is closed, land shows the refusal and hands off nothing. When it is `degraded`, land shows the hint. Run `/adf:land` again once the forge is fixed. |
 | 4 | Write the inputs | `land.mjs comment-input`. Land dispatches one read-only agent for each issue, all in parallel. |
 | 5 | Check each reply | `land.mjs comment`. The script checks the fields of the reply. |
 | 6 | Hand off | `land.mjs handoff`. The tracker previews each comment and status change. Land asks for your yes. |

@@ -35,14 +35,14 @@ The provider never forces a push. It refuses an empty branch and a protected bra
 | [/adf:retro](../../cycle/retro.md) | `open`, not a draft, with no CI run. |
 | [/adf:land](tracker.md) | `state`: the check that the merge happened. |
 
-The core calls `check` before the other operations.
+`/adf:archive` calls `check` before `finalize`.
 
 ## With no provider
 
 - Nothing is pushed. No merge request exists. Each report says so.
 - `/adf:archive` offers to merge the change into its base branch. It merges only after your yes (the `merge-local` step).
 - The local merge runs `git merge --no-ff <branch>` in the main checkout. The main checkout must be clean and have the base branch checked out. The branch stays. A failed merge is aborted.
-- For `state`, the core decides "merged" from git. The branch tip must be an ancestor of the local base or of `origin/<base>`. The core fetches nothing.
+- For `state`, the core decides "merged" from git. The branch tip must be an ancestor of the local base or of `origin/<base>`. Or a squash commit on the base has the patch id of the whole change. The core fetches nothing. See [the land command](tracker.md#the-land-command).
 
 A provider that does not declare an operation is not called for it. The core applies the same default.
 

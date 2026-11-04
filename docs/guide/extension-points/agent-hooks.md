@@ -1,5 +1,6 @@
 <!-- sources:
 - plugins/adf/hooks/**
+- plugins/adf/contract/README.md
 - plugins/adf-english-check/hooks/**
 - plugins/adf-npm-workspaces/hooks/**
 - plugins/adf/scripts/update.mjs

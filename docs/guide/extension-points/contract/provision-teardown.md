@@ -42,6 +42,8 @@ Before the `provision` call, the core copies into the worktree the untracked fil
 | `degraded` | The tool of the plugin is missing. The step continues and the report gives the hint. |
 | `refused` | `provision` stops the step. `teardown` stops the removal, and the worktree stays. |
 
+When a provider refuses, the core does not call the providers after it. The result names them in `skipped`.
+
 ## Providers
 
 | Plugin | `provision` | `teardown` |
