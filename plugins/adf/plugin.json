@@ -1,5 +1,5 @@
 {
-  "$schema": "https://agent-plugins.org/schemas/plugin/v1.json",
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "adf",
   "version": "0.19.0",
   "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",

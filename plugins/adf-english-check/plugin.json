@@ -1,5 +1,5 @@
 {
-  "$schema": "https://agent-plugins.org/schemas/plugin/v1.json",
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "adf-english-check",
   "version": "0.8.0",
   "description": "Stops an agent's git commit when the files in scope hold non-English text",

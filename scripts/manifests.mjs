@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import { isMain } from './lib/main.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const SCHEMA = 'https://agent-plugins.org/schemas/plugin/v1.json'
+const SCHEMA = 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json'
 const COPIED = ['author', 'homepage', 'repository', 'license', 'keywords']
 
 const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'))

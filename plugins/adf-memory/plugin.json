@@ -1,5 +1,5 @@
 {
-  "$schema": "https://agent-plugins.org/schemas/plugin/v1.json",
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "adf-memory",
   "version": "0.2.1",
   "description": "Wiki memory for the Agentic Dev Flow: an indexed knowledge base, a log rotated monthly, and the ingest, query and lint workflows",
