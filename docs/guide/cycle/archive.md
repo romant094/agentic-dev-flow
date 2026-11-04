@@ -1,5 +1,7 @@
 <!-- sources:
 - plugins/adf/skills/archive/**
+- plugins/adf/scripts/archive.mjs
+- plugins/adf/scripts/lib/archive.mjs
 -->
 
 # /adf:archive

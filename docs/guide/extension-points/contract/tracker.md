@@ -1,6 +1,9 @@
 <!-- sources:
 - plugins/adf/skills/land/**
 - plugins/adf/contract/README.md
+- plugins/adf/scripts/land.mjs
+- plugins/adf/scripts/lib/land.mjs
+- plugins/adf/scripts/lib/tracker.mjs
 -->
 
 # The tracker role

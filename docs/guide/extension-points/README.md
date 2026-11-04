@@ -1,6 +1,8 @@
 <!-- sources:
 - plugins/adf/contract/README.md
 - plugins/adf/contract/contract.json
+- plugins/adf/scripts/lib/registry.mjs
+- plugins/adf/scripts/lib/roles.mjs
 -->
 
 # Extension points

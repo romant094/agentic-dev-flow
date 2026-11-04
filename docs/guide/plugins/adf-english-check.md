@@ -1,5 +1,8 @@
 <!-- sources:
-- plugins/adf-english-check/.claude-plugin/**
+- plugins/adf-english-check/scripts/*.mjs
+- plugins/adf-english-check/scripts/lib/*.mjs
+- plugins/adf-english-check/adf-extension.json
+- plugins/adf-english-check/hooks/**
 -->
 
 # `adf-english-check`

@@ -1,5 +1,8 @@
 <!-- sources:
 - plugins/adf/contract/README.md
+- plugins/adf/scripts/forge.mjs
+- plugins/adf/scripts/lib/local-merge.mjs
+- plugins/adf/scripts/lib/roles.mjs
 -->
 
 # The forge role

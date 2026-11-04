@@ -1,3 +1,13 @@
+<!-- sources:
+- plugins/adf/skills/propose/**
+- plugins/adf/skills/apply/**
+- plugins/adf/skills/verify/**
+- plugins/adf/skills/review/**
+- plugins/adf/skills/archive/**
+- plugins/adf/scripts/propose.mjs
+- plugins/adf/scripts/archive.mjs
+-->
+
 # Your first change
 
 ## Before you start

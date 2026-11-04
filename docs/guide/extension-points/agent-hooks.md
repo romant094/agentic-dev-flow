@@ -2,6 +2,9 @@
 - plugins/adf/hooks/**
 - plugins/adf-english-check/hooks/**
 - plugins/adf-npm-workspaces/hooks/**
+- plugins/adf/scripts/update.mjs
+- plugins/adf-english-check/scripts/hook.mjs
+- plugins/adf-npm-workspaces/scripts/guard.mjs
 -->
 
 # The agents' own hooks

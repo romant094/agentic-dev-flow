@@ -1,5 +1,7 @@
 <!-- sources:
-- plugins/adf-prisma/.claude-plugin/**
+- plugins/adf-prisma/scripts/*.mjs
+- plugins/adf-prisma/scripts/lib/*.mjs
+- plugins/adf-prisma/adf-extension.json
 -->
 
 # `adf-prisma`

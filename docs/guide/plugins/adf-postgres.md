@@ -1,5 +1,7 @@
 <!-- sources:
-- plugins/adf-postgres/.claude-plugin/**
+- plugins/adf-postgres/scripts/*.mjs
+- plugins/adf-postgres/scripts/lib/*.mjs
+- plugins/adf-postgres/adf-extension.json
 -->
 
 # `adf-postgres`

@@ -1,5 +1,7 @@
 <!-- sources:
 - plugins/adf/skills/retro/**
+- plugins/adf/scripts/retro.mjs
+- plugins/adf/scripts/lib/retro.mjs
 -->
 
 # /adf:retro

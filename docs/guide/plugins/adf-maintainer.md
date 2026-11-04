@@ -1,5 +1,7 @@
 <!-- sources:
-- plugins/adf-maintainer/.claude-plugin/**
+- plugins/adf-maintainer/scripts/*.mjs
+- plugins/adf-maintainer/scripts/lib/*.mjs
+- plugins/adf-maintainer/adf-extension.json
 -->
 
 # `adf-maintainer`

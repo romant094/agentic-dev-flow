@@ -1,3 +1,8 @@
+<!-- sources:
+- package.json
+- scripts/*.mjs
+-->
+
 # Contributing
 
 ## Repository layout

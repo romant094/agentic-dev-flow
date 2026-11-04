@@ -1,5 +1,6 @@
 <!-- sources:
 - plugins/adf/contract/README.md
+- plugins/adf/scripts/lib/verify.mjs
 -->
 
 # The verify hook

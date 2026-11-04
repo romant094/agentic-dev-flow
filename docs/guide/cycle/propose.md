@@ -1,5 +1,7 @@
 <!-- sources:
 - plugins/adf/skills/propose/**
+- plugins/adf/scripts/propose.mjs
+- plugins/adf/scripts/lib/propose.mjs
 -->
 
 # /adf:propose

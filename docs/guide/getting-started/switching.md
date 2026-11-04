@@ -1,3 +1,10 @@
+<!-- sources:
+- plugins/adf/skills/init/**
+- plugins/adf/scripts/lib/migrate.mjs
+- plugins/adf/scripts/lib/init.mjs
+- plugins/adf/scripts/init.mjs
+-->
+
 # Switching a project to the plugins
 
 This checklist is for a host project that already runs its own change flow, written before the

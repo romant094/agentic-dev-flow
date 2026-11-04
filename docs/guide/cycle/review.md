@@ -1,5 +1,7 @@
 <!-- sources:
 - plugins/adf/skills/review/**
+- plugins/adf/scripts/review.mjs
+- plugins/adf/scripts/lib/review.mjs
 -->
 
 # /adf:review

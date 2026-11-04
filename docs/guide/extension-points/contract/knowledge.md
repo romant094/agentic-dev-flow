@@ -1,5 +1,7 @@
 <!-- sources:
 - plugins/adf/contract/README.md
+- plugins/adf/scripts/lib/roles.mjs
+- plugins/adf/scripts/lib/ingest.mjs
 -->
 
 # The knowledge role

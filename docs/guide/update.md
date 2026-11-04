@@ -1,5 +1,7 @@
 <!-- sources:
 - plugins/adf/skills/update/**
+- plugins/adf/scripts/update.mjs
+- plugins/adf/scripts/lib/update.mjs
 -->
 
 # /adf:update

@@ -1,5 +1,8 @@
 <!-- sources:
-- plugins/adf-gitlab/.claude-plugin/**
+- plugins/adf-gitlab/scripts/*.mjs
+- plugins/adf-gitlab/scripts/lib/*.mjs
+- plugins/adf-gitlab/adf-extension.json
+- plugins/adf-gitlab/templates/**
 -->
 
 # `adf-gitlab`

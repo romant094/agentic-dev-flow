@@ -1,5 +1,6 @@
 <!-- sources:
 - plugins/adf/contract/README.md
+- plugins/adf/scripts/lib/roles.mjs
 -->
 
 # The upstream role

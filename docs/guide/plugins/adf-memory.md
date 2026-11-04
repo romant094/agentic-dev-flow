@@ -1,5 +1,9 @@
 <!-- sources:
-- plugins/adf-memory/.claude-plugin/**
+- plugins/adf-memory/scripts/*.mjs
+- plugins/adf-memory/scripts/lib/*.mjs
+- plugins/adf-memory/adf-extension.json
+- plugins/adf-memory/instructions/**
+- plugins/adf-memory/host/**
 -->
 
 # `adf-memory`

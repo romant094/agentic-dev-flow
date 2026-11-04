@@ -1,5 +1,9 @@
 <!-- sources:
 - plugins/adf/skills/apply/**
+- plugins/adf/scripts/apply-status.mjs
+- plugins/adf/scripts/dispatch.mjs
+- plugins/adf/scripts/lib/apply-status.mjs
+- plugins/adf/scripts/lib/dispatch.mjs
 -->
 
 # /adf:apply

@@ -1,5 +1,8 @@
 <!-- sources:
-- plugins/adf-npm-workspaces/.claude-plugin/**
+- plugins/adf-npm-workspaces/scripts/*.mjs
+- plugins/adf-npm-workspaces/scripts/lib/*.mjs
+- plugins/adf-npm-workspaces/adf-extension.json
+- plugins/adf-npm-workspaces/hooks/**
 -->
 
 # `adf-npm-workspaces`

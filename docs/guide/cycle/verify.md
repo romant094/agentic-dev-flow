@@ -1,5 +1,7 @@
 <!-- sources:
 - plugins/adf/skills/verify/**
+- plugins/adf/scripts/verify.mjs
+- plugins/adf/scripts/lib/verify.mjs
 -->
 
 # /adf:verify

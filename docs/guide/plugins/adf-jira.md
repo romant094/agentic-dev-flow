@@ -6,6 +6,11 @@
 - plugins/adf-jira/skills/sync-debt/**
 - plugins/adf-jira/skills/task/**
 - plugins/adf-jira/skills/worklog/**
+- plugins/adf-jira/scripts/*.mjs
+- plugins/adf-jira/scripts/lib/*.mjs
+- plugins/adf-jira/adf-extension.json
+- plugins/adf-jira/templates/**
+- plugins/adf-jira/env.example
 -->
 
 # `adf-jira`
