@@ -1,6 +1,9 @@
 ---
+name: init
 description: Set up ADF in this project, or report what is missing if it is already set up. Triggers may be phrased in any language.
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name. Outside Claude Code, read `${CLAUDE_PLUGIN_ROOT}/schema/runtimes/<runtime>.md` first: it maps this text's dispatches and questions to your tools.
+
 
 Set up the ADF core in the current project. Running it again is safe: it creates only what is
 missing and changes nothing that exists.

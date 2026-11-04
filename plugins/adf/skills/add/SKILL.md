@@ -1,7 +1,10 @@
 ---
+name: add
 description: Enable an ADF plugin in this project, or set the configuration of one already enabled. Triggers may be phrased in any language.
 argument-hint: <plugin id or path> [config as JSON]
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name. Outside Claude Code, read `${CLAUDE_PLUGIN_ROOT}/schema/runtimes/<runtime>.md` first: it maps this text's dispatches and questions to your tools.
+
 
 Enable the plugin given in the arguments: an installed plugin's id (`name@marketplace`), or
 the path of a plugin directory. A second argument, if present, is the

@@ -652,7 +652,7 @@ test('every prompt skeleton reaches its agent through the frame or renderSkeleto
 // none of their sentences: a rule an agent is told lives in its skeleton alone.
 test('the apply instruction and command restate no sentence of an apply prompt skeleton', () => {
   const pluginRoot = join(PROMPTS_DIR, '..', '..')
-  const surfaces = ['schema/instructions/apply.md', 'commands/apply.md'].map((p) => normalize(readFileSync(join(pluginRoot, p), 'utf8')))
+  const surfaces = ['schema/instructions/apply.md', 'skills/apply/SKILL.md'].map((p) => normalize(readFileSync(join(pluginRoot, p), 'utf8')))
   const skeletons = readdirSync(PROMPTS_DIR).filter((f) => f.endsWith('.md') && !f.startsWith('verify'))
   assert.ok(skeletons.length >= 8, skeletons.join(', '))
   const restated = []

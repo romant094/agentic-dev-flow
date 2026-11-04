@@ -1,7 +1,10 @@
 ---
+name: remove
 description: Disable an ADF plugin in this project. Triggers may be phrased in any language.
 argument-hint: <plugin name or id>
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name. Outside Claude Code, read `${CLAUDE_PLUGIN_ROOT}/schema/runtimes/<runtime>.md` first: it maps this text's dispatches and questions to your tools.
+
 
 Disable the plugin named in the arguments, by its name (`adf-jira`) or its id
 (`adf-jira@agentic-dev-flow`). The plugin's files stay where they are; only its

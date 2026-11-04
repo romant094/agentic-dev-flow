@@ -1,7 +1,10 @@
 ---
+name: update
 description: Update this project's ADF to the latest release, or to a given tag, in one merge request that pins the new release, migrates the registry and merges the host files. Triggers on "update ADF", "update the flow", "upgrade adf". Triggers may be phrased in any language.
 argument-hint: [--to <tag>]
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name. Outside Claude Code, read `${CLAUDE_PLUGIN_ROOT}/schema/runtimes/<runtime>.md` first: it maps this text's dispatches and questions to your tools.
+
 
 Update the project's ADF package to the latest release, or to the tag given with `--to`. The
 update is one branch, `chore/adf-update-<version>`, in its own worktree, and one merge request.

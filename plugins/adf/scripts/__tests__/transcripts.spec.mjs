@@ -265,3 +265,6 @@ test('sessions and their subagents are measured from the change\'s first ledger 
   assert.equal(p1.foreignRecords, 0, 'the lead-in is the change\'s own, not foreign')
   assert.deepEqual(p1.subagents.map((a) => a.agentId), ['b1'])
 })
+
+// Fixture added in Task 11 of iteration 17: how a runtime records a skill invocation.
+test.todo('a skill invocation is marked like a command')

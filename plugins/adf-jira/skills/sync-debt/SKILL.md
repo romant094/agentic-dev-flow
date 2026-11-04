@@ -2,6 +2,8 @@
 name: sync-debt
 description: Use when the ADF technical debt tree and its Jira epic need to be brought back into agreement — after entries are added, merged or reworded, or when asked to check whether the epic still mirrors the tree. Triggers on "sync the tech debt", "mirror the debt to Jira", "update the tech debt epic". Triggers may be phrased in any language.
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name.
+
 
 # Sync the technical debt tree to Jira
 

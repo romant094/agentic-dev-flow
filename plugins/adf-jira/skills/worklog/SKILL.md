@@ -2,6 +2,8 @@
 name: worklog
 description: Use to fill Jira worklogs for a day or a date range. The method is the developer's own — where the material comes from, where the hours come from, how days are filled, how an entry reads — and it is learned from them and kept in their personal profile layer. On a first run with nothing recorded, the skill asks how they want to work rather than assuming. Triggers on "fill my worklog", "log my hours", "worklog for last week". Triggers may be phrased in any language.
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name.
+
 
 # Jira Worklog
 

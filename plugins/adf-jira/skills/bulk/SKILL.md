@@ -2,6 +2,8 @@
 name: bulk
 description: Use to move many Jira issues at once — a status change with the fields that go with it, a field edit across a selection, or a reassignment. Solves each issue's own transition path from the discovered workflow, shows the plan, and applies it only after confirmation. Triggers on "close these issues", "move them to resolved", "reassign to the PM", "send to review", "hand over to QA", "bulk edit". Triggers may be phrased in any language.
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name.
+
 
 # Jira Bulk
 

@@ -2,6 +2,8 @@
 name: setup
 description: Use to create or refresh the Jira project profile that every other adf-jira skill reads — discovers API facts from the live instance and interviews the developer for team and personal conventions. Run it once per project, and again after a Jira admin changes the workflow. Triggers on "set up jira", "refresh the jira profile", "jira setup". Triggers may be phrased in any language.
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name.
+
 
 # Jira Setup
 

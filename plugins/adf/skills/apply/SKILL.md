@@ -1,8 +1,11 @@
 ---
+name: apply
 description: Apply a change - execute its plan task by task with subagents, in its own worktree. Triggers may be phrased in any language.
 argument-hint: <change-name>
 effort: medium
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name. Outside Claude Code, read `${CLAUDE_PLUGIN_ROOT}/schema/runtimes/<runtime>.md` first: it maps this text's dispatches and questions to your tools.
+
 
 Apply a change: execute its `plan.md` through `superpowers:subagent-driven-development`, task
 group by task group, in the change's worktree. Apply implements; it writes no artifact. Verify

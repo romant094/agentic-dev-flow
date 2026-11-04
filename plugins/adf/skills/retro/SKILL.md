@@ -1,8 +1,11 @@
 ---
+name: retro
 description: Run a retrospective - how the flow worked over a window of archived changes, one change or a period. Triggers may be phrased in any language.
 argument-hint: "[--change <name> | --from <YYYY-MM-DD> --to <YYYY-MM-DD>]"
 effort: medium
 ---
+In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the directory two levels above this file's directory, and `$ARGUMENTS` is the text the developer wrote after this skill's name. Outside Claude Code, read `${CLAUDE_PLUGIN_ROOT}/schema/runtimes/<runtime>.md` first: it maps this text's dispatches and questions to your tools.
+
 
 Run a retrospective: a script selects the archived changes and computes every number, one agent
 reasons over them, its findings and the open ADF debt are filed upstream on the developer's yes,

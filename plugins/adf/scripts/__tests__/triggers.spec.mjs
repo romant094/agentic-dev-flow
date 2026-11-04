@@ -1,5 +1,5 @@
 // Trigger phrases (decision D16 of iteration 13, the rule in the root README's "Core and
-// plugins"): every skill and command of every plugin writes its triggers in English and carries
+// plugins"): every skill of every plugin writes its triggers in English and carries
 // the note that a trigger may come in any language. Runs on the real files of this repository;
 // the fixtures beside it only prove the check can fire.
 import { test } from 'node:test'
@@ -26,19 +26,19 @@ function walk(dir) {
   })
 }
 
-// Every SKILL.md under plugins/*/skills/ and every command under plugins/*/commands/.
+// Every SKILL.md under plugins/*/skills/.
 function triggerFiles() {
   const plugins = join(repo, 'plugins')
   return readdirSync(plugins).flatMap((plugin) =>
-    ['skills', 'commands'].flatMap((kind) => {
-      const dir = join(plugins, plugin, kind)
+    (() => {
+      const dir = join(plugins, plugin, 'skills')
       try {
         statSync(dir)
       } catch {
         return []
       }
-      return walk(dir).filter((f) => (kind === 'skills' ? f.endsWith(`${sep}SKILL.md`) : f.endsWith('.md')))
-    })
+      return walk(dir).filter((f) => f.endsWith(`${sep}SKILL.md`))
+    })()
   )
 }
 
@@ -93,10 +93,10 @@ test('the trigger check fires on a Cyrillic trigger, a missing note and a non-La
   assert.deepEqual(triggerProblems('no frontmatter'), ['no frontmatter description', `description lacks the note "${NOTE}"`])
 })
 
-test('every skill and command of every plugin writes its triggers in English and carries the note', () => {
+test('every skill of every plugin writes its triggers in English and carries the note', () => {
   const files = triggerFiles()
   assert.ok(files.some((f) => f.endsWith(`${sep}SKILL.md`)), 'no SKILL.md was found')
-  assert.ok(files.some((f) => f.includes(`${sep}commands${sep}`)), 'no command was found')
+  assert.ok(files.some((f) => f.includes(`plugins${sep}adf${sep}skills${sep}`)), 'no adf skill was found')
   const found = files.flatMap((f) => triggerProblems(readFileSync(f, 'utf8')).map((p) => `${rel(f)}: ${p}`))
   assert.deepEqual(found, [], found.join('\n'))
 })

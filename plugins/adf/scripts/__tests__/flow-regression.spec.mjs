@@ -60,8 +60,9 @@ test('every script under plugins/*/scripts is named in a spec of its own plugin'
 // The surfaces an agent acts on, the prompt skeletons a dispatched agent is sent among them. A
 // README is documentation for people, not a surface.
 function surfaces() {
-  const folders = [join(adf, 'schema', 'instructions'), join(adf, 'commands'), join(adf, 'agents'), join(adf, 'host'), join(adf, 'schema', 'prompts')]
-  return folders.flatMap((dir) => readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => join(dir, f)))
+  const folders = [join(adf, 'schema', 'instructions'), join(adf, 'agents'), join(adf, 'host'), join(adf, 'schema', 'prompts')]
+  const skills = readdirSync(join(adf, 'skills')).map((n) => join(adf, 'skills', n, 'SKILL.md'))
+  return [...folders.flatMap((dir) => readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => join(dir, f))), ...skills]
 }
 
 // Normalisation copied from the origin's normative-duplication check. Any capitalisation of
@@ -175,7 +176,7 @@ test('no surface states how many checks, steps, artifacts or rules there are', (
 
 // The origin's `check-workflow-shape.mjs`: documentation contradicted the workflow's real shape,
 // so the shape is derived from the files that define it, never remembered. `schema.json` holds
-// the artifacts and their order; `commands/*.md` are the commands. Only the declaration sites
+// the artifacts and their order; `skills/*/SKILL.md` are the commands. Only the declaration sites
 // are checked, the places that enumerate a set: the origin's first version matched every count
 // or id near "artifact" anywhere, and its findings were dominated by sentences naming a subset or
 // using an id as the plain English word it is. A missing site is a finding, never silence: the
@@ -185,7 +186,7 @@ test('no surface states how many checks, steps, artifacts or rules there are', (
 // Optional is derived the origin's way, from `requires`: the artifacts the last artifact of the
 // build order does not depend on, directly or through others, are side branches a change may
 // skip (today `design`, required by nothing).
-export function workflowShape(schema, commandFiles) {
+export function workflowShape(schema, commandNames) {
   const byId = new Map(schema.artifacts.map((a) => [a.id, a]))
   const needed = new Set()
   const queue = [buildOrder(schema).at(-1)]
@@ -201,7 +202,7 @@ export function workflowShape(schema, commandFiles) {
     optional: optional.map((a) => a.id),
     generates: schema.artifacts.map((a) => a.generates),
     optionalGenerates: optional.map((a) => a.generates),
-    commands: commandFiles.filter((f) => f.endsWith('.md')).map((f) => f.replace(/\.md$/, '')).sort()
+    commands: [...commandNames].sort()
   }
 }
 
@@ -236,10 +237,10 @@ export function proposeFilesFindings(file, text, shape) {
 }
 
 // Sites: the README's command block after "in the host project:" and its layout line for
-// `commands/`. Each lists every command, in an order of its own, so sets are compared.
+// `skills/`. Each lists every command, in an order of its own, so sets are compared.
 export function readmeCommandFindings(file, text, shape) {
   const block = text.match(/in the host project:\s*\n\s*```[^\n]*\n([\s\S]*?)```/)
-  const layout = text.match(/^\s*commands\/\s+(.+)$/m)
+  const layout = text.match(/^\s*skills\/\s+(.+)$/m)
   const names = (source) => sorted([...source.matchAll(/\/adf:([a-z][a-z-]*)/g)].map((m) => m[1]))
   return [
     ...(block ? differs(file, 'readme-command-block', names(block[1]), shape.commands) : missing(file, 'readme-command-block')),
@@ -256,7 +257,7 @@ test('the shape detectors fire on a drifted list and on a missing site, and pass
       { id: 'c', generates: 'c.md', requires: ['b'] }
     ]
   }
-  const shape = workflowShape(schema, ['go.md', 'init.md', 'notes.txt'])
+  const shape = workflowShape(schema, ['go', 'init'])
   assert.deepEqual([shape.mandatory, shape.optional, shape.commands], [['a', 'b', 'c'], ['side'], ['go', 'init']])
 
   assert.deepEqual(schemaDescriptionFindings('s', 'Flow: a, b, c. side is optional: never required.', shape), [])
@@ -274,7 +275,7 @@ test('the shape detectors fire on a drifted list and on a missing site, and pass
   ])
   assert.deepEqual(proposeFilesFindings('p', 'Nothing.', shape), ['p [propose-files]: the list was not found'])
 
-  const readme = 'Then, in the host project:\n\n```\n/adf:init\n/adf:go <x>\n```\n\n  commands/   /adf:go, /adf:init\n'
+  const readme = 'Then, in the host project:\n\n```\n/adf:init\n/adf:go <x>\n```\n\n  skills/   /adf:go, /adf:init\n'
   assert.deepEqual(readmeCommandFindings('r', readme, shape), [])
   assert.deepEqual(readmeCommandFindings('r', readme.replace('/adf:go <x>', '/adf:gone').replace(', /adf:init', ''), shape), [
     'r [readme-command-block]: lists gone, init; the schema has go, init',
@@ -286,14 +287,14 @@ test('the shape detectors fire on a drifted list and on a missing site, and pass
   ])
 })
 
-test('every prose list of the artifacts and commands matches the schema and the commands folder', () => {
+test('every prose list of the artifacts and commands matches the schema and the skills folder', () => {
   const schema = loadSchema()
-  const shape = workflowShape(schema, readdirSync(join(adf, 'commands')))
+  const shape = workflowShape(schema, readdirSync(join(adf, 'skills')))
   assert.ok(shape.optional.length > 0 && shape.commands.length > 0, 'the shape was not derived')
   const read = (path) => readFileSync(join(repo, path), 'utf8')
   const found = [
     ...schemaDescriptionFindings('plugins/adf/schema/schema.json', schema.description, shape),
-    ...proposeFilesFindings('plugins/adf/commands/propose.md', read('plugins/adf/commands/propose.md'), shape),
+    ...proposeFilesFindings('plugins/adf/skills/propose/SKILL.md', read('plugins/adf/skills/propose/SKILL.md'), shape),
     ...readmeCommandFindings('README.md', read('README.md'), shape)
   ]
   assert.deepEqual(found, [], found.join('\n'))
@@ -390,12 +391,12 @@ test('the frame states the foreground dispatch rule, and every command that disp
   const frame = readFileSync(join(adf, 'schema', 'prompts', 'frame.md'), 'utf8')
   const tools = frame.slice(frame.indexOf('## Tools'), frame.indexOf('## Rules'))
   assert.match(normalise(tools), /never end a turn with a dispatch outstanding/)
-  const commands = join(adf, 'commands')
+  const skills = join(adf, 'skills')
   const bound = /`## Tools` in\s+`\$\{CLAUDE_PLUGIN_ROOT\}\/schema\/prompts\/frame\.md`, and they bind this session too/
-  const unbound = readdirSync(commands)
-    .filter((f) => f.endsWith('.md'))
-    .map((f) => [f, readFileSync(join(commands, f), 'utf8')])
-    .filter(([, text]) => /dispatch/i.test(text) && !bound.test(text))
+  const unbound = readdirSync(skills)
+    .map((f) => [f, readFileSync(join(skills, f, 'SKILL.md'), 'utf8')])
+    // The token line every skill opens with says "dispatches"; it is not a dispatch.
+    .filter(([, text]) => /dispatch/i.test(text.replace(/^In a runtime that does not substitute them:.*$/m, '')) && !bound.test(text))
     .map(([f]) => f)
   assert.deepEqual(unbound, [])
 })
