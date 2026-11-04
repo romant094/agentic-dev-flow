@@ -11,7 +11,7 @@ release with the merge. A user-scope install gets the same notice and its own up
 ## Intent
 
 The flow's concept is settled; later releases are fixes and improvements. The flow has no public
-release, so there is no update path other than this command (iteration 16a documents only it).
+release, so there is no update path other than this command (the guide, iteration 18, documents only it).
 A project's flow can fall behind the repository without anybody noticing, and an update by hand
 touches several files whose rules nobody remembers.
 
@@ -107,7 +107,7 @@ touches several files whose rules nobody remembers.
 
 - Updating a project's local plugins.
 - Rolling back to an older release (a revert of the merge request does it).
-- Codex support: an iteration of its own (roadmap row 19).
+- Codex support: an iteration of its own (roadmap row 17).
 
 ## Depends on
 

@@ -1,4 +1,4 @@
-# Iteration 16a — Documentation
+# Iteration 18 — Documentation
 
 ## Goal
 
@@ -103,3 +103,5 @@ Settled by the developer on 2026-11-03.
   link, and an agent finds a page that no longer says what the code does.
 - The switch's findings stay in the iteration 15 record; the guide does not repeat them.
 - English only, STE style, like every other artifact.
+- After Codex support (iteration 17), not before it (2026-11-04): the guide covers both Claude
+  Code and Codex.
