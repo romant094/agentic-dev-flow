@@ -47,10 +47,11 @@
 //            (lib/workspace.mjs remove): a dirty tree refused, never forced, the branch kept
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { readBranches, requireBranches } from './branches.mjs'
 import { commitPaths } from './commit.mjs'
 import { BLOCK_INDEX, markFiled } from './debt.mjs'
-import { DispatchError, planDispatch, renderPrompt, replyFile, RETRO_ID, retroDir, retroInputFile } from './dispatch.mjs'
+import { dispatchFields, DispatchError, planDispatch, renderPrompt, replyFile, RETRO_ID, RETRO_ROLES, retroDir, retroInputFile, withPreamble } from './dispatch.mjs'
 import { mainCheckout } from './installed.mjs'
 import { localMerge } from './local-merge.mjs'
 import { PLUGIN_ROOT } from './metrics.mjs'
@@ -58,7 +59,7 @@ import { input, recordRetroDispatch, recordRetroReply } from './retro.mjs'
 import { renderRetro, retroDocument } from './retro-render.mjs'
 import { readDebtRoot } from './registry.mjs'
 import { callRole, CORE, coreRepository, forgeInput, forgeReport, hostSlug, knowledgePaths, upstreamReport } from './roles.mjs'
-import { defaultHome } from './runtime.mjs'
+import { defaultHome, detectRuntime } from './runtime.mjs'
 import { buildSidecar, fetchRef, MODES, RETRO_DIR, sinceLastRetro } from './window.mjs'
 import { create, gitIn, remove as removeWorktree, worktreePath, worktrees } from './workspace.mjs'
 
@@ -133,7 +134,8 @@ const today = (now) => now().toISOString().slice(0, 10)
 
 // deps: { now() -> Date, home, fault(step), knowledgePaths(root) -> { state, paths },
 // forge(operation, input) -> role result, upstream(operation, input) -> role result,
-// repository: the `owner/name` filed in, default the core manifest's }. For
+// repository: the `owner/name` filed in, default the core manifest's, runtime: the one the
+// dispatch is printed for, default the one that runs the script }. For
 // `start`, the id is made from `date` (default today) and the `scope`'s mode; for the other
 // steps, `id` names a started retrospective, default the newest started.
 export function retroContext(rootArg, { id, date, scope, start = false, deps = {} } = {}) {
@@ -160,6 +162,7 @@ export function retroContext(rootArg, { id, date, scope, start = false, deps = {
     date: day,
     now,
     home,
+    runtime: deps.runtime ?? detectRuntime({ scriptPath: fileURLToPath(import.meta.url) }),
     fault: deps.fault ?? null,
     repository: deps.repository ? () => deps.repository : () => coreRepository(),
     knowledgePaths: deps.knowledgePaths ?? ((root) => knowledgePaths(root, core)),
@@ -250,6 +253,7 @@ export function windowStep(ctx) {
     mkdirSync(dirname(inputFile), { recursive: true })
     writeFileSync(inputFile, `${JSON.stringify(input(sidecar, { root: wt, home: ctx.home }), null, 2)}\n`)
     const plan = planDispatch({ role: 'retro', id: ctx.id }, { root: wt, main: ctx.main, planText: null, exists: existsSync })
+    const agent = dispatchFields(RETRO_ROLES.retro.level, ctx.runtime)
     const fields = [
       ['Dispatch name', plan.name],
       ['Worktree', wt],
@@ -257,7 +261,7 @@ export function windowStep(ctx) {
       ['Reply file', plan.replyFile]
     ]
     const promptFile = promptPath(wt, ctx.id)
-    writeFileSync(promptFile, `${renderPrompt({ plan, skeletons: skeletons(), fields, tokens: { '${CLAUDE_PLUGIN_ROOT}': PLUGIN_ROOT, '<root>': wt, '<worktree>': wt } })}\n`)
+    writeFileSync(promptFile, `${withPreamble(renderPrompt({ plan, skeletons: skeletons(), fields, tokens: { '${CLAUDE_PLUGIN_ROOT}': PLUGIN_ROOT, '<root>': wt, '<worktree>': wt } }), agent.preamble)}\n`)
     const attempt = recordRetroDispatch(wt, ctx.id, { now: ctx.now().toISOString() })
     return {
       state: 'done',
@@ -269,7 +273,7 @@ export function windowStep(ctx) {
         changes: sidecar.changes.map((c) => c.change),
         coverage: sidecar.coverage,
         adfDebt: sidecar.adfDebt.map(titled),
-        dispatch: { ...plan, promptFile, attempt: attempt.attempt }
+        dispatch: { ...withoutAgent(plan), ...agent.fields, promptFile, attempt: attempt.attempt }
       }
     }
   })
@@ -309,6 +313,7 @@ const FINDING_FIELDS = ['id', 'title', 'class', 'changes', 'evidence', 'cost', '
 const DEBT_FIELDS = ['id', 'title', 'plugin', 'pluginVersion', 'change', 'class', 'source', 'body']
 const only = (o, keys) => Object.fromEntries(keys.map((k) => [k, o[k] ?? null]))
 const titled = ({ id, title }) => ({ id, title })
+const withoutAgent = ({ agent, ...rest }) => rest
 
 // The `upstream.file` input: each finding and debt record cut to the contract's fields, an
 // absent field sent as null.
