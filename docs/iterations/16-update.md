@@ -63,10 +63,10 @@ touches several files whose rules nobody remembers.
    notice; its owner moves the `ref` to the first release that has them in a merge request of
    its own. Every later update goes through the command.
 10. **A teammate after the merge.** The new `ref` reaches the teammate with the integration
-    branch. When Claude Code does not install it by itself (not checked yet, step 4), the session
-    start finds the installed release older than the project's `ref` and runs, or offers, one
-    script that pulls the pinned release (`update.mjs pull`: the marketplace refresh and the
-    reinstall for this project). No other teammate step.
+    branch. Claude Code does not install it by itself (checked in step 4, see `## Result`): the
+    session start finds the installed release older than the project's `ref` and offers one
+    script that pulls the pinned release (`update.mjs pull`, run by `/adf:update`: the
+    marketplace refresh and `claude plugin update` for this project). No other teammate step.
 11. **Local plugins** (a project's own, for its domain, such as a `path` entry or another
    marketplace) are not the package's: the command does not check or update them.
 
@@ -129,3 +129,73 @@ touches several files whose rules nobody remembers.
 | 6 | Host file merge: unedited replaced; edited shows the three versions and takes the developer's choice | unit tests; the agent's automatic merge checked on one edited file |
 | 7 | `/adf:update`: steps 6.1–6.5 above; the merge request through the forge, or a local branch with no forge | a scratch project from `v0.18.1` to the new tag |
 | 8 | Release adf with the new tag | `npm test`, the scratch run of step 7 (parity is retired, `docs/roadmap.md`) |
+
+## Result
+
+Released as adf 0.19.0, adf-english-check 0.8.0, package `v0.19.0`.
+
+Checks: `npm test` 1645 pass, 0 fail; `scripts/check-release.mjs` ok. Parity is retired from the
+release steps (`docs/roadmap.md`, `## Checks after every iteration`): the switch removed the
+origin's flow, so its tools have nothing to compare against.
+
+### The scratch run (2026-11-04)
+
+Run by the maintainer's agent with no developer step. A local bare repository held the package
+at four tags (`v0.19.0`, `v0.19.1`, and after the fixes below `v0.19.2`, `v0.19.3`), with the
+marketplace renamed `adf-sandbox` so the developer's own `agentic-dev-flow` record stayed
+untouched (a clean `CLAUDE_CONFIG_DIR` has no login). A scratch project with a local bare origin
+and no forge plugin enabled `adf` and `adf-memory` at project scope, with an edited
+`openspec/review-prompt.md`. Interactive sessions were driven by `expect`; `/adf:update` ran
+headless (`claude -p`, Sonnet), the developer's answers given in its arguments: about $0.15 per
+update, $0.09 for the pull.
+
+What was checked:
+- **The notice.** The `SessionStart` hook's `systemMessage` shows in the interactive session:
+  `SessionStart:startup says: ADF v0.19.1 is available; this project is on v0.19.0. Run
+  /adf:update.` After the merge of an update: `This project pins ADF v0.19.1; v0.19.0 is
+  installed. Run /adf:update to install it.`
+- **`/adf:update` end to end**, twice: `plan`, `apply` from the new clone, the branch commit, the
+  no-forge report, `cleanup`. An unedited template replaced (`planning.md`), an edited one merged
+  with *Keep everything*: once clean, once through a `git merge-file` conflict the agent
+  resolved, keeping the project's section and carrying the template's change.
+- **Claude Code after a changed `ref`.** A session start moves the global marketplace record and
+  its clone to the project's new `ref` and says "Plugins changed. Run /reload-plugins", but does
+  not reinstall: the install record stays on the old release, also after `/reload-plugins`
+  (the new version only lands in the cache). So `update.mjs pull` is needed.
+- **`pull` in a session** (`/adf:update` with `pull` true): `claude plugin update` for each
+  enabled package plugin; installed equals the pinned `ref` after it.
+- **A teammate on the same machine** who clones the project and trusts it: no install record of
+  its own, the plugins enabled at the pinned version from the shared cache; `check` reports
+  installed equal to `ref`.
+
+Defects found and fixed:
+- F1: `where` warned "not from an installed release" when the Claude Code home is a symlink
+  (node resolves the script's path, the home was compared unresolved). Fixed in `b234840`.
+- F2: step 10 removed the clones with `rm -rf`, which Claude Code's safety check and a
+  developer's hook block; the clones stayed. `update.mjs cleanup --clones` now removes only the
+  directory `plan` made (`d97abcb`).
+- F3: `pull` ran `claude plugin install`, which does nothing for an installed plugin; the
+  refusal caught it. `pull` now runs `claude plugin update` for a plugin with an install record
+  for the scope and `install` for the others (`3471a02`).
+- F4 (not a defect of the port): `claude plugin marketplace update` from a shell follows the
+  global record's `ref`, not the project's; only a session start moves the record. `pull` runs
+  inside a session through `/adf:update`, so it is in order there.
+- F5: the update specs left the clones of every `plan` in the system temporary directory (490
+  directories). The specs remove them now (`0173adb`).
+
+Not checked: the merge request path through a forge (the scratch project had none; `forge.mjs`
+`open` and `finalize` are covered by unit tests), a teammate on another machine, a user-scope
+update.
+
+### The first update of a project on `v0.18.1`
+
+`v0.18.1` has neither the notice nor `pull`, and Claude Code does not reinstall on a changed
+`ref` (above). So:
+1. The project's owner moves the `ref` in `.claude/settings.json` to `v0.19.0` in a merge request
+   of its own. The registry entries need no `version`: an entry without one reads its version
+   from the old tag's `marketplace.json`.
+2. After the merge, each developer, on their own machine: pulls the integration branch, starts
+   one Claude Code session in the project and closes it (this moves the marketplace record),
+   then runs `claude plugin update <id> --scope project` for each enabled plugin of the package,
+   in the project's main directory.
+3. From `v0.19.0` on, the session start says when to update, and `/adf:update` does the rest.
