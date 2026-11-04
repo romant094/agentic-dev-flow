@@ -2,67 +2,156 @@
 
 ## Goal
 
-A user guide in the repository, nested by section, from which a developer who has never seen the
-flow installs it, runs a change from propose to land, adds a plugin and updates the flow with
-`/adf:update`. The guide stays current in two stages: a script in `npm test` fails when a part of
-the flow has no page, and an agent in every release step checks that the pages still say what
-the changed code does.
+A developer who finds the repository on GitHub and has never seen the flow understands four
+things from the first page: what ADF is, why to use it, what it does, and how to install it in
+Claude Code or in Codex. From the user guide the same developer installs the flow, runs a change
+through the cycle, adds a plugin and updates the flow with `/adf:update`. A changelog tells each
+release's changes from `v0.18.1`, the first working release, on.
+
+The guide stays current in two stages: a script in `npm test` fails when a part of the flow has
+no page, and an agent in every release step checks that the pages still say what the changed
+code does.
+
+## Reader
+
+A stranger on GitHub, not a teammate of the origin project: no knowledge of the flow, of the
+origin's history or of the maintainer's records. Every page is written for that reader.
 
 ## Structure
 
-`docs/guide/` holds the user guide. `docs/iterations/`, `docs/lessons/` and `docs/roadmap.md` stay
-where they are as the maintainer's records and are not part of it. `docs/switching.md` becomes a
-guide page.
+### The first page: `README.md`
+
+The repository's `README.md` becomes the product page, on the pattern of
+`addyosmani/agent-skills` (`README.md` on its `main`). In this order:
+
+1. Title, a one-line tagline, and a text diagram of the main cycle:
+   `propose → apply → verify → review → archive`. `land` is not in the main cycle (see
+   *Extension points*). `retro` is shown apart from the cycle: it looks back over archived
+   changes and is not a stage of one change.
+2. **Commands**: a table, one row per command of the core (`plugins/adf/skills/`): command,
+   when to use it, what it does. `/adf:land` is in the table with the mark *optional — needs a
+   tracker plugin*.
+3. **Quick start**: one collapsible `<details>` block per agent, Claude Code and Codex, each with
+   the exact install commands and a link to that agent's install page.
+4. **Plugins**: a table, one row per plugin in `.claude-plugin/marketplace.json` other than
+   `adf`: plugin, one-line description, when a project needs it, link to its guide page.
+5. **How it works**: the core and the plugins, the registry, one branch and worktree per change;
+   links to the extension points and the concepts.
+6. **Why ADF**: full control of a change, from the gathered context, the plans and the
+   decomposition to the review, the verification and the delivery of the code; and flexibility,
+   because a project enables only the plugins it needs. No cost figures and no comparison with
+   other tools: the measured figures come from test runs.
+7. **Documentation**: link to `docs/guide/README.md` and to `CHANGELOG.md`.
+8. **Contributing** (issues and pull requests are welcome; link to `docs/guide/contributing.md`)
+   and **License**.
+
+The status table by iteration leaves the `README.md`; `docs/roadmap.md` already holds the order
+and the state of each iteration. The `## Layout`, `## Tests` and `## Host files` sections move to
+guide pages (`concepts/` and a contributor page); the `README.md` links to them.
+
+### `CHANGELOG.md`
+
+At the repository root. One section per package version, newest first, from `v0.18.1` to the
+current version, in the *Keep a Changelog* form, with an `## [Unreleased]` section on top for
+the work after the last tag (this iteration's guide is there), (`## [x.y.z] — YYYY-MM-DD`, with `Added`,
+`Changed`, `Fixed`, `Removed` as needed). Each entry is written for the stranger: what changed
+for a user of the flow, not which iteration did it. The sources for the existing entries are the
+tags, `git log` between them, and the iteration records. `v0.18.0` has no section: it fails two
+test assertions and `v0.18.1` replaced it; the `v0.18.1` section is the first working release.
+
+### The user guide: `docs/guide/`
+
+`docs/iterations/`, `docs/lessons/` and `docs/roadmap.md` stay where they are as the
+maintainer's records and are not part of the guide. `docs/switching.md` becomes a guide page.
 
 ```
 docs/guide/
   README.md                  the index: what the flow is, where to start, the section map
   getting-started/
-    install.md               marketplace, project scope, /adf:init
+    claude-code.md           install in Claude Code: marketplace, project scope, /adf:init
+    codex.md                 install in Codex: marketplace, user scope, adf:init, /hooks trust
     switching.md             a project with a flow of its own moves to the plugins
-    first-change.md          one small change from propose to land
+    first-change.md          one small change from propose to archive
   cycle/
-    README.md                the cycle on one page, the artifacts and where they live
-    propose.md apply.md verify.md review.md archive.md land.md retro.md
+    README.md                the main cycle on one page, the artifacts and where they live
+    propose.md apply.md verify.md review.md archive.md
+    retro.md                 the retrospective, apart from the cycle
+  extension-points/
+    README.md                the full cycle with land, and where each point acts
+    contract/
+      tracker.md             the tracker role; /adf:land is documented here
+      forge.md               the forge role; without it archive merges locally
+      knowledge.md           the knowledge role
+      upstream.md            the upstream role
+      provision-teardown.md  the worktree hooks
+      verify-check.md        the verify hook
+    agent-hooks.md           the agents' own hooks: the English check, the npm guard,
+                             the session-start update notice
+  plugins/
+    README.md                which plugin does what, what is skipped without it
+    <one page per plugin>    adf-english-check, adf-gitlab, adf-jira, adf-maintainer,
+                             adf-memory, adf-npm-workspaces, adf-postgres, adf-prisma
   concepts/
     registry.md              .claude/adf-extensions.json, roles, contract versions
     worktrees.md             one branch and worktree per change, groups, provisioning
     capability-levels.md     mechanical, integration, architecture
-    scope-and-tracker.md     scope sources, taken keys, the hand-off
     memory-and-debt.md       wiki memory, the technical debt store
-    metrics.md               the metrics record, prices, the retrospective
-  plugins/
-    README.md                which plugin does what, what is skipped without it
-    <one page per plugin>    adf-gitlab, adf-jira, adf-memory, adf-english-check,
-                             adf-npm-workspaces, adf-postgres, adf-prisma, adf-maintainer
+    metrics.md               the metrics record, prices, the retrospective's numbers
+    host-files.md            what the flow writes into a project
   projects/
     several-projects.md      several projects on one machine (inputs below)
     team.md                  what a teammate does after the merge request that installs the flow
   update.md                  /adf:update, the only update path
   troubleshooting.md         the refusals a developer meets and what to do
+  contributing.md            the repository layout and its tests
 ```
 
-A plugin's own `README.md` stays short: what it provides and a link to its guide page, so each
-fact has one place.
+Two kinds of page describe one plugin from two sides, and each fact has one place:
+
+- An **extension point** page says what the point is, when in the cycle it acts, and what the core
+  does with no provider. It names the plugins that provide it.
+- A **plugin** page says how to install, enable and configure the plugin, and what it does. It
+  links to the points it provides.
+
+Each agent difference has one place too: the install pages say how each agent installs, invokes
+a command and trusts a hook. The other pages name a command in the Claude Code form
+(`/adf:propose`) and link to `getting-started/codex.md` for the Codex form, once per page.
+
+A plugin's own `README.md` shrinks to what it provides and a link to its guide page.
 
 Each page names the files it describes in a front matter list, `sources:` (paths or globs under
 `plugins/`). The script check and the agent check both read it.
 
-The flow has no public release, so there is no update path before `/adf:update`: the guide
-documents only the command.
+The flow has no public release before this one, so there is no update path before
+`/adf:update`: the guide documents only the command.
+
+## Language
+
+Every page of the guide, the `README.md` and the `CHANGELOG.md` is written in ASD-STE100
+Simplified Technical English: one idea per sentence, at most 20 words in a procedure sentence and
+25 in a description, active voice, the imperative for a step, one step per action, one term per
+concept. Command names, file names and code identifiers stay as they are.
 
 ## Steps
 
 | # | Step | Check |
 |---|---|---|
 | 1 | `docs/guide/` with the index and the section skeleton above; `docs/switching.md` moves to `getting-started/` | `check-guide.mjs` |
-| 2 | `getting-started/` and `cycle/`: each command page says what the command asks, writes, commits and how it resumes after a stop | the agent check (step 6) |
-| 3 | `concepts/`, `plugins/` (the plugin READMEs move here and shrink to a link), `projects/`, `update.md`, `troubleshooting.md` | the agent check (step 6) |
-| 4 | `README.md` of the repository: the current state (the plugin-first flow on `main`, the monolithic one on `adf-legacy`) and a link to the guide in place of the status table | read by the developer |
-| 5 | Stage 1, by script: `scripts/check-guide.mjs` in `npm test`. Every command in `plugins/adf/commands/`, every plugin in `.claude-plugin/marketplace.json`, every contract role and every registry key has a page that names it; every file under `plugins/*/commands/`, `plugins/*/skills/` and `plugins/*/contract/` is in some page's `sources:`; every `sources:` entry and every relative link resolves | unit tests; a removed page or a new command without a page fails `npm test` |
-| 6 | Stage 2, by reasoning: `scripts/guide-review.mjs` in every release step. The script takes the diff since the previous release tag, selects the pages whose `sources:` it touches, and builds one package; one read-only agent replies in JSON under a schema the port owns (a finding: page, claim, the source line that contradicts it, the fix), checked by script. A release goes out with no open finding | unit tests of the package and the reply check; one run on the release that adds the guide |
-| 7 | The upkeep rule in `docs/roadmap.md`, `## Checks after every iteration`: 3. `check-guide.mjs` (in `npm test`); 4. `guide-review.mjs` with no open finding. A flow change updates its pages in the same commit | read by the developer |
-| 8 | A scratch repository and a clean `CLAUDE_CONFIG_DIR` follow `getting-started/` to a passing `extensions.mjs check` and one change to land | the run's notes in the `## Result` |
+| 2 | `getting-started/` and `cycle/`: each command page says what the command asks, writes, commits and how it resumes after a stop; each install page holds the commands of its agent, taken from the code and from `docs/iterations/17-codex.md` | the agent check (step 6) |
+| 3 | `extension-points/`, `plugins/` (the plugin READMEs move here and shrink to a link), `concepts/`, `projects/`, `update.md`, `troubleshooting.md`, `contributing.md` | the agent check (step 6) |
+| 4 | `README.md` as the product page and `CHANGELOG.md` from `v0.18.1` | read by the developer |
+| 5 | Stage 1, by script: `scripts/check-guide.mjs` in `npm test`. Every skill in `plugins/adf/skills/`, every plugin in `.claude-plugin/marketplace.json`, every contract point in `plugins/adf/contract/README.md`, every registry key and every agent hook in `plugins/*/hooks/hooks.json` has a page that names it; every file under `plugins/*/skills/`, `plugins/*/commands/`, `plugins/*/contract/` and `plugins/*/hooks/` is in some page's `sources:`; every `sources:` entry and every relative link resolves. The registry keys are the top-level keys and the fields of an extension entry; a plugin's own `config` keys are on its page and the script does not check them. `scripts/check-release.mjs` also refuses a `metadata.version` with no section in `CHANGELOG.md`, and a pinned tag in an install command of the guide or the `README.md` that is not `v<metadata.version>` | unit tests; a removed page, a new skill with no page, a release with no changelog section or a stale pinned tag fails `npm test` |
+| 6 | Stage 2, by reasoning: `scripts/guide-review.mjs` in every release step, on the pattern of `review.mjs`. `input` takes the diff since the previous release tag, selects the pages whose `sources:` it touches and the pages the diff itself adds or changes, and writes one package per guide section; the maintainer's session dispatches one read-only agent per package; the agent replies in JSON under a schema the port owns (a finding: page, claim, the source line that contradicts it, the fix), and `check` validates the reply. A release goes out with no open finding; that is the maintainer's rule in `docs/roadmap.md`, with no committed record | unit tests of `input` and `check`; one run on this branch, from `v0.20.0`, which selects every page of the guide |
+| 7 | The upkeep rule in `docs/roadmap.md`, `## Checks after every iteration`: 3. `check-guide.mjs` (in `npm test`); 4. `guide-review.mjs` with no open finding; 5. a release adds its `CHANGELOG.md` section. A flow change updates its pages in the same commit | read by the developer |
+
+This iteration makes no release: the guide goes to `main` by its PR, and `metadata.version`
+stays `0.20.0` (the developer, 2026-11-04). The next release takes the `## [Unreleased]`
+section.
+
+There is no scratch run in this iteration (the developer, 2026-11-04): Claude Code was run end to
+end up to iteration 15, and a teammate checks Codex on a real project. Every provider claim in
+the guide is taken from the code or from the iteration records, never from memory, and the agent
+check reviews it.
 
 ## Inputs: several projects at project scope
 
@@ -75,33 +164,63 @@ Found on 2026-11-03 in `~/.claude/plugins/` on the developer's machine.
   registry entry.
 - The plugin code lives in a global cache, one directory per plugin version
   (`cache/agentic-dev-flow/<plugin>/<version>`). `installed_plugins.json` keeps one record per
-  plugin and project path, so two projects run two versions side by side: the rehearsal clones
-  are on adf 0.17.2, the origin on 0.18.1.
+  plugin and project path, so two projects run two versions side by side.
 - The marketplace record is global: `known_marketplaces.json` holds one `agentic-dev-flow`
   entry with one `ref`. When two projects pin different refs, the clone follows the last
-  marketplace add or update. Not yet checked: what an install or a project trust in the other
-  project then takes. To check for `projects/several-projects.md`.
+  marketplace add or update. Not checked: what an install or a project trust in the other
+  project then takes. The page says so.
 - `adf` finds a plugin through the install record of the main directory, also from a worktree
   (`plugins/adf/scripts/lib/installed.mjs`, `mainCheckout`). An install made in a worktree does
-  not count (issue #12).
-- A teammate who trusts the project gets the marketplace clone and the cache but no install
-  record, so `adf` skips the extension plugins (issue #12). `projects/team.md` waits for that fix.
+  not count.
+- A teammate who trusts the project: issue #12, fixed in iteration 16 by the `pull` path; after
+  the merge request that installs or updates the flow, each teammate runs `/adf:update` once and
+  restarts.
+- Codex installs at user scope (`docs/iterations/17-codex.md`), so the several-projects page has
+  one section per agent.
 
 ## Decisions
 
 Settled by the developer on 2026-11-03.
 
-- After `/adf:update` (16), not before it: the origin's team already has the developer's own
-  instructions for the current state, so the guide is not urgent, and after 16 it documents the
-  update command too.
+- After `/adf:update` (16), not before it.
 - The guide is nested by section in the repository, not one long page.
-- No update path before `/adf:update`: the flow has no public release, so every update goes
-  through the command, and the guide documents only it.
-- The maintainer's records (iterations, lessons, roadmap) stay in `docs/` for now; the guide is
+- No update path before `/adf:update`: the guide documents only the command.
+- The maintainer's records (iterations, lessons, roadmap) stay in `docs/`; the guide is
   `docs/guide/`.
 - The guide is checked in two stages: a script finds a part of the flow with no page or a dead
   link, and an agent finds a page that no longer says what the code does.
 - The switch's findings stay in the iteration 15 record; the guide does not repeat them.
-- English only, STE style, like every other artifact.
-- After Codex support (iteration 17), not before it (2026-11-04): the guide covers both Claude
-  Code and Codex.
+
+Settled by the developer on 2026-11-04.
+
+- After Codex support (iteration 17): the guide covers both Claude Code and Codex.
+- The reader is a stranger on GitHub. The first page says what ADF is, why to use it, what it
+  does and how to install it; its base is the `README.md` of `addyosmani/agent-skills`.
+- Each tool has its own page: each plugin and each agent. The first page gives each a short
+  description and a link.
+- A `CHANGELOG.md`, from `v0.18.1`, the first working release.
+- `land` leaves the main cycle. A separate section, *Extension points*, shows the full cycle and
+  where the plugins act; `land` is documented there, under the tracker.
+- The extension points section has two parts: the contract points, and the agents' own hooks
+  (the English check is there).
+- Both checks stay in this iteration.
+- No scratch run.
+- ASD-STE100 for the guide.
+- *Why ADF* says: full control from the context, the plans and the decomposition to the review,
+  the verification and the delivery; and flexibility. No cost figures: they come from test runs.
+- Outside pull requests are welcome.
+- The iteration makes no release; it is documentation only.
+
+Calls made in the design, open to the developer's review:
+
+- Branch `feat/18-documentation` and a PR into `main`, as for iteration 17.
+- The changelog form is *Keep a Changelog*; `check-release.mjs` refuses a version with no section.
+- `guide-review.mjs` works as `review.mjs` does: the script builds the packages and checks the
+  replies, the maintainer's session dispatches the agents.
+- `plugins/adf/contract/README.md` stays the normative contract for plugin authors; the
+  `extension-points/` pages explain each point to a user and link to it.
+- The install commands pin the current tag, and `check-release.mjs` keeps the pin current.
+- Command pages use the Claude Code form and link once to the Codex install page for its form.
+- `README.md` sections `## Layout` and `## Tests` move to `contributing.md`, `## Host files` to
+  `concepts/host-files.md`.
+- `scope-and-tracker.md` of the earlier draft becomes `extension-points/contract/tracker.md`.
