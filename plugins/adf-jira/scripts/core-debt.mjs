@@ -5,10 +5,11 @@
 //   core-debt.mjs list --kind debt
 //   core-debt.mjs track --id <id> --key <KEY>
 //
-// The core is found beside this plugin (a checkout of the marketplace), else in the plugin cache
-// by its layout (`<marketplace>/<plugin>/<version>/`, Codex and Claude Code), the highest version,
-// else in Claude Code's install records: the `adf` plugin of this plugin's marketplace, the install for this project
-// first. Prints the core's own output; with no core it prints { ok: false, error } and exits 1.
+// The core is found beside this plugin (a checkout of the marketplace), else in Claude Code's
+// install records: the `adf` plugin of this plugin's marketplace, the install for this project
+// first; else in the plugin cache by its layout (`<marketplace>/<plugin>/<version>/`, Codex and
+// Claude Code), the highest version. Prints the core's own output; with no core it prints
+// { ok: false, error } and exits 1.
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -30,12 +31,13 @@ const real = (path) => {
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/
 
-// Versions high to low; a name that is not semver (`local`) goes last.
+// Versions high to low; a name that is not semver (`local`) goes last. Equal numbers are ordered
+// on the whole name, high to low, so the choice does not depend on the directory listing.
 function byVersionDesc(a, b) {
   const [ma, mb] = [SEMVER.exec(a), SEMVER.exec(b)]
   if (!ma || !mb) return ma ? -1 : mb ? 1 : a.localeCompare(b)
   for (let i = 1; i <= 3; i++) if (ma[i] !== mb[i]) return Number(mb[i]) - Number(ma[i])
-  return 0
+  return a < b ? 1 : a > b ? -1 : 0
 }
 
 function cachedCore(pluginRoot, exists) {
@@ -53,8 +55,10 @@ function cachedCore(pluginRoot, exists) {
 export function findCore({ pluginRoot = PLUGIN_ROOT, home = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), projectDir, exists = existsSync } = {}) {
   const sibling = join(pluginRoot, '..', 'adf')
   if (exists(join(sibling, DEBT))) return sibling
-  const cached = cachedCore(pluginRoot, exists)
-  if (cached) return cached
+  return recordedCore(pluginRoot, home, projectDir, exists) ?? cachedCore(pluginRoot, exists)
+}
+
+function recordedCore(pluginRoot, home, projectDir, exists) {
   let records
   try {
     records = JSON.parse(readFileSync(join(home, 'plugins', 'installed_plugins.json'), 'utf8')).plugins ?? {}
