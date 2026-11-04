@@ -1,13 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   DEFAULT_PRICES_URL,
   RUNTIME,
   autonomyOf,
+  commandsOf,
   encodeKeys,
+  parseRecords,
   projectKeys,
   readTranscripts,
   responses,
@@ -270,5 +272,10 @@ test('sessions and their subagents are measured from the change\'s first ledger 
   assert.deepEqual(p1.subagents.map((a) => a.agentId), ['b1'])
 })
 
-// Fixture added in Task 11 of iteration 17: how a runtime records a skill invocation.
-test.todo('a skill invocation is marked like a command')
+// Recorded by `claude -p "/adf:init"` in Claude Code (iteration 17, Task 11): the skill invocation is
+// a `<command-name>` user record, followed by a meta record that holds the skill body.
+test('a skill invocation is marked like a command', () => {
+  const records = parseRecords(readFileSync(join(import.meta.dirname, 'fixtures', 'skill-invocation.jsonl'), 'utf8'))
+  assert.deepEqual(commandsOf(records), [{ at: '2026-11-04T10:24:52.479Z', name: 'adf:init' }])
+  assert.deepEqual(autonomyOf(records), { developerMessages: 0, askUserQuestion: 0, clears: 0 })
+})
