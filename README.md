@@ -31,6 +31,7 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Tracker: the `tracker` role and the `forge` operation `state` (contract `1.7`); propose gathers the scope from a key or a phrase (the tracker and the debt store), checks each taken issue by a read-only agent and starts the taken ones; `/adf:land` hands them to the tester after the merge; the plugin `adf-jira` | done (iteration 13) |
 | `/adf:quick`, a small fix or feature without the full artifact set | not started |
 | Update: one package version and its tag; the session-start notice of a newer or a pinned release; `/adf:update`, one merge request with the new `ref`, the plugins' `config` migrations (contract `1.9`) and the host files merged by the developer's choice; `pull` for a teammate or a user-scope install | done (iteration 16) |
+| Codex: the package runs in Codex as well as in Claude Code; the commands are skills, each plugin has a root `plugin.json`, the Codex marketplace is `.agents/plugins/marketplace.json`, a runtime map names each runtime's tools, and `runlog.mjs collect` packs a run log for the maintainer | done (iteration 17) |
 
 The order is in `docs/roadmap.md`.
 
@@ -48,7 +49,9 @@ The order is in `docs/roadmap.md`.
 
 ## Install
 
-This repository is a Claude Code marketplace:
+This repository is a marketplace for Claude Code and for Codex.
+
+### Claude Code
 
 ```
 /plugin marketplace add <path or git URL of this repository>
@@ -127,6 +130,39 @@ Only the flow's maintainer installs `adf-maintainer@agentic-dev-flow`: it files 
 retrospective's findings and the ADF debt upstream (`plugins/adf-maintainer/README.md`). Every
 other host has no `upstream` provider, and the retrospective skips the step.
 
+### Codex
+
+Install the package at user scope, with its dependency, Superpowers:
+
+```
+codex plugin marketplace add romant094/agentic-dev-flow --ref v0.19.0
+codex plugin marketplace add anthropics/claude-plugins-official
+codex plugin add superpowers@claude-plugins-official
+codex plugin add adf@agentic-dev-flow
+```
+
+Use the tag of the release you want in `--ref`. Node 20 or later is the only other prerequisite.
+
+Then, in the host project:
+
+1. Run `$adf:init`, or pick `adf:init` in `/skills`. Use the name form `/skills` shows.
+2. Open `/hooks` and trust the plugins' hooks once. A hook that is not trusted does not run.
+3. Run the other skills the same way: `$adf:propose <change>`, `$adf:apply`, and so on.
+
+The skills work as in Claude Code. `/adf:update` runs in Codex too. Its pull step upgrades
+the user's Codex marketplace. Codex sessions are not read for metrics yet: the metrics record
+names the reason.
+
+To send the maintainer a run log, run this in the project's main directory:
+
+```
+node <adf root>/scripts/runlog.mjs collect
+```
+
+It writes `.adf/runlog/<date>-<runtime>.tar.gz`. The archive holds whole sessions, the
+changes' records, the registry and `versions.json`. It never holds env files, `auth.json`,
+`*.pem` or `*.key`. Read the warning it prints, then send the archive to the maintainer.
+
 ## Host files
 
 `/adf:init` writes the registry, `.claude/adf-extensions.json` (its keys are in
@@ -140,16 +176,19 @@ of `adf-jira` in `.adf/jira/<skill>/`.
 ## Layout
 
 ```
-.claude-plugin/marketplace.json   the marketplace: the core and every plugin
+.claude-plugin/marketplace.json   the Claude Code marketplace: the core and every plugin
+.agents/plugins/marketplace.json  the Codex marketplace
 plugins/adf/                      the core
-  skills/                         /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply, /adf:verify, /adf:review, /adf:archive, /adf:land, /adf:retro, /adf:update
+  plugin.json                     the root manifest (agent-plugins.org), generated from .claude-plugin/ by scripts/manifests.mjs; every plugin has one
+  skills/                         /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply, /adf:verify, /adf:review, /adf:archive, /adf:land, /adf:retro, /adf:update (one <name>/SKILL.md each; $adf:<name> in Codex)
   agents/                         the capability-level subagents apply, verify, review and archive dispatch
+  schema/runtimes/                one file per runtime: the flow's words mapped to its tools
   contract/                       the extension contract and its version
   schema/                         the artifact graph (schema.json), templates, instructions
   host/                           templates of files /adf:init adds to the host (planning guide)
   scripts/                        extensions, superpowers, workspace, changes, specs,
-                                  plan-symbols, ledger, forge, reply, sdd, tasks, guard, with
-                                  their library and tests
+                                  plan-symbols, ledger, forge, reply, sdd, tasks, guard, with, runlog
+                                  (lib/runtime.mjs detects the runtime), with their library and tests
 plugins/adf-gitlab/               the forge role for GitLab, through glab; the merge request template
 plugins/adf-english-check/        a PreToolUse hook that blocks a commit with non-English text
 plugins/adf-memory/               the wiki memory: the knowledge role, its log and its workflows
