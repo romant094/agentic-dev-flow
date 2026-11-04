@@ -236,3 +236,56 @@ Calls made in the design, open to the developer's review:
 - `README.md` sections `## Layout` and `## Tests` move to `contributing.md`, `## Host files` to
   `concepts/host-files.md`.
 - `scope-and-tracker.md` of the earlier draft becomes `extension-points/contract/tracker.md`.
+
+## Result
+
+### Checks run
+
+- `npm test` at the last commit of this task: 1757 tests, 1752 pass, 0 fail, 5 skipped.
+  `check-guide.mjs` inside it: `ok: true`, `errors: []`. `check-lessons.mjs`: `ok: true`,
+  `errors: []`.
+- One `npm test` run during Task 5 showed 1 failure that nobody identified. Two reruns showed 0
+  failures, and the failure did not reproduce. It stays unexplained.
+- First run of `guide-review.mjs`: `node scripts/guide-review.mjs input --from v0.20.0 --out
+  .superpowers/sdd/18-documentation-plan/guide-review`, run at 78b6c82. It wrote 6 packages with
+  40 pages, which is every page of the guide. Six read-only agents replied. `check` accepted all
+  six replies: `ok: true`, 0 errors.
+- Findings: concepts 1, plugins 4, cycle 0, extension-points 0, getting-started 0, projects 0.
+- Rerun of the concepts and plugins packages after the fixes: <pending>
+
+### Findings and fixes
+
+Each finding was checked against the cited source line first. All 5 were true. The fixes are in
+the commit `docs(guide): fix the guide-review findings`.
+
+| Page | Finding | Fix |
+|---|---|---|
+| `concepts/memory-and-debt.md` | `resolved.md` has more than two added columns | Lists all 7 columns and the dropped `Source` and `Precedent` (`debt-format.md:69`) |
+| `plugins/adf-gitlab.md` | A degraded `check` carries no `fallback` | `open`, `finalize` and `state` carry it; `check` does not (`forge.mjs:234`) |
+| `plugins/adf-jira.md` | The comment of a partial hand-off does check a status when the issue moves back | The comment row expects `statuses.initial` when the plan routes the issue back (`tracker.mjs:503`) |
+| `plugins/adf-maintainer.md` | `change` and `source` of a debt record are optional | Marked optional; refusal covers unknown and missing required fields (`upstream.mjs:149`) |
+| `plugins/adf-postgres.md` | Teardown with a `null` branch is done, not refused | Provision refuses; teardown drops nothing and returns a note (`postgres.mjs:330`) |
+
+### What the task reviews found and fixed
+
+- Task 1: clean; 6 minors deferred (`guide.mjs` edge cases, untested CLI shape).
+- Task 2: 3 Important (pages with no sources; plugin pages citing only the marketplace; pages not citing code); fixed in 1 round.
+- Task 3: 2 Important (a `/reload-plugins` claim the code contradicts; first install not marked "Not checked"); fixed in 1 round.
+- Task 4: 2 Important (review defaults wrongly marked "Not checked"; archive "What it asks" listed non-questions); fixed in 1 round.
+- Task 5: 1 Important (`forge.md` claimed a check before every operation); fixed in 1 round.
+- Task 6: approved with minors (a dropped `isOurEntry` fact, lost small facts, a few sentences over 25 words); the lessons evidence and the parity replay moved to the guide pages.
+- Task 7: 2 Important (a `v0.18.1` manual update path against the spec; an incomplete install lookup in several-projects); fixed in 1 round.
+- Task 8: 1 Important (CHANGELOG `Fixed` entries for defects no release shipped); fixed in 1 round.
+- Task 9: approved; minors deferred (run on a committed tree; all-or-nothing reply check).
+- Rulings: Task 6 moves lessons evidence to the guide; remove the `v0.18.1` update path; guide prose says "main checkout"; README keeps a Quick start link under the diagram.
+
+### Stale input in this spec
+
+The input "An install made in a worktree does not count" is stale. `plugins/adf/scripts/lib/installed.mjs:46` counts a project or local install record of the current worktree for commands run in that worktree.
+
+### Not checked
+
+- A run in a scratch project (the developer's decision, 2026-11-04).
+- The first Claude Code install on an empty machine.
+- The Codex items that each page marks "Not checked".
+- The deferred minors listed above.
