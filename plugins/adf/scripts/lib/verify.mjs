@@ -19,7 +19,7 @@ import { changeDir, globToRegExp, META_FILE, parseTasks, readChangeMeta, skipped
 import { parseName } from './dispatch.mjs'
 import { baseCheckPath, listGroups } from './groups.mjs'
 import { commitPaths } from './commit.mjs'
-import { appendRecord, readRecords, SESSION_ENV, skillEditShas } from './ledger.mjs'
+import { appendRecord, readRecords, sessionOf, skillEditShas } from './ledger.mjs'
 import { baseRef, EXTENSIONS } from './plan-symbols.mjs'
 import { readRegistry } from './registry.mjs'
 import { onlyOutsideReview } from './review-state.mjs'
@@ -530,7 +530,7 @@ export function extensionChecks(root, change, git, base, core) {
 
 // A verify session starts fresh: sections left by an earlier session describe a HEAD that may
 // have moved, so they are deleted before its first run. The session is the harness's
-// (CLAUDE_CODE_SESSION_ID), kept in run.json: a run whose session differs from the one that
+// (CLAUDE_CODE_SESSION_ID, CODEX_THREAD_ID in Codex), kept in run.json: a run whose session differs from the one that
 // wrote run.json clears the directory itself, and so does a run at a HEAD other than the one
 // run.json names, unless every commit between changes only what no review reads (the change's
 // own directory, files the review filter excludes: lib/review-state.mjs onlyOutsideReview), as
@@ -545,7 +545,7 @@ export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md
   const git = gitIn(root)
   const base = resolveBase(root, change, git)
   const outDir = verifyDir(root, change)
-  const session = env[SESSION_ENV] || null
+  const session = sessionOf(env)
   const previous = attempt(() => JSON.parse(readFileSync(join(outDir, 'run.json'), 'utf8')))
   const head = attempt(() => git('rev-parse', 'HEAD'))
   const cleared = fresh

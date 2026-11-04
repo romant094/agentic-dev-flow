@@ -152,6 +152,10 @@ test('sessions: the ledger first, then the branch, marked by source; unresolved 
   assert.deepEqual(value.unresolved, ['s9'])
 })
 
+test('transcripts of another runtime are not read', () => {
+  assert.deepEqual(readTranscripts({ repoPath: REPO, branch: BRANCH, ledger, projectsDir: fixture(), runtime: 'codex' }), { value: null, reason: 'transcripts of runtime codex are not read' })
+})
+
 test('a session is measured on its branch records; a sidechain record is kept apart', () => {
   const { value } = readTranscripts({ repoPath: REPO, branch: BRANCH, ledger, projectsDir: fixture() })
   const s1 = value.sessions.find((s) => s.id === 's1')

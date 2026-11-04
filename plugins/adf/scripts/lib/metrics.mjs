@@ -27,6 +27,7 @@ import { computeFacts, dayOf, levelOf, maxTurnsFromAgents, TOKEN_FIELDS, UNDATED
 import { LAYERS, readSddRecords, removalCandidates, summarizeLedger } from './metrics-records.mjs'
 import { costOf, priceAt } from './prices.mjs'
 import { pluginDir, readRegistry } from './registry.mjs'
+import { detectRuntime } from './runtime.mjs'
 import { defaultProjectsDir, onChangeBranch, readTranscripts, RUNTIME } from './transcripts.mjs'
 
 export const SCHEMA_VERSION = 2
@@ -198,7 +199,7 @@ function disagreementsOf(tx, ledger) {
 // The record of one change. `root` is the change's checkout; `branch` defaults to its current
 // branch, `base` to the change's recorded base, else the registry's integration branch.
 // Throws RecordError when the assembled record fails its schema.
-export function buildRecord({ root, change, branch, base, now = new Date(), projectsDir = defaultProjectsDir(), home, pluginRoot = PLUGIN_ROOT } = {}) {
+export function buildRecord({ root, change, branch, base, now = new Date(), projectsDir = defaultProjectsDir(), home, pluginRoot = PLUGIN_ROOT, runtime = detectRuntime({ scriptPath: fileURLToPath(import.meta.url) }) } = {}) {
   root = realpathSync(resolve(root))
   const git = gitOf(root)
   const scrub = scrubber(root, resolve(projectsDir))
@@ -219,7 +220,7 @@ export function buildRecord({ root, change, branch, base, now = new Date(), proj
     // A ledger that does not parse is the ledger group's gap, named by its reader.
   }
   const commonDir = git('rev-parse', '--path-format=absolute', '--git-common-dir')
-  const tx = readTranscripts({ repoPath: root, commonDir, branch, base, ledger, projectsDir })
+  const tx = readTranscripts({ repoPath: root, commonDir, branch, base, ledger, projectsDir, runtime })
   const facts = computeFacts(tx.value, { ledger, maxTurns: maxTurnsOf(pluginRoot), rulings: sdd.ledger?.rulings ?? null })
   for (const g of TRANSCRIPT_GROUPS) coverage[g] = facts ? 'record' : none(`transcripts: ${scrub(tx.reason)}`)
   if (facts) warnings.push(...facts.warnings)
@@ -267,6 +268,7 @@ export function buildRecord({ root, change, branch, base, now = new Date(), proj
     range,
     generatedAt: at,
     generator: generator.value,
+    runtime,
     sources: {
       transcripts: tx.value ? { runtime: tx.value.runtime, sessions: transcriptSessions(tx.value, facts), unresolved: tx.value.unresolved } : null,
       disagreements: tx.value ? disagreementsOf(tx.value, ledger) : [],

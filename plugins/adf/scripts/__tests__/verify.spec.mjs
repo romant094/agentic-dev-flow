@@ -653,6 +653,15 @@ test('run clears the sections of another session by itself; --fresh still forces
   assert.equal(existsSync(join(dir, 'c4.json')), false)
 })
 
+test('verify compares the session by the runtime\'s id', () => {
+  const { root } = host()
+  const codex = (id) => ({ ADF_RUNTIME: 'codex', CODEX_THREAD_ID: id, CLAUDE_CODE_SESSION_ID: 'same' })
+  assert.equal(runChecks(root, { change: CHANGE, env: codex('t1') }).session, 't1')
+  section(root, 'c4', 'pass')
+  assert.equal(runChecks(root, { change: CHANGE, env: codex('t1') }).cleared, null)
+  assert.equal(runChecks(root, { change: CHANGE, env: codex('t2') }).cleared, 'new session')
+})
+
 // A section describes the HEAD it was written at, and the verify replies' count restarts with the
 // session: HEAD moved by code opens a new one in the same harness session; a commit no review
 // reads (the change's own directory, filtered files) does not.

@@ -83,6 +83,13 @@ test('refuses an unknown kind and a task that is not a task number', () => {
   assert.equal(buildRecord('debt', { what: 'a', reason: 'b', task: '2.10' }, { now }).task, '2.10')
 })
 
+test('ledger records CODEX_THREAD_ID in codex', () => {
+  const root = mkdtempSync(join(tmpdir(), 'adf-ledger-codex-'))
+  const { record } = appendRecord(root, 'c', 'session', { phase: 'apply' }, { env: { ADF_RUNTIME: 'codex', CODEX_THREAD_ID: 'thread-1', CLAUDE_CODE_SESSION_ID: 'claude-1' } })
+  assert.equal(record.sessionId, 'thread-1')
+  assert.throws(() => appendRecord(root, 'c', 'session', { phase: 'apply' }, { env: { ADF_RUNTIME: 'codex', CLAUDE_CODE_SESSION_ID: 'claude-1' } }), /CODEX_THREAD_ID/)
+})
+
 test('takes the session id from the environment, never from the caller', () => {
   assert.throws(() => buildRecord('session', { phase: 'apply' }), /CLAUDE_CODE_SESSION_ID/)
   assert.throws(() => buildRecord('session', { phase: 'apply', sessionId: 'typed' }, { sessionId: 'abc' }), /session takes no --sessionId/)
