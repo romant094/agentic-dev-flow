@@ -1,5 +1,4 @@
 {
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "adf-npm-workspaces",
   "version": "0.2.0",
   "description": "Provisions an ADF worktree of an npm-workspaces monorepo: its own node_modules, linked to the main checkout's third-party packages and to its own workspace packages; blocks npm install in a linked worktree",
@@ -14,12 +13,8 @@
     "provision",
     "hook"
   ],
-  "extensions": {
-    "com.openai": {
-      "interface": {
-        "displayName": "adf-npm-workspaces",
-        "shortDescription": "Provisions an ADF worktree of an npm-workspaces monorepo: its own node_modules, linked to the main checkout's third-party packages and to its own workspace packages; blocks npm install in a linked worktree"
-      }
-    }
+  "interface": {
+    "displayName": "adf-npm-workspaces",
+    "shortDescription": "Provisions an ADF worktree of an npm-workspaces monorepo: its own node_modules, linked to the main checkout's third-party packages and to its own workspace packages; blocks npm install in a linked worktree"
   }
 }

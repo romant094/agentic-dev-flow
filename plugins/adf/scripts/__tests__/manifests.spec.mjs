@@ -1,7 +1,7 @@
 // The generated Codex manifests of scripts/manifests.mjs.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { syncManifests } from '../../../../scripts/manifests.mjs'
@@ -92,6 +92,77 @@ test('--check reports a hand-edited version and writes nothing', () => {
     assert.equal(result.ok, false)
     assert.deepEqual(result.differ, ['plugins/demo/plugin.json'])
     assert.equal(read(root, 'plugins', 'demo', 'plugin.json').version, '9.9.9')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+// Codex loads no hooks for a plugin whose manifest is a root plugin.json (the agent-plugins.org
+// format); it loads hooks/hooks.json only for a `.codex-plugin/plugin.json` or `.claude-plugin/` one.
+function withHooks(root, { skills = false } = {}) {
+  mkdirSync(join(root, 'plugins', 'demo', 'hooks'), { recursive: true })
+  writeFileSync(join(root, 'plugins', 'demo', 'hooks', 'hooks.json'), '{"hooks":{}}')
+  if (skills) mkdirSync(join(root, 'plugins', 'demo', 'skills'))
+}
+
+test('a plugin with hooks/hooks.json gets .codex-plugin/plugin.json and no root plugin.json', () => {
+  const root = fixture()
+  try {
+    withHooks(root, { skills: true })
+    writeFileSync(join(root, 'plugins', 'demo', 'plugin.json'), '{}')
+    syncManifests({ root })
+    assert.equal(existsSync(join(root, 'plugins', 'demo', 'plugin.json')), false)
+    assert.deepEqual(read(root, 'plugins', 'demo', '.codex-plugin', 'plugin.json'), {
+      name: 'demo',
+      version: '1.2.3',
+      description: 'A demo plugin',
+      author: { name: 'Someone' },
+      license: 'MIT',
+      keywords: ['a', 'b'],
+      skills: './skills/',
+      interface: { displayName: 'demo', shortDescription: 'A demo plugin' },
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a hook plugin without a skills directory declares no skills, and never declares hooks', () => {
+  const root = fixture()
+  try {
+    withHooks(root)
+    syncManifests({ root })
+    const manifest = read(root, 'plugins', 'demo', '.codex-plugin', 'plugin.json')
+    assert.equal('skills' in manifest, false)
+    assert.equal('hooks' in manifest, false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a plugin without hooks keeps its root plugin.json and has no .codex-plugin', () => {
+  const root = fixture()
+  try {
+    syncManifests({ root })
+    assert.equal(existsSync(join(root, 'plugins', 'demo', 'plugin.json')), true)
+    assert.equal(existsSync(join(root, 'plugins', 'demo', '.codex-plugin')), false)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('--check flags a leftover root plugin.json on a hook plugin and a stale .codex-plugin on another', () => {
+  const root = fixture()
+  try {
+    withHooks(root)
+    syncManifests({ root })
+    writeFileSync(join(root, 'plugins', 'demo', 'plugin.json'), '{}')
+    assert.deepEqual(syncManifests({ root, check: true }).differ, ['plugins/demo/plugin.json'])
+    syncManifests({ root })
+    rmSync(join(root, 'plugins', 'demo', 'hooks'), { recursive: true })
+    const result = syncManifests({ root, check: true })
+    assert.equal(result.ok, false)
+    assert.deepEqual(result.differ.sort(), ['plugins/demo/.codex-plugin/plugin.json', 'plugins/demo/plugin.json'])
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
