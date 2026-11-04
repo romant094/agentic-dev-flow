@@ -161,7 +161,7 @@ function gitProject(settings = { enabledPlugins: { 'adf@agentic-dev-flow': true,
   writeFileSync(file, JSON.stringify(records))
   // What a real `claude plugin install adf@...` does to the install record: the pinned version.
   const installPinned = (args) => {
-    if (args[1] !== 'install' || args[2] !== ID) return
+    if (args[1] !== 'update' || args[2] !== ID) return
     const file = join(home, 'plugins', 'installed_plugins.json')
     const records = JSON.parse(readFileSync(file, 'utf8'))
     for (const record of records.plugins[ID]) if (record.scope === 'project') record.version = '0.10.0'
@@ -181,13 +181,13 @@ function fakeClaude({ onCall, failOn } = {}) {
   return { fn, calls }
 }
 
-test('pull runs the marketplace update, then one install per enabled plugin', () => {
+test('pull runs the marketplace update, then updates an installed plugin and installs the others', () => {
   const { root, home, installPinned } = gitProject()
   const { fn, calls } = fakeClaude({ onCall: installPinned })
   const r = run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
   assert.deepEqual(r.ran, [
     ['plugin', 'marketplace', 'update', 'agentic-dev-flow'],
-    ['plugin', 'install', 'adf@agentic-dev-flow', '--scope', 'project'],
+    ['plugin', 'update', 'adf@agentic-dev-flow', '--scope', 'project'],
     ['plugin', 'install', 'adf-jira@agentic-dev-flow', '--scope', 'project']
   ])
   assert.deepEqual(calls.map((c) => c.args), r.ran)
@@ -223,12 +223,12 @@ test('pull refuses when settings.json had uncommitted changes', () => {
   assert.equal(calls.length, 0)
 })
 
-test('pull at user scope installs with --scope user and reports restored false', () => {
+test('pull at user scope updates with --scope user and reports restored false', () => {
   const { root, home } = setup({ user: '0.9.0' })
   writeFileSync(join(home, 'settings.json'), JSON.stringify({ enabledPlugins: { 'adf@agentic-dev-flow': true } }))
   const { fn } = fakeClaude()
   const r = run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
-  assert.deepEqual(r.ran[1], ['plugin', 'install', 'adf@agentic-dev-flow', '--scope', 'user'])
+  assert.deepEqual(r.ran[1], ['plugin', 'update', 'adf@agentic-dev-flow', '--scope', 'user'])
   assert.equal(r.restored, false)
   assert.equal(r.installed, '0.9.0')
 })
@@ -240,7 +240,7 @@ test('pull stops on a failing claude call and names the calls made', () => {
     run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
     assert.fail('should throw')
   } catch (error) {
-    assert.match(error.message, /plugin install adf@agentic-dev-flow --scope project.*no network/)
+    assert.match(error.message, /plugin update adf@agentic-dev-flow --scope project.*no network/)
     assert.equal(error.ran.length, 1)
   }
 })
@@ -253,7 +253,7 @@ test('pull refuses scope none', () => {
 test('pull restores settings.json when a later call fails', () => {
   const { root, home } = gitProject()
   const before = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
-  const { fn } = fakeClaude({ failOn: 3, onCall: (args) => args[1] === 'install' && writeFileSync(join(root, '.claude', 'settings.json'), '{}') })
+  const { fn } = fakeClaude({ failOn: 3, onCall: (args) => args[1] !== 'marketplace' && writeFileSync(join(root, '.claude', 'settings.json'), '{}') })
   try {
     run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
     assert.fail('should throw')

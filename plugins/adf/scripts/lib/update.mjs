@@ -10,7 +10,7 @@ import { indentOf, MARKETPLACE, SETTINGS_PATH } from './host-settings.mjs'
 import { mainCheckout, selectInstall } from './installed.mjs'
 import { migrateConfig } from './migrate.mjs'
 import { DECLARATION_FILE, parseVersion, REGISTRY_PATH } from './registry.mjs'
-import { claudeHome, mergeSettings, readJson } from './superpowers.mjs'
+import { claudeHome, countsHere, mergeSettings, readJson } from './superpowers.mjs'
 import { create, worktreePath } from './workspace.mjs'
 
 const VERSION = /^\d+\.\d+\.\d+$/
@@ -180,7 +180,16 @@ function enabledPackagePlugins(main, scope, home) {
     .map(([id]) => id)
 }
 
-// Refreshes the marketplace, then installs every enabled package plugin, in the main directory.
+// Whether the plugin has an install record of its own for the scope: `claude plugin install` does
+// nothing for an installed plugin, and `claude plugin update` refuses one that is not installed.
+function hasRecord(id, main, scope, home) {
+  const records = readJson(join(home, 'plugins', 'installed_plugins.json'))?.plugins?.[id]
+  if (!Array.isArray(records)) return false
+  return records.some((r) => r.scope === scope && (scope === 'user' || countsHere(r, [main])))
+}
+
+// Refreshes the marketplace, then updates every enabled package plugin installed for the scope and
+// installs the others, in the main directory.
 // Installing at project scope rewrites .claude/settings.json; the file is restored afterwards, so
 // it must be clean before. A failing `claude` call stops the pull, after the restore: the error carries `ran` and `restored`.
 // Afterwards the install is read again: `installed`, and for a project `ref`. A project whose
@@ -193,7 +202,9 @@ export function pull({ root, scope, home = claudeHome(), claude = defaultClaude 
     throw new Error(`${SETTINGS_PATH} has uncommitted changes; commit or revert them first`)
   }
   const calls = [['plugin', 'marketplace', 'update', MARKETPLACE]]
-  for (const id of enabledPackagePlugins(main, scope, home)) calls.push(['plugin', 'install', id, '--scope', scope])
+  for (const id of enabledPackagePlugins(main, scope, home)) {
+    calls.push(['plugin', hasRecord(id, main, scope, home) ? 'update' : 'install', id, '--scope', scope])
+  }
   const ran = []
   let restored = false
   const restore = () => {
@@ -223,7 +234,7 @@ export function pull({ root, scope, home = claudeHome(), claude = defaultClaude 
   const { ref, pinned } = projectRef(main)
   const installed = installedVersion(PLUGIN_KEY_ID, main, { home })
   if (pinned && (installed === null || compareVersions(installed, TAG.exec(ref)[1]) < 0)) {
-    const error = new Error(`after the pull ADF ${installed ? `v${installed}` : 'is not'} installed for this project, older than the pinned ${ref}; run claude plugin install ${PLUGIN_KEY_ID} --scope project and check its output`)
+    const error = new Error(`after the pull ADF ${installed ? `v${installed}` : 'is not'} installed for this project, older than the pinned ${ref}; run claude plugin update ${PLUGIN_KEY_ID} --scope project and check its output`)
     error.ran = ran
     error.restored = restored
     throw error

@@ -17,10 +17,11 @@
 //       remote once a day (<home>/adf/update-check.json). Any error: nothing printed, exit 0
 //   update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>]
 //       { ran: [[...claude args]], restored, installed[, ref] }: `claude plugin marketplace
-//       update`, then `claude plugin install <id> --scope <scope>` for each enabled package
-//       plugin, in the main directory. Scope defaults to what `check` reports. Project scope
-//       refuses when .claude/settings.json has uncommitted changes, restores it after the
-//       installs, and refuses when the installed release is still older than the pinned ref
+//       update`, then for each enabled package plugin `claude plugin update <id> --scope <scope>`
+//       when it has an install record for the scope, else `claude plugin install`, in the main
+//       directory. Scope defaults to what `check` reports. Project scope refuses when
+//       .claude/settings.json has uncommitted changes, restores it after the calls, and refuses
+//       when the installed release is still older than the pinned ref
 //   update.mjs plan [--to <tag>] [--root <dir>]
 //       { from, to, base, baseCommit, upToDate, plugins, log: { [plugin]: subjects }, hostFiles:
 //       [{ path, class }], contract: { from, to, compatible[, reason] }, inFlight, clones: { old,
