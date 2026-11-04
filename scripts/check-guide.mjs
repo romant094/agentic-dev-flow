@@ -4,7 +4,7 @@
 //
 // - every skill (`/<plugin>:<name>`), plugin, extension point and registry key appears
 //   in backticks on some page;
-// - every file under plugins/*/skills/, contract/ and hooks/ matches a `sources:` entry of some page;
+// - every file under plugins/*/skills/, commands/, contract/ and hooks/ matches a `sources:` entry of some page;
 // - every `sources:` entry matches at least one file;
 // - every link in a page, in README.md and in CHANGELOG.md resolves to a file or a directory.
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
@@ -17,6 +17,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 // The top level and the entry fields of the registry (plugins/adf/contract/README.md `## The registry`).
 export const REGISTRY_KEYS = ['contract', 'branches', 'extensions', 'metrics', 'plugin', 'path', 'points', 'config', 'version']
+
+// The directories of each plugin whose files a page's `sources:` must cover; a missing one is skipped.
+export const COVERED_DIRS = ['skills', 'commands', 'contract', 'hooks']
 
 const external = /^(?:[a-z][a-z0-9+.-]*:|#)/i
 
@@ -81,7 +84,7 @@ if (isMain(import.meta.url)) {
     )
   const points = [...read('plugins/adf/contract/README.md').matchAll(/^### `([^`]+)`/gm)].map((m) => m[1])
   const pluginDirs = readdirSync(join(root, 'plugins'), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
-  const coveredFiles = listFiles(root, pluginDirs.flatMap((p) => ['skills', 'contract', 'hooks'].map((s) => `plugins/${p}/${s}`)))
+  const coveredFiles = listFiles(root, pluginDirs.flatMap((p) => COVERED_DIRS.map((s) => `plugins/${p}/${s}`)))
   const topFiles = readdirSync(root, { withFileTypes: true }).filter((d) => d.isFile()).map((d) => d.name)
   const files = [...new Set([...listFiles(root, ['plugins', 'scripts', '.claude-plugin', 'docs']), ...topFiles])]
   const extraLinkPages = ['README.md', 'CHANGELOG.md']

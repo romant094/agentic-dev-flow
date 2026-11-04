@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseSources, matchGlob } from '../../../../scripts/lib/guide.mjs'
-import { checkGuide, REGISTRY_KEYS } from '../../../../scripts/check-guide.mjs'
+import { checkGuide, COVERED_DIRS, REGISTRY_KEYS } from '../../../../scripts/check-guide.mjs'
 
 test('parseSources reads the leading comment', () => {
   const text = '<!-- sources:\n- plugins/adf/skills/propose/**\n- plugins/adf/scripts/lib/propose.mjs\n-->\n# Page\n'
@@ -101,4 +101,8 @@ test('README.md links are checked', () => {
   assert.equal(errors.length, 1)
   assert.match(errors[0], /README\.md/)
   assert.match(errors[0], /docs\/gone\.md/)
+})
+
+test('the covered directories include commands', () => {
+  assert.deepEqual(COVERED_DIRS, ['skills', 'commands', 'contract', 'hooks'])
 })

@@ -6,6 +6,7 @@
 //   guide-review.mjs input --from <tag> --out <dir> [--root <dir>]
 //       writes <dir>/<section>.json for each section with a page to review; prints
 //       { packages: [{ section, file, pages }] }; exit 1 for an unknown tag.
+//       Run on a committed tree: input reads pages from the working tree, the diff and file list from commits.
 //   guide-review.mjs check --package <file> --reply <file> [--root <dir>]
 //       prints { ok, errors, findings }; exit 1 when the reply is invalid.
 //

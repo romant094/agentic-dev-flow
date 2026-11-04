@@ -1,7 +1,10 @@
 // The release check in scripts/check-release.mjs.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { changelogVersions, checkRelease, pinnedTags } from '../../../../scripts/check-release.mjs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { changelogVersions, checkRelease, pinFiles, pinnedTags } from '../../../../scripts/check-release.mjs'
 
 const marketplace = (version, plugins = [{ name: 'adf', version: '0.18.1' }]) => ({ metadata: { version }, plugins })
 
@@ -82,4 +85,11 @@ test('a link anchor is not a pin, and a git URL fragment is', () => {
 
 test('a pre-release tag is not its release', () => {
   assert.deepEqual(pinnedTags('--ref v1.0.0-rc.1\n"ref": "v1.0.0-rc.1"\nrepo.git#v1.0.0-rc.1'), [])
+})
+
+test('pins are read from README.md and every page of the guide, at any depth', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'pins-'))
+  mkdirSync(join(dir, 'docs/guide/plugins'), { recursive: true })
+  for (const file of ['README.md', 'docs/guide/update.md', 'docs/guide/plugins/a.md', 'docs/guide/x.txt']) writeFileSync(join(dir, file), '')
+  assert.deepEqual(pinFiles(dir), ['README.md', 'docs/guide/plugins/a.md', 'docs/guide/update.md'])
 })

@@ -7,12 +7,13 @@
 // - a `v<x.y.z>` tag on HEAD equals `v<metadata.version>`;
 // - the files `manifests.mjs` generates for Codex match `manifests.mjs --check`;
 // - CHANGELOG.md has a `## [<metadata.version>]` section;
-// - every tag pinned in README.md and docs/guide/getting-started/*.md is `v<metadata.version>`.
-import { readdirSync, readFileSync } from 'node:fs'
+// - every tag pinned in README.md and every page of docs/guide/ is `v<metadata.version>`.
+import { readFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isMain } from './lib/main.mjs'
+import { listFiles } from './lib/guide.mjs'
 import { syncManifests } from './manifests.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -27,6 +28,11 @@ export function changelogVersions(text) {
 // A pre-release suffix (`v1.0.0-rc.1`) is not the release, so it is no pin.
 export function pinnedTags(text) {
   return [...text.matchAll(/(?:--ref |"ref": ?"|\.git#)(v\d+\.\d+\.\d+)(?![\w.+-])/g)].map((match) => match[1])
+}
+
+// The files whose pinned tags are checked: README.md and every page of the guide.
+export function pinFiles(dir) {
+  return ['README.md', ...listFiles(dir, ['docs/guide']).filter((path) => path.endsWith('.md'))]
 }
 
 export function checkRelease({ marketplace, manifests, headTags, differ = [], changelog, pinned = [] }) {
@@ -62,11 +68,7 @@ if (isMain(import.meta.url)) {
   const headTags = execFileSync('git', ['tag', '--points-at', 'HEAD'], { cwd: root, encoding: 'utf8' })
     .split('\n')
     .filter((tag) => /^v\d+\.\d+\.\d+$/.test(tag))
-  const gettingStarted = join('docs', 'guide', 'getting-started')
-  const pinFiles = readdirSync(join(root, gettingStarted))
-    .filter((name) => name.endsWith('.md'))
-    .map((name) => join(gettingStarted, name))
-  const pinned = ['README.md', ...pinFiles].map((file) => ({ file, tags: pinnedTags(readFileSync(join(root, file), 'utf8')) }))
+  const pinned = pinFiles(root).map((file) => ({ file, tags: pinnedTags(readFileSync(join(root, file), 'utf8')) }))
   const errors = checkRelease({
     marketplace,
     manifests,
