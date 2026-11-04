@@ -34,14 +34,14 @@ Codex CLI `0.146.0-alpha.3.1` at the time of the design; the scratch run used `0
 | Claude Code | Codex | Evidence |
 |---|---|---|
 | `.claude-plugin/plugin.json` | read as a fallback; first a root `plugin.json` whose `$schema` starts with `https://agent-plugins.org/schemas/`, then `.codex-plugin/plugin.json`, then `.claude-plugin/plugin.json` | `codex-rs/utils/plugins/src/plugin_namespace.rs` `find_plugin_manifest_path`; on this machine `context7` and `frontend-design` from `claude-plugins-official` run from `.claude-plugin/` only |
-| Root `plugin.json` components | none declared; skills are always `./skills`; Codex-only fields under `extensions."com.openai"` (`apps`, `hooks`, `onboardingSkill`, `interface`) | `codex-rs/core-plugins/src/agent_plugin_manifest.rs:17-28, 169` |
+| Root `plugin.json` components | **no hooks are loaded for this format** (`loader.rs:986-997`); none declared; skills are always `./skills`; Codex-only fields under `extensions."com.openai"` (`apps`, `hooks`, `onboardingSkill`, `interface`) | `codex-rs/core-plugins/src/agent_plugin_manifest.rs:17-28, 169` |
 | `.claude-plugin/marketplace.json` | read as legacy; the primary path is `.agents/plugins/marketplace.json` (`plugins[]`: `name`, `source`, `policy`, `category`) | `codex plugin list` printed the legacy path for `claude-plugins-official`; plugins/build doc |
 | `claude plugin marketplace add/update`, `claude plugin install/update` | `codex plugin marketplace add <repo>[@ref] [--ref]`, `codex plugin marketplace upgrade [name]`, `codex plugin add <id>`, `codex plugin remove`, `codex plugin list` | `codex plugin --help` |
 | `installed_plugins.json`, cache `~/.claude/plugins/cache/<m>/<p>/<v>` | `[plugins."<id>"] enabled` in `config.toml` (user `~/.codex/`, project `.codex/config.toml` for a trusted project), cache `~/.codex/plugins/cache/<m>/<p>/<v>` | `~/.codex/config.toml`; plugins/build doc |
 | Commands `commands/*.md` | converted to skills at install, but a command over 4000 bytes or with `$ARGUMENTS` is skipped; every `adf` command fails one of the two | `core-plugins/src/command_migration.rs:343-360, 418-433` |
 | Skills `skills/<n>/SKILL.md` | the same format; invoked by `$<name>` or `/skills`, or implicitly by `description` | build-skills doc |
 | `${CLAUDE_PLUGIN_ROOT}` in skill text | not substituted; the model sees the skill file's path | build-skills doc (no substitution named) |
-| `hooks/hooks.json` | loaded by default from a plugin, the same schema and event names; `CLAUDE_PLUGIN_ROOT` and `PLUGIN_ROOT` are set; `PreToolUse` on a shell command has `tool_name` `Bash`; exit 2 or `permissionDecision: deny` blocks; a hook runs only after the user trusts it in `/hooks`; **not confirmed in 0.166 for these plugins: see `## Result`** | `codex-rs/hooks/src/engine/discovery.rs:311-319`; hooks doc; `hooks.state."superpowers@claude-plugins-official:hooks/hooks.json:session_start:0:0"` in `~/.codex/config.toml` |
+| `hooks/hooks.json` | loaded by default from a plugin, the same schema and event names; `CLAUDE_PLUGIN_ROOT` and `PLUGIN_ROOT` are set; `PreToolUse` on a shell command has `tool_name` `Bash`; exit 2 or `permissionDecision: deny` blocks; a hook runs only after the user trusts it in `/hooks`; **only for a Legacy manifest (`.codex-plugin/` or `.claude-plugin/`), not for a root `plugin.json`: see `## Result`** | `codex-rs/hooks/src/engine/discovery.rs:311-319`; hooks doc; `hooks.state."superpowers@claude-plugins-official:hooks/hooks.json:session_start:0:0"` in `~/.codex/config.toml` |
 | `agents/*.md` in a plugin | not loaded; custom agents are TOML (`name`, `description`, `developer_instructions`, optional `model`, `model_reasoning_effort`) in `~/.codex/agents/` or `.codex/agents/`; dispatched by `spawn_agent` with `agent_type`, in parallel | `codex-rs/agent-roles/src/discovery.rs`; subagents doc; `core/src/tools/handlers/multi_agents/spawn.rs` |
 | AskUserQuestion | `request_user_input`, in Plan mode only; not in `codex exec` | `codex-rs/tools/src/tool_config.rs:6-15`; binary string |
 | `CLAUDE.md` | `AGENTS.md`; `CLAUDE.md` only through `project_doc_fallback_filenames` | agents-md doc |
@@ -65,13 +65,20 @@ tests and the scratch run. The rest of the code asks this module and names no ho
 
 ### 2. Manifests
 
-- Each plugin directory gets a root `plugin.json` in the agent-plugins.org schema
+- A plugin with no `hooks/hooks.json` gets a root `plugin.json` in the agent-plugins.org schema
   (`$schema`, `name`, `version`, `description`, `author`, `homepage`, `repository`, `license`,
   `keywords`, and `extensions."com.openai".interface`). Codex reads it first. The
   `.claude-plugin/plugin.json` stays for Claude Code, which does not read the root one.
+- A plugin with `hooks/hooks.json` (`adf`, `adf-english-check`, `adf-npm-workspaces`) gets a
+  `.codex-plugin/plugin.json` instead, and no root `plugin.json`: for a root `plugin.json` (the
+  agent-plugins.org format) Codex loads no hooks (`core-plugins/src/loader.rs:986-997`); for a
+  `.codex-plugin/` or `.claude-plugin/` manifest it loads `hooks/hooks.json` by default. The file
+  holds `name`, `version`, `description`, the copied fields, `skills` when the plugin has a `skills/`
+  directory, and `interface`; it never sets `hooks` (an empty `hooks` disables them).
 - The repository gets `.agents/plugins/marketplace.json`, one entry per plugin, `source` the
   plugin's path. `.claude-plugin/marketplace.json` stays.
-- One script keeps the three in step: `scripts/manifests.mjs` writes the root `plugin.json` and
+- One script keeps the three in step: `scripts/manifests.mjs` writes the root `plugin.json` or
+  the `.codex-plugin/plugin.json` (and removes the other) and
   the Codex marketplace from `.claude-plugin/`, and `check-release.mjs` fails when they differ.
   The versions stay in one place, `.claude-plugin/`.
 
@@ -170,7 +177,7 @@ files need no change.
 
 ## Calls made by the designer, not the developer
 
-- A root `plugin.json` per plugin directory, not one at the repository root: Codex reads the
+- A root `plugin.json` (or `.codex-plugin/plugin.json` for a hook plugin) per plugin directory, not one at the repository root: Codex reads the
   manifest of a plugin from that plugin's root, and the repository is a marketplace of nine
   plugins, not one plugin (agent-skills is one plugin, so its plugin root is its repository root).
 - Commands become skills in both runtimes rather than a generated copy for Codex: one text, no
@@ -256,21 +263,21 @@ Checked, with the outcome:
   code needed no fix. The `todo` test is now a real test on the fixture
   `scripts/__tests__/fixtures/skill-invocation.jsonl` (commit `3e2c94a`).
 
-Not confirmed (defect candidates, not fixed; no cause found in the time of the run):
-
-- Plugin hooks did not run in Codex 0.166. A `PreToolUse` English-check commit of a Russian line in a file in
-  scope (`notes/**`) was not blocked: the commit `82db91a` went through with the registry entry present. A
-  logging line added to the cached `hook.mjs` never fired, in a run that ran Bash commands. The app-server
-  `hooks/list` returns `hooks: []` for the project, with the three `adf` plugins and Superpowers installed, while
-  a `.codex/hooks.json` of the project is listed (`trustStatus: untrusted`). Declaring `hooks` in the root
-  `plugin.json`, at the top level or under `extensions."com.openai"`, or in a `.codex-plugin/plugin.json`,
-  changed nothing. The hook script itself blocks: with the Codex-shaped input on stdin it exits 2 and prints
-  `notes/hello.md:1: ...`. So the English check, the npm guard and the update notice have no confirmed Codex
-  run; the spec's `hooks/hooks.json` row (the source citation `discovery.rs:311-319` and the developer's
-  `hooks.state` key) says plugin hooks load, and this run did not see it. It needs a look at a real
-  interactive session (`/hooks`) before the release claims it.
-- The update notice: `update.mjs notice` run by hand in Codex's environment printed nothing (the marketplace
-  is a local directory with no ref). Codex did not run it at session start, for the reason above.
+Defect found and fixed: plugin hooks did not run in Codex 0.166. The first run did not block a commit of a
+Russian line (commit `82db91a`), and `hooks/list` returned `hooks: []`. The cause: for a plugin whose
+manifest is the root `plugin.json` (the agent-plugins.org format) Codex loads no hooks
+(`core-plugins/src/loader.rs:986-997`); hooks load only for a `.codex-plugin/plugin.json` or a
+`.claude-plugin/plugin.json`, where `hooks/hooks.json` is the default. The fix (commit `1ef3374`,
+`scripts/manifests.mjs`, failing tests first): a plugin with `hooks/hooks.json` gets a generated
+`.codex-plugin/plugin.json` and no root `plugin.json`. Verified in a fresh scratch home at `1ef3374`:
+`hooks/list` lists `adf-english-check@agentic-dev-flow:hooks/hooks.json:pre_tool_use:0:0` and
+`adf@agentic-dev-flow:hooks/hooks.json:session_start:0:0` (source `plugin`, `trustStatus` untrusted); one
+`codex exec --dangerously-bypass-hook-trust` run to commit a Russian line was refused, the commit did not
+happen, and the model reported `adf-english-check: the commit was stopped; these lines are not in English:
+notes/hello.md:1: ...`. Tokens of that run: input 107681, cached 91904, output 938.
+The `/hooks` trust screen itself, the npm guard in Codex and the update notice are not seen: the notice
+printed no event in that session, as expected for a local marketplace with no ref (`update.mjs notice`
+by hand also prints nothing).
 
 Facts the run showed:
 
@@ -280,10 +287,10 @@ Facts the run showed:
   permitted`. The commit run needed `-c 'sandbox_workspace_write.writable_roots=["<project>/.git"]'`.
 - Codex tokens (`turn.completed`; input / cached input / output):
   `/adf:init` 154358 / 142080 / 2375; the blocked-commit attempt in the sandbox 83030 / 75904 / 619; the commit
-  run 90115 / 75136 / 747; a hook probe 32517 / 26880 / 69. Total: input 360020, cached input 320000, output 3810;
+  run 90115 / 75136 / 747; a hook probe 32517 / 26880 / 69. Total of the first four runs: input 360020, cached input 320000, output 3810;
   the two refused `-m` runs cost nothing. No limit or quota error appeared.
 
-Defects found and fixed: none. Defects found and left: the hooks line above.
+Defects found and fixed: the hooks manifest, above. Left: `runlog collect` skips `codex --version` when `codex` is not on `PATH`.
 
 Not checked: the Codex desktop app; the full propose-to-archive cycle (the teammate's run, returned by
-`runlog.mjs collect`); the `$adf:init` mention form; a second Codex session for the notice.
+`runlog.mjs collect`); the `$adf:init` mention form; a Codex session that shows the update notice (needs a marketplace with a ref and a newer tag); the Codex `/hooks` screen.

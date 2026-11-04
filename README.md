@@ -31,7 +31,7 @@ origin project learned the hard way, with their reasons (`docs/lessons/`).
 | Tracker: the `tracker` role and the `forge` operation `state` (contract `1.7`); propose gathers the scope from a key or a phrase (the tracker and the debt store), checks each taken issue by a read-only agent and starts the taken ones; `/adf:land` hands them to the tester after the merge; the plugin `adf-jira` | done (iteration 13) |
 | `/adf:quick`, a small fix or feature without the full artifact set | not started |
 | Update: one package version and its tag; the session-start notice of a newer or a pinned release; `/adf:update`, one merge request with the new `ref`, the plugins' `config` migrations (contract `1.9`) and the host files merged by the developer's choice; `pull` for a teammate or a user-scope install | done (iteration 16) |
-| Codex: the package runs in Codex as well as in Claude Code; the commands are skills, each plugin has a root `plugin.json`, the Codex marketplace is `.agents/plugins/marketplace.json`, a runtime map names each runtime's tools, and `runlog.mjs collect` packs a run log for the maintainer | done (iteration 17) |
+| Codex: the package runs in Codex as well as in Claude Code; the commands are skills, each plugin has a Codex manifest (a root `plugin.json`, or `.codex-plugin/plugin.json` when it has hooks), the Codex marketplace is `.agents/plugins/marketplace.json`, a runtime map names each runtime's tools, and `runlog.mjs collect` packs a run log for the maintainer | done (iteration 17) |
 
 The order is in `docs/roadmap.md`.
 
