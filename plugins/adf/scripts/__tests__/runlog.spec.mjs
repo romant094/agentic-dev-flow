@@ -43,7 +43,8 @@ test('codex rollouts of the project and its worktrees are packed, others are not
     rollout(s.home, '2026-10-01', 'rollout-old.jsonl', s.main)
     put(join(s.home, 'auth.json'), '{"token":"secret"}')
     put(join(s.main, '.superpowers', 'sdd', 'my-change', 'ledger.jsonl'), `${JSON.stringify({ id: 'x-1', kind: 'note', at: '2026-11-02T09:00:00Z' })}\n`)
-    put(join(s.main, '.superpowers', 'sdd', 'my-change', '.env'), 'SECRET=1')
+    for (const secret of ['.env', '.envrc', '.env.local', '.ENV', 'tls.pem', 'id.key']) put(join(s.main, '.superpowers', 'sdd', 'my-change', secret), 'SECRET=1')
+    put(join(s.main, 'openspec', 'changes', 'my-change', '.env.local'), 'SECRET=1')
     put(join(s.main, 'openspec', 'changes', 'my-change', 'proposal.md'), '# p')
     put(join(s.main, '.superpowers', 'sdd', 'old-change', 'ledger.jsonl'), `${JSON.stringify({ id: 'x-1', kind: 'note', at: '2026-09-02T09:00:00Z' })}\n`)
     const result = collectIn(s, 'codex')
@@ -55,7 +56,7 @@ test('codex rollouts of the project and its worktrees are packed, others are not
     for (const f of ['sessions/rollout-a.jsonl', 'sessions/rollout-b.jsonl', 'sessions/rollout-c.jsonl', 'changes/my-change/sdd/ledger.jsonl', 'changes/my-change/openspec/proposal.md', 'registry.json', 'versions.json']) {
       assert.ok(files.includes(f), `${f} missing from ${files}`)
     }
-    assert.ok(!files.some((f) => /other|old|auth\.json|\.env|old-change/.test(f)), files.join('\n'))
+    assert.ok(!files.some((f) => /other|old|auth\.json|\.env|\.ENV|\.pem|\.key|old-change/.test(f)), files.join('\n'))
     const versions = JSON.parse(readIn(result.archive, 'versions.json'))
     assert.equal(versions.runtime, 'codex')
     assert.equal(versions.node, process.version)
@@ -133,6 +134,49 @@ test('.adf/runlog/ is ignored by the host .gitignore lines', () => {
     const result = collectIn(s, 'codex')
     git(s.main, 'check-ignore', '-q', result.archive)
     assert.equal(git(s.main, 'status', '--porcelain', '--', '.adf'), '')
+  } finally {
+    rmSync(s.base, { recursive: true, force: true })
+  }
+})
+
+test('a large rollout still matches by its first line; a first line over the head is skipped', () => {
+  const s = setup()
+  try {
+    const [y, m, d] = ['2026', '11', '02']
+    const meta = (cwd) => JSON.stringify({ type: 'session_meta', payload: { cwd } })
+    put(join(s.home, 'sessions', y, m, d, 'rollout-big.jsonl'), `${meta(s.main)}\n${'x'.repeat(2 * 1024 * 1024)}\n`)
+    put(join(s.home, 'sessions', y, m, d, 'rollout-long.jsonl'), `${meta(s.main).slice(0, -2)},"pad":"${'y'.repeat(300 * 1024)}"}}\n`)
+    const result = collectIn(s, 'codex')
+    assert.equal(result.ok, true)
+    assert.equal(result.sessions, 1)
+    assert.ok(list(result.archive).includes('sessions/rollout-big.jsonl'))
+    assert.ok(result.skipped.some((x) => x.what.endsWith('rollout-long.jsonl') && /broken/.test(x.reason)))
+  } finally {
+    rmSync(s.base, { recursive: true, force: true })
+  }
+})
+
+test('a sibling directory that only shares the path prefix is not the project', () => {
+  const s = setup()
+  try {
+    rollout(s.home, '2026-11-02', 'rollout-sib.jsonl', `${s.main}2`)
+    const today = new Date().toISOString().slice(0, 10)
+    put(join(s.home, 'projects', encodeKeys(`${s.main}2`)[0], 'sib-1.jsonl'), '{}\n')
+    assert.equal(collectIn(s, 'codex').sessions, 0)
+    const claude = run(['collect', '--from', today, '--to', today, '--root', s.main], { env: { ADF_RUNTIME: 'claude-code', CLAUDE_CONFIG_DIR: s.home } })
+    assert.equal(claude.sessions, 0)
+  } finally {
+    rmSync(s.base, { recursive: true, force: true })
+  }
+})
+
+test('a ledger that does not parse is named in skipped', () => {
+  const s = setup()
+  try {
+    put(join(s.main, '.superpowers', 'sdd', 'bad-change', 'ledger.jsonl'), '{not json\n')
+    const result = collectIn(s, 'codex')
+    assert.equal(result.ok, true)
+    assert.ok(result.skipped.some((x) => x.what.endsWith(join('bad-change', 'ledger.jsonl'))))
   } finally {
     rmSync(s.base, { recursive: true, force: true })
   }

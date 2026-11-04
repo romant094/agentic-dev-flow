@@ -19,9 +19,12 @@
 // A change is in the window when its ledger has a record dated (`at`) inside it, in the main
 // directory or in a worktree. `skipped` is [{ what, reason }]: a broken session file, a session
 // the ledger names whose transcript is not found, a value that cannot be read. Env files
-// (`.env*`) and `auth.json` are never packed. The window is inclusive, in UTC dates.
+// (`.env*` in any letter case), `auth.json`, `*.pem` and `*.key` are never packed. The window is
+// inclusive, in UTC dates. Codex sessions are dated by the runtime's `YYYY/MM/DD` directory and
+// Claude Code's by file modification time, so a session near a window edge may be off by a day.
+// `<cli> --version` is given 10 seconds; a timeout is named in `skipped`.
 import { execFileSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { closeSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -37,7 +40,22 @@ export const WARNING = 'The archive holds whole session transcripts: everything 
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 const DAY = 86400000
 const SELF = fileURLToPath(import.meta.url)
-const SECRET = (name) => name === 'auth.json' || name === '.env' || name.startsWith('.env.')
+const HEAD_BYTES = 256 * 1024
+const VERSION_TIMEOUT_MS = 10000
+const SECRET = (name) => name === 'auth.json' || name.toLowerCase().startsWith('.env') || /\.(pem|key)$/i.test(name)
+
+// The first line of a file, read from its first HEAD_BYTES only; null when there is no newline there.
+function firstLine(path) {
+  const fd = openSync(path, 'r')
+  try {
+    const buffer = Buffer.alloc(HEAD_BYTES)
+    const n = readSync(fd, buffer, 0, HEAD_BYTES, 0)
+    const end = buffer.subarray(0, n).indexOf(10)
+    return end < 0 ? null : buffer.subarray(0, end).toString('utf8')
+  } finally {
+    closeSync(fd)
+  }
+}
 
 const day = (ms) => new Date(ms).toISOString().slice(0, 10)
 const inWindow = (d, window) => d >= window.from && d <= window.to
@@ -76,7 +94,7 @@ function projectRoots(main, skipped) {
   return [...new Set(paths)]
 }
 
-function changesIn(roots, window) {
+function changesIn(roots, window, skipped) {
   const found = new Map()
   for (const root of roots) {
     const base = join(root, '.superpowers', 'sdd')
@@ -88,7 +106,8 @@ function changesIn(roots, window) {
       try {
         records = readLedger(readFileSync(ledger, 'utf8'))
       } catch {
-        records = []
+        skipped.push({ what: ledger, reason: 'the ledger does not parse; its change is not packed' })
+        continue
       }
       if (!records.some((r) => typeof r.at === 'string' && inWindow(r.at.slice(0, 10), window))) continue
       found.set(name, [...(found.get(name) ?? []), { root, records }])
@@ -125,9 +144,11 @@ function codexSessions(home, roots, window, skipped) {
           const path = join(base, y, m, d, file)
           let meta
           try {
-            meta = JSON.parse(readFileSync(path, 'utf8').split('\n', 1)[0])
+            const line = firstLine(path)
+            if (line === null) throw new Error('no first line in the head')
+            meta = JSON.parse(line)
           } catch {
-            skipped.push({ what: path, reason: 'broken session file: the first line is not JSON' })
+            skipped.push({ what: path, reason: 'broken session file: the first line is missing, too long or not JSON' })
             continue
           }
           const cwd = meta?.type === 'session_meta' ? meta.payload?.cwd : null
@@ -166,8 +187,8 @@ function claudeSessions(home, roots, window, skipped) {
   return out
 }
 
-function run(file, args) {
-  return execFileSync(file, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+function run(file, args, timeout) {
+  return execFileSync(file, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout }).trim()
 }
 
 function versions({ runtime, main, home, window, skipped }) {
@@ -193,7 +214,7 @@ function versions({ runtime, main, home, window, skipped }) {
   }
   return {
     runtime,
-    runtimeVersion: attempt(`${cli(runtime)} --version`, () => run(cli(runtime), ['--version'])),
+    runtimeVersion: attempt(`${cli(runtime)} --version`, () => run(cli(runtime), ['--version'], VERSION_TIMEOUT_MS)),
     node: process.version,
     git: attempt('git --version', () => run('git', ['--version'])),
     plugins,
@@ -222,7 +243,7 @@ export function collect(root, { from, to, env = process.env, now = Date.now() } 
         skipped.push({ what: s.path, reason: `cannot copy: ${error.message}` })
       }
     }
-    const changes = changesIn(roots, window)
+    const changes = changesIn(roots, window, skipped)
     for (const [name, places] of changes) packChange(stage, name, places)
     // A session the ledger names, with no file packed: gone, or outside the window.
     const packed = sessions.map((s) => s.name)
