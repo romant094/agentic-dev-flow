@@ -50,7 +50,8 @@ The plugin checks the config only when a database is needed.
 
 - A provision whose `kind` or `needs` asks for no database is done, whatever the config holds.
 - A teardown with no config (`{}`) is done and drops nothing, because provision made no database.
-- When a database is needed, a missing or malformed field is refused, and the error names it.
+- A teardown with a non-empty config is checked for every kind of worktree. A missing or malformed field is refused.
+- A provision that needs a database refuses a missing or malformed field. The error names it.
 
 The declaration lists `prefix` and `url` as `requiredConfig`. So `/adf:add` warns when the config lacks them.
 

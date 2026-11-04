@@ -13,7 +13,7 @@
 
 The change name, optional. Without it, the command uses the change named in the conversation, or else the active change.
 
-Run it after `/adf:apply`. The preflight refuses when the root is the main checkout, when the branch is unnamed or protected, or when the plan is not done. It writes nothing in that case.
+Run it after `/adf:apply`. The preflight refuses when the change root that it resolves is the main checkout, when the branch is unnamed or protected, or when the plan is not done. It writes nothing in that case.
 
 ## What it does
 

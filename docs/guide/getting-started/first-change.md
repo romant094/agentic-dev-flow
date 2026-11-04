@@ -32,7 +32,7 @@ Run each command in the main checkout of the project. Each command after `/adf:p
    - When a tracker is enabled, it asks which issues the change works on.
    - It writes the artifacts with you, one by one.
    - It commits the artifacts.
-   - It opens the merge request through the forge plugin.
+   - With a forge plugin, it opens the merge request.
 
 2. Run `/adf:apply`.
 
@@ -73,7 +73,7 @@ The command `/adf:land` is not part of this cycle. See [the tracker role](../ext
 | `openspec/changes/archive/<date>-<name>/` after `/adf:archive` | the same change directory, moved |
 | `openspec/specs/` | the main specs, with the change's delta specs merged in |
 | `.claude/worktrees/` | the change's worktree, removed by `/adf:archive` |
-| the merge request | open on the forge, for you to merge |
+| the merge request | with a forge plugin, open on the forge, for you to merge |
 
 A change whose specs need no edit skips the `specs` artifact. `/adf:propose` records the reason.
 

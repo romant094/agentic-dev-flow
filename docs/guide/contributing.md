@@ -20,9 +20,9 @@ plugins/adf/                      the core
   .codex-plugin/plugin.json       the Codex manifest
   skills/                         the commands, one <name>/SKILL.md each
   agents/                         the capability-level subagents
-  schema/runtimes/                one file for each runtime: the flow's words mapped to its tools
   contract/                       the extension contract and its version
   schema/                         the artifact graph, the templates and the instructions
+  schema/runtimes/                one file for each runtime: the flow's words mapped to its tools
   host/                           the templates of the files /adf:init adds to a project
   scripts/                        the command-line scripts, their library in lib/ and their tests
 plugins/adf-gitlab/               the forge role for GitLab
@@ -38,7 +38,7 @@ test/fixtures/                    a host project and a plugin for end-to-end tes
 docs/guide/                       this guide
 ```
 
-The skills are `/adf:init`, `/adf:add`, `/adf:remove`, `/adf:propose`, `/adf:apply`, `/adf:verify`, `/adf:review`, `/adf:archive`, `/adf:land`, `/adf:retro` and `/adf:update`. In Codex they are the skills `adf:<name>`. See [the Codex page](getting-started/codex.md).
+The commands are in the Commands table of [the README](../../README.md#commands). In Codex they are the skills `adf:<name>`. See [the Codex page](getting-started/codex.md).
 
 A plugin with hooks (`adf`, `adf-english-check`, `adf-npm-workspaces`) has its Codex manifest at `.codex-plugin/plugin.json`. Every other plugin has a `plugin.json` in its root. `scripts/manifests.mjs` generates these files from the manifests in `.claude-plugin/`. Do not edit them by hand.
 
@@ -54,8 +54,8 @@ npm test
 
 1. The unit and end-to-end specs, with `node --test`: `plugins/*/scripts/__tests__/*.spec.mjs` and `scripts/parity/__tests__/*.spec.mjs`. `test/env.mjs` removes the variables that select a runtime, so the specs run the same in both.
 2. `scripts/check-lessons.mjs` checks the rule tables under `docs/`. Each cited file must exist and hold the cited phrase.
-3. `scripts/check-release.mjs` checks the package version in `.claude-plugin/marketplace.json`. Each plugin's version must equal the one in its `plugin.json`. A release tag on `HEAD` must equal the package version. The generated Codex manifests must match `scripts/manifests.mjs --check`.
-4. `scripts/check-guide.mjs` checks this guide. Every command, plugin, extension point and registry key must appear in backticks on some page. Every file under `skills/`, `contract/` and `hooks/` must match a `sources:` entry of some page. Every `sources:` entry must match a file. Every link must resolve.
+3. `scripts/check-release.mjs` checks the package version in `.claude-plugin/marketplace.json`. Each plugin's version must equal the one in its `plugin.json`. A release tag on `HEAD` must equal the package version. `CHANGELOG.md` must have a section for the package version. Every pinned tag in `README.md` and in the guide must equal `v<package version>`. The generated Codex manifests must match `scripts/manifests.mjs --check`.
+4. `scripts/check-guide.mjs` checks this guide. Every command, plugin, extension point and registry key must appear in backticks on some page. Every file under `skills/`, `commands/`, `contract/` and `hooks/` must match a `sources:` entry of some page. Every `sources:` entry must match a file. Every link must resolve.
 
 Each step must pass. A failing step ends the run.
 
@@ -65,3 +65,5 @@ Each step must pass. A failing step ends the run.
 - Write in Simplified Technical English: one idea in a sentence, at most 20 words in a step and 25 in a description.
 - Use the active voice. Use one term for one concept.
 - Start each page with a `sources:` comment that lists the files that the page describes. The comment is HTML on the first lines of the page, not front matter.
+- Update the pages in the same commit as the flow change.
+- Add an `## [Unreleased]` entry to `CHANGELOG.md` for the change.

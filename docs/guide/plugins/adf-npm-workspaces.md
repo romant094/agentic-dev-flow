@@ -36,6 +36,12 @@ The plugin enforces the rule with a Claude Code `PreToolUse` hook on Bash comman
 - It allows the main checkout, `npm install -g` and every other command.
 - It allows a command line that it cannot read, and a `cd` to a variable. The guard fails open.
 
+| Guard exit code | Meaning |
+|---|---|
+| 0 | The call runs. |
+| 2 | The call is blocked. The message says that a dependency update is its own change, to make in the main checkout. |
+| 1 | The guard failed. The call runs. The message says the command was not checked. |
+
 The guard acts only in a repository whose registry has an entry for this plugin. The registry is `.claude/adf-extensions.json` in the main checkout. The entry is an installed id, or a `path` entry whose directory holds the `adf-extension.json` of this plugin. With no registry, or no entry for this plugin, the guard exits 0 and prints nothing, although the plugin is installed.
 
 ## What `provision` does

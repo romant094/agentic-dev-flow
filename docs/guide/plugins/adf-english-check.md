@@ -34,7 +34,7 @@ claude plugin install adf-english-check@agentic-dev-flow --scope project
 
 The Codex form is on [the Codex page](../getting-started/codex.md). In Codex, trust the hook in `/hooks`.
 
-The registry entry also enables the check. A repository with no registry, or with no entry for this plugin, is not checked. The hook exits 0 and prints nothing, although the plugin is installed. An entry with no `config` checks the defaults below.
+The registry entry also enables the check. The entry is an installed id, or a `path` entry whose directory holds the `adf-extension.json` of this plugin. A repository with no registry, or with no entry for this plugin, is not checked. The hook exits 0 and prints nothing, although the plugin is installed. An entry with no `config` checks the defaults below.
 
 ## Configure
 
@@ -102,12 +102,12 @@ The list is `CORE_COMMIT_SCRIPTS` in `scripts/lib/english.mjs`. A future core sc
 | Exit code | Meaning |
 |---|---|
 | 0 | No finding, or the command is not a commit. The hook prints nothing. |
-| 2 | Claude Code blocks the Bash call. The agent gets one `path:line: text` line for each finding, and the instruction to rewrite those lines in English and run the command again. |
+| 2 | Claude Code blocks the Bash call. The agent gets one `path:line: text` line for each finding, and the instruction to rewrite those lines in English and run the command again. The message starts with `adf-english-check: the commit was stopped; these lines are not in English:`. |
 | 1 | The check failed, for example on a malformed registry. Claude Code shows a hook error and the commit runs. The message says the commit was not checked. |
 
 ## Limits
 
-- The check exists only where this plugin is enabled in Claude Code and in the repository's registry. A commit made by hand, outside Claude Code, is not checked. The plugin installs no git hook.
+- The check exists only where this plugin is enabled in the repository's registry, in Claude Code or in Codex after you trust the hook in `/hooks`. A commit made by hand, outside Claude Code, is not checked. The plugin installs no git hook. Not checked: the hook in Codex.
 - The hook reads the command line, not what the shell will do. A commit hidden in a script or an alias is not seen. The commit scripts of the core above are the exception.
 - A file that is staged in part is checked as it is in the working tree.
 

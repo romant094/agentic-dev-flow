@@ -76,11 +76,13 @@ A merge conflict in *Keep everything* goes to the agent. It keeps your edits and
 
 ## The notice at the session start
 
-A `SessionStart` hook runs `update.mjs notice`. It asks the remote once a day. It prints these messages, or nothing. Both lines can print together:
+A `SessionStart` hook runs `update.mjs notice`. It asks the remote once a day. It prints these messages, or nothing:
 
+- `This project pins ADF v<ref>; v<installed> is installed. Run /adf:update to install it.`
 - `ADF v<latest> is available; this project is on v<ref>. Run /adf:update.`
 - `ADF v<latest> is available; v<installed> is installed. Run /adf:update.` (a user-scope install)
-- `This project pins ADF v<ref>; v<installed> is installed. Run /adf:update to install it.`
+
+A project install can print the first two lines together. The pin line comes first.
 
 Any error in the hook prints nothing.
 
@@ -90,8 +92,9 @@ Any error in the hook prints nothing.
 2. Remove the update worktree: `git worktree remove <worktree>`.
 3. Delete the update branch: `git branch -d <branch>`.
 4. Restart the Claude Code session.
+5. When the session start says the pinned release is not installed, run `/adf:update`.
 
-The rest of the team gets the new release with the merge. See [What a teammate does](projects/team.md).
+Each teammate runs `/adf:update` once after the merge. See [What a teammate does](projects/team.md).
 
 ## A half-finished update
 

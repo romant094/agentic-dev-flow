@@ -29,6 +29,14 @@ codex plugin add superpowers@claude-plugins-official
 codex plugin add adf@agentic-dev-flow
 ```
 
+## Enable more plugins
+
+To use another plugin of the package, for example `adf-memory`, do these steps:
+
+1. Install it: `codex plugin add adf-memory@agentic-dev-flow`.
+2. Invoke the skill `adf:add` with the id `adf-memory@agentic-dev-flow`.
+3. Open `/hooks` and trust the new hooks.
+
 ## Run the first skill
 
 1. Open Codex in the project.
@@ -57,6 +65,8 @@ This guide names every command in the Claude Code form, for example `/adf:propos
 | `/adf:init` | the skill `adf:init` |
 | `/adf:propose <change>` | the skill `adf:propose`, with the change name |
 | `/adf:apply`, `/adf:verify`, `/adf:review`, `/adf:archive` | the skills with the same names |
+| `/adf:add <id>`, `/adf:remove <id>` | the skills `adf:add` and `adf:remove`, with the plugin id |
+| `/adf:land`, `/adf:retro` | the skills with the same names |
 | `/adf:update` | the skill `adf:update`; its pull step upgrades the user's Codex marketplace |
 
 The skills work as in Claude Code.
@@ -69,7 +79,7 @@ The flow's scripts read the Codex home from `CODEX_HOME`. When the variable is n
 
 ## Send the maintainer a run log
 
-Run this command in the main directory of the project:
+Run this command in the main checkout of the project:
 
 ```
 node <adf root>/scripts/runlog.mjs collect

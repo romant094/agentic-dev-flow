@@ -38,59 +38,15 @@ Claude Code loads the hooks of a plugin only when you install the plugin by id. 
 
 Plugin: [`adf-english-check`](../plugins/adf-english-check.md). Event: `PreToolUse`, matcher `Bash`. Script: `scripts/hook.mjs`.
 
-The hook reads each Bash command before it runs. When the command commits, the hook checks the files that the commit takes. A line with non-English text blocks the commit.
+The hook blocks a commit that takes a line of non-English text. For the characters it finds, the scope, the commits it sees, the exit codes and the block message, see [adf-english-check](../plugins/adf-english-check.md).
 
-The hook finds these characters: Cyrillic, CJK punctuation, CJK ideographs and fullwidth forms. Em dashes, arrows and typographic quotes pass.
-
-The hook acts only in a project whose registry enables `adf-english-check`. Without an entry, it does nothing.
-
-### Which files it checks
-
-The registry entry sets the scope in its `config`. A key you do not set keeps its default.
-
-| Key | Default |
-|---|---|
-| `include` | `openspec/changes/**`, `openspec/specs/**` |
-| `exclude` | `openspec/changes/**/plan.md` |
-| `extensions` | `md`, `mjs`, `yaml`, `yml`, `json` |
-
-An `exclude` glob wins over an `include` glob.
-
-### Which commits it sees
-
-The hook sees a `git commit` command. It sees the commit scripts of the ADF core too, such as `commit.mjs`. It reads the paths such a script commits.
-
-### What you see
-
-| Exit code | Meaning |
-|---|---|
-| 0 | The call runs. The command is not a commit, or the hook found nothing. |
-| 2 | The call is blocked. The agent gets one line `path:line: text` for each finding. |
-| 1 | The check failed. The call runs. The message says the commit was not checked. |
-
-The block message starts with `adf-english-check: the commit was stopped; these lines are not in English:`. It ends with the instruction to rewrite the lines in English and run the command again.
-
-### In Codex
-
-Not checked: the hook with the trust given on the `/hooks` screen.
+Not checked: the hook in Codex, with the trust given on the `/hooks` screen.
 
 ## The npm guard
 
 Plugin: [`adf-npm-workspaces`](../plugins/adf-npm-workspaces.md). Event: `PreToolUse`, matcher `Bash`. Script: `scripts/guard.mjs`.
 
-A worktree that the plugin provisions has a `node_modules` that links into the `node_modules` of the main checkout. An npm command that changes dependencies would rewrite the main checkout's dependencies. The guard blocks it.
-
-The guard blocks these commands in a linked git worktree, with their npm aliases: `install`, `ci`, `add`, `update` and `uninstall`. It does not block a global command (`-g`).
-
-The guard reads `cd <dir>` and `npm --prefix <dir>` to find the directory where the command runs. A command line that it cannot read is allowed.
-
-The guard acts only when the registry of the main checkout enables `adf-npm-workspaces`.
-
-| Exit code | Meaning |
-|---|---|
-| 0 | The call runs. |
-| 2 | The call is blocked. The message says that a dependency update is its own change, to make in the main checkout. |
-| 1 | The guard failed. The call runs. The message says the command was not checked. |
+The guard blocks an npm command that changes dependencies in a linked git worktree. For the commands it blocks, the directory it reads and the exit codes, see [adf-npm-workspaces](../plugins/adf-npm-workspaces.md).
 
 Not checked: the guard in Codex.
 

@@ -19,7 +19,7 @@ The change name, optional. Without it, the command uses the change named in the 
 The command refuses, and changes nothing, in these cases:
 
 - The Superpowers skills are missing.
-- The root is the main checkout, or its branch is unnamed or protected.
+- The change root that the command resolves is the main checkout, or its branch is unnamed or protected.
 - The plan is missing. The message sends you to `/adf:propose <name>`.
 - The plan names a file or symbol that the tree does not hold. Correct `plan.md` first.
 - Every task is complete. The message sends you to `/adf:verify`.

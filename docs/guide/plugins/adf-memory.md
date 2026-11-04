@@ -8,7 +8,7 @@
 
 # `adf-memory`
 
-`adf-memory` is the wiki memory of the flow. It provides the `knowledge` role: an indexed knowledge base in the project at `.claude/memory/`, a log of what each session learned that rotates monthly, and the instructions of the ingest, query and lint workflows.
+`adf-memory` is the wiki memory of the flow. It provides the `knowledge` role. The role has three parts: an indexed knowledge base in the project at `.claude/memory/`, a monthly rotating log of what each session learned, and the instructions of the ingest, query and lint workflows.
 
 ## What it does
 
@@ -64,7 +64,7 @@ The fields of `log`:
 - `entry` is the text written.
 - `rotated` lists the months moved to `log-archive/`.
 
-The `findings` of `check` are `unindexed`, `broken-link`, `malformed-header`, `out-of-order` and `missing`. `pages` lists the pages checked. `excluded` lists the pages left out.
+The `findings` of `check` are `unindexed`, `broken-link`, `malformed-header`, `out-of-order` and `missing`. `pages` is the number of pages checked. `excluded` is the number of pages left out.
 
 ### Sort the log
 

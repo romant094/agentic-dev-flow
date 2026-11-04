@@ -110,7 +110,7 @@ The skill shows the `error` field of the script. In these messages, `<base>` is 
 | `cannot clone <url> at <ref> and <tag>: <git error>` | Git cannot reach the repository or one of the tags. | Check the network and the tag. |
 | `the update to v<version> is refused: <reason>` | The reason is a major change of the contract, or an invalid `contract` in the registry. See the next two rows. | Read the reason. |
 | `the update moves the extension contract from <a> to <b>, a major change; every plugin must move to contract <b> first` | The reason of the row above. | Move every plugin to contract `<b>`, then run `/adf:update` again. |
-| `.claude/adf-extensions.json has no valid "contract" field (<value>); set it to the contract version the project runs` | The reason of the row above, for a registry with a bad `contract`. | Set `contract` to a `major.minor` value, such as the one in [the registry](concepts/registry.md). |
+| `.claude/adf-extensions.json has no valid "contract" field (<value>); set it to the contract version the project runs` | The reason of the row above, for a registry with a bad `contract`. | Set `contract` to the `version` in `plugins/adf/contract/contract.json`, a `major.minor` value. See [the registry](concepts/registry.md). |
 | `the integration branch moved since plan (<base> is <commit>, plan read <commit>); run plan again` | A commit reached the integration branch after the plan. | Run `/adf:update` again. |
 | `<dir> is not at <tag>; run plan again` | The clone is not at the target tag. | Run `/adf:update` again. |
 | `no choice for <files>: each edited host file needs keep, replace or manual` | The command did not get a choice for an edited file. | Answer the merge question for each file. |

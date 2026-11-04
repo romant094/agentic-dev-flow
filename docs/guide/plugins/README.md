@@ -16,7 +16,7 @@ The core `adf` runs the change cycle. Each plugin adds one tool at an [extension
 | `adf` | The change cycle, the skills, the contract. | The change cycle does not run. |
 | [`adf-gitlab`](adf-gitlab.md) | The `forge` role on GitLab, through `glab`. | Nothing is pushed. No merge request exists. Archive offers a local merge. |
 | [`adf-memory`](adf-memory.md) | The `knowledge` role: the wiki memory in `.claude/memory/`. | No index is read. Archive skips the ingest and writes no log entry. |
-| [`adf-jira`](adf-jira.md) | The `tracker` role on Jira, and seven Jira skills. | The tracker steps are skipped. The scope holds only the own sources of the core. |
+| [`adf-jira`](adf-jira.md) | The `tracker` role on Jira, and seven Jira skills. | The tracker steps are skipped. The scope holds only the debt store and the changes in flight. |
 | [`adf-maintainer`](adf-maintainer.md) | The `upstream` role on GitHub, for the maintainer of the flow. | A retrospective files nothing. The findings stay in its sidecar. |
 | [`adf-npm-workspaces`](adf-npm-workspaces.md) | The `provision` hook for an npm-workspaces monorepo, and a guard against `npm install` in a worktree. | The core copies the files that the planning guide names, and nothing else. The guard does not run. |
 | [`adf-postgres`](adf-postgres.md) | The `provision` and `teardown` hooks: one database for each worktree. | No database is made for a worktree. |

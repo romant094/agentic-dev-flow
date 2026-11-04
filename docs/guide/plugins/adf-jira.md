@@ -173,7 +173,7 @@ With `apply: <plan id>`, the plan runs.
 | `partial` | `done`, `test`, `remains` (lists); `commit` | the route back to `statuses.initial`, never through `statuses.handoff`, then the comment; with no `statuses.initial`, or no such route, the comment only and the status stays, and `unmoved` in the plan names why |
 | `not-reproduced` | `tried`, `commit`; `test` | as `taken`: the comment says the issue does not reproduce on that commit, and the tester retests it |
 
-The required fields are the core's. The core sends every text field as a list of one-line texts. The plugin checks them again before it sends anything. It refuses a field that is not such a list, a text that holds a link or a URL, and a `commit` that is not a commit hash. The core checks the wording. The plugin renders the markup.
+The required fields are the core's. The core sends every text field as a list of one-line texts. The plugin checks them again before it sends anything. It refuses three things: a field that is not such a list, a text that holds a link or a URL, and a `commit` that is not a commit hash. The core checks the wording. The plugin renders the markup.
 
 ### Held plans and resume
 
@@ -185,7 +185,7 @@ A plan is `start-<UTC stamp>` or `handoff-<UTC stamp>`. It is a file in `stateDi
 
 For a refused plan, run `start` or `handoff` again without `apply` to get a new plan.
 
-Each write of an issue is its own row. The `step` is `transition`, `assignee` or `comment`. Each row checks the status it expects before it runs. The comment of a partial hand-off checks no status when the plan does not move the issue. When the plan routes the issue back to `statuses.initial`, the comment row expects that status.
+Each write of an issue is its own row. The `step` is `transition`, `assignee` or `comment`. Each row checks the status it expects before it runs. The comment of a partial hand-off checks no status when the issue has no initial status or no route back. When the plan routes the issue back to `statuses.initial`, the comment row expects that status.
 
 A rerun with the same plan id resumes from the state of each row. A row that is done is not sent again. So a hand-off that failed after its transition posts only the comment. A comment row also reads the comments of the issue. It posts nothing when a comment with the same body is there. An issue that someone moved by hand since the plan was built is skipped as drifted, not failed.
 
@@ -201,7 +201,7 @@ Inside a section, the plugin replaces a placeholder in double braces.
 - `commit` is the commit hash.
 - `mr` is the merge request URL. Its line appears only when the core passes `mr`. The core does it only with a forge.
 - A line that holds an empty value is dropped.
-- A block opened by `#name` and closed by `/name`, each in double braces on its own line, stays only when the value is not empty.
+- A block stays only when its value is not empty. `#name` opens the block and `/name` closes it. Each marker is in double braces on its own line.
 
 The plugin escapes agent text, so a bracket or a brace opens no link or macro.
 

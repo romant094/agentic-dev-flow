@@ -72,7 +72,7 @@ The seed runs only when `config.seed` is not `false` and `package.json` of the p
 
 ## What `verify-check` does
 
-It returns one check, `migration-order`. Prisma applies migrations in the order of their directory names, which are timestamps. A branch migration that sorts before the newest migration that the base gained would apply first on a fresh database and last on the developer's database.
+It returns one check, `migration-order`. Prisma applies migrations in the order of their directory names, which are timestamps. Suppose a branch migration sorts before the newest migration that the base gained. It would apply first on a fresh database. It would apply last on the developer's database.
 
 | Case | Verdict |
 |---|---|

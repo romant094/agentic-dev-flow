@@ -15,7 +15,7 @@ Choose one mode.
 
 | Input | Changes covered |
 |---|---|
-| nothing | Every change merged into the integration branch since the last window retrospective. All of them when there is none. |
+| nothing | Every change archived since the last window retrospective. All of them when there is none. |
 | `--change <name>` | One archived change. |
 | `--from <YYYY-MM-DD> --to <YYYY-MM-DD>` | The changes merged in that period. |
 
@@ -34,7 +34,7 @@ A script runs each step. One agent reasons over the numbers that the scripts com
 | `reply` | Checks the reply of the `retro <id>` agent. |
 | `file` | Files the findings and the open ADF debt upstream, through the upstream role. |
 | `render` | Writes the report and the sidecar. |
-| `record` | Commits both files. |
+| `record` | Commits both files and the debt tree files that `file` marked. |
 | `publish` | Opens a merge request, or merges locally. |
 | `remove` | Removes the worktree. |
 
@@ -52,7 +52,7 @@ A script runs each step. One agent reasons over the numbers that the scripts com
 | the debt tree | The Filed column of each ADF debt record that was filed. |
 | `.superpowers/retro/<id>/` | The input, the prompt, the replies and the state. This folder is ignored. |
 
-The commit message is `docs(retro): <mode> retrospective <date>`, with ` of <change>` for one change. A retrospective writes no debt and commits nothing else.
+The commit message is `docs(retro): <mode> retrospective <date>`, with ` of <change>` for one change. A retrospective writes no new debt. It commits only the two files and the debt tree files that `file` marked.
 
 With a forge plugin, the merge request targets the integration branch. It is not a draft and it runs no CI. The command never merges it.
 

@@ -31,7 +31,7 @@ This is an example:
 
 | Key | Meaning |
 |---|---|
-| `contract` | The extension contract version the project runs, in the form `major.minor`. A value in another form is an error. |
+| `contract` | The extension contract version the project runs, in the form `major.minor`. A value in another form is an error. The current value is `version` in `plugins/adf/contract/contract.json`: 1.9 at v0.20.0. |
 | `branches` | The branch policy. `integration` names the branch that a change forks from and merges into. `protected` lists the other branches that nobody commits to directly. The integration branch is always protected. |
 | `extensions` | The list of enabled plugins. See the entry fields below. |
 | `metrics` | Optional. `metrics.pricesUrl` is an http or https URL of the pricing page. Without it, the core uses its default. See [Metrics](metrics.md). |

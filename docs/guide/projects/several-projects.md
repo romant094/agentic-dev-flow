@@ -31,7 +31,7 @@ Not checked: what an install or a project trust in the other project then takes.
 
 ### Where to install
 
-The flow reads the install records of Claude Code for the main checkout of the project. A user-scope record counts everywhere. A project or local record counts when its project path is the main checkout, or the worktree where the command runs. The flow reads the enabled and disabled settings from the main checkout only, and the Superpowers gate checks the main checkout only.
+The flow reads the install records of Claude Code for the main checkout of the project. A user-scope record counts everywhere. A project or local record counts when its project path is the main checkout, or the worktree where the command runs. The flow reads the enabled and disabled settings from the main checkout only, and the Superpowers gate of the cycle commands' preflight checks the main checkout only. Other callers check the root they are given.
 
 A project install that you make in a change worktree counts only for commands that run in that worktree. Install from the main checkout, so that every worktree finds the plugin. When a plugin is not installed, the message names the command and says to run it from the main checkout. See [Troubleshooting](../troubleshooting.md).
 

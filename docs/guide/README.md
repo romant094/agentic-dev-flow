@@ -17,6 +17,7 @@ The sections of this guide, in reading order.
 - [Install in Claude Code](getting-started/claude-code.md)
 - [Install in Codex](getting-started/codex.md)
 - [Your first change](getting-started/first-change.md)
+- [Switching a project to the plugins](getting-started/switching.md)
 - [The main cycle](cycle/README.md)
 - [/adf:propose](cycle/propose.md)
 - [/adf:apply](cycle/apply.md)
@@ -52,4 +53,3 @@ The sections of this guide, in reading order.
 - [/adf:update](update.md)
 - [Troubleshooting](troubleshooting.md)
 - [Contributing](contributing.md)
-- [Switching a project to the plugins](getting-started/switching.md)
