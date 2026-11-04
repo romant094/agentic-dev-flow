@@ -28,7 +28,7 @@ the few scripts that read Claude Code's state, and leaves the flow itself as it 
 
 ## What Codex offers (checked on 2026-11-04)
 
-Codex CLI `0.146.0-alpha.3.1` (`/Applications/ChatGPT.app/Contents/Resources/codex`), its source
+Codex CLI `0.146.0-alpha.3.1` at the time of the design; the scratch run used `0.166.0-alpha.6` (`/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex`), its source
 (`openai/codex`) and its documentation (developers.openai.com/codex, now learn.chatgpt.com/docs).
 
 | Claude Code | Codex | Evidence |
@@ -41,7 +41,7 @@ Codex CLI `0.146.0-alpha.3.1` (`/Applications/ChatGPT.app/Contents/Resources/cod
 | Commands `commands/*.md` | converted to skills at install, but a command over 4000 bytes or with `$ARGUMENTS` is skipped; every `adf` command fails one of the two | `core-plugins/src/command_migration.rs:343-360, 418-433` |
 | Skills `skills/<n>/SKILL.md` | the same format; invoked by `$<name>` or `/skills`, or implicitly by `description` | build-skills doc |
 | `${CLAUDE_PLUGIN_ROOT}` in skill text | not substituted; the model sees the skill file's path | build-skills doc (no substitution named) |
-| `hooks/hooks.json` | loaded by default from a plugin, the same schema and event names; `CLAUDE_PLUGIN_ROOT` and `PLUGIN_ROOT` are set; `PreToolUse` on a shell command has `tool_name` `Bash`; exit 2 or `permissionDecision: deny` blocks; a hook runs only after the user trusts it in `/hooks` | `codex-rs/hooks/src/engine/discovery.rs:311-319`; hooks doc; `hooks.state."superpowers@claude-plugins-official:hooks/hooks.json:session_start:0:0"` in `~/.codex/config.toml` |
+| `hooks/hooks.json` | loaded by default from a plugin, the same schema and event names; `CLAUDE_PLUGIN_ROOT` and `PLUGIN_ROOT` are set; `PreToolUse` on a shell command has `tool_name` `Bash`; exit 2 or `permissionDecision: deny` blocks; a hook runs only after the user trusts it in `/hooks`; **not confirmed in 0.166 for these plugins: see `## Result`** | `codex-rs/hooks/src/engine/discovery.rs:311-319`; hooks doc; `hooks.state."superpowers@claude-plugins-official:hooks/hooks.json:session_start:0:0"` in `~/.codex/config.toml` |
 | `agents/*.md` in a plugin | not loaded; custom agents are TOML (`name`, `description`, `developer_instructions`, optional `model`, `model_reasoning_effort`) in `~/.codex/agents/` or `.codex/agents/`; dispatched by `spawn_agent` with `agent_type`, in parallel | `codex-rs/agent-roles/src/discovery.rs`; subagents doc; `core/src/tools/handlers/multi_agents/spawn.rs` |
 | AskUserQuestion | `request_user_input`, in Plan mode only; not in `codex exec` | `codex-rs/tools/src/tool_config.rs:6-15`; binary string |
 | `CLAUDE.md` | `AGENTS.md`; `CLAUDE.md` only through `project_doc_fallback_filenames` | agents-md doc |
@@ -129,8 +129,8 @@ one in the standard library, for the two shapes these files use (`[table."key"]`
 ### 7. Hooks
 
 The three `hooks/hooks.json` files run in Codex as they are: the variables, the tool name and
-the blocking exit are the same. The scripts behind them read their input through one helper that
-accepts both runtimes' fields. The guide tells the developer to trust the hooks once in
+the blocking exit are the same. The scripts behind them need no input helper (the Task 6 ruling): both runtimes send `tool_name` `Bash` and
+the command in `tool_input.command`, the only fields read. The guide tells the developer to trust the hooks once in
 `/hooks`; `/adf:init` in Codex says so too, since a hook that is not trusted does not run.
 
 ### 8. Update
@@ -215,9 +215,75 @@ files need no change.
 | 4 | Scripts that print instructions and prompts substitute the plugin's directory | unit tests |
 | 5 | `dispatch.mjs` prints the agent by runtime (Claude Code agent, or Codex effort and body); `schema/runtimes/claude-code.md` and `codex.md` | unit tests |
 | 6 | Install records, the Superpowers gate and the refusals through `runtime.mjs`, with the TOML reader | unit tests on a fixture Codex home |
-| 7 | Hooks: one input helper; the English check and the npm guard block in Codex; the notice shows | unit tests; `codex exec` in the scratch project |
+| 7 | Hooks: no input helper needed; the English check and the npm guard block in Codex; the notice shows | unit tests; `codex exec` in the scratch project |
 | 8 | Update in Codex: notice and `pull` | unit tests with an injected `codex` |
 | 9 | The ledger's session id; the metrics' null transcript figures with the reason | unit tests |
 | 10 | `runlog.mjs collect` | unit tests on a fixture home and project |
 | 11 | The scratch run in Codex: install, `/adf:init`, one small change from propose to archive with no forge, the run log collected; then the same `/adf:init` in Claude Code | the run's notes in `## Result` |
 | 12 | README install section for Codex; release | `npm test`; `scripts/check-release.mjs` |
+
+## Result
+
+The scratch run of 2026-11-04 (Task 11). Codex CLI `0.166.0-alpha.6`, `CODEX_HOME` a clean directory with a
+copy of the developer's login, the package a local clone of `feat/17-codex` at `48d15b7` added as a local
+marketplace. Claude Code `2.1.311`, model haiku. The run's scratch directory is removed.
+
+Checked, with the outcome:
+
+- `codex plugin marketplace add <local clone>` and `anthropics/claude-plugins-official`, then
+  `codex plugin add` for `superpowers@claude-plugins-official` (7.0.0), `adf` (0.19.0), `adf-memory`
+  (0.2.1) and `adf-english-check` (0.8.0). `codex plugin list --json`: all four `installed: true`,
+  `enabled: true`, with these versions.
+- Skill name form: the model's skill listing names the skills `adf:init`, `adf:land` and so on
+  (`- adf:init: Set up ADF ... (file: r2/init/SKILL.md)`). A `codex exec` prompt that says "Invoke the skill
+  adf:init" made the model read `skills/init/SKILL.md` and `schema/runtimes/codex.md` from the plugin cache and
+  run `extensions.mjs init`. The `$adf:init` mention form is not run: `codex exec` has no way to type it
+  in this budget; the README's form matches the listing, so it stays.
+- `/adf:init` in Codex: exit 0, one turn. It wrote `.claude/adf-extensions.json` (contract 1.9, integration
+  `master`, debt root `docs/tech-debt`), `.claude/settings.json`, `.gitignore` lines, `openspec/planning.md`
+  and `openspec/review-prompt.md`. It wrote no `.codex/config.toml`.
+- `extensions.mjs add adf-english-check@agentic-dev-flow` run from the Codex plugin cache with `CODEX_HOME`
+  set: `ok`. The first attempt, with `CODEX_HOME` unset, was refused with the Claude Code install command: the
+  runtime comes from the script's path under the runtime's own cache directory, so the home must be set.
+- `runlog.mjs collect` run from the Codex cache: `"sessions": 6`, archive `2026-11-04-codex.tar.gz` holding
+  `sessions/` (6 rollouts), `changes/`, `registry.json`, `versions.json`; no `auth.json`. Run from the package
+  clone it detects Claude Code and finds 0 sessions. It skips `codex --version` (`spawnSync codex ENOENT`)
+  because the desktop install has no `codex` on `PATH`.
+- Claude Code: `claude -p --plugin-dir <pkg>/plugins/adf --model haiku "/adf:init"` ran the skill (created
+  the registry, `openspec/planning.md`, `.gitignore` lines) and asked the integration-branch questions. Its
+  transcript marks the invocation as `<command-name>/adf:init</command-name>` in a user record, then a meta
+  user record with the skill body. `commandsOf` returns it and `autonomyOf` does not count it: the metrics
+  code needed no fix. The `todo` test is now a real test on the fixture
+  `scripts/__tests__/fixtures/skill-invocation.jsonl` (commit `3e2c94a`).
+
+Not confirmed (defect candidates, not fixed; no cause found in the time of the run):
+
+- Plugin hooks did not run in Codex 0.166. A `PreToolUse` English-check commit of a Russian line in a file in
+  scope (`notes/**`) was not blocked: the commit `82db91a` went through with the registry entry present. A
+  logging line added to the cached `hook.mjs` never fired, in a run that ran Bash commands. The app-server
+  `hooks/list` returns `hooks: []` for the project, with the three `adf` plugins and Superpowers installed, while
+  a `.codex/hooks.json` of the project is listed (`trustStatus: untrusted`). Declaring `hooks` in the root
+  `plugin.json`, at the top level or under `extensions."com.openai"`, or in a `.codex-plugin/plugin.json`,
+  changed nothing. The hook script itself blocks: with the Codex-shaped input on stdin it exits 2 and prints
+  `notes/hello.md:1: ...`. So the English check, the npm guard and the update notice have no confirmed Codex
+  run; the spec's `hooks/hooks.json` row (the source citation `discovery.rs:311-319` and the developer's
+  `hooks.state` key) says plugin hooks load, and this run did not see it. It needs a look at a real
+  interactive session (`/hooks`) before the release claims it.
+- The update notice: `update.mjs notice` run by hand in Codex's environment printed nothing (the marketplace
+  is a local directory with no ref). Codex did not run it at session start, for the reason above.
+
+Facts the run showed:
+
+- `-m gpt-5-mini` and `-m gpt-5.1-codex-mini` are refused ("not supported when using Codex with a ChatGPT
+  account"); the runs used the account's default model.
+- `--sandbox workspace-write` keeps `.git` read-only: `git add` fails with `index.lock: Operation not
+  permitted`. The commit run needed `-c 'sandbox_workspace_write.writable_roots=["<project>/.git"]'`.
+- Codex tokens (`turn.completed`; input / cached input / output):
+  `/adf:init` 154358 / 142080 / 2375; the blocked-commit attempt in the sandbox 83030 / 75904 / 619; the commit
+  run 90115 / 75136 / 747; a hook probe 32517 / 26880 / 69. Total: input 360020, cached input 320000, output 3810;
+  the two refused `-m` runs cost nothing. No limit or quota error appeared.
+
+Defects found and fixed: none. Defects found and left: the hooks line above.
+
+Not checked: the Codex desktop app; the full propose-to-archive cycle (the teammate's run, returned by
+`runlog.mjs collect`); the `$adf:init` mention form; a second Codex session for the notice.
