@@ -175,9 +175,8 @@ Never merge it: the developer merges it.
 10. Remove the temporary clones:
 
     ```bash
-    git -C <clones.repo> worktree remove <clones.old>
-    git -C <clones.repo> worktree remove <clones.new>
-    rm -rf "$(dirname <clones.repo>)"
+    node "${CLAUDE_PLUGIN_ROOT}/scripts/update.mjs" cleanup --clones '<clones as JSON>'
     ```
 
-    The three directories share one temporary parent, which `plan` made.
+    It removes the one temporary directory `plan` made for the three clones, and refuses any
+    other directory. Never remove the clones with `rm`.

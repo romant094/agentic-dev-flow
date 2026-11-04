@@ -41,20 +41,23 @@
 //   update.mjs commit --worktree <dir> --to <tag>
 //       { worktree, branch, committed }: stages the files apply wrote and the manual ones, and
 //       commits; refuses while one holds a conflict marker, or when nothing is left to commit
+//   update.mjs cleanup --clones <json>
+//       { removed }: removes the temporary directory plan made for the clones (null when it is
+//       gone already); refuses any other directory
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { isMain } from './lib/main.mjs'
 import { claudeHome } from './lib/superpowers.mjs'
-import { applyUpdate, checkUpdate, commitUpdate, latestTag, noticeMessage, planUpdate, pull, quietGit, remoteTags } from './lib/update.mjs'
+import { applyUpdate, checkUpdate, commitUpdate, latestTag, noticeMessage, planUpdate, pull, quietGit, remoteTags, removeClones } from './lib/update.mjs'
 
 export const USAGE =
-  'usage: update.mjs check [--root <dir>] [--home <dir>] | update.mjs notice [--root <dir>] [--home <dir>] | update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>] | update.mjs plan [--to <tag>] [--root <dir>] | update.mjs apply --to <tag> --clones <json> --base <commit> [--choices <json>] [--root <dir>] | update.mjs commit --worktree <dir> --to <tag>'
+  'usage: update.mjs check [--root <dir>] [--home <dir>] | update.mjs notice [--root <dir>] [--home <dir>] | update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>] | update.mjs plan [--to <tag>] [--root <dir>] | update.mjs apply --to <tag> --clones <json> --base <commit> [--choices <json>] [--root <dir>] | update.mjs commit --worktree <dir> --to <tag> | update.mjs cleanup --clones <json>'
 
 export class UsageError extends Error {}
 
 const DAY = 24 * 60 * 60 * 1000
-const ALLOWED = { check: [], notice: [], pull: ['scope'], plan: ['to'], apply: ['to', 'clones', 'base', 'choices'], commit: ['worktree', 'to'] }
-const REQUIRED = { apply: ['to', 'clones', 'base'], commit: ['worktree', 'to'] }
+const ALLOWED = { check: [], notice: [], pull: ['scope'], plan: ['to'], apply: ['to', 'clones', 'base', 'choices'], commit: ['worktree', 'to'], cleanup: ['clones'] }
+const REQUIRED = { apply: ['to', 'clones', 'base'], commit: ['worktree', 'to'], cleanup: ['clones'] }
 const CHOICES = ['keep', 'replace', 'manual']
 
 function json(name, text) {
@@ -148,6 +151,11 @@ export function run(argv, { cwd = process.cwd(), git, now = Date.now(), claude }
       return applyUpdate(root, { to: values.to, clones: clonesOption(values.clones), base: values.base, choices: choicesOption(values.choices) })
     case 'commit':
       return commitUpdate(resolve(cwd, values.worktree), { to: values.to })
+    case 'cleanup': {
+      const clones = clonesOption(values.clones)
+      if (typeof clones.repo !== 'string') throw new UsageError('--clones is { "old": <dir>, "new": <dir>, "repo": <dir> } as plan prints it')
+      return removeClones(clones)
+    }
     case 'notice': {
       try {
         const message = noticeMessage(checkUpdate(root, { home, fetchLatest: cachedLatest(home, git, now) }))

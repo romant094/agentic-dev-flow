@@ -1,9 +1,9 @@
 // Versions for /adf:update: the plugin version this machine has, the tag the marketplace has
 // at most, and the ref a project pins.
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { requireBranches } from './branches.mjs'
 import { classify, hostFiles, keepFromUpdate, replaceFromUpdate } from './host-merge.mjs'
 import { indentOf, MARKETPLACE, SETTINGS_PATH } from './host-settings.mjs'
@@ -362,6 +362,19 @@ export function planUpdate(root, { to = null, git = defaultGit } = {}) {
     rmSync(tmp, { recursive: true, force: true })
     throw error
   }
+}
+
+// Removes the temporary directory plan made for its clones: one parent `adf-update-*` directly in
+// the system temporary directory, holding old, new and repo. Anything else is refused.
+export function removeClones(clones) {
+  const parent = dirname(resolve(clones.repo))
+  const shaped = ['old', 'new'].every((k) => dirname(resolve(clones[k])) === parent) && basename(parent).startsWith('adf-update-')
+  const refusal = new Error(`${parent} is not a temporary directory plan made; remove it yourself`)
+  if (!shaped) throw refusal
+  if (!existsSync(parent)) return { removed: null }
+  if (dirname(realpathSync(parent)) !== realpathSync(tmpdir())) throw refusal
+  rmSync(parent, { recursive: true, force: true })
+  return { removed: parent }
 }
 
 function gitAt(dir) {

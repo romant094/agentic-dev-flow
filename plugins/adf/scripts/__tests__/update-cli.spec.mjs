@@ -275,3 +275,23 @@ test('the notice hook runs at session startup only', () => {
   assert.equal(entry.matcher, 'startup')
   assert.match(entry.hooks[0].command, /update\.mjs" notice$/)
 })
+
+test('cleanup removes the temporary parent of the clones plan made', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'adf-update-'))
+  const clones = { old: join(tmp, 'old'), new: join(tmp, 'new'), repo: join(tmp, 'repo') }
+  for (const dir of Object.values(clones)) mkdirSync(dir)
+  const r = run(['cleanup', '--clones', JSON.stringify(clones)])
+  assert.equal(r.removed, tmp)
+  assert.equal(existsSync(tmp), false)
+  assert.deepEqual(run(['cleanup', '--clones', JSON.stringify(clones)]), { removed: null })
+})
+
+test('cleanup refuses a directory plan did not make', () => {
+  const other = mkdtempSync(join(tmpdir(), 'adf-other-'))
+  const clones = { old: join(other, 'old'), new: join(other, 'new'), repo: join(other, 'repo') }
+  assert.throws(() => run(['cleanup', '--clones', JSON.stringify(clones)]), /not a temporary directory plan made/)
+  assert.equal(existsSync(other), true)
+  const split = { old: join(mkdtempSync(join(tmpdir(), 'adf-update-')), 'old'), new: join(other, 'new'), repo: join(other, 'repo') }
+  assert.throws(() => run(['cleanup', '--clones', JSON.stringify(split)]), /not a temporary directory plan made/)
+  assert.throws(() => run(['cleanup']), UsageError)
+})
