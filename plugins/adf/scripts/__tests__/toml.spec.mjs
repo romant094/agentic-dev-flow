@@ -30,3 +30,18 @@ test('unknown shapes are skipped', () => {
   assert.equal(toml['nested'], undefined)
   assert.deepEqual(readToml('not toml at all\n= = =\n[unclosed'), { '': {} })
 })
+
+test('a multi-line string is skipped to its closing delimiter', () => {
+  const text = '[plugins."a@b"]\nenabled = true\nnote = """\nenabled = false\n[x]\n"""\nafter = 1\nlit = \'\'\'\n[y]\n\'\'\'\none = """inline"""\n[z]\nk = 2\n'
+  const toml = readToml(text)
+  assert.equal(toml['plugins.a@b'].enabled, true)
+  assert.equal(toml['plugins.a@b'].after, 1)
+  assert.equal(toml.x, undefined)
+  assert.equal(toml.y, undefined)
+  assert.equal(toml.z.k, 2)
+})
+
+test('a bracket in a comment does not swallow the array that follows', () => {
+  const toml = readToml('k = [ # a [ note\n  "a",\n]\n[z]\nv = 1\n')
+  assert.equal(toml.z.v, 1)
+})

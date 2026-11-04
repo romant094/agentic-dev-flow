@@ -34,17 +34,23 @@ function scalar(raw) {
   return undefined
 }
 
-const depth = (text) => [...text].reduce((n, c) => n + ('[{'.includes(c) ? 1 : ']}'.includes(c) ? -1 : 0), 0)
+// Bracket depth of a value's text, ignoring quoted strings and a trailing comment.
+const depth = (text) => [...text.replace(/"[^"]*"|'[^']*'/g, '').replace(/#.*$/, '')].reduce((n, c) => n + ('[{'.includes(c) ? 1 : ']}'.includes(c) ? -1 : 0), 0)
 
 export function readToml(text) {
   const tables = { '': {} }
   let current = tables['']
   let skipping = false
   let open = 0
+  let closing = null // the delimiter that ends a multi-line string being skipped
   for (const line of String(text).split(/\r?\n/)) {
     const trimmed = line.trim()
+    if (closing) {
+      if (line.includes(closing)) closing = null
+      continue
+    }
     if (skipping) {
-      open += depth(trimmed.replace(/"[^"]*"|'[^']*'/g, ''))
+      open += depth(trimmed)
       if (open <= 0) skipping = false
       continue
     }
@@ -58,10 +64,15 @@ export function readToml(text) {
     }
     const m = trimmed.match(KEY)
     if (!m) continue
+    const multi = m[2].match(/^("""|''')(.*)$/)
+    if (multi) {
+      if (!multi[2].includes(multi[1])) closing = multi[1]
+      continue
+    }
     const value = scalar(m[2])
     if (value !== undefined) current[unquote(m[1])] = value
     else if (/^[[{]/.test(m[2])) {
-      open = depth(m[2].replace(/"[^"]*"|'[^']*'/g, ''))
+      open = depth(m[2])
       skipping = open > 0
     }
   }
