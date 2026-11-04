@@ -298,6 +298,8 @@ Not checked:
 - the full propose-to-archive cycle (the teammate's run, returned by `runlog.mjs collect`);
 - `/adf:propose` in Claude Code (only `/adf:init` ran);
 - the `$adf:init` mention form;
+- `CODEX_THREAD_ID` in a model's shell: unconfirmed, so a Codex ledger may carry no session id;
+- `$ARGUMENTS` in a Claude Code skill (`/adf:propose <name>`): not run, only `/adf:init` ran;
 - the tag, release and update-notice path: there was no bare repository and no test tag, and the notice was
   silent with a local marketplace and no ref;
 - Claude Code ran with `--plugin-dir`, not from a marketplace install;

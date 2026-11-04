@@ -169,7 +169,8 @@ export function checkUpdate(root, { git = quietGit, runtime = detected(), home =
 // The session-start text for a check result; null when there is nothing to say.
 export function noticeMessage(check, { runtime = detected() } = {}) {
   const lines = []
-  const update = runtime === 'codex' ? '$adf:update' : '/adf:update'
+  // Codex: the skill's name as `/skills` lists it; the `$adf:update` mention form is unconfirmed.
+  const update = runtime === 'codex' ? 'the skill adf:update' : '/adf:update'
   const bare = (v) => v?.replace(/^v/, '')
   if (check.pull) lines.push(`This project pins ADF v${bare(check.ref)}; v${check.installed} is installed. Run ${update} to install it.`)
   if (check.behind) {

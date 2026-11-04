@@ -28,7 +28,7 @@ files for CONFIRMED stale skills, leftover group worktrees, check 1 failures and
 results. Port context: `docs/roadmap.md`, `docs/iterations/07-apply.md`, the rows of
 `docs/lessons/apply.md`, `forge-gitlab.md` and `superpowers-gate.md` pending on iteration 08,
 `plugins/adf/schema/schema.json`, `plugins/adf/schema/instructions/{apply,resolve}.md`,
-`plugins/adf/commands/{apply,init}.md`, `plugins/adf/scripts/{workspace,changes,specs,ledger}.mjs`,
+`plugins/adf/skills/{apply,init}/SKILL.md`, `plugins/adf/scripts/{workspace,changes,specs,ledger}.mjs`,
 `plugins/adf/scripts/lib/{groups,workspace,changes,roles,main,plan-symbols,ledger,host-files}.mjs`,
 `plugins/adf/contract/README.md`, `scripts/parity/{run,origin-sdd}.mjs`.
 

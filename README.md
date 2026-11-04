@@ -145,13 +145,14 @@ Codex support starts at v0.20.0: use v0.20.0 or a later tag in `--ref`. Node 20 
 
 Then, in the host project:
 
-1. Run `$adf:init`, or pick `adf:init` in `/skills`. Use the name form `/skills` shows.
+1. Invoke the skill `adf:init` by the name `/skills` lists, or pick it in `/skills`.
 2. Open `/hooks` and trust the plugins' hooks once. A hook that is not trusted does not run.
-3. Run the other skills the same way: `$adf:propose <change>`, `$adf:apply`, and so on.
+3. Invoke the other skills the same way, by the name `/skills` lists: `adf:propose` with the
+   change name, `adf:apply`, and so on. The `$adf:<name>` mention form is not confirmed.
 
-The skills work as in Claude Code. `/adf:update` runs in Codex too. Its pull step upgrades
-the user's Codex marketplace. Codex sessions are not read for metrics yet: the metrics record
-names the reason.
+The skills work as in Claude Code. The skill `adf:update` runs in Codex too. Its pull step
+upgrades the user's Codex marketplace. Codex sessions are not read for metrics yet: the metrics
+record names the reason.
 
 To send the maintainer a run log, run this in the project's main directory:
 
@@ -182,16 +183,17 @@ of `adf-jira` in `.adf/jira/<skill>/`.
 .claude-plugin/marketplace.json   the Claude Code marketplace: the core and every plugin
 .agents/plugins/marketplace.json  the Codex marketplace
 plugins/adf/                      the core
-  plugin.json                     the root manifest (agent-plugins.org), generated from .claude-plugin/ by scripts/manifests.mjs; every plugin has one
-  skills/                         /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply, /adf:verify, /adf:review, /adf:archive, /adf:land, /adf:retro, /adf:update (one <name>/SKILL.md each; $adf:<name> in Codex)
+  .codex-plugin/plugin.json       the Codex manifest, generated from .claude-plugin/ by scripts/manifests.mjs; a plugin with hooks (adf, adf-english-check, adf-npm-workspaces) has it here, every other plugin has a root plugin.json (agent-plugins.org)
+  skills/                         /adf:init, /adf:add, /adf:remove, /adf:propose, /adf:apply, /adf:verify, /adf:review, /adf:archive, /adf:land, /adf:retro, /adf:update (one <name>/SKILL.md each; adf:<name> in Codex's /skills)
   agents/                         the capability-level subagents apply, verify, review and archive dispatch
   schema/runtimes/                one file per runtime: the flow's words mapped to its tools
   contract/                       the extension contract and its version
   schema/                         the artifact graph (schema.json), templates, instructions
   host/                           templates of files /adf:init adds to the host (planning guide)
-  scripts/                        extensions, superpowers, workspace, changes, specs,
-                                  plan-symbols, ledger, forge, reply, sdd, tasks, guard, with, runlog
-                                  (lib/runtime.mjs detects the runtime), with their library and tests
+  scripts/                        the CLIs (extensions, superpowers, workspace, changes, specs,
+                                  plan-symbols, ledger, forge, reply, sdd, tasks, guard, runlog and
+                                  more), their library in lib/ (lib/runtime.mjs detects the
+                                  runtime) and their tests
 plugins/adf-gitlab/               the forge role for GitLab, through glab; the merge request template
 plugins/adf-english-check/        a PreToolUse hook that blocks a commit with non-English text
 plugins/adf-memory/               the wiki memory: the knowledge role, its log and its workflows

@@ -316,7 +316,7 @@ function codexSetup({ installed = '0.9.0', ref, record = '[marketplaces.agentic-
 test('codex: notice compares the installed version with the latest tag', () => {
   const { root, home } = codexSetup()
   assert.deepEqual(run(['notice', '--root', root, '--home', home], { runtime: 'codex', git: git(TAGS) }), {
-    systemMessage: 'ADF v0.10.0 is available; v0.9.0 is installed. Run $adf:update.'
+    systemMessage: 'ADF v0.10.0 is available; v0.9.0 is installed. Run the skill adf:update.'
   })
   const current = codexSetup({ installed: '0.10.0' })
   assert.equal(run(['notice', '--root', current.root, '--home', current.home], { runtime: 'codex', git: git(TAGS) }), null)
@@ -325,7 +325,7 @@ test('codex: notice compares the installed version with the latest tag', () => {
 test('codex: notice takes the project\'s pinned ref', () => {
   const { root, home } = codexSetup({ ref: 'v0.10.0' })
   assert.deepEqual(run(['notice', '--root', root, '--home', home], { runtime: 'codex', git: git(TAGS) }), {
-    systemMessage: 'This project pins ADF v0.10.0; v0.9.0 is installed. Run $adf:update to install it.'
+    systemMessage: 'This project pins ADF v0.10.0; v0.9.0 is installed. Run the skill adf:update to install it.'
   })
   const behind = codexSetup({ ref: 'v0.9.0' })
   assert.match(run(['check', '--root', behind.root, '--home', behind.home], { runtime: 'codex', git: git(TAGS) }).scope, /project/)
