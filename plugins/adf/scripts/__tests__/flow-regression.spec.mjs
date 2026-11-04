@@ -287,7 +287,7 @@ test('the shape detectors fire on a drifted list and on a missing site, and pass
   ])
 })
 
-test('every prose list of the artifacts and commands matches the schema and the skills folder', () => {
+test('every prose list of the artifacts and commands matches the schema and the commands folder', () => {
   const schema = loadSchema()
   const shape = workflowShape(schema, readdirSync(join(adf, 'skills')))
   assert.ok(shape.optional.length > 0 && shape.commands.length > 0, 'the shape was not derived')
