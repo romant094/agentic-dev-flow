@@ -19,7 +19,6 @@ Every iteration's plan lists the steps an LLM would do, and moves each one a scr
    flow, so the comparison has nothing to run against. The harness stays in the repository as
    the record of what was compared. A release is checked by `npm test` and by a run of the
    changed commands in a scratch project.
-
 3. `scripts/check-guide.mjs`, which runs inside `npm test`: every command, plugin, contract
    role, registry key and source file has a guide page, and every link resolves.
 4. `scripts/guide-review.mjs` with no open finding, in every release step: one read-only agent

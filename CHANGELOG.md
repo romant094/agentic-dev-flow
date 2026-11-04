@@ -58,7 +58,7 @@ A version is the package version in `.claude-plugin/marketplace.json`, and its t
 
 ### Fixed
 
-- The flow finds a plugin that is installed for the main directory when it runs in a worktree.
+- The flow finds a plugin that is installed for the main checkout when it runs in a worktree. A command that runs in a worktree also counts a project or local install record of that worktree.
 - The flow finds a plugin that a trusted project enables with no install record, in the plugin cache.
 
 ### Upgrade from 0.18.1
