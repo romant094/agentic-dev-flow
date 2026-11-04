@@ -63,7 +63,7 @@ Installing `adf` also installs and enables its dependency, Superpowers
 openspec CLI is not needed.
 
 A project that already runs its own change flow switches by the checklist in
-`docs/switching.md`, which also holds each developer's migration guide.
+`docs/guide/getting-started/switching.md`, which also holds each developer's migration guide.
 
 Then, in the host project:
 
@@ -208,7 +208,7 @@ scripts/parity/                   dev tools: compare the ported scripts with the
                                   (npm run parity -- <root>; retired from releases since 16)
 test/fixtures/                    a host project and a plugin for end-to-end tests
 docs/roadmap.md                   the porting order
-docs/switching.md                 the switch from a project's own flow; the developer's migration guide
+docs/guide/getting-started/switching.md  the switch from a project's own flow; the developer's migration guide
 docs/lessons/                     the origin project's rules per capability, with reasons
 docs/iterations/                  one plan per iteration
 ```
