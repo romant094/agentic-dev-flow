@@ -64,7 +64,7 @@ Paths and names on this page are examples. `develop` stands for the integration 
    Never remove the changes themselves. `openspec/changes/` keeps every change in flight and the archive. A change in flight continues with the `/adf:*` command of its next phase (steps 3, 4 and 15). If you remove its directory, you lose its artifacts. The removal touches only the tools of the flow, never the content of a change.
 
    Search the whole repository for the old command names and script paths before you close the inventory. Remove or reword every hit.
-8. Reword the agent instructions of the project (for example `CLAUDE.md`) that describe the old flow. Name `/adf:propose` as the entry point for a change. An agent follows the instructions it reads, so an old command named there wins over the plugin's command.
+8. Reword the agent instructions of the project (for example `CLAUDE.md`) that describe the old flow. Name `/adf:propose` as the entry point for a change. An agent follows the instructions it reads, so the agent uses the old command, not the plugin's command.
 9. Bring the technical debt tables to the format of the plugins.
 
    1. Rename the last column of an entry table to `Tracker`. For example, rename a column `Jira`.
@@ -99,7 +99,7 @@ Paths and names on this page are examples. `develop` stands for the integration 
     To move to a new release, change the ref in one merge request.
 
     `claude plugin install --scope project` rewrites the settings file with its own indentation. Say so in the commit. The formatter of the project restores the style.
-11. Run `/adf:init`. Then run `/adf:add` once per plugin, each with its configuration on the first add. Add `adf-postgres` before `adf-prisma`. Then run the own setup of a plugin, for example `/adf-jira:setup`. Answer the questions of `/adf:init`:
+11. Run `/adf:init`. Then run `/adf:add` once per plugin, each with its configuration on the first add. Add `adf-postgres` before `adf-prisma`. Then run the setup of each plugin, for example `/adf-jira:setup`. Answer the questions of `/adf:init`:
 
     - the integration branch and any other protected branch;
     - the debt root;

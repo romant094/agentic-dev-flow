@@ -7,7 +7,7 @@
 
 # Install in Codex
 
-Codex support starts at v0.20.0. Use v0.20.0 or a later tag in `--ref`. Node 20 or later is the only other prerequisite.
+Use v0.20.0 or a later tag in `--ref`. Node 20 or later is the only other prerequisite.
 
 The install is at user scope: it applies to every project on the machine.
 
@@ -46,7 +46,7 @@ Not checked: the `$adf:init` mention form. Use the name that `/skills` lists.
 
 Codex does not run a hook that you did not trust. `/adf:init` tells you to do this step when the hooks need it.
 
-Not checked: the `/hooks` trust screen. The test run bypassed the trust step.
+Not checked: the `/hooks` trust screen.
 
 ## Command forms
 
@@ -61,7 +61,7 @@ This guide names every command in the Claude Code form, for example `/adf:propos
 
 The skills work as in Claude Code.
 
-Codex sessions are not read for metrics yet. The metrics record names the reason.
+Codex sessions are not read for metrics yet.
 
 ## Codex home
 

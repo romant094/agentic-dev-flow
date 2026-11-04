@@ -52,11 +52,13 @@ The `ref` must be a release tag in the form `v<x.y.z>`. `/adf:update` refuses a 
 
 The install also installs and enables the dependency, Superpowers (`superpowers@claude-plugins-official`).
 
+Not checked: whether `claude plugin install` from a shell finds a marketplace that only `.claude/settings.json` declares. Not checked: whether trusting the project already offers the install.
+
 If a plugin is already installed, `claude plugin install` does nothing. To move an installed plugin to a new release, use `/adf:update`. See [the update page](../update.md).
 
 ## Load the skills
 
-Restart Claude Code in the project. Not checked: whether the restart is required. The command `/reload-plugins` loads a plugin that changed.
+Restart Claude Code in the project. The skills load at the restart.
 
 ## Set up the project
 
@@ -92,7 +94,10 @@ Restart Claude Code in the project. Not checked: whether the restart is required
 
 ## Enable more plugins
 
-Install a plugin, then enable it with `/adf:add`. For example, for the memory plugin:
+Enable a plugin in two steps. For example, for the memory plugin:
+
+1. Install the plugin.
+2. Enable it with `/adf:add`.
 
 ```
 claude plugin install adf-memory@agentic-dev-flow --scope project

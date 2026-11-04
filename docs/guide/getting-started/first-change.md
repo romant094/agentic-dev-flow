@@ -7,6 +7,7 @@
 - plugins/adf/scripts/propose.mjs
 - plugins/adf/scripts/archive.mjs
 - plugins/adf/scripts/lib/changes.mjs
+- plugins/adf/schema/schema.json
 -->
 
 # Your first change
@@ -30,7 +31,8 @@ Run each command in the main checkout of the project. Each command after `/adf:p
    - The command asks you to choose the base branch and the branch name.
    - When a tracker is enabled, it asks which issues the change works on.
    - It writes the artifacts with you, one by one.
-   - It commits the artifacts and opens the merge request through the forge plugin.
+   - It commits the artifacts.
+   - It opens the merge request through the forge plugin.
 
 2. Run `/adf:apply`.
 
@@ -58,7 +60,8 @@ Run each command in the main checkout of the project. Each command after `/adf:p
    - It asks about each recorded finding or debt that has no place yet.
    - It merges the change's delta specs into the main specs.
    - It asks for your yes before it merges locally, when the project has no forge plugin.
-   - It finalizes the merge request, and removes the worktree.
+   - It finalizes the merge request.
+   - It removes the worktree.
 
 The command `/adf:land` is not part of this cycle. See [the tracker role](../extension-points/contract/tracker.md).
 
