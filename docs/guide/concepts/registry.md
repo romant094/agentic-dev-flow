@@ -52,7 +52,7 @@ An entry of `extensions` has exactly one of `plugin` and `path`.
 
 | Field | Meaning |
 |---|---|
-| `plugin` | The id of an installed plugin, in the form `name@marketplace`. The core finds the plugin through the install records of the main directory, so the entry survives a plugin update and works in every worktree. |
+| `plugin` | The id of an installed plugin, in the form `name@marketplace`. The core finds the plugin through the install records of the main checkout, so the entry survives a plugin update and works in every worktree. |
 | `path` | A plugin directory in the project. Use it for a plugin in development. A `path` entry carries the contract points only. Claude Code loads the hooks, commands and skills of a plugin only when it is installed by id. |
 | `points` | The points that the plugin provides. `/adf:add` writes it from the `provides` of the plugin's declaration. An entry with no `points` is named for no point, and the registry check warns about it. |
 | `config` | The configuration of the plugin. The core does not read it. It passes the object to the plugin's operations. |

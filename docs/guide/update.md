@@ -21,6 +21,7 @@ First it runs `update.mjs check`. The result of `check` decides the path:
 | The project pins a release, and the installed release is older than the pin | It pulls the pinned release, tells you to restart the session, and stops. |
 | The project pins a release, and a newer release exists (or you gave `--to`) | It plans and makes the update. |
 | The project pins a release, and it is the latest | It says so and stops. |
+| A user-scope install is on the latest release | It says so and stops. |
 | The project pins no release tag | It tells you that it updates a project that pins a tag, or a user-scope install, and stops. |
 | A user-scope install is behind the latest release | It pulls the latest release, tells you to restart the session, and stops. The global marketplace record does not move. |
 
@@ -49,7 +50,7 @@ The update branch holds these changes:
 
 The plan lists a plugin that the new release no longer ships as dropped. Its registry entry stays as it is.
 
-The update is refused when the new release changes the major version of the extension contract. Every plugin must move to the new contract first.
+The command refuses an update that changes the major version of the extension contract. Every plugin must move to the new contract first.
 
 ### The host files
 
@@ -75,16 +76,17 @@ A merge conflict in *Keep everything* goes to the agent. It keeps your edits and
 
 ## The notice at the session start
 
-A `SessionStart` hook runs `update.mjs notice`. It asks the remote once a day. It prints one of these messages, or nothing:
+A `SessionStart` hook runs `update.mjs notice`. It asks the remote once a day. It prints these messages, or nothing. Both lines can print together:
 
 - `ADF v<latest> is available; this project is on v<ref>. Run /adf:update.`
+- `ADF v<latest> is available; v<installed> is installed. Run /adf:update.` (a user-scope install)
 - `This project pins ADF v<ref>; v<installed> is installed. Run /adf:update to install it.`
 
 Any error in the hook prints nothing.
 
 ## After the merge request
 
-1. Pull the integration branch into the main directory.
+1. Pull the integration branch into the main checkout.
 2. Remove the update worktree: `git worktree remove <worktree>`.
 3. Delete the update branch: `git branch -d <branch>`.
 4. Restart the Claude Code session.
@@ -99,16 +101,3 @@ The rest of the team gets the new release with the merge. See [What a teammate d
 - Start over, on your yes. The command removes the worktree and the branch, and you run `/adf:update` again.
 
 The refusals are listed in [Troubleshooting](troubleshooting.md).
-
-## A project on v0.18.1
-
-Release `v0.18.1` has no session-start notice and no pull step. A changed `ref` alone does not install the new release. Update such a project to `v0.19.0` or later by hand:
-
-1. The owner of the project changes `ref` in `.claude/settings.json` to the new tag in a merge request.
-2. After the merge, each developer pulls the integration branch.
-3. Each developer starts one Claude Code session in the project and closes it. This moves the marketplace record.
-4. Each developer runs `claude plugin update <id> --scope project` in the main directory, for each enabled plugin of the package.
-
-From `v0.19.0` on, the notice and `/adf:update` do these steps.
-
-Not checked: releases before `v0.18.1`.

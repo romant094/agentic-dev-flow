@@ -37,7 +37,7 @@ A refusal is a stop that changes nothing, or nothing that you must undo. A scrip
 | Message | Cause | What to do |
 |---|---|---|
 | `this project has no ADF registry; run /adf:init first` | `.claude/adf-extensions.json` does not exist. | Run `/adf:init`. |
-| ``<id> is not installed for this project; run: claude plugin install <id> --scope project; run it from <main>`` | The plugin has no install for this project. `<main>` is the main directory of the project. | Run the command from `<main>`, then run `/adf:add` again. |
+| ``<id> is not installed for this project; run: claude plugin install <id> --scope project; run it from <main>`` | The plugin has no install for this project. `<main>` is the main checkout of the project. | Run the command from `<main>`, then run `/adf:add` again. |
 | `<id> is installed but disabled` | The plugin is off in the settings. | Enable the plugin, then run `/adf:add` again. |
 | `<target> is already enabled` | The plugin is already in the registry. | Give a configuration to replace the current one. Otherwise nothing is needed. |
 | `a plugin named <name> is already enabled (<entry>)` | Another entry has the same plugin name. | Remove the other entry first. |
@@ -50,8 +50,8 @@ A refusal is a stop that changes nothing, or nothing that you must undo. A scrip
 
 | Message | Cause | What to do |
 |---|---|---|
-| `<root> is not the main checkout; run propose from <main>, where change worktrees are made.` | You ran the command inside a worktree. | Run `/adf:propose` in the main directory. |
-| `<n> tracked file(s) have uncommitted changes; show git status to the developer and let them deal with it, never stash or commit for them.` | The main directory has uncommitted changes to tracked files. | Commit or discard the changes yourself. Untracked files do not block. |
+| `<root> is not the main checkout; run propose from <main>, where change worktrees are made.` | You ran the command inside a worktree. | Run `/adf:propose` in the main checkout. |
+| `<n> tracked file(s) have uncommitted changes; show git status to the developer and let them deal with it, never stash or commit for them.` | The main checkout has uncommitted changes to tracked files. | Commit or discard the changes yourself. Untracked files do not block. |
 | `<branch> is protected; a change never works on it` | The branch name is in the protected list. | Choose another branch name. |
 | `uncommitted changes to tracked files:` | The same as the line above, found when the worktree is made. A list of files follows. | Commit or discard the changes. |
 | `<path> already exists` | The worktree path of the change is in use. | Choose another change name, or remove the old worktree. |
@@ -69,7 +69,7 @@ A refusal is a stop that changes nothing, or nothing that you must undo. A scrip
 | Message | Cause | What to do |
 |---|---|---|
 | `<root> holds no change "<change>"; select the change and its root from changes.mjs find.` | The change does not exist in that checkout. | Check the change name. |
-| `<root> is the main checkout; a change works only in its own worktree, so pick that worktree from changes.mjs find or make one with /adf:propose.` | The command ran in the main directory. | Run it for the change worktree. |
+| `<root> is the main checkout; a change works only in its own worktree, so pick that worktree from changes.mjs find or make one with /adf:propose.` | The command ran in the main checkout. | Run it for the change worktree. |
 | `HEAD is detached; check out the change branch in the worktree.` | The worktree has no branch checked out. | Check out the change branch. |
 | `<branch> is protected and nothing is committed to it directly; work on the change branch /adf:propose made.` | The worktree is on a protected branch. | Check out the change branch. |
 | `the registry sets no branch policy, so the protected branches are unknown; run /adf:init.` | The registry has no `branches` key. | Run `/adf:init`. |

@@ -10,7 +10,7 @@ One developer installs or updates the flow in a merge request. The other develop
 
 ## After the merge request
 
-The merge request changes `.claude/settings.json`, which pins the release. It does not change the plugins that are installed on a teammate's machine. A changed pin alone does not update the install. In the checked case, Claude Code moved its marketplace record at the next session start and did not reinstall the plugins.
+The merge request changes `.claude/settings.json`, which pins the release. It does not change the plugins that are installed on a teammate's machine. A changed pin alone does not update the install. At the next session start, Claude Code moves its marketplace record. It does not reinstall the plugins.
 
 Each teammate does this once, after the merge request is merged:
 
@@ -22,7 +22,7 @@ Each teammate does this once, after the merge request is merged:
 
 In step 4, `/adf:update` runs `claude plugin update <id> --scope project` for each enabled plugin of the package that has an install record. It runs `claude plugin install` for the others. It restores `.claude/settings.json` afterwards. It refuses when that file has uncommitted changes.
 
-After the restart, `update.mjs check` reports `pull` as false and `installed` equal to `ref`. For the update itself, see [/adf:update](../update.md).
+After the restart, `update.mjs check` reports `pull` as false and `installed` equal to `ref` without its `v`. For the update itself, see [/adf:update](../update.md).
 
 ## Why not `claude plugin install`
 

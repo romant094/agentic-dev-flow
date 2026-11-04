@@ -63,4 +63,5 @@ Each step must pass. A failing step ends the run.
 
 - Write in English.
 - Write in Simplified Technical English: one idea in a sentence, at most 20 words in a step and 25 in a description.
-- Start each page with a `sources:` comment that lists the files that the page describes.
+- Use the active voice. Use one term for one concept.
+- Start each page with a `sources:` comment that lists the files that the page describes. The comment is HTML on the first lines of the page, not front matter.

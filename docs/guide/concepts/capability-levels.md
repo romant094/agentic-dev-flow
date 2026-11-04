@@ -25,7 +25,7 @@ The mechanical level never takes a claim that nobody re-checks, such as "committ
 
 ## Which dispatch gets which level
 
-Each task of `plan.md` carries a `**Level:**` line with one of the three levels. A task without it is refused.
+Each task of `plan.md` carries a `**Level:**` line with one of the three levels. The flow refuses a task without it.
 
 | Dispatch | Level |
 |---|---|

@@ -16,7 +16,7 @@ The flow measures how each change ran. The measure is one record for each change
 - the session transcripts of the agent;
 - git.
 
-The schema `schema/metrics.schema.json` checks the record. A record that fails the schema is not written. A `degraded` `metrics` step does not stop `/adf:archive`.
+The schema `schema/metrics.schema.json` checks the record. The script does not write a record that fails the schema. A `degraded` `metrics` step does not stop `/adf:archive`.
 
 The rules of the record:
 
@@ -43,7 +43,7 @@ For every field, see `plugins/adf/contract/metrics-format.md`. The record reads 
 
 ## Prices
 
-The record holds tokens only. The cost is computed when someone reads the record, from a dated price table in the project:
+The record holds tokens only. The flow computes the cost when someone reads the record, from a dated price table in the project:
 
 - The files are `.adf/prices/<YYYY-MM-DD>.json`. The project commits them.
 - A file holds the rates of each model from its date on. `/adf:archive` adds a file only when the prices changed.
@@ -51,7 +51,7 @@ The record holds tokens only. The cost is computed when someone reads the record
 
 The core fetches the rates from a pricing page. The registry key `metrics.pricesUrl` sets the page. Without it, the core uses the default pricing page of the runtime. `/adf:init` does not ask for the URL. See [the registry](registry.md).
 
-`metrics.mjs prices fetch` fetches the page by hand. A failed fetch keeps the last file. With no file at all, the fetch is refused. `metrics.mjs cost --file <record>` prices a record, and lists the models that it could not price.
+`metrics.mjs prices fetch` fetches the page by hand. A failed fetch keeps the last file. With no file at all, the fetch refuses. `metrics.mjs cost --file <record>` prices a record, and lists the models that it could not price.
 
 ## The retrospective's numbers
 
