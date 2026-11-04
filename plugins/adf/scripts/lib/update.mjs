@@ -4,12 +4,14 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { requireBranches } from './branches.mjs'
 import { classify, hostFiles, keepFromUpdate, replaceFromUpdate } from './host-merge.mjs'
 import { indentOf, MARKETPLACE, SETTINGS_PATH } from './host-settings.mjs'
-import { mainCheckout, selectInstall } from './installed.mjs'
+import { codexEnabledIds, codexMarketplace, mainCheckout, selectInstall } from './installed.mjs'
 import { migrateConfig } from './migrate.mjs'
 import { DECLARATION_FILE, parseVersion, REGISTRY_PATH } from './registry.mjs'
+import { cli, detectRuntime, installCommand, runtimeHome } from './runtime.mjs'
 import { claudeHome, countsHere, mergeSettings, readJson } from './superpowers.mjs'
 import { create, worktreePath } from './workspace.mjs'
 
@@ -60,10 +62,12 @@ export function remoteTags(url, { git = defaultGit } = {}) {
     .map((ref) => ref.slice('refs/tags/'.length))
 }
 
+const detected = () => detectRuntime({ scriptPath: fileURLToPath(import.meta.url) })
+
 // The version of the install installedPath picks; null when there is none or it names no version.
-export function installedVersion(id, root, { home = claudeHome() } = {}) {
+export function installedVersion(id, root, { runtime = detected(), home = runtimeHome(runtime) } = {}) {
   try {
-    const version = selectInstall(id, root, { home }).version
+    const version = selectInstall(id, root, { runtime, home }).version
     return VERSION.test(version ?? '') ? version : null
   } catch (error) {
     if (error.absent) return null
@@ -125,9 +129,14 @@ export function sourceUrl(source) {
 }
 
 // Where the update comes from: the project's declared marketplace, else this machine's record.
-function remoteUrl(root, scope, home) {
+function remoteUrl(root, scope, home, runtime) {
   if (scope === 'project') {
     return sourceUrl(readJson(join(mainCheckout(root), SETTINGS_PATH))?.extraKnownMarketplaces?.[MARKETPLACE]?.source)
+  }
+  if (runtime === 'codex') {
+    const record = codexMarketplace(MARKETPLACE, home)
+    if (record?.source_type !== 'git' || typeof record.source !== 'string') return null
+    return /^[\w.-]+\/[\w.-]+$/.test(record.source) ? `https://github.com/${record.source}.git` : record.source
   }
   return sourceUrl(readJson(join(home, 'plugins', 'known_marketplaces.json'))?.[MARKETPLACE]?.source)
 }
@@ -137,15 +146,17 @@ function remoteUrl(root, scope, home) {
 // is compared against its ref; a user-scope install against its installed version. An unpinned
 // ref is never compared, and its latest tag is not asked for.
 // `fetchLatest(url)` gives the newest tag name or null; tests and the notice replace it.
-export function checkUpdate(root, { git = quietGit, home = claudeHome(), fetchLatest = (url) => latestTag(remoteTags(url, { git })) } = {}) {
+export function checkUpdate(root, { git = quietGit, runtime = detected(), home = runtimeHome(runtime), fetchLatest = (url) => latestTag(remoteTags(url, { git })) } = {}) {
   const { ref, pinned } = projectRef(root)
-  const record = userRecord(home)
+  // Codex has no install record of Claude Code's kind: its user install is the enabled plugin's cache.
+  const codexVersion = runtime === 'codex' ? installedVersion(PLUGIN_KEY_ID, root, { runtime, home }) : null
+  const record = runtime === 'codex' ? (codexVersion ? { version: codexVersion } : null) : userRecord(home)
   const scope = ref !== null ? 'project' : record ? 'user' : 'none'
   const result = { scope, ref, pinned, installed: null, latest: null, behind: false, pull: false, inFlight: inFlight(root) }
   if (scope === 'none') return result
-  result.installed = scope === 'user' ? (VERSION.test(record.version ?? '') ? record.version : null) : installedVersion(PLUGIN_KEY_ID, root, { home })
+  result.installed = scope === 'user' ? (VERSION.test(record.version ?? '') ? record.version : null) : installedVersion(PLUGIN_KEY_ID, root, { runtime, home })
   if (scope === 'project' && !pinned) return result
-  const url = remoteUrl(root, scope, home)
+  const url = remoteUrl(root, scope, home, runtime)
   const latest = url ? fetchLatest(url) : null
   result.latest = latest
   const latestVersion = latest ? TAG.exec(latest)?.[1] : null
@@ -156,21 +167,26 @@ export function checkUpdate(root, { git = quietGit, home = claudeHome(), fetchLa
 }
 
 // The session-start text for a check result; null when there is nothing to say.
-export function noticeMessage(check) {
+export function noticeMessage(check, { runtime = detected() } = {}) {
   const lines = []
+  const update = runtime === 'codex' ? '$adf:update' : '/adf:update'
   const bare = (v) => v?.replace(/^v/, '')
-  if (check.pull) lines.push(`This project pins ADF v${bare(check.ref)}; v${check.installed} is installed. Run /adf:update to install it.`)
+  if (check.pull) lines.push(`This project pins ADF v${bare(check.ref)}; v${check.installed} is installed. Run ${update} to install it.`)
   if (check.behind) {
     const on = check.scope === 'project' ? `this project is on v${bare(check.ref)}` : `v${check.installed} is installed`
-    lines.push(`ADF v${bare(check.latest)} is available; ${on}. Run /adf:update.`)
+    lines.push(`ADF v${bare(check.latest)} is available; ${on}. Run ${update}.`)
   }
   return lines.length ? lines.join('\n') : null
 }
 
-const defaultClaude = (args, { cwd }) => execFileSync('claude', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+const defaultRun = (command, args, { cwd }) => execFileSync(command, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+
+// Where Codex's marketplace is added from when a project pins a ref: the repository, not the user's record.
+const CODEX_SOURCE = 'romant094/agentic-dev-flow'
 
 // The package plugins enabled for a scope: ids ending `@agentic-dev-flow` set to true.
-function enabledPackagePlugins(main, scope, home) {
+function enabledPackagePlugins(main, scope, home, runtime) {
+  if (runtime === 'codex') return codexEnabledIds(main, home).filter((id) => id.endsWith(`@${MARKETPLACE}`))
   const merged =
     scope === 'project'
       ? mergeSettings(readJson(join(main, SETTINGS_PATH)), readJson(join(main, '.claude', 'settings.local.json')))
@@ -188,38 +204,59 @@ function hasRecord(id, main, scope, home) {
   return records.some((r) => r.scope === scope && (scope === 'user' || countsHere(r, [main])))
 }
 
-// Refreshes the marketplace, then updates every enabled package plugin installed for the scope and
-// installs the others, in the main directory.
-// Installing at project scope rewrites .claude/settings.json; the file is restored afterwards, so
-// it must be clean before. A failing `claude` call stops the pull, after the restore: the error carries `ran` and `restored`.
+// The calls of one pull. Claude Code: refresh the marketplace, then update every enabled package
+// plugin installed for the scope and install the others. Codex has one user-scope install and no
+// update subcommand: when the project pins a ref, the user's marketplace record is moved to it
+// first (`add` on a name with another ref is an error, so a record on another ref is removed; the
+// same ref is a no-op), then `marketplace upgrade` (which follows the record's ref) and
+// `plugin add` for each enabled plugin.
+function pullCalls({ main, scope, home, runtime, ref, pinned }) {
+  const plugins = enabledPackagePlugins(main, scope, home, runtime)
+  if (runtime !== 'codex') {
+    return [['plugin', 'marketplace', 'update', MARKETPLACE], ...plugins.map((id) => ['plugin', hasRecord(id, main, scope, home) ? 'update' : 'install', id, '--scope', scope])]
+  }
+  const calls = []
+  if (pinned) {
+    const record = codexMarketplace(MARKETPLACE, home)
+    if (record && record.ref !== ref) calls.push(['plugin', 'marketplace', 'remove', MARKETPLACE])
+    calls.push(['plugin', 'marketplace', 'add', CODEX_SOURCE, '--ref', ref])
+  }
+  calls.push(['plugin', 'marketplace', 'upgrade', MARKETPLACE], ...plugins.map((id) => ['plugin', 'add', id]))
+  return calls
+}
+
+// Refreshes the marketplace and brings every enabled package plugin up to date (see pullCalls), in
+// the main directory.
+// Installing at project scope in Claude Code rewrites .claude/settings.json; the file is restored afterwards, so
+// it must be clean before. A failing call stops the pull, after the restore: the error carries `ran` and `restored`.
 // Afterwards the install is read again: `installed`, and for a project `ref`. A project whose
 // installed release is still older than its pinned ref is a refusal naming both.
-export function pull({ root, scope, home = claudeHome(), claude = defaultClaude }) {
+export function pull({ root, scope, runtime = detected(), home = runtimeHome(runtime), run = defaultRun }) {
   if (scope !== 'project' && scope !== 'user') throw new Error(`cannot pull for scope ${scope}`)
   const main = mainCheckout(root)
+  const command = cli(runtime)
+  const touchesSettings = scope === 'project' && runtime !== 'codex'
   const gitOut = (args) => execFileSync('git', ['-C', main, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-  if (scope === 'project' && gitOut(['status', '--porcelain', '--', SETTINGS_PATH]).trim() !== '') {
+  if (touchesSettings && gitOut(['status', '--porcelain', '--', SETTINGS_PATH]).trim() !== '') {
     throw new Error(`${SETTINGS_PATH} has uncommitted changes; commit or revert them first`)
   }
-  const calls = [['plugin', 'marketplace', 'update', MARKETPLACE]]
-  for (const id of enabledPackagePlugins(main, scope, home)) {
-    calls.push(['plugin', hasRecord(id, main, scope, home) ? 'update' : 'install', id, '--scope', scope])
-  }
+  const { ref, pinned } = projectRef(main)
+  const calls = pullCalls({ main, scope, home, runtime, ref, pinned: pinned && scope === 'project' })
   const ran = []
   let restored = false
   const restore = () => {
-    if (scope === 'project' && gitOut(['status', '--porcelain', '--', SETTINGS_PATH]).trim() !== '') {
+    if (touchesSettings && gitOut(['status', '--porcelain', '--', SETTINGS_PATH]).trim() !== '') {
       gitOut(['checkout', '--', SETTINGS_PATH])
       restored = true
     }
   }
   for (const args of calls) {
     try {
-      claude(args, { cwd: main })
+      run(command, args, { cwd: main })
     } catch (cause) {
       restore()
       const stderr = String(cause.stderr ?? cause.message ?? '').trim()
-      const error = new Error(`claude ${args.join(' ')} failed: ${stderr}`)
+      const error = new Error(`${command} ${args.join(' ')} failed: ${stderr}`)
       error.ran = ran
       error.restored = restored
       throw error
@@ -228,13 +265,13 @@ export function pull({ root, scope, home = claudeHome(), claude = defaultClaude 
   }
   restore()
   if (scope === 'user') {
-    const version = userRecord(home)?.version
+    const version = runtime === 'codex' ? installedVersion(PLUGIN_KEY_ID, main, { runtime, home }) : userRecord(home)?.version
     return { ran, restored, installed: VERSION.test(version ?? '') ? version : null }
   }
-  const { ref, pinned } = projectRef(main)
-  const installed = installedVersion(PLUGIN_KEY_ID, main, { home })
+  const installed = installedVersion(PLUGIN_KEY_ID, main, { runtime, home })
   if (pinned && (installed === null || compareVersions(installed, TAG.exec(ref)[1]) < 0)) {
-    const error = new Error(`after the pull ADF ${installed ? `v${installed}` : 'is not'} installed for this project, older than the pinned ${ref}; run claude plugin update ${PLUGIN_KEY_ID} --scope project and check its output`)
+    const again = runtime === 'codex' ? installCommand(runtime, PLUGIN_KEY_ID, scope) : `claude plugin update ${PLUGIN_KEY_ID} --scope project`
+    const error = new Error(`after the pull ADF ${installed ? `v${installed}` : 'is not'} installed for this project, older than the pinned ${ref}; run ${again} and check its output`)
     error.ran = ran
     error.restored = restored
     throw error

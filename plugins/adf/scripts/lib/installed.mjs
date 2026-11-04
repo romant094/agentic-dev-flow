@@ -89,6 +89,22 @@ function readTomlFile(path) {
   }
 }
 
+// The package plugins Codex has enabled (ids with `enabled = true`), from the same two layers.
+export function codexEnabledIds(main, home) {
+  const merged = {}
+  for (const path of [join(home, 'config.toml'), join(main, '.codex', 'config.toml')]) {
+    for (const [table, values] of Object.entries(readTomlFile(path))) {
+      if (table.startsWith('plugins.')) merged[table] = { ...merged[table], ...values }
+    }
+  }
+  return Object.entries(merged).filter(([, v]) => v.enabled === true).map(([table]) => table.slice('plugins.'.length))
+}
+
+// The user's `[marketplaces.<name>]` record in Codex's config.toml: { source_type, source, ref, ... }.
+export function codexMarketplace(name, home) {
+  return readTomlFile(join(home, 'config.toml'))[`marketplaces.${name}`] ?? null
+}
+
 function selectCodexInstall(id, main, { home, exists }) {
   const { enabled } = codexEnabled(id, main, home)
   if (enabled === false) throw absent(`${id} is installed but disabled`, id, 'disabled')

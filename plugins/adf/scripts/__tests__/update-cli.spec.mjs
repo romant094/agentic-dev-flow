@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -170,10 +170,10 @@ function gitProject(settings = { enabledPlugins: { 'adf@agentic-dev-flow': true,
   return { root, home, sh, installPinned }
 }
 
-function fakeClaude({ onCall, failOn } = {}) {
+function fakeRun({ onCall, failOn } = {}) {
   const calls = []
-  const fn = (args, opts) => {
-    calls.push({ args, cwd: opts.cwd })
+  const fn = (cli, args, opts) => {
+    calls.push({ cli, args, cwd: opts.cwd })
     if (failOn === calls.length) throw Object.assign(new Error('boom'), { stderr: 'no network' })
     onCall?.(args, opts)
     return ''
@@ -183,14 +183,15 @@ function fakeClaude({ onCall, failOn } = {}) {
 
 test('pull runs the marketplace update, then updates an installed plugin and installs the others', () => {
   const { root, home, installPinned } = gitProject()
-  const { fn, calls } = fakeClaude({ onCall: installPinned })
-  const r = run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
+  const { fn, calls } = fakeRun({ onCall: installPinned })
+  const r = run(['pull', '--root', root, '--home', home], { run: fn, git: git(TAGS) })
   assert.deepEqual(r.ran, [
     ['plugin', 'marketplace', 'update', 'agentic-dev-flow'],
     ['plugin', 'update', 'adf@agentic-dev-flow', '--scope', 'project'],
     ['plugin', 'install', 'adf-jira@agentic-dev-flow', '--scope', 'project']
   ])
   assert.deepEqual(calls.map((c) => c.args), r.ran)
+  assert.deepEqual([...new Set(calls.map((c) => c.cli))], ['claude'])
   assert.equal(r.restored, false)
   assert.deepEqual([r.installed, r.ref], ['0.10.0', 'v0.10.0'])
 })
@@ -198,7 +199,7 @@ test('pull runs the marketplace update, then updates an installed plugin and ins
 test('pull refuses, naming both versions, when the installed release is still older than the ref', () => {
   const { root, home } = gitProject()
   try {
-    run(['pull', '--root', root, '--home', home], { claude: fakeClaude().fn, git: git(TAGS) })
+    run(['pull', '--root', root, '--home', home], { run: fakeRun().fn, git: git(TAGS) })
     assert.fail('should throw')
   } catch (error) {
     assert.match(error.message, /v0\.9\.0 installed .*older than the pinned v0\.10\.0/)
@@ -209,8 +210,8 @@ test('pull refuses, naming both versions, when the installed release is still ol
 test('pull restores a settings file it changed', () => {
   const { root, home, installPinned } = gitProject()
   const before = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
-  const { fn } = fakeClaude({ onCall: (args) => (installPinned(args), args[1] === 'install' && writeFileSync(join(root, '.claude', 'settings.json'), '{}')) })
-  const r = run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
+  const { fn } = fakeRun({ onCall: (args) => (installPinned(args), args[1] === 'install' && writeFileSync(join(root, '.claude', 'settings.json'), '{}')) })
+  const r = run(['pull', '--root', root, '--home', home], { run: fn, git: git(TAGS) })
   assert.equal(r.restored, true)
   assert.equal(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'), before)
 })
@@ -218,16 +219,16 @@ test('pull restores a settings file it changed', () => {
 test('pull refuses when settings.json had uncommitted changes', () => {
   const { root, home } = gitProject()
   writeFileSync(join(root, '.claude', 'settings.json'), '{"dirty":true}')
-  const { fn, calls } = fakeClaude()
-  assert.throws(() => run(['pull', '--scope', 'project', '--root', root, '--home', home], { claude: fn, git: git(TAGS) }), /\.claude\/settings\.json has uncommitted changes; commit or revert them first/)
+  const { fn, calls } = fakeRun()
+  assert.throws(() => run(['pull', '--scope', 'project', '--root', root, '--home', home], { run: fn, git: git(TAGS) }), /\.claude\/settings\.json has uncommitted changes; commit or revert them first/)
   assert.equal(calls.length, 0)
 })
 
 test('pull at user scope updates with --scope user and reports restored false', () => {
   const { root, home } = setup({ user: '0.9.0' })
   writeFileSync(join(home, 'settings.json'), JSON.stringify({ enabledPlugins: { 'adf@agentic-dev-flow': true } }))
-  const { fn } = fakeClaude()
-  const r = run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
+  const { fn } = fakeRun()
+  const r = run(['pull', '--root', root, '--home', home], { run: fn, git: git(TAGS) })
   assert.deepEqual(r.ran[1], ['plugin', 'update', 'adf@agentic-dev-flow', '--scope', 'user'])
   assert.equal(r.restored, false)
   assert.equal(r.installed, '0.9.0')
@@ -235,9 +236,9 @@ test('pull at user scope updates with --scope user and reports restored false', 
 
 test('pull stops on a failing claude call and names the calls made', () => {
   const { root, home } = gitProject()
-  const { fn } = fakeClaude({ failOn: 2 })
+  const { fn } = fakeRun({ failOn: 2 })
   try {
-    run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
+    run(['pull', '--root', root, '--home', home], { run: fn, git: git(TAGS) })
     assert.fail('should throw')
   } catch (error) {
     assert.match(error.message, /plugin update adf@agentic-dev-flow --scope project.*no network/)
@@ -247,15 +248,15 @@ test('pull stops on a failing claude call and names the calls made', () => {
 
 test('pull refuses scope none', () => {
   const { root, home } = setup({})
-  assert.throws(() => run(['pull', '--root', root, '--home', home], { claude: fakeClaude().fn }), /nothing to pull/)
+  assert.throws(() => run(['pull', '--root', root, '--home', home], { run: fakeRun().fn }), /nothing to pull/)
 })
 
 test('pull restores settings.json when a later call fails', () => {
   const { root, home } = gitProject()
   const before = readFileSync(join(root, '.claude', 'settings.json'), 'utf8')
-  const { fn } = fakeClaude({ failOn: 3, onCall: (args) => args[1] !== 'marketplace' && writeFileSync(join(root, '.claude', 'settings.json'), '{}') })
+  const { fn } = fakeRun({ failOn: 3, onCall: (args) => args[1] !== 'marketplace' && writeFileSync(join(root, '.claude', 'settings.json'), '{}') })
   try {
-    run(['pull', '--root', root, '--home', home], { claude: fn, git: git(TAGS) })
+    run(['pull', '--root', root, '--home', home], { run: fn, git: git(TAGS) })
     assert.fail('should throw')
   } catch (error) {
     assert.equal(error.restored, true)
@@ -296,4 +297,74 @@ test('cleanup refuses a directory plan did not make', () => {
   assert.throws(() => run(['cleanup', '--clones', JSON.stringify(split)]), /not a temporary directory plan made/)
   run(['cleanup', '--clones', JSON.stringify({ old: join(made, 'old'), new: join(made, 'new'), repo: join(made, 'repo') })])
   assert.throws(() => run(['cleanup']), UsageError)
+})
+
+// Codex: the package is enabled in <home>/config.toml and installed under the plugin cache.
+function codexSetup({ installed = '0.9.0', ref, record = '[marketplaces.agentic-dev-flow]\nsource_type = "git"\nsource = "https://example.com/adf.git"\n', extra = [] } = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'adf-cx-'))
+  const home = mkdtempSync(join(tmpdir(), 'adf-cxh-'))
+  if (ref) {
+    mkdirSync(join(root, '.claude'))
+    writeFileSync(join(root, '.claude', 'settings.json'), JSON.stringify({ extraKnownMarketplaces: { 'agentic-dev-flow': { source: { source: 'git', url: URL, ref } } } }))
+  }
+  const enabled = [ID, ...extra].map((id) => `[plugins."${id}"]\nenabled = true\n`).join('\n')
+  writeFileSync(join(home, 'config.toml'), `${record}\n${enabled}`)
+  mkdirSync(join(home, 'plugins', 'cache', 'agentic-dev-flow', 'adf', installed), { recursive: true })
+  return { root, home }
+}
+
+test('codex: notice compares the installed version with the latest tag', () => {
+  const { root, home } = codexSetup()
+  assert.deepEqual(run(['notice', '--root', root, '--home', home], { runtime: 'codex', git: git(TAGS) }), {
+    systemMessage: 'ADF v0.10.0 is available; v0.9.0 is installed. Run $adf:update.'
+  })
+  const current = codexSetup({ installed: '0.10.0' })
+  assert.equal(run(['notice', '--root', current.root, '--home', current.home], { runtime: 'codex', git: git(TAGS) }), null)
+})
+
+test('codex: notice takes the project\'s pinned ref', () => {
+  const { root, home } = codexSetup({ ref: 'v0.10.0' })
+  assert.deepEqual(run(['notice', '--root', root, '--home', home], { runtime: 'codex', git: git(TAGS) }), {
+    systemMessage: 'This project pins ADF v0.10.0; v0.9.0 is installed. Run $adf:update to install it.'
+  })
+  const behind = codexSetup({ ref: 'v0.9.0' })
+  assert.match(run(['check', '--root', behind.root, '--home', behind.home], { runtime: 'codex', git: git(TAGS) }).scope, /project/)
+})
+
+test('codex: pull runs upgrade then add for each enabled plugin', () => {
+  const { root, home } = codexSetup({ extra: ['adf-jira@agentic-dev-flow', 'x@other'] })
+  const { fn, calls } = fakeRun({ onCall: () => mkdirSync(join(home, 'plugins', 'cache', 'agentic-dev-flow', 'adf', '0.10.0'), { recursive: true }) })
+  rmSync(join(home, 'plugins', 'cache', 'agentic-dev-flow', 'adf', '0.9.0'), { recursive: true })
+  const r = run(['pull', '--scope', 'user', '--root', root, '--home', home], { runtime: 'codex', run: fn, git: git(TAGS) })
+  assert.deepEqual(r.ran, [
+    ['plugin', 'marketplace', 'upgrade', 'agentic-dev-flow'],
+    ['plugin', 'add', 'adf@agentic-dev-flow'],
+    ['plugin', 'add', 'adf-jira@agentic-dev-flow']
+  ])
+  assert.deepEqual([...new Set(calls.map((c) => c.cli))], ['codex'])
+  assert.deepEqual([r.restored, r.installed], [false, '0.10.0'])
+})
+
+test('codex: pull re-points the marketplace to the pinned ref first', () => {
+  const stale = '[marketplaces.agentic-dev-flow]\nsource_type = "git"\nsource = "https://example.com/adf.git"\nref = "v0.9.0"\n'
+  const { root, home } = codexSetup({ ref: 'v0.10.0', record: stale })
+  const { fn } = fakeRun({ onCall: (args) => args[2] === 'upgrade' && mkdirSync(join(home, 'plugins', 'cache', 'agentic-dev-flow', 'adf', '0.10.0'), { recursive: true }) })
+  rmSync(join(home, 'plugins', 'cache', 'agentic-dev-flow', 'adf', '0.9.0'), { recursive: true })
+  const r = run(['pull', '--root', root, '--home', home], { runtime: 'codex', run: fn, git: git(TAGS) })
+  assert.deepEqual(r.ran, [
+    ['plugin', 'marketplace', 'remove', 'agentic-dev-flow'],
+    ['plugin', 'marketplace', 'add', 'romant094/agentic-dev-flow', '--ref', 'v0.10.0'],
+    ['plugin', 'marketplace', 'upgrade', 'agentic-dev-flow'],
+    ['plugin', 'add', 'adf@agentic-dev-flow']
+  ])
+  assert.deepEqual([r.installed, r.ref], ['0.10.0', 'v0.10.0'])
+  // A record already on the ref is added again without a remove (Codex treats it as a no-op).
+  const same = codexSetup({ ref: 'v0.10.0', record: stale.replace('v0.9.0', 'v0.10.0'), installed: '0.10.0' })
+  const again = run(['pull', '--root', same.root, '--home', same.home], { runtime: 'codex', run: fakeRun().fn, git: git(TAGS) })
+  assert.deepEqual(again.ran[0], ['plugin', 'marketplace', 'add', 'romant094/agentic-dev-flow', '--ref', 'v0.10.0'])
+})
+
+test('codex: pull refuses, naming both versions, when the pinned release is still not installed', () => {
+  const { root, home } = codexSetup({ ref: 'v0.10.0' })
+  assert.throws(() => run(['pull', '--root', root, '--home', home], { runtime: 'codex', run: fakeRun().fn, git: git(TAGS) }), /v0\.9\.0 installed .*older than the pinned v0\.10\.0.*codex plugin add/)
 })
