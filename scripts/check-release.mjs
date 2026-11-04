@@ -23,9 +23,10 @@ export function changelogVersions(text) {
   return [...text.matchAll(/^## \[(\d+\.\d+\.\d+)\]/gm)].map((match) => match[1])
 }
 
-// Every tag an install command pins: `--ref v<x.y.z>`, `"ref": "v<x.y.z>"` or `#v<x.y.z>`.
+// Every tag an install command pins: `--ref v<x.y.z>`, `"ref": "v<x.y.z>"` or `.git#v<x.y.z>`.
+// A pre-release suffix (`v1.0.0-rc.1`) is not the release, so it is no pin.
 export function pinnedTags(text) {
-  return [...text.matchAll(/(?:--ref |"ref": ?"|#)(v\d+\.\d+\.\d+)\b/g)].map((match) => match[1])
+  return [...text.matchAll(/(?:--ref |"ref": ?"|\.git#)(v\d+\.\d+\.\d+)(?![\w.+-])/g)].map((match) => match[1])
 }
 
 export function checkRelease({ marketplace, manifests, headTags, differ = [], changelog, pinned = [] }) {

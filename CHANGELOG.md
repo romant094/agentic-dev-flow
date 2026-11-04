@@ -9,11 +9,12 @@ A version is the package version in `.claude-plugin/marketplace.json`, and its t
 
 ### Added
 
-- A user guide in [`docs/guide/`](docs/guide/README.md): the install in Claude Code and in Codex, the main cycle, the extension points, each plugin, the concepts and the update.
-- `scripts/check-guide.mjs`, in `npm test`: it fails when a skill, a plugin, an extension point or a registry key has no page, or when a link does not resolve.
+- A user guide in [`docs/guide/`](docs/guide/README.md). It covers the install in Claude Code and in Codex, the main cycle and the extension points. It also covers each plugin, the concepts and the update.
+- `scripts/check-guide.mjs`, in `npm test`. It fails when a skill, a plugin, an extension point or a registry key has no page. It also fails when a link does not resolve.
 - `guide-review`: an agent check, in each release step, that the guide pages still say what the changed code does.
 - This changelog.
-- Two rules in `scripts/check-release.mjs`: `CHANGELOG.md` must have a section for the package version, and every install command must pin the tag of that version.
+- A rule in `scripts/check-release.mjs`: `CHANGELOG.md` must have a section for the package version.
+- A rule in `scripts/check-release.mjs`: every install command must pin the tag of the package version.
 
 ### Changed
 
@@ -24,9 +25,13 @@ A version is the package version in `.claude-plugin/marketplace.json`, and its t
 ### Added
 
 - Codex support. The package runs in Codex as well as in Claude Code.
+- Codex runs the hooks of `adf`, `adf-english-check` and `adf-npm-workspaces`.
+- `adf-jira` finds the `adf` core in the plugin cache of each runtime.
+- `/adf:retro` dispatches its agent in the form of the current runtime.
 - The Codex marketplace, `.agents/plugins/marketplace.json`. Install with `codex plugin marketplace add romant094/agentic-dev-flow --ref v0.20.0`.
 - A Codex manifest for each plugin, generated from its Claude Code manifest by `scripts/manifests.mjs`.
 - The session-start notice of a new release and the pull step of `/adf:update` work in Codex.
+- When a re-point of the Codex marketplace fails, the flow restores the marketplace record.
 - `runlog.mjs collect`: it packs the sessions and the change records of a run into one archive for the maintainer. The archive holds no credential files and no private keys.
 
 ### Changed
@@ -35,23 +40,17 @@ A version is the package version in `.claude-plugin/marketplace.json`, and its t
 - The scripts print the real plugin paths, and they name the agent tools of the current runtime.
 - The flow reads the session id and the metrics by runtime. The flow does not read Codex sessions for metrics yet.
 
-### Fixed
-
-- Codex runs the hooks of `adf`, `adf-english-check` and `adf-npm-workspaces`. Before the fix, Codex loaded no hooks of these plugins.
-- `adf-jira` finds the `adf` core in the plugin cache of each runtime.
-- `/adf:retro` dispatches its agent in the form of the current runtime.
-- When a re-point of the Codex marketplace fails, the flow restores the marketplace record.
-
 ## [0.19.0] — 2026-11-04
 
 ### Added
 
 - `/adf:update`: one merge request that moves the project to the latest release, or to the tag that `--to` names. It pins the new release, migrates the plugin configuration in the registry and merges the host files.
-- The session-start notice. It tells you when a newer release exists, or when the installed release is not the pinned one.
-- The pull step of `/adf:update`: it installs the pinned release for a teammate or for a user-scope install.
+- The session-start notice. It tells you when a newer release exists, or when the installed release is not the pinned one. It runs git with a timeout, and it caches a failed check.
+- The pull step of `/adf:update`: it installs the pinned release for a teammate or for a user-scope install. It runs `claude plugin update` for an installed plugin and `claude plugin install` for the others. When an install fails, it restores the settings file.
+- `/adf:update` removes its temporary clones by script.
 - Contract `1.9`: a plugin can declare migrations of its `config`, which `/adf:update` runs.
 - One package version for the core and all plugins, in `metadata.version` of `.claude-plugin/marketplace.json`. `scripts/check-release.mjs` checks it against the plugin versions and the tag.
-- The scripts report the plugin root that they run from.
+- The scripts report the plugin root that they run from. The report works when the Claude Code home is a symbolic link.
 
 ### Changed
 
@@ -59,12 +58,8 @@ A version is the package version in `.claude-plugin/marketplace.json`, and its t
 
 ### Fixed
 
-- The flow counts a plugin install for a worktree, and for the cached plugin of a trusted project.
-- The install check works when the Claude Code home is a symbolic link.
-- The pull step runs `claude plugin update` for an installed plugin. Before the fix, it ran `claude plugin install`, which does nothing for an installed plugin.
-- The pull step restores the settings file when a later install fails.
-- `/adf:update` removes its temporary clones by script.
-- The session-start notice runs git with a timeout, and it caches a failed check.
+- The flow finds a plugin that is installed for the main directory when it runs in a worktree.
+- The flow finds a plugin that a trusted project enables with no install record, in the plugin cache.
 
 ### Upgrade from 0.18.1
 

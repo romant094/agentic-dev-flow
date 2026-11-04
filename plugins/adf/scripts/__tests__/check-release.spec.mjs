@@ -74,3 +74,12 @@ test('prose mentions of a version are not pins', () => {
   ].join('\n')
   assert.deepEqual(pinnedTags(text), ['v0.20.0', 'v0.19.0', 'v0.18.1'])
 })
+
+test('a link anchor is not a pin, and a git URL fragment is', () => {
+  assert.deepEqual(pinnedTags('See [the notes](a.md#v0.19.0).'), [])
+  assert.deepEqual(pinnedTags('"url": "https://github.com/romant094/agentic-dev-flow.git#v0.20.0"'), ['v0.20.0'])
+})
+
+test('a pre-release tag is not its release', () => {
+  assert.deepEqual(pinnedTags('--ref v1.0.0-rc.1\n"ref": "v1.0.0-rc.1"\nrepo.git#v1.0.0-rc.1'), [])
+})

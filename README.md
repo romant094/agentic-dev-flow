@@ -13,6 +13,8 @@ ADF (agentic dev flow) runs each change through one cycle of commands. Each comm
   /adf:retro    looks back over the archived changes; it is not a stage of one change
 ```
 
+To install ADF in Claude Code or in Codex, see [Quick start](#quick-start).
+
 ## Commands
 
 Each command is a skill of the core plugin `adf`. In Codex, invoke the skill by the name that `/skills` lists. See [the Codex page](docs/guide/getting-started/codex.md#command-forms).
@@ -124,8 +126,8 @@ The core `adf` runs the cycle. Every other plugin is optional. A project enables
 
 ADF is built on two foundations:
 
-- **OpenSpec** gives the spec-driven model. The specs say what the system must do. Each change carries its proposal, design, delta specs and tasks in `openspec/changes/`. ADF has its own engine and schema for this model, so the `openspec` command-line tool is not needed.
-- **Superpowers** gives the agent's working skills: brainstorming, writing plans, test-driven development, subagent-driven execution, worktrees, code review and verification before completion. `adf` installs it as a dependency.
+- **[OpenSpec](https://github.com/Fission-AI/OpenSpec)** gives the spec-driven model. The specs say what the system must do. Each change carries its proposal, design, delta specs and tasks in `openspec/changes/`. ADF has its own engine and schema for this model, so the `openspec` command-line tool is not needed.
+- **[Superpowers](https://github.com/obra/superpowers)** gives the agent's working skills: brainstorming, writing plans, test-driven development, subagent-driven execution, worktrees, code review and verification before completion. `adf` installs it as a dependency.
 
 ADF joins them into one cycle. It adds the gates between the stages and a script for each deterministic step. The agents reply in a structured form that a script checks. ADF also adds the review rounds, the delivery through a forge, the metrics and the extension points.
 
