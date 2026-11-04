@@ -1,7 +1,7 @@
 // The release check in scripts/check-release.mjs.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { checkRelease } from '../../../../scripts/check-release.mjs'
+import { changelogVersions, checkRelease, pinnedTags } from '../../../../scripts/check-release.mjs'
 
 const marketplace = (version, plugins = [{ name: 'adf', version: '0.18.1' }]) => ({ metadata: { version }, plugins })
 
@@ -36,4 +36,41 @@ test('a generated Codex manifest that differs fails the check', () => {
   const errors = checkRelease({ ...base, differ: ['plugins/adf/plugin.json'] })
   assert.equal(errors.length, 1)
   assert.match(errors[0], /plugins\/adf\/plugin\.json/)
+})
+
+const consistent = { marketplace: marketplace('0.18.1'), manifests: { adf: '0.18.1' }, headTags: [] }
+
+test('a version with no changelog section fails', () => {
+  const changelog = '# Changelog\n\n## [Unreleased]\n\n## [0.18.0] — 2026-10-01\n'
+  const errors = checkRelease({ ...consistent, changelog })
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /CHANGELOG\.md has no section for 0\.18\.1/)
+  assert.deepEqual(checkRelease({ ...consistent, changelog: `${changelog}\n## [0.18.1] — 2026-10-02\n` }), [])
+})
+
+test('the Unreleased section is not a version', () => {
+  assert.deepEqual(changelogVersions('## [Unreleased]\n\n### Added\n\n## [0.20.0] — 2026-11-03\n## [0.19.0] — 2026-10-30\n'), [
+    '0.20.0',
+    '0.19.0',
+  ])
+})
+
+test('a stale pinned tag fails and names the file', () => {
+  const pinned = [
+    { file: 'README.md', tags: ['v0.18.1'] },
+    { file: 'docs/guide/getting-started/codex.md', tags: ['v0.17.0'] },
+  ]
+  const errors = checkRelease({ ...consistent, pinned })
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /docs\/guide\/getting-started\/codex\.md: pinned tag v0\.17\.0 must be v0\.18\.1/)
+})
+
+test('prose mentions of a version are not pins', () => {
+  const text = [
+    'codex plugin marketplace add romant094/agentic-dev-flow --ref v0.20.0',
+    '{ "ref": "v0.19.0" }',
+    'claude plugin marketplace add https://github.com/romant094/agentic-dev-flow.git#v0.18.1',
+    'Codex support starts at v0.20.0: use v0.20.0 or a later tag in `--ref`.',
+  ].join('\n')
+  assert.deepEqual(pinnedTags(text), ['v0.20.0', 'v0.19.0', 'v0.18.1'])
 })

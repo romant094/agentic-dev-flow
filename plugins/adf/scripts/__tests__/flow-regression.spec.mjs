@@ -236,16 +236,12 @@ export function proposeFilesFindings(file, text, shape) {
   ]
 }
 
-// Sites: the README's command block after "in the host project:" and its layout line for
-// `skills/`. Each lists every command, in an order of its own, so sets are compared.
+// Site: the README's `## Commands` table, one row per command in its first column. It lists
+// every command, in an order of its own, so sets are compared.
 export function readmeCommandFindings(file, text, shape) {
-  const block = text.match(/in the host project:\s*\n\s*```[^\n]*\n([\s\S]*?)```/)
-  const layout = text.match(/^\s*skills\/\s+(.+)$/m)
-  const names = (source) => sorted([...source.matchAll(/\/adf:([a-z][a-z-]*)/g)].map((m) => m[1]))
-  return [
-    ...(block ? differs(file, 'readme-command-block', names(block[1]), shape.commands) : missing(file, 'readme-command-block')),
-    ...(layout ? differs(file, 'readme-layout-commands', names(layout[1]), shape.commands) : missing(file, 'readme-layout-commands'))
-  ]
+  const section = text.match(/^## Commands\n([\s\S]*?)(?=^## |(?![\s\S]))/m)
+  const rows = section && [...section[1].matchAll(/^\| `\/adf:([a-z][a-z-]*)`/gm)].map((m) => m[1])
+  return rows?.length ? differs(file, 'readme-commands-table', sorted(rows), shape.commands) : missing(file, 'readme-commands-table')
 }
 
 test('the shape detectors fire on a drifted list and on a missing site, and pass a matching one', () => {
@@ -275,16 +271,12 @@ test('the shape detectors fire on a drifted list and on a missing site, and pass
   ])
   assert.deepEqual(proposeFilesFindings('p', 'Nothing.', shape), ['p [propose-files]: the list was not found'])
 
-  const readme = 'Then, in the host project:\n\n```\n/adf:init\n/adf:go <x>\n```\n\n  skills/   /adf:go, /adf:init\n'
+  const readme = '# T\n\n## Commands\n\n| Command | What |\n|---|---|\n| `/adf:init` | x |\n| `/adf:go` | y |\n\n## Next\n\n| `/adf:extra` | z |\n'
   assert.deepEqual(readmeCommandFindings('r', readme, shape), [])
-  assert.deepEqual(readmeCommandFindings('r', readme.replace('/adf:go <x>', '/adf:gone').replace(', /adf:init', ''), shape), [
-    'r [readme-command-block]: lists gone, init; the schema has go, init',
-    'r [readme-layout-commands]: lists go; the schema has go, init'
+  assert.deepEqual(readmeCommandFindings('r', readme.replace('`/adf:go`', '`/adf:gone`'), shape), [
+    'r [readme-commands-table]: lists gone, init; the schema has go, init'
   ])
-  assert.deepEqual(readmeCommandFindings('r', 'Nothing.', shape), [
-    'r [readme-command-block]: the list was not found',
-    'r [readme-layout-commands]: the list was not found'
-  ])
+  assert.deepEqual(readmeCommandFindings('r', 'Nothing.', shape), ['r [readme-commands-table]: the list was not found'])
 })
 
 test('every prose list of the artifacts and commands matches the schema and the commands folder', () => {
