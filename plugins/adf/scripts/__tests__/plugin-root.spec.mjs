@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -27,4 +27,14 @@ test('a root outside the cache warns and names it', () => {
   assert.equal(result.cached, false)
   assert.equal(result.version, '1.2.3')
   assert.equal(result.warning, `the adf scripts run from ${root}, not from an installed release`)
+})
+
+test('a cached root counts when the home is a symlink and the script path is resolved', () => {
+  const real = mkdtempSync(join(tmpdir(), 'adf-real-home-'))
+  const home = join(mkdtempSync(join(tmpdir(), 'adf-link-')), '.claude')
+  symlinkSync(real, home)
+  const root = join(real, 'plugins', 'cache', 'market', 'adf', '1.2.3')
+  const result = pluginRoot({ home, scriptUrl: plugin(root) })
+  assert.equal(result.cached, true)
+  assert.equal(result.warning, null)
 })
