@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// Claude Code PreToolUse hook (matcher Bash): reads the hook input JSON on stdin and blocks an
+// PreToolUse hook (matcher Bash), the same input in Claude Code and Codex: reads the hook input JSON on stdin and blocks an
 // npm install, ci, add, update or uninstall that would run in a linked git worktree
 // (lib/guard.mjs).
+// Both runtimes send tool_name Bash and the command in tool_input.command, the only fields read.
 //
 // Exit codes: 0 the call runs; 2 the call is blocked and stderr, the reason, goes to the agent;
 // 1 the guard itself failed, a non-blocking error: the call runs and stderr says it was not
