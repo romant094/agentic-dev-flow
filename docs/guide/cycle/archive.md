@@ -7,7 +7,9 @@
 
 # /adf:archive
 
-`/adf:archive` takes a reviewed change to its end. It merges the delta specs into the main specs, places every recorded finding and debt, and moves the change into the archive. It ingests what the change taught, finalizes the merge request and removes the worktree.
+`/adf:archive` takes a reviewed change to its end. It merges the delta specs into the main specs. It places every recorded finding and debt. It moves the change into the archive.
+
+It also ingests what the change taught. It finalizes the merge request. It removes the worktree.
 
 ## What it takes
 
@@ -16,9 +18,9 @@ The change name, optional. Add `--no-ci` to push the merge request with no CI ru
 The preflight refuses, and writes nothing, in these cases:
 
 - `review.md` is not done. Run `/adf:review`.
-- A file outside the change directory has uncommitted changes. This includes untracked files. Archive commits only what it writes. You commit, move or discard these files first.
+- A file outside the change directory has uncommitted changes, untracked files included. Archive commits only what it writes. You commit, move or discard these files first. This check applies only before archive starts. A run that resumes skips it.
 
-The `check` step accepts a `PASS` record only. A `BLOCKED` record is refused. The one way past a blocking finding is your ruling with a reason at review.
+The `check` step accepts a `PASS` record only. A `BLOCKED` record is refused. It also refuses when a commit after the reviewed commit touches a file other than `review.md`. The code changed since the review: run `/adf:review` again. The one way past a blocking finding is your ruling with a reason at review.
 
 ## The steps
 
@@ -45,11 +47,18 @@ The command ends with a report. It names each step that is not finished and the 
 
 - Whether to archive anyway, at `check`, when the change is incomplete. The warnings name the artifacts not done and the unchecked tasks.
 - Where each unplaced item goes, at `placements`. The command proposes a destination for each item. The destinations are the product debt store, the ADF debt records, a follow-up change, or an acceptance with your decision. An acceptance needs your explicit yes.
-- The Purpose of a new capability, which the command writes from `proposal.md`. It shows the merge preview first. There is no way to archive without the merge.
-- A resolution of each spec conflict. A conflict is a requirement whose main-spec text changed since the base. One agent for each capability proposes it.
+- Nothing at `merge`, except that it shows you the merge preview first. There is no way to archive without the merge.
 - Your yes before a local merge, when no forge plugin is enabled.
 
 The command never merges a merge request. You merge it.
+
+## The merge step
+
+The command writes the Purpose of a new capability from `proposal.md`. It needs at least 50 characters.
+
+A conflict is a requirement whose main-spec text changed since the base. One `spec-merge <capability>` agent for each conflicting capability proposes a resolution. The script checks each reply.
+
+Not checked: whether the instructions make you approve a resolution. They say only that a stale delta can be rebased with you instead.
 
 ## What it writes and commits
 

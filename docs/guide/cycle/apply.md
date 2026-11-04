@@ -33,7 +33,12 @@ The command asks only in these cases:
 - The work shows that an artifact is wrong. The command names the artifact and suggests the update.
 - A task needs a file outside its `**Files:**` block, for a reason the apply rules do not cover.
 
-It stops and reports on a blocker, an error, a refused tree guard, a blocked group, an open reuse-sweep finding, or a suite failure that does not also fail on the base branch.
+It stops and reports in these cases:
+
+- A blocker or an error.
+- A refused tree guard or a blocked group.
+- An open reuse-sweep finding.
+- A suite failure that does not also fail on the base branch.
 
 ## What it does
 
@@ -69,7 +74,7 @@ At a group boundary, the command can record a handoff and stop for a fresh sessi
 After a `FAIL` from `/adf:verify` that needs a code change, open an apply round:
 
 1. Write the text of the fix task into a file.
-2. Run `plan.mjs reopen --change <name> --title "<the fix>" --task-file <file>`.
+2. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/plan.mjs" reopen --change <name> --title "<the fix>" --task-file <file>`.
 3. Run `/adf:apply`.
 4. Run `/adf:verify` again.
 

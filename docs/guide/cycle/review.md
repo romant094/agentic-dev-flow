@@ -47,7 +47,13 @@ Only your own words make a ruling. Silence never does.
 
 ## The verdict
 
-A script computes the verdict, `PASS` or `BLOCKED`. It is `BLOCKED` while a finding of a blocking severity is open, while a fix is not re-reviewed, or while the suite after the fixes fails without a ruling. The registry key `review.blockOn` sets the blocking severities.
+A script computes the verdict, `PASS` or `BLOCKED`. The verdict is `BLOCKED` in any of these cases:
+
+- A finding of a blocking severity is open.
+- A fix is not re-reviewed.
+- The suite after the fixes fails, and you gave no ruling.
+
+The registry key `review.blockOn` sets the blocking severities. Its default is `CRITICAL` and `HIGH`. The key `review.maxBytes` sets the largest diff that one reviewer takes. Its default is 400000 bytes.
 
 | Verdict | Next step |
 |---|---|
@@ -74,7 +80,5 @@ Run `/adf:review` again.
 - A run of an earlier session that has rounds is kept. The command goes on from the stored rounds.
 - `--fresh` discards a kept run and starts a new review. You must ask for it.
 - A reviewer reply that fails its check goes back once to the same agent. A second invalid reply stops the stage. Only a new run with `--fresh` begins again.
-
-Not checked: the default values of `review.blockOn` and `review.maxBytes`.
 
 The Codex form of each command is in [the Codex page](../getting-started/codex.md).
