@@ -18,14 +18,14 @@
 //       a second refusal stops archive.
 //
 // --root names the change worktree (default: the current directory); the change may be active
-// or already archived. --home names the Claude Code home where the knowledge plugin is found.
+// or already archived. --home names the runtime's home where the knowledge plugin is found.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { parseArgs } from 'node:util'
 import { checkIngestFile, findChangeDir, ingestInputFile, mergeBaseOf, relativeTo, staleList } from './lib/ingest.mjs'
 import { isMain } from './lib/main.mjs'
 import { callRole, CORE, knowledgeReport } from './lib/roles.mjs'
-import { claudeHome } from './lib/superpowers.mjs'
+import { defaultHome } from './lib/runtime.mjs'
 
 export const USAGE = `usage:
   ingest.mjs stale --change <name> [--base <rev>] [--root <dir>] [--home <dir>]
@@ -57,7 +57,7 @@ export function run(argv, { cwd = process.cwd(), knowledge = (root, home) => cal
   const file = ingestInputFile(root, change)
 
   if (command === 'stale') {
-    const context = knowledge(root, values.home ?? claudeHome())
+    const context = knowledge(root, values.home ?? defaultHome())
     if (context.state === 'none') return { ok: true, state: 'none', report: knowledgeReport('context', context) }
     if (context.state !== 'done') throw new Error(knowledgeReport('context', context))
     const paths = globs(context.paths)

@@ -29,7 +29,7 @@ import { scopeNaming } from './scope.mjs'
 import { checkSpecsBase, extractRequirementsSection, MESSAGES, parseDeltaSpec, validateProject } from './specs.mjs'
 import { PLANNING_FILE } from './guide.mjs'
 import { countsOf, readTestRecord, SET_MESSAGE } from './suite.mjs'
-import { claudeHome } from './superpowers.mjs'
+import { defaultHome } from './runtime.mjs'
 import { gitIn } from './workspace.mjs'
 
 export const CHECKS = {
@@ -539,7 +539,7 @@ export function extensionChecks(root, change, git, base, core) {
 //
 // The approved skill edits are the ledger's `skill-edit` records, read on every run, plus any
 // `skillEdits` the caller names.
-export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md', fresh = false, env = process.env, now = new Date().toISOString(), home = claudeHome(env) }) {
+export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md', fresh = false, env = process.env, now = new Date().toISOString(), home = defaultHome(env) }) {
   const root = resolve(rootArg)
   if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
   const git = gitIn(root)

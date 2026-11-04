@@ -3,6 +3,7 @@
 import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { claudeHome } from './superpowers.mjs'
 
 export { claudeHome }
@@ -10,6 +11,12 @@ export const RUNTIMES = ['claude-code', 'codex']
 
 export function runtimeHome(runtime, env = process.env) {
   return runtime === 'codex' ? env.CODEX_HOME || join(homedir(), '.codex') : claudeHome(env)
+}
+
+// The home every entry script uses unless --home names one: the home of the runtime that runs
+// the scripts.
+export function defaultHome(env = process.env, scriptPath = fileURLToPath(import.meta.url)) {
+  return runtimeHome(detectRuntime({ env, scriptPath }), env)
 }
 
 export function cacheDir(runtime, home) {
@@ -28,9 +35,9 @@ export function installCommand(runtime, id, scope) {
   return runtime === 'codex' ? `codex plugin add ${id}` : `claude plugin install ${id} --scope ${scope}`
 }
 
-// Order: ADF_RUNTIME, the script's path under a runtime's plugin cache, CODEX_THREAD_ID,
-// CLAUDE_CODE_SESSION_ID, then claude-code. A home that is a symlink is compared resolved, as
-// node resolves the script's own path.
+// Order: ADF_RUNTIME, the script's path under a runtime's plugin cache, CODEX_THREAD_ID, then
+// claude-code. A home that is a symlink is compared resolved, as node resolves the script's own
+// path.
 export function detectRuntime({ env = process.env, scriptPath, homes } = {}) {
   if (RUNTIMES.includes(env.ADF_RUNTIME)) return env.ADF_RUNTIME
   if (scriptPath) {

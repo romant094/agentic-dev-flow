@@ -36,8 +36,8 @@
 //       For a role that reads the review package (PACKAGE_ROLES) the call cuts it through the
 //       skill's review-package (lib/sdd.mjs reviewPackage), names the file in `Review package`
 //       and returns `package` ({ file, stray }); a range it cannot cut is refused. --home names
-//       the Claude Code home the Superpowers skill is found in (default: lib/superpowers.mjs
-//       claudeHome).
+//       the runtime home the Superpowers skill is found in (default: the home of the runtime
+//       that runs the script).
 //       ai-review refuses while its input file is missing. ai-fix reads the finding from the
 //       round's findings file (`review.mjs response` wrote it, ids renumbered) and refuses unless
 //       the finding is the `next` of the round's fix plan (`review.mjs fixplan`); it names the

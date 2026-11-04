@@ -76,7 +76,7 @@ import {
 import { CORE, hookProviders, knowledgePaths } from './lib/roles.mjs'
 import { readDebtRoot } from './lib/registry.mjs'
 import { loadSchema } from './lib/schema.mjs'
-import { claudeHome } from './lib/superpowers.mjs'
+import { defaultHome } from './lib/runtime.mjs'
 import { gitIn } from './lib/workspace.mjs'
 
 const USAGE = 'usage: plan.mjs lint|graph|schedule|unplanned|added|reopen [--change <name>] [--root <dir>] (see the header for each command; without --change, the one active change under the root)'
@@ -136,7 +136,7 @@ function grepIn(root) {
 // holds none.
 function provisioned(root) {
   try {
-    const { plugins, absent } = hookProviders(root, 'provision', { ...CORE, home: claudeHome() })
+    const { plugins, absent } = hookProviders(root, 'provision', { ...CORE, home: defaultHome() })
     return plugins.length + absent.length > 0
   } catch {
     return false
@@ -146,7 +146,7 @@ function provisioned(root) {
 // The files archive's ingest updates after the change lands, so a Delete sweep does not ask a
 // task to list them: the knowledge provider's paths and the registry's debt tree.
 function archiveOwned(root) {
-  const globs = knowledgePaths(root, { ...CORE, home: claudeHome() }).paths.map((g) => globToRegExp(g))
+  const globs = knowledgePaths(root, { ...CORE, home: defaultHome() }).paths.map((g) => globToRegExp(g))
   let debt = null
   try {
     debt = readDebtRoot(root)?.replace(/\/$/, '') ?? null

@@ -4,7 +4,7 @@
 // or a result with ok false, exit 2 on a usage error. --root is any checkout of the host (default:
 // the current directory); the state lives in the main checkout's
 // .superpowers/sdd/<change>/scope/, the tracker's files in .superpowers/sdd/<change>/tracker/.
-// --home names the Claude Code home where the plugins are found.
+// --home names the runtime's home where the plugins are found.
 //
 //   scope.mjs gather --change <name> [--keys K1,K2] [--text "<phrase>"] [--skip-tracker "<reason>"]
 //       the tracker's check, then its gather of the keys and the phrase, a debt id among the
@@ -48,10 +48,9 @@ import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { isMain } from './lib/main.mjs'
-import { detectRuntime } from './lib/runtime.mjs'
+import { detectRuntime, runtimeHome } from './lib/runtime.mjs'
 import { CORE } from './lib/roles.mjs'
 import { answer, check, checkInput, gather, Refusal, render, retest, select, start, state } from './lib/scope.mjs'
-import { claudeHome } from './lib/superpowers.mjs'
 
 export const USAGE = `usage:
   scope.mjs gather --change <name> [--keys K1,K2] [--text "<phrase>"] [--skip-tracker "<reason>"] [--root <dir>] [--home <dir>]
@@ -126,7 +125,7 @@ export function run(argv, { cwd = process.cwd(), env = process.env, runtime = de
   if (!values.change) usage(`${command} needs --change <name>`)
   const root = resolve(cwd, values.root ?? '.')
   const change = values.change
-  const core = { ...CORE, home: values.home ?? claudeHome() }
+  const core = { ...CORE, home: values.home ?? runtimeHome(runtime, env) }
   switch (command) {
     case 'gather':
       return gather(root, change, { keys: list(values.keys === undefined ? [] : [values.keys]), text: values.text ?? null, skipTracker: values['skip-tracker'] ?? null, core })

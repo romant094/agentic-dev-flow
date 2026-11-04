@@ -18,9 +18,9 @@
 //       ({ ok, change, base, head, file, said, stray })
 //
 // brief and package find the skill in the Superpowers install recorded for the main checkout
-// (--home names the Claude Code home: default $CLAUDE_CONFIG_DIR, else ~/.claude) and run its
-// script with `bash` named explicitly, in --root; on Windows that is Git Bash's bash, which must
-// be on PATH. Anything a call wrote to the shared default `.superpowers/sdd/plan/` is moved into
+// (--home names the runtime's home: default $CLAUDE_CONFIG_DIR, else ~/.claude; in Codex
+// $CODEX_HOME, else ~/.codex) and run its script with `bash` named explicitly, in --root; on
+// Windows that is Git Bash's bash, which must be on PATH. Anything a call wrote to the shared default `.superpowers/sdd/plan/` is moved into
 // the change's workspace and listed in `stray` ({ from, to }).
 //
 // --root <dir> names the host project, for brief and package the change worktree (default: the

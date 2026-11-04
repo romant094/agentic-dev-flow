@@ -67,7 +67,7 @@ import { isMain } from './lib/main.mjs'
 import { NEED_WORD, planInputs } from './lib/plan.mjs'
 import { KINDS, NEEDS_KINDS, provisionSummary, provisionWorktree } from './lib/provision.mjs'
 import { reviewPackage } from './lib/sdd.mjs'
-import { claudeHome } from './lib/superpowers.mjs'
+import { defaultHome } from './lib/runtime.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const contract = () => JSON.parse(readFileSync(join(here, '..', 'contract', 'contract.json'), 'utf8'))
@@ -136,7 +136,7 @@ export function run(argv) {
   if (!change) throw new Error('usage: workspace.mjs <command> --change <name>')
   // The contract and home the hooks of a worktree are called with.
   const c = contract()
-  const core = { coreContract: c.version, points: c.points, home: home ?? claudeHome() }
+  const core = { coreContract: c.version, points: c.points, home: home ?? defaultHome() }
   switch (command) {
     case 'suggest':
       return suggest(root, change, scopeKey(root, change, key))

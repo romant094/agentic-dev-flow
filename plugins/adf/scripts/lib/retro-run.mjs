@@ -58,7 +58,7 @@ import { input, recordRetroDispatch, recordRetroReply } from './retro.mjs'
 import { renderRetro, retroDocument } from './retro-render.mjs'
 import { readDebtRoot } from './registry.mjs'
 import { callRole, CORE, coreRepository, forgeInput, forgeReport, hostSlug, knowledgePaths, upstreamReport } from './roles.mjs'
-import { claudeHome } from './superpowers.mjs'
+import { defaultHome } from './runtime.mjs'
 import { buildSidecar, fetchRef, MODES, RETRO_DIR, sinceLastRetro } from './window.mjs'
 import { create, gitIn, remove as removeWorktree, worktreePath, worktrees } from './workspace.mjs'
 
@@ -152,7 +152,7 @@ export function retroContext(rootArg, { id, date, scope, start = false, deps = {
     if (!existsSync(statePath(main, resolved))) refuse(`no retrospective ${resolved} is started in ${main}; run retro.mjs start first`)
     day = readState(main, resolved).date
   }
-  const home = deps.home ?? claudeHome()
+  const home = deps.home ?? defaultHome()
   const core = { ...CORE, home }
   return {
     main,
