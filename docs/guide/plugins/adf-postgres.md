@@ -22,7 +22,7 @@
 3. Put `config.prefix` and `_` before it.
 4. Cut it so that the whole name stays within the 63-byte identifier limit of Postgres. The whole name includes `_` and the first 8 hex digits of the SHA-256 of the full branch name.
 
-The hash keeps two long branches with a common prefix apart. Teardown finds the same name again. A `null` branch, which is a detached HEAD, is refused: it gives no name.
+The hash keeps two long branches with a common prefix apart. Teardown finds the same name again. A `null` branch is a detached HEAD, which gives no name. Provision refuses it. Teardown with a `null` branch drops nothing and returns the note `no branch was given, so no database was dropped.`
 
 The server and the credentials are those of the main checkout. The plugin takes the value of `config.url.key` in `config.url.file` of the main checkout, with the database `postgres`. You configure nothing new.
 

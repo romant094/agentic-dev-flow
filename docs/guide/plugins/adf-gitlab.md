@@ -44,7 +44,7 @@ The plugin never merges and never sets a reviewer, label or milestone. Integrati
 
 ### When `glab` is missing
 
-When `glab` is missing or not logged in, every operation but `push` degrades. Nothing is pushed or sent. The result carries a `hint`, which is the install or login command, and a `fallback` to run later.
+When `glab` is missing or not logged in, every operation but `push` degrades. Nothing is pushed or sent. The result carries a `hint`, which is the install or login command. The `open`, `finalize` and `state` operations also carry a `fallback` to run later. `check` carries no `fallback`.
 
 A degraded `finalize` saves its input to a file outside the repository. Its fallback reruns `finalize` on that file, so the merge with the blocks of other changes still happens.
 

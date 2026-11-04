@@ -185,7 +185,7 @@ A plan is `start-<UTC stamp>` or `handoff-<UTC stamp>`. It is a file in `stateDi
 
 For a refused plan, run `start` or `handoff` again without `apply` to get a new plan.
 
-Each write of an issue is its own row. The `step` is `transition`, `assignee` or `comment`. Each row checks the status it expects before it runs. The comment of a partial hand-off checks none.
+Each write of an issue is its own row. The `step` is `transition`, `assignee` or `comment`. Each row checks the status it expects before it runs. The comment of a partial hand-off checks no status when the plan does not move the issue. When the plan routes the issue back to `statuses.initial`, the comment row expects that status.
 
 A rerun with the same plan id resumes from the state of each row. A row that is done is not sent again. So a hand-off that failed after its transition posts only the comment. A comment row also reads the comments of the issue. It posts nothing when a comment with the same body is there. An issue that someone moved by hand since the plan was built is skipped as drifted, not failed.
 

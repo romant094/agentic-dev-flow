@@ -70,9 +70,9 @@ The plugin prints one JSON object. Its `state` is `done`, `degraded` or `refused
 | `check` | `{ repository: "owner/name" }` |
 | `file` | `{ repository, host, retro, findings, debt }` |
 
-A finding is `{ id, title, class, changes, evidence, cost, caughtWhere, plugin, version, body }`. A debt record is `{ id, title, plugin, pluginVersion, change, class, source, body }`.
+A finding is `{ id, title, class, changes, evidence, cost, caughtWhere, plugin, version, body }`. A debt record is `{ id, title, plugin, pluginVersion, change, class, source, body }`. The fields `change` and `source` are optional: each may be absent, `null` or empty.
 
-The plugin refuses an unknown or missing field before any call. With no findings and no debt, `file` is done with `issues: []` and calls nothing.
+The plugin refuses an unknown field, or a missing required field, before any call. With no findings and no debt, `file` is done with `issues: []` and calls nothing.
 
 ## Points it provides
 

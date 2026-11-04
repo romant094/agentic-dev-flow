@@ -59,7 +59,7 @@ The tree has no status, assignee, priority or estimate column. The tree owns the
 
 ### Resolved debt
 
-When a change resolves an entry, `/adf:archive` moves its row to `resolved.md` of the block. The row gets two more columns, `Resolved by` and `Date`. Later changes read how the debt was fixed. Open-debt counts ignore a resolved row.
+When a change resolves an entry, `/adf:archive` moves its row to `resolved.md` of the block. The `resolved.md` table has the columns `ID`, `Title`, `Anchors`, `Class`, `Tracker`, `Resolved by` and `Date`. It drops the `Source` and `Precedent` columns of the block index. Later changes read how the debt was fixed. Open-debt counts ignore a resolved row.
 
 ### ADF records
 
