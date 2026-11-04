@@ -13,13 +13,14 @@ Every iteration's plan lists the steps an LLM would do, and moves each one a scr
 
 1. `npm test`: the unit tests and `scripts/check-lessons.mjs`, which proves every rule of the
    origin is ported with evidence, rejected, or pending on a named iteration.
-2. `npm run parity -- <origin project root>`: every parity tool in `scripts/parity/` runs the
-   ported script and the origin's script (or the openspec CLI) on a copy of the origin
-   project's data and reports every difference. A ported script gets its parity tool in the
-   iteration that ports it. A difference is a defect unless the lessons file records it as a
-   deliberate change.
+2. Parity is retired from the release steps since iteration 16 (the developer's decision,
+   2026-11-04). The parity tools in `scripts/parity/` compared each ported script with the
+   origin's own script at the origin's `HEAD`; the switch (iteration 15) removed the origin's
+   flow, so the comparison has nothing to run against. The harness stays in the repository as
+   the record of what was compared. A release is checked by `npm test` and by a run of the
+   changed commands in a scratch project.
 
-The iteration record's `## Result` cites both.
+The iteration record's `## Result` cites the checks it ran.
 
 ## Iterations
 
