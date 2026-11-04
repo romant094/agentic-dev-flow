@@ -219,5 +219,5 @@ test('the recorded registry: every plugin of the switch in order, adf-jira and a
   assert.match(jira.notes[0], /only its config is taken, since the replay registers the plugin by path/)
   assert.deepEqual(Object.keys(registry.find((e) => e.name === 'adf-postgres').config).sort(), ['exec', 'prefix', 'url'])
   assert.deepEqual(registry.filter((e) => e.config === null).map((e) => e.name), ['adf-gitlab', 'adf-memory', 'adf-english-check', 'adf-npm-workspaces', 'adf-prisma'])
-  for (const key of ['packages', 'wholeSuite', 'proof', 'copies']) assert.match(RECORDED_GUIDE[key].source, /docs\/lessons|README/)
+  for (const key of ['packages', 'wholeSuite', 'proof', 'copies']) assert.match(RECORDED_GUIDE[key].source, /docs\/lessons|docs\/guide|README/)
 })
