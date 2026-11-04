@@ -135,13 +135,13 @@ other host has no `upstream` provider, and the retrospective skips the step.
 Install the package at user scope, with its dependency, Superpowers:
 
 ```
-codex plugin marketplace add romant094/agentic-dev-flow --ref v0.19.0
+codex plugin marketplace add romant094/agentic-dev-flow --ref v0.20.0
 codex plugin marketplace add anthropics/claude-plugins-official
 codex plugin add superpowers@claude-plugins-official
 codex plugin add adf@agentic-dev-flow
 ```
 
-Use the tag of the release you want in `--ref`. Node 20 or later is the only other prerequisite.
+Codex support starts at v0.20.0: use v0.20.0 or a later tag in `--ref`. Node 20 or later is the only other prerequisite.
 
 Then, in the host project:
 
@@ -158,6 +158,9 @@ To send the maintainer a run log, run this in the project's main directory:
 ```
 node <adf root>/scripts/runlog.mjs collect
 ```
+
+`<adf root>` is the directory of the installed `adf` plugin. In Codex it is
+`~/.codex/plugins/cache/agentic-dev-flow/adf/<version>`.
 
 It writes `.adf/runlog/<date>-<runtime>.tar.gz`. The archive holds whole sessions, the
 changes' records, the registry and `versions.json`. It never holds env files, `auth.json`,
