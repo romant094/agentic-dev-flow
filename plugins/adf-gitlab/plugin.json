@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "adf-gitlab",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "GitLab forge for the Agentic Dev Flow: pushes a change branch, opens its merge request and finalizes it through glab",
   "author": {
     "name": "Anton Romankov"

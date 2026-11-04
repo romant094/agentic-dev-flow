@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "adf-postgres",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A disposable PostgreSQL database for each change and group worktree of the Agentic Dev Flow: creates it from the branch name, points the worktree's env file at it, and drops it at teardown",
   "author": {
     "name": "Anton Romankov"

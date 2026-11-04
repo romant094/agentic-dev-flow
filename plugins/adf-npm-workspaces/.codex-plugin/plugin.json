@@ -1,6 +1,6 @@
 {
   "name": "adf-npm-workspaces",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Provisions an ADF worktree of an npm-workspaces monorepo: its own node_modules, linked to the main checkout's third-party packages and to its own workspace packages; blocks npm install in a linked worktree",
   "author": {
     "name": "Anton Romankov"

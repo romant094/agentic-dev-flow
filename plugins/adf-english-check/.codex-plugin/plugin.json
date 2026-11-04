@@ -1,6 +1,6 @@
 {
   "name": "adf-english-check",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Stops an agent's git commit when the files in scope hold non-English text",
   "author": {
     "name": "Anton Romankov"

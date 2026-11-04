@@ -5,7 +5,7 @@
     "name": "Anton Romankov"
   },
   "metadata": {
-    "version": "0.19.0"
+    "version": "0.20.0"
   },
   "allowCrossMarketplaceDependenciesOn": [
     "claude-plugins-official"
@@ -14,55 +14,55 @@
     {
       "name": "adf",
       "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
-      "version": "0.19.0",
+      "version": "0.20.0",
       "source": "./plugins/adf"
     },
     {
       "name": "adf-gitlab",
       "description": "ADF forge plugin for GitLab: pushes a change branch and keeps its merge request through glab",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "source": "./plugins/adf-gitlab"
     },
     {
       "name": "adf-english-check",
       "description": "Blocks an agent's git commit when a file in scope holds non-English prose",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "source": "./plugins/adf-english-check"
     },
     {
       "name": "adf-memory",
       "description": "ADF knowledge plugin: an indexed wiki memory, a log rotated monthly, and the ingest, query and lint workflows",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "source": "./plugins/adf-memory"
     },
     {
       "name": "adf-maintainer",
       "description": "Upstream for the Agentic Dev Flow maintainer: files a retrospective's flow findings and the open ADF debt as GitHub issues through gh",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "source": "./plugins/adf-maintainer"
     },
     {
       "name": "adf-npm-workspaces",
       "description": "ADF provisioning for npm workspaces: a worktree's own node_modules with its workspace links inside the worktree, and a guard against npm install in a worktree",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "source": "./plugins/adf-npm-workspaces"
     },
     {
       "name": "adf-postgres",
       "description": "ADF provisioning for PostgreSQL: a database per worktree, named from its branch, its URL in the worktree's env file, dropped at teardown",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "source": "./plugins/adf-postgres"
     },
     {
       "name": "adf-prisma",
       "description": "ADF provisioning for Prisma: an own generated client, migrations and seed into a worktree's own database, and the migration-order check at verify",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "source": "./plugins/adf-prisma"
     },
     {
       "name": "adf-jira",
       "description": "ADF tracker for Jira: gathers issues at propose, starts them and hands them to the tester after the merge, plus guarded two-phase Jira skills",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "source": "./plugins/adf-jira"
     }
   ]
