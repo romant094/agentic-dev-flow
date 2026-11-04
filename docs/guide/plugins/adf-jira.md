@@ -170,7 +170,7 @@ With `apply: <plan id>`, the plan runs.
 | State | Fields | The rows |
 |---|---|---|
 | `taken` | `done`, `test` (lists); `commit` | the route to `statuses.handoff`, the comment, then the tester (`JIRA_QA`) as assignee; every action on the issue first, the assignee last |
-| `partial` | `done`, `test`, `remains` (lists); `commit` | the route back to `statuses.initial`, never through `statuses.handoff`, then the comment; with no `statuses.initial`, or no such route, the comment only and the status stays, and `unmoved` in the plan names why |
+| `partial` | `done`, `test`, `remains` (lists); `commit` | the route back to `statuses.initial`, never through `statuses.handoff`, then the comment; with no `statuses.initial`, the comment only and the status stays; `check` then notes that `config.statuses.initial` is unset; with `statuses.initial` set but no route back, the comment only and the status stays, and `unmoved` in the plan names why |
 | `not-reproduced` | `tried`, `commit`; `test` | as `taken`: the comment says the issue does not reproduce on that commit, and the tester retests it |
 
 The required fields are the core's. The core sends every text field as a list of one-line texts. The plugin checks them again before it sends anything. It refuses three things: a field that is not such a list, a text that holds a link or a URL, and a `commit` that is not a commit hash. The core checks the wording. The plugin renders the markup.

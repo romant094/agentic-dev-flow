@@ -251,7 +251,10 @@ Calls made in the design, open to the developer's review:
   40 pages, which is every page of the guide. Six read-only agents replied. `check` accepted all
   six replies: `ok: true`, 0 errors.
 - Findings: concepts 1, plugins 4, cycle 0, extension-points 0, getting-started 0, projects 0.
-- Rerun of the concepts and plugins packages after the fixes: <pending>
+- Rerun at a1e3b18 of concepts and plugins (from v0.20.0): concepts 0; plugins 2 new findings (adf-memory `pages`/`excluded` are counts; adf-postgres teardown checks a non-empty config for every worktree) — fixed in the final fix wave.
+- Final whole-branch review (opus): ready with fixes — 5 Important, 16 Minor; fixed in 4e20bac, e2d9dbc, 0adada1 (scoped re-review: all addressed).
+- guide-review of the pages the fix wave changed (`input --from a1e3b18`, 20 pages, 6 packages, all replies valid): 2 findings (registry.md `points` warning; adf-jira partial hand-off with no initial status) — fixed in the last commit of the branch.
+- Found: plugins/adf/contract/README.md:271 says the registry check warns about an entry with no `points`; the code does not (registry.mjs:383-410). Not changed in this iteration.
 
 ### Findings and fixes
 
