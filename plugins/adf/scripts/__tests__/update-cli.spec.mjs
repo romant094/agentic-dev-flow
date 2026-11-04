@@ -291,7 +291,9 @@ test('cleanup refuses a directory plan did not make', () => {
   const clones = { old: join(other, 'old'), new: join(other, 'new'), repo: join(other, 'repo') }
   assert.throws(() => run(['cleanup', '--clones', JSON.stringify(clones)]), /not a temporary directory plan made/)
   assert.equal(existsSync(other), true)
-  const split = { old: join(mkdtempSync(join(tmpdir(), 'adf-update-')), 'old'), new: join(other, 'new'), repo: join(other, 'repo') }
+  const made = mkdtempSync(join(tmpdir(), 'adf-update-'))
+  const split = { old: join(made, 'old'), new: join(other, 'new'), repo: join(other, 'repo') }
   assert.throws(() => run(['cleanup', '--clones', JSON.stringify(split)]), /not a temporary directory plan made/)
+  run(['cleanup', '--clones', JSON.stringify({ old: join(made, 'old'), new: join(made, 'new'), repo: join(made, 'repo') })])
   assert.throws(() => run(['cleanup']), UsageError)
 })

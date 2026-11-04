@@ -1,13 +1,22 @@
 // /adf:update end to end on a fixture marketplace repository with two tags: `plan` clones the
 // two releases and lists what changed, `apply` writes the update on its own branch, `commit`
 // finishes an update whose merge left conflicts.
-import { test } from 'node:test'
+import { after, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { run } from '../update.mjs'
+import { run as runCli } from '../update.mjs'
+
+// plan leaves its clones for apply; the tests remove them at the end.
+const made = []
+function run(argv, opts) {
+  const result = runCli(argv, opts)
+  if (argv[0] === 'plan' && result?.clones) made.push(dirname(result.clones.repo))
+  return result
+}
+after(() => made.forEach((dir) => rmSync(dir, { recursive: true, force: true })))
 
 const git = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 
