@@ -1,10 +1,10 @@
 {
   "name": "adf-jira",
-  "contract": "1.7",
+  "contract": "1.11",
   "provides": {
     "tracker": {
       "script": "scripts/tracker.mjs",
-      "operations": ["check", "gather", "start", "handoff"]
+      "operations": ["check", "gather", "bugs", "start", "handoff"]
     }
   }
 }

@@ -110,6 +110,7 @@ The plugin prints one JSON object. Its `state` is `done`, `degraded` or `refused
 |---|---|---|
 | `check` | `{}` | `tool: "ready"`, `account` (the login of the token, from `/rest/api/2/myself`), `sources` (name, layer and length of each env value), `profile.discoveredAt` |
 | `gather` | `keys` (issue keys), `text`, or both; `change`; `stateDir` (absolute) | `items` and `notes`; one JSON file for each issue in `stateDir` |
+| `bugs` | `change`; `stateDir` (absolute) | `items` and `notes`; the items have the shape of `gather`'s, every one of kind `bug`, open and not excluded |
 | `start` | `items: [{ key, corrections, answers }]`, `stateDir`; `apply` (a plan id) | without `apply`: `held: true`, `plan`, `file`, `preview`; with it: `applied` (keys), `skipped` and `failed` (`{ key, reason }`), `aborted` |
 | `handoff` | `items: [{ key, state, fields }]`, `mr: { url } \| null`, `stateDir`; `apply` | as `start` |
 
@@ -145,6 +146,12 @@ Each item is `{ key, url, kind, subtask, title, status, open, parent, subtasks, 
 - `branchRank` orders the branch key: a named sub-task first, then the lowest sub-task, then the lowest bug (a sub-bug too), then a named task.
 - Among named issues, the first in `keys` wins. Only hits of the text search tie, and a tie is for the developer to decide.
 - An excluded issue and an epic have a `null` rank.
+
+### The bugs operation
+
+`bugs` finds the open bugs of the allowlisted projects. The bug issue types are the issue types of `discovered.json` whose name contains "bug". It searches for open issues of those types, at most 20, in key order. It then reads each issue as `gather` does, but reads no related issue. It returns the items of kind `bug` that are open and not excluded.
+
+With no bug issue type in the profile, `bugs` returns no item and the note "the profile has no bug issue type".
 
 ### The start operation
 
@@ -257,4 +264,4 @@ The plugin never deletes an issue or a comment. The engine has no delete path. T
 
 ## Points it provides
 
-- [`tracker`](../extension-points/contract/tracker.md): the operations `check`, `gather`, `start` and `handoff`.
+- [`tracker`](../extension-points/contract/tracker.md): the operations `check`, `gather`, `bugs`, `start` and `handoff`.

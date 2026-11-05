@@ -24,7 +24,7 @@
 //   item     { source: tracker | debt, key, title, kind, state: candidate | taken | partial |
 //              excluded, reason, verdict, check, flags, ... }
 //            tracker: url, status, open, parent, links, branchToken, branchRank, file
-//            debt:    block, class, anchors, tracker, files, matched (key | id | text), precedent?
+//            debt:    block, class, anchors, tracker, files, matched (key | id | text | bugs), precedent?
 //   precedent { key, title, class, block, anchors, tracker, resolvedBy, date, matched (key | id | text
 //              | precedent) }: resolved debt, a row of a block's resolved.md, never an item; the
 //              past fix its archived change (resolvedBy) holds, for the issue check to read
@@ -47,7 +47,7 @@ import { mainCheckout } from './installed.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { readDebtRoot, readRegistry } from './registry.mjs'
 import { checkouts } from './resolve.mjs'
-import { callRole, knowledgeReport, TRACKER_SKIPPED, trackerReport } from './roles.mjs'
+import { callRole, knowledgeReport, provider, TRACKER_SKIPPED, trackerReport } from './roles.mjs'
 import { checkFields, handoffFields, heldWrite as trackerHold, trackerCall as tracker } from './tracker.mjs'
 import { worktreePath } from './workspace.mjs'
 
@@ -228,7 +228,7 @@ function debtIds(main) {
   return new Set([...entries, ...resolved].map((e) => e.id))
 }
 
-function debtItems(main, { keys, words }) {
+function debtItems(main, { keys, words, bugs = false }) {
   const root = readDebtRoot(main)
   if (!root) return { store: null, items: [], precedents: [] }
   const tree = join(main, root)
@@ -236,7 +236,8 @@ function debtItems(main, { keys, words }) {
   const match = (e) => (e.tracker && keys.has(e.tracker) ? 'key' : keys.has(e.id) ? 'id' : matchesPhrase(e.title, words) ? 'text' : null)
   const items = []
   for (const e of entries) {
-    const matched = match(e)
+    // With bugs, every open defect is an item; the resolved entries keep to the other matches.
+    const matched = match(e) ?? (bugs && e.class === 'defect' ? 'bugs' : null)
     if (!matched) continue
     const block = blocks.find((b) => b.id === e.block)
     items.push({
@@ -296,7 +297,7 @@ const KEPT = ['state', 'reason', 'verdict', 'check']
 
 function trackerLine(t) {
   if (t.state === 'skipped') return `Tracker: skipped for this change (${t.reason}).`
-  if (t.state === 'none') return trackerReport('gather', t)
+  if (t.state === 'none') return t.noBugs ?? trackerReport('gather', t)
   if (t.state === 'degraded') return `${t.report} Fix it and gather again, or gather again with --skip-tracker "<reason>".`
   return t.report
 }
@@ -304,14 +305,16 @@ function trackerLine(t) {
 function debtLine(store, items) {
   if (!store) return 'Debt: none; the registry sets no debt.root.'
   if (items.length === 0) return 'Debt: no entry matches.'
-  return `Debt: ${items.map((i) => `${i.key} (${i.matched === 'key' ? `tracker key ${i.tracker}` : i.matched === 'id' ? 'debt id' : 'phrase'})`).join(', ')}.`
+  return `Debt: ${items.map((i) => `${i.key} (${i.matched === 'key' ? `tracker key ${i.tracker}` : i.matched === 'id' ? 'debt id' : i.matched === 'bugs' ? 'open defect' : 'phrase'})`).join(', ')}.`
 }
 
 const precedentLine = (p) => `Precedent: ${p.key}, ${p.title}, resolved by \`${p.resolvedBy}\` on ${p.date}.`
 
 // keys: tracker keys or debt ids the developer named; text: a phrase; skipTracker: the reason
-// the developer gave for working without the tracker this time, after a degraded check.
-export function gather(root, change, { keys = [], text: phrase = null, skipTracker = null, core }) {
+// the developer gave for working without the tracker this time, after a degraded check; bugs:
+// the open bugs of the tracker and the open defects of the debt, in place of keys and a phrase.
+export function gather(root, change, { keys = [], text: phrase = null, skipTracker = null, bugs = false, core }) {
+  if (bugs && (keys.length > 0 || phrase)) refuse('--bugs takes no keys and no phrase')
   const { main, scope: previous } = load(root, change)
   for (const k of keys) if (!SCOPE_KEY.test(k)) refuse(`"${k}" is not a key: a key holds no space, colon, pipe or backtick`)
   const stateDir = trackerDir(main, change)
@@ -328,25 +331,30 @@ export function gather(root, change, { keys = [], text: phrase = null, skipTrack
     if (check.state === 'refused') refuse(trackerReport('check', check), { tracker: check })
     if (check.state === 'none') t = { state: 'none', plugin: null, notes: [], ...(check.absent ? { absent: check.absent } : {}), report: trackerReport('gather', check) }
     else if (check.state === 'degraded') t = { state: 'degraded', plugin, tool: check.tool ?? null, hint: check.hint ?? null, notes: [], report: trackerReport('check', check) }
-    else if (trackerKeys.length === 0 && !phrase) t = { state: 'done', plugin, account: check.account ?? null, notes: ['no tracker key and no phrase; the tracker was not searched'], report: trackerReport('check', check) }
+    else if (!bugs && trackerKeys.length === 0 && !phrase) t = { state: 'done', plugin, account: check.account ?? null, notes: ['no tracker key and no phrase; the tracker was not searched'], report: trackerReport('check', check) }
     else {
       mkdirSync(stateDir, { recursive: true })
-      const got = tracker(main, 'gather', { ...(trackerKeys.length ? { keys: trackerKeys } : {}), ...(phrase ? { text: phrase } : {}), change, stateDir }, core)
-      if (got.state === 'refused') refuse(trackerReport('gather', got), { tracker: got })
-      if (got.state === 'degraded') t = { state: 'degraded', plugin, tool: got.tool ?? null, hint: got.hint ?? null, notes: [], report: trackerReport('gather', got) }
-      else if (got.state === 'none') t = { state: 'none', plugin, notes: [], report: trackerReport('gather', got) }
+      const operation = bugs ? 'bugs' : 'gather'
+      const got = tracker(main, operation, bugs ? { change, stateDir } : { ...(trackerKeys.length ? { keys: trackerKeys } : {}), ...(phrase ? { text: phrase } : {}), change, stateDir }, core)
+      if (got.state === 'refused') refuse(trackerReport(operation, got), { tracker: got })
+      if (got.state === 'degraded') t = { state: 'degraded', plugin, tool: got.tool ?? null, hint: got.hint ?? null, notes: [], report: trackerReport(operation, got) }
+      else if (bugs && got.state === 'none' && got.reason === 'not-provided') {
+        const contract = provider(main, 'tracker', core)?.declaration.contract
+        t = { state: 'none', plugin, notes: [], noBugs: `Tracker bugs: none; the tracker plugin has no bugs operation (contract ${contract}); name a key or a phrase.` }
+        t.report = t.noBugs
+      } else if (got.state === 'none') t = { state: 'none', plugin, notes: [], report: trackerReport('gather', got) }
       else {
         raw = Array.isArray(got.items) ? got.items : []
         // The check's notes go with the gather's: a ready check says them only here.
         const notes = [...(check.notes ?? []), ...(got.notes ?? [])]
-        t = { state: 'done', plugin, account: check.account ?? null, notes: notes.map(text), report: trackerReport('gather', { ...got, notes }) }
+        t = { state: 'done', plugin, account: check.account ?? null, notes: notes.map(text), report: trackerReport(operation, { ...got, notes }) }
       }
     }
   }
   const trackerItems = raw.map((r) => trackerItem(main, change, r))
   const keySet = new Set([...keys, ...trackerItems.map((i) => i.key)])
-  const words = phraseWords(phrase ?? (keys.length ? '' : change.replace(/-/g, ' ')))
-  const debt = debtItems(main, { keys: keySet, words })
+  const words = bugs ? [] : phraseWords(phrase ?? (keys.length ? '' : change.replace(/-/g, ' ')))
+  const debt = debtItems(main, { keys: keySet, words, bugs })
   const items = [...trackerItems, ...debt.items]
   const seen = new Set()
   for (const i of items) {
@@ -380,7 +388,7 @@ export function gather(root, change, { keys = [], text: phrase = null, skipTrack
   const scope = {
     version: 1,
     change,
-    from: { keys, text: phrase },
+    from: { keys, text: phrase, ...(bugs ? { bugs: true } : {}) },
     tracker: t,
     items,
     precedents: debt.precedents,

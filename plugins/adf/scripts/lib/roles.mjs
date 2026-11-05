@@ -315,7 +315,7 @@ export function trackerReport(operation, result) {
   if (result.state === 'refused') return `${label}: refused; ${result.error ?? 'no reason given'}`
   if (result.state === 'degraded') return `${label}: not done (${result.tool ?? 'degraded'}). ${result.hint ?? ''}`.trim()
   if (operation === 'check') return [`Tracker: ${result.tool ?? 'ready'}${result.account ? ` as ${result.account}` : ''}`, ...(result.notes ?? []).map((n) => `  note: ${n}`)].join('\n')
-  if (operation === 'gather') {
+  if (operation === 'gather' || operation === 'bugs') {
     const items = Array.isArray(result.items) ? result.items : []
     return [`${label}: ${items.length} item(s)${items.length ? `: ${items.map((i) => i?.key).join(', ')}` : ''}`, ...(result.notes ?? []).map((n) => `  note: ${n}`)].join('\n')
   }
