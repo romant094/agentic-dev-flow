@@ -50,7 +50,7 @@ Install Node 20 or later. Then:
          "source": {
            "source": "git",
            "url": "https://github.com/romant094/agentic-dev-flow.git",
-           "ref": "v0.20.0"
+           "ref": "v0.21.0"
          }
        }
      },
@@ -81,7 +81,7 @@ The install also installs the dependency, Superpowers. The full steps are in [In
 Install Node 20 or later. Then run these commands in a shell:
 
 ```
-codex plugin marketplace add romant094/agentic-dev-flow --ref v0.20.0
+codex plugin marketplace add romant094/agentic-dev-flow --ref v0.21.0
 codex plugin marketplace add anthropics/claude-plugins-official
 codex plugin add superpowers@claude-plugins-official
 codex plugin add adf@agentic-dev-flow

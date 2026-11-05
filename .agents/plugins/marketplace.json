@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "adf",
-      "version": "0.20.0",
+      "version": "0.21.0",
       "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
       "source": {
         "source": "local",
@@ -20,7 +20,7 @@
     },
     {
       "name": "adf-gitlab",
-      "version": "0.6.1",
+      "version": "0.7.0",
       "description": "GitLab forge for the Agentic Dev Flow: pushes a change branch, opens its merge request and finalizes it through glab",
       "source": {
         "source": "local",
@@ -118,7 +118,7 @@
     },
     {
       "name": "adf-jira",
-      "version": "0.5.1",
+      "version": "0.6.0",
       "description": "Jira tracker for the Agentic Dev Flow: gathers issues at propose, starts them and hands them to the tester after the merge, plus guarded two-phase Jira skills for bulk changes, comments, epics, tasks, worklogs and the debt mirror",
       "source": {
         "source": "local",

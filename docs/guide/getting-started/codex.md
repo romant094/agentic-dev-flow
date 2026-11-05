@@ -16,7 +16,7 @@ The install is at user scope: it applies to every project on the machine.
 Run these commands in a shell:
 
 ```
-codex plugin marketplace add romant094/agentic-dev-flow --ref v0.20.0
+codex plugin marketplace add romant094/agentic-dev-flow --ref v0.21.0
 codex plugin marketplace add anthropics/claude-plugins-official
 ```
 

@@ -5,7 +5,7 @@
     "name": "Anton Romankov"
   },
   "metadata": {
-    "version": "0.20.0"
+    "version": "0.21.0"
   },
   "allowCrossMarketplaceDependenciesOn": [
     "claude-plugins-official"
@@ -14,13 +14,13 @@
     {
       "name": "adf",
       "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
-      "version": "0.20.0",
+      "version": "0.21.0",
       "source": "./plugins/adf"
     },
     {
       "name": "adf-gitlab",
       "description": "ADF forge plugin for GitLab: pushes a change branch and keeps its merge request through glab",
-      "version": "0.6.1",
+      "version": "0.7.0",
       "source": "./plugins/adf-gitlab"
     },
     {
@@ -62,7 +62,7 @@
     {
       "name": "adf-jira",
       "description": "ADF tracker for Jira: gathers issues at propose, starts them and hands them to the tester after the merge, plus guarded two-phase Jira skills",
-      "version": "0.5.1",
+      "version": "0.6.0",
       "source": "./plugins/adf-jira"
     }
   ]

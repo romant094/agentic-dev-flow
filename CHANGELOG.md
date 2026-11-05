@@ -6,6 +6,27 @@ The versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A version is the package version in `.claude-plugin/marketplace.json`, and its tag is `v<version>`.
 It lists the changes to the flow and its plugins. A change to the documentation alone is not listed and is not a release.
 
+## [0.21.0] — 2026-11-05
+
+### Added
+
+- `/adf:quick`: a short cycle for a fix that changes no behaviour. It runs from a tracker key, a phrase or the open bugs to a merge request, then `/adf:land`. It writes one `quick.md`, runs only the affected tests and one review round.
+- The quick task can gather the tracker and the debt store. It drops large items, an agent estimates the rest, and the developer selects.
+- `## Affected tests command` in the planning guide. `/adf:init` proposes it, and `quick.mjs tests` runs it on the changed files of the branch.
+- Contract 1.11: the tracker operation `bugs`. `scope.mjs gather --bugs` lists the open bugs and the open debt defects.
+- `adf-jira` 0.6.0: the `bugs` operation, the newest updated bugs first.
+- Contract 1.10: the `forge` operations `open` and `finalize` take `links`. The merge request description starts with a link to each tracker issue and debt entry of the scope.
+- `adf-gitlab` 0.7.0: renders the links. A debt entry links to its file at the merge-base commit.
+- The metrics record names its cycle, `full` or `quick`. `/adf:retro` reports quick changes as their own group.
+
+### Changed
+
+- The core schema is named `full`. A change whose metadata says `adf` reads as `full`.
+- The merge request body no longer has to name the scope keys. The archive key check counts the keys of the links.
+- A forge plugin declared before contract 1.10 gets the links at the top of the body at `finalize`.
+- The retro aggregates and the delta cover full changes only.
+- `/adf:land` gives the tester of a quick change its `quick.md`.
+
 ## [0.20.0] — 2026-11-04
 
 ### Added

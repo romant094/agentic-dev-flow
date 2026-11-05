@@ -28,7 +28,7 @@ Pin the release in the project's `.claude/settings.json`. The pin is the entry `
       "source": {
         "source": "git",
         "url": "https://github.com/romant094/agentic-dev-flow.git",
-        "ref": "v0.20.0"
+        "ref": "v0.21.0"
       }
     }
   },
