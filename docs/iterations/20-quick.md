@@ -59,13 +59,19 @@ the flags, the separate planner and executor agents, the work on the current bra
 10. **With no key and no phrase**, the quick task asks for a key or a phrase. With neither, it asks
     the tracker for the project's open bugs and shows them for the selection. This is a new
     tracker operation and a contract change; `adf-jira` implements it.
-11. **Metrics are mandatory.** Every quick task writes its metrics record, so that its speed and
+11. **Two cycles of one flow: `full` and `quick`.** The core's schemas are named by cycle, `full`
+    (the cycle from propose to archive) and `quick`; prose says "the full cycle" and "the quick
+    cycle". The commands stay `/adf:propose` and `/adf:quick`.
+12. **Metrics are mandatory.** Every quick task writes its metrics record, so that its speed and
     cost can be analysed and compared with the main cycle.
 
 ## Calls made by the designer, not the developer
 
 - **The quick task is a change of its own schema.** It lives in `openspec/changes/<name>/` like any
-  change, with `meta.schema` set to `quick`. Today every script loads the one schema directory
+  change, with `meta.schema` set to `quick`. The core's one schema today is named `adf`
+  (`schema/schema.json:2`) and that name is in the metadata of every change written so far; it is
+  renamed `full`, and `adf` read in a change's metadata means `full`, so no change in flight or in
+  an archive is migrated. Today every script loads the one schema directory
   (`lib/schema.mjs:9`) and nothing reads `meta.schema` (`lib/changes.mjs:79`); `loadSchema` takes
   the change's schema from it, and every caller passes the change's (`forge.mjs`, `propose.mjs`,
   `plan.mjs`, `specs.mjs`, `lib/archive.mjs`). The `quick` schema's one artifact is `quick.md`:
@@ -116,8 +122,8 @@ the flags, the separate planner and executor agents, the work on the current bra
   the fix shows missing goes to the debt store.
 - **The metrics record.** The same `metrics.json` and schema as the main cycle
   (`contract/metrics-format.md`), written by `metrics.mjs extract` at the end and committed in
-  its own commit. The record names the change's schema (`quick` or `adf`), a new optional
-  top-level key, so a record without it reads as `adf`. The quick task records its phases in the
+  its own commit. The record names the change's cycle in a new optional top-level key
+  `cycle`, `full` or `quick`; a record without it reads as `full`. The quick task records its phases in the
   ledger (`gather`, `estimate`, `code`, `tests`, `review`, `end`), so `activeMinutes.byPhase` and
   `tokens.byPhase` split by them; `timing.tasks` counts the plan's steps in `quick.md`. Groups
   with no source in a quick task (verify, the implementer dispatches) are `null` with their
@@ -146,13 +152,13 @@ the flags, the separate planner and executor agents, the work on the current bra
 
 | # | Step | Check |
 |---|---|---|
-| 1 | Schemas by change: `loadSchema` from `meta.schema` in every caller; the `quick` schema, one artifact `quick.md`, its template and its gates (a plan of at most three steps, a summary before the end) | `schema` and `changes.mjs` unit tests; the `adf` schema's tests unchanged |
+| 1 | Schemas by change: the core's schema renamed `full`, with `adf` read as `full`; `loadSchema` from `meta.schema` in every caller; the `quick` schema, one artifact `quick.md`, its template and its gates (a plan of at most three steps, a summary before the end) | `schema` and `changes.mjs` unit tests; the `full` schema's tests unchanged but for the name |
 | 2 | `quick.mjs`: the large-item filter over `scope.mjs gather`, the estimate input, the reply check and the verdicts it records for `scope.mjs start` | unit tests on gathered fixtures |
 | 2a | The `bugs` operation: contract, `scope.mjs gather --bugs`, the `adf-jira` provider | contract and `scope.spec.mjs` tests; `adf-jira` tests on a recorded reply |
 | 3 | `## Affected tests command` in the planning guide, `/adf:init`'s proposal of it, and the script that runs it on the branch's changed files | unit tests |
 | 4 | The review of a quick change with `--change` and the branch as its range, one fix round | `review.spec.mjs` |
 | 5 | The end: the archive's steps for a quick change, the skipped ones recorded; `mrInput` from `quick.md` | `archive.spec.mjs` |
-| 5a | Metrics: the record's schema key, the quick phases in the ledger, `timing.tasks` from `quick.md`; `/adf:retro` reports quick changes as their own group | `metrics.spec.mjs`, `retro.spec.mjs` |
+| 5a | Metrics: the record's `cycle` key, the quick phases in the ledger, `timing.tasks` from `quick.md`; `/adf:retro` reports quick changes as their own group | `metrics.spec.mjs`, `retro.spec.mjs` |
 | 6 | The `/adf:quick` skill for Claude Code and Codex, with `list` and the resume | the guide's checks |
 | 7 | The guide: `docs/guide/cycle/quick.md` and the cycle page | `check-guide.mjs` |
 | 8 | A behaviour check: one real small fix in a scratch project, with and without a tracker, from the command to land | the run's notes and metrics in the `## Result` |
