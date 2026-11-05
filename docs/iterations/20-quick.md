@@ -88,8 +88,7 @@ the flags, the separate planner and executor agents, the work on the current bra
   text point to, and marks each `quick` or `propose` with its reason. For a taken tracker issue
   the same reply gives the verdict that `scope.mjs start` requires (`lib/scope.mjs:867`:
   `current`, `corrected` or `obsolete`), so propose's per-issue check (`check-input`) is not run.
-- **The open bugs.** A new `tracker` operation `bugs` (the next contract minor version, in
-  `operationSince`): input `change`, `stateDir`; result `items` in the shape of `gather`'s, every
+- **The open bugs.** A new `tracker` operation `bugs` (contract 1.11, in `operationSince`): input `change`, `stateDir`; result `items` in the shape of `gather`'s, every
   item of kind `bug`, open and not `excluded`; `notes`. `adf-jira` maps it to a JQL query of the
   profile's project for open issues of its bug type. `scope.mjs gather --bugs` calls it in place
   of the search and merges the result as it merges `gather`'s; the debt store is gathered as
