@@ -288,7 +288,7 @@ describe('tracker bugs', () => {
     const { code, result } = await call(jira, where, 'bugs', input(where))
     assert.equal(code, 0, JSON.stringify(result))
     const search = jira.calls.find((c) => c.path === '/rest/api/2/search')
-    assert.equal(search.body.jql, 'project in ("PROJ") AND issuetype in ("Bug", "Sub-bug") AND statusCategory != Done ORDER BY key ASC')
+    assert.equal(search.body.jql, 'project in ("PROJ") AND issuetype in ("Bug", "Sub-bug") AND statusCategory != Done ORDER BY updated DESC')
     assert.equal(search.body.maxResults, 20)
   })
 

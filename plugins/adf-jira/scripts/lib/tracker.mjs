@@ -227,7 +227,7 @@ async function bugs(ctx) {
   const types = (facts.issueTypes ?? []).filter((t) => kindOf(t) === 'bug').map((t) => t.name)
   if (types.length === 0) return done({ change, items: [], notes: ['the profile has no bug issue type'] })
   const quote = (list) => list.map((v) => `"${v.replace(/["\\]/g, '\\$&')}"`).join(', ')
-  const jql = `project in (${quote(env.allowedProjects)}) AND issuetype in (${quote(types)}) AND statusCategory != Done ORDER BY key ASC`
+  const jql = `project in (${quote(env.allowedProjects)}) AND issuetype in (${quote(types)}) AND statusCategory != Done ORDER BY updated DESC`
   const found = (await client.search(jql, ['key'], TEXT_SEARCH_LIMIT)).map((i) => i.key)
   const notes = []
   if (found.length === TEXT_SEARCH_LIMIT) notes.push(`the bug search stopped at ${TEXT_SEARCH_LIMIT} issues`)

@@ -36,7 +36,7 @@ With a phrase, the change name comes from the phrase. With keys only, it comes f
 
 ## The context choice
 
-With keys or a phrase, the command asks once whether to gather the context. The context is the tracker search and the debt store. On a yes, it searches with the keys and the phrase. On a no, it uses the keys alone. With no keys and no phrase, it gathers nothing and goes on to the branch.
+With keys or a phrase, the command asks once whether to gather the context. The context is the tracker search and the debt store. On a yes, it searches with the keys and the phrase. On a no, it uses the keys alone. On a no with a phrase and no keys, it gathers nothing and goes on to the branch.
 
 When the tracker is degraded, the command asks you to fix it, or for a reason to go on without it. A reason lets the run take debt entries only.
 
@@ -75,7 +75,7 @@ The `quick-plan` gate refuses a plan of more than three steps and a step with no
 
 ## The affected tests
 
-After the code, the command runs the affected tests. It reads one command from the section `## Affected tests command` of `openspec/planning.md`. It runs the command in the worktree on the files that the change changed. `{files}` in the command stands for those paths. The run goes into a record, `quick/tests.json`, under the change's state directory.
+After the code, the command runs the affected tests. It reads one command from the section `## Affected tests command` of `openspec/planning.md`. It runs the command in the worktree on the files that the change changed. It leaves out the change directory, `openspec/planning.md` and the files under `.superpowers/`. `{files}` in the command stands for those paths. An example command for vitest is `npx vitest related --run --passWithNoTests {files}`. The run goes into a record, `quick/tests.json`, under the change's state directory.
 
 - With no changed file, no test runs.
 - With an empty section, the command waits. The session reads your test runner and proposes one command. On your yes, it writes the command into the section and commits that file alone. On a no, no affected tests run.
@@ -85,7 +85,7 @@ For the other sections of the planning guide, see [Host files](../concepts/host-
 
 ## The one review
 
-A quick change has one review round. The session dispatches the reviewer and fixes each blocking finding itself. It commits each fix and records it. No second round re-reviews the fixes. After the last fix, the affected tests run again. When the branch has no change to review, the record says so. A finding that needs a second round goes to `/adf:propose`. For the rules of the round, see [/adf:review](review.md).
+A quick change has one review round. The session dispatches the reviewer and fixes each blocking finding itself. It commits each fix and records it. No second round re-reviews the fixes. After the last fix, the affected tests run again. When they fail, the session fixes the failure. It then starts a fresh review run with one new round. The `--fresh` option discards the stored round. When the branch has no change to review, the record says so. A finding that needs a second round goes to `/adf:propose`. For the rules of the round, see [/adf:review](review.md).
 
 ## The end
 

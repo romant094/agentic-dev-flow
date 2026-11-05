@@ -38,7 +38,6 @@ Each command takes the change name as an optional argument, except `/adf:propose
 
 The command `/adf:land` is not part of this cycle. It follows the merge of the merge request. For the full cycle with `land`, see [the extension points](../extension-points/README.md).
 
-
 The command [/adf:retro](retro.md) is apart from the cycle. It assesses the flow over archived changes.
 
 ## Two cycles

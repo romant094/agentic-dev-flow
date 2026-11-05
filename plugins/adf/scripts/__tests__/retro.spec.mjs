@@ -150,7 +150,7 @@ function validReply(inp) {
     improvements: [
       { what: 'Small', file: 'a.md', expectedEffect: 'a little', saving: 'coverage.changes' },
       { what: 'Large', file: 'b.md', expectedEffect: 'much', saving: 'changes.one.values.cost.tokens' },
-      { what: 'Middle', file: 'c.md', expectedEffect: 'some', saving: 'aggregates.cost.tokens.mean' }
+      { what: 'Middle', file: 'c.md', expectedEffect: 'some', saving: 'aggregates.quick.cost.tokens.mean' }
     ]
   }
 }
@@ -195,7 +195,8 @@ test('the input carries each change, its signals and every citable key with its 
   assert.equal(inp.values['changes.one.verify.checks.tests'], 'fail')
   assert.equal(inp.values['changes.one.ledger.deviations'], 1)
   assert.equal(inp.values['changes.one.review.dispositions.fixed'], 2)
-  assert.equal(inp.values['aggregates.cost.tokens.mean'], 200)
+  assert.equal(inp.values['aggregates.cost.tokens.mean'], 300, 'the plain aggregates are over the full changes')
+  assert.equal(inp.values['aggregates.quick.cost.tokens.mean'], 100)
   assert.equal(inp.values['coverage.changes'], 2)
   assert.ok(!('changes.two.signals.lateCaught' in inp.values), 'an unmeasured signal has no key')
   assert.deepEqual(inp.keys, Object.keys(inp.values))
@@ -240,7 +241,7 @@ test('a valid reply is accepted: every key resolved, the plugin version filled, 
     r.improvements.map((m) => [m.what, m.saving.value]),
     [
       ['Large', 300],
-      ['Middle', 200],
+      ['Middle', 100],
       ['Small', 2]
     ]
   )

@@ -19,6 +19,7 @@
 // its own (`quality.findings.re-review`), so a key is looked up whole, never split:
 //
 //   aggregates.<metric>.<stat>        stat n, mean, median, perTask, perKloc, iqr, cv
+//   aggregates.quick.<metric>.<stat>  the same over the quick changes; the plain keys are the full ones
 //   delta.<metric>.<stat>             the current value less the previous window's
 //   coverage.records, coverage.changes, candidates.records
 //   changes.<name>.values.<metric>    one change's value of a metric
@@ -196,7 +197,9 @@ export function input(sidecar, { root, home = defaultHome() } = {}) {
   const put = (key, value) => {
     if (value !== null && value !== undefined && (typeof value === 'string' || num(value))) values[key] = value
   }
-  for (const [metric, agg] of Object.entries(sidecar.aggregates ?? {})) for (const stat of STATS) put(`aggregates.${metric}.${stat}`, agg[stat])
+  const { quick, ...full } = sidecar.aggregates ?? {}
+  for (const [metric, agg] of Object.entries(full)) for (const stat of STATS) put(`aggregates.${metric}.${stat}`, agg[stat])
+  for (const [metric, agg] of Object.entries(quick ?? {})) for (const stat of STATS) put(`aggregates.quick.${metric}.${stat}`, agg[stat])
   for (const kind of ['improved', 'worsened', 'unchanged']) for (const row of sidecar.delta?.[kind] ?? []) put(`delta.${row.metric}.${row.stat}`, round4(row.current - row.previous))
   put('coverage.records', sidecar.coverage?.records)
   put('coverage.changes', sidecar.coverage?.changes)

@@ -92,10 +92,10 @@ test('preflight refuses apply on a quick change', async () => {
   writeFileSync(join(dir, '.adf.json'), JSON.stringify({ schema: 'quick', schemaVersion: 1, created: '2026-10-15', base: 'develop' }))
   git(change, 'add', '.')
   git(change, 'commit', '-q', '-m', 'quick')
-  for (const phase of ['apply', 'verify']) {
+  for (const phase of ['apply', 'verify', 'review']) {
     const out = await check(phase, change)
     assert.equal(out.ok, false)
-    assert.equal(out.refusal, 'add-x is a quick change; it has no apply or verify')
+    assert.equal(out.refusal, 'add-x is a quick change; it has no apply, verify or review stage: run /adf:quick add-x')
   }
   assert.equal(existsSync(join(change, '.superpowers', 'sdd')), false, 'nothing is written')
 })

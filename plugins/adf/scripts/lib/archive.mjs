@@ -348,32 +348,37 @@ export function handEditedProse(verifyText) {
 // A quick change has the quick schema; every other change reads as full.
 export const isQuick = (root, change) => schemaOf(root, change).name === 'quick'
 
+// The command that reviews a change again: a quick change has its review inside /adf:quick.
+const reviewCommand = (root, change) =>
+  existsSync(join(root, CHANGES_DIR, change)) && isQuick(root, change) ? `/adf:quick ${change}` : `/adf:review ${change}`
+
 export function checkStep(ctx) {
   return runStep(ctx, 'check', () => {
     const { root, change, git } = ctx
     const record = recordPath(change)
+    const again = reviewCommand(root, change)
     const top = git('read the repository root', 'rev-parse', '--show-toplevel')
     const roots = { change: root, repository: existsSync(top) ? realpathSync(top) : top }
-    if (!existsSync(join(root, record))) refuse(`${record} is missing; run /adf:review ${change}`, { roots })
+    if (!existsSync(join(root, record))) refuse(`${record} is missing; run ${again}`, { roots })
     const parsed = checkRecord(readFileSync(join(root, record), 'utf8'))
-    if (!parsed.ok) refuse(`${record} cannot be read: ${parsed.errors.join('; ')}; run /adf:review ${change} again`, { roots })
+    if (!parsed.ok) refuse(`${record} cannot be read: ${parsed.errors.join('; ')}; run ${again} again`, { roots })
     if (parsed.change && parsed.change !== change) refuse(`${record} is the record of ${parsed.change}, not ${change}`, { roots })
     if (parsed.verdict !== 'PASS') {
-      refuse(`${record} says ${parsed.verdict}; archive proceeds on PASS only: settle each outstanding finding with /adf:review ${change}, where the developer's ruling with a reason accepts a blocking finding`, { verdict: parsed.verdict, roots })
+      refuse(`${record} says ${parsed.verdict}; archive proceeds on PASS only: settle each outstanding finding with ${again}, where the developer's ruling with a reason accepts a blocking finding`, { verdict: parsed.verdict, roots })
     }
     if (git('read the status of the review record', 'status', '--porcelain', '--', record) !== '') refuse(`${record} has uncommitted changes; review.mjs assemble --commit commits it`, { roots })
     if (!git('read the history of the review record', 'log', '-1', '--format=%H', '--', record)) refuse(`${record} is not committed; review.mjs assemble --commit commits it`, { roots })
     const sha = spawnSync('git', ['rev-parse', '--verify', '--quiet', `${parsed.commit}^{commit}`], { cwd: root, encoding: 'utf8' })
-    if (sha.status !== 0) refuse(`the reviewed commit ${parsed.commit} is not in this repository (change root ${roots.change}, repository root ${roots.repository}); run /adf:review ${change} again`, { roots })
+    if (sha.status !== 0) refuse(`the reviewed commit ${parsed.commit} is not in this repository (change root ${roots.change}, repository root ${roots.repository}); run ${again} again`, { roots })
     const commit = sha.stdout.trim()
     if (!gitAsk(root, 'compare the reviewed commit with HEAD', 'merge-base', '--is-ancestor', commit, 'HEAD')) {
-      refuse(`the reviewed commit ${commit.slice(0, 7)} is not an ancestor of HEAD (change root ${roots.change}, repository root ${roots.repository}); run /adf:review ${change} again`, { roots })
+      refuse(`the reviewed commit ${commit.slice(0, 7)} is not an ancestor of HEAD (change root ${roots.change}, repository root ${roots.repository}); run ${again} again`, { roots })
     }
     const after = git('list the commits after the reviewed one', 'log', '--format=%h', `${commit}..HEAD`, '--', '.', `:(exclude)${record}`)
     if (after) {
       const differ = roots.change !== roots.repository ? '; the two roots differ, so pass the worktree top level as --root' : ''
       refuse(
-        `commit(s) ${after.split('\n').join(', ')} after the reviewed commit ${commit.slice(0, 7)} change files other than ${record}: the code changed since it was reviewed; run /adf:review ${change} again (change root ${roots.change}, repository root ${roots.repository}${differ})`,
+        `commit(s) ${after.split('\n').join(', ')} after the reviewed commit ${commit.slice(0, 7)} change files other than ${record}: the code changed since it was reviewed; run ${again} again (change root ${roots.change}, repository root ${roots.repository}${differ})`,
         { roots, stale: after.split('\n') }
       )
     }

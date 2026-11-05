@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { changeMeta } from './changes.mjs'
+import { changeMeta, CHANGES_DIR } from './changes.mjs'
 import { FILES, quote } from './commit.mjs'
 import { dispatchFields, QUICK_ROLES, sddDir, withPreamble } from './dispatch.mjs'
 import { PLANNING_FILE, sectionLine } from './guide.mjs'
@@ -197,7 +197,8 @@ const gitOut = (root, ...args) => {
 }
 
 // The files the change changed: the commits since the merge base with the base branch, then the
-// uncommitted tracked and untracked files, each once, those that still exist.
+// uncommitted tracked and untracked files, each once, those that still exist. The change's own
+// directory, the planning guide and the state under .superpowers/ are not test input.
 function changedFiles(root, change) {
   const hasRef = (name) => spawnSync('git', ['rev-parse', '--verify', '--quiet', name], { cwd: root }).status === 0
   const ref = baseRef(changeMeta(root, change), hasRef)
@@ -211,7 +212,9 @@ function changedFiles(root, change) {
     dirty.push(entry.slice(3))
     if (/[RC]/.test(entry.slice(0, 2))) n++ // a rename or copy names its source in the next entry
   }
-  return [...new Set([...committed, ...dirty].filter(Boolean))].filter((p) => existsSync(join(root, p)))
+  const own = `${CHANGES_DIR}/${change}/`
+  const code = (p) => p && !p.startsWith(own) && p !== PLANNING_FILE && !p.startsWith('.superpowers/')
+  return [...new Set([...committed, ...dirty].filter(code))].filter((p) => existsSync(join(root, p)))
 }
 
 // Runs the guide's affected tests command in the change worktree on the files the change

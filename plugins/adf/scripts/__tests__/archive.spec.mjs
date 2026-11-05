@@ -1138,6 +1138,13 @@ test('archive check refuses a quick change with no summary', () => {
   assert.equal(call(quickHost(), ['check']).ok, true)
 })
 
+test('archive check names /adf:quick for a quick change', () => {
+  const out = call(quickHost({ verdict: 'BLOCKED' }), ['check'])
+  assert.equal(out.ok, false)
+  assert.match(out.refusal, /settle each outstanding finding with \/adf:quick add-x,/)
+  assert.doesNotMatch(out.refusal, /adf:review/)
+})
+
 test('merge is skipped for a quick change', () => {
   const h = quickHost()
   assert.equal(call(h, ['check']).ok, true)

@@ -108,7 +108,7 @@ async function changePhase(out, { phase, change, root, env, schema, git }) {
   }
   out.base = readBase(root, change)
   schema ??= schemaOf(root, change)
-  if (schema.name === 'quick' && (phase === 'apply' || phase === 'verify')) return stop(`${change} is a quick change; it has no apply or verify`)
+  if (schema.name === 'quick' && ['apply', 'verify', 'review'].includes(phase)) return stop(`${change} is a quick change; it has no apply, verify or review stage: run /adf:quick ${change}`)
 
   const apply = applyInstructions(root, change, schema)
   out.progress = apply.progress

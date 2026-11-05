@@ -388,6 +388,12 @@ export function commentInputStep(ctx) {
     const debt = debtTargets(scope, ctx.main, at.root)
     const artifact = (name) => (existsSync(join(dir, name)) ? join(dir, name) : null)
     const artifacts = { dir, proposal: artifact('proposal.md'), specs: specDeltas(dir), tasks: artifact('tasks.md'), verify: artifact('verify.md') }
+    // A quick change has quick.md; its affected tests record lives only in its worktree, which
+    // archive's remove step deletes, so the record is null once the worktree is gone.
+    if (artifact('quick.md')) {
+      const tests = join(sddDir(worktreePath(ctx.main, ctx.change), ctx.change), 'quick', 'tests.json')
+      Object.assign(artifacts, { quick: artifact('quick.md'), tests: existsSync(tests) ? tests : null })
+    }
     const out = landDir(ctx.main, ctx.change)
     mkdirSync(join(out, 'comment'), { recursive: true })
     mkdirSync(join(out, 'replies'), { recursive: true })

@@ -149,7 +149,7 @@ Each item is `{ key, url, kind, subtask, title, status, open, parent, subtasks, 
 
 ### The bugs operation
 
-`bugs` finds the open bugs of the allowlisted projects. The bug issue types are the issue types of `discovered.json` whose name contains "bug". It searches for open issues of those types, at most 20, in key order. It then reads each issue as `gather` does, but reads no related issue. It returns the items of kind `bug` that are open and not excluded.
+`bugs` finds the open bugs of the allowlisted projects. The bug issue types are the issue types of `discovered.json` whose name contains "bug". It searches for open issues of those types, at most 20, the most recently updated first. It then reads each issue as `gather` does, but reads no related issue. It returns the items of kind `bug` that are open and not excluded.
 
 With no bug issue type in the profile, `bugs` returns no item and the note "the profile has no bug issue type".
 

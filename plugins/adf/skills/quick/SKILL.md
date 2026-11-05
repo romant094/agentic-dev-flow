@@ -64,6 +64,14 @@ The branch and `quick.md` stay for the developer to keep or remove.
    - Compare the plan's steps with `git -C <root> log --oneline` since the base. A step with no
      commit: resume at step 6, at `forge.mjs open`. Every step has its commit: resume at step 7.
 
+   Before you go on at a resume point, record the phase that it enters: `code` for step 6,
+   `tests` for step 7, `review` for step 8 and `end` for step 9. Step 5 records `code` itself
+   at its end, because that record marks step 5 as done.
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/ledger.mjs" session --change <name> --phase <phase> --root <root>
+   ```
+
    A name that neither call lists is a new change: go on to step 2 with it as the name.
 
 2. **Get the change name and the input.** With neither a key nor a phrase, ask one open question:
@@ -219,7 +227,9 @@ The branch and `quick.md` stay for the developer to keep or remove.
    - `empty: true`: run `review.mjs assemble --change <name> --not-reviewed "<reason>" --commit
      --root <root>`, and go to step 9.
 
-   Otherwise open the round, and write the reviewer's input and prompt:
+   On a resume at the round, look first for the stored reply of round 1,
+   `<root>/.superpowers/sdd/<name>/review/r1/findings.json`. When it exists, run no `round`, no
+   `input` and no dispatch. Go on to `fixplan`. Otherwise open the round, and write the reviewer's input and prompt:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" round --change <name> --root <root>
@@ -227,10 +237,8 @@ The branch and `quick.md` stay for the developer to keep or remove.
    node "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch.mjs" prompt --change <name> --role ai-review --round 1 --root <root>
    ```
 
-   On a resume, `round` gives `already: true` for a round with no stored reply. When
-   `<root>/.superpowers/sdd/<name>/review/r1/findings.json` exists, the reply is stored: go on
-   to the fixes. Otherwise dispatch `ai-review r1` at `agent`, with the printed `prompt`. Store
-   its reply:
+   On a resume, `round` gives `already: true` for a round with no stored reply. Dispatch
+   `ai-review r1` at `agent`, with the printed `prompt`. Store its reply:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" response --change <name> --round 1 --file <reply json> --root <root>
@@ -256,7 +264,18 @@ The branch and `quick.md` stay for the developer to keep or remove.
    ruling and its disposition as the review instruction states. Write a body file for each
    non-blocking finding left as it is, and record it with `review.mjs disposition --change
    <name> --finding F<n> --as recorded --body-file <file> --root <root>`. After the last fix,
-   run `quick.mjs tests --change <name> --root <root>` again. Then assemble and commit the record:
+   run `quick.mjs tests --change <name> --root <root>` again.
+
+   When these tests fail, fix the failure and commit the fix. Then start a new run:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" start --change <name> --fresh --root <root>
+   ```
+
+   `--fresh` discards the stored round, its findings and its fixes. Do one new round: `round`,
+   `input`, the dispatch, `response`, the fixes and the tests, as above. Then assemble.
+
+   When the tests pass, assemble and commit the record:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/review.mjs" assemble --change <name> --commit --root <root>

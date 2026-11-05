@@ -541,6 +541,7 @@ export function delta(prev, cur) {
   const now = cur?.aggregates ?? cur ?? {}
   const out = { improved: [], worsened: [], unchanged: [], notCompared: [] }
   for (const key of [...new Set([...Object.keys(now), ...Object.keys(before)])].sort()) {
+    if (key === 'quick') continue // the quick changes' aggregates are not compared
     const direction = DIRECTION[key]
     const [b, c] = [before[key], now[key]]
     if (!direction) {
@@ -666,15 +667,17 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
     }
   })
 
-  // The aggregates are computed from the same inputs the values came from.
-  const inputs = changes.map((c) => ({ change: c.change, record: records.get(c.archiveDir).record, coverage: c.coverage, git: c.git, tasks: c.tasks, sharedBranch: c.sharedBranch }))
-  const aggregates = aggregate(inputs)
+  // The aggregates are computed from the same inputs the values came from, over the full
+  // changes; the quick changes have aggregates of their own, null when the window has none.
+  const inputs = changes.map((c) => ({ change: c.change, cycle: c.cycle, record: records.get(c.archiveDir).record, coverage: c.coverage, git: c.git, tasks: c.tasks, sharedBranch: c.sharedBranch }))
+  const quickInputs = inputs.filter((c) => c.cycle === 'quick')
+  const aggregates = { ...aggregate(inputs.filter((c) => c.cycle === 'full')), quick: quickInputs.length > 0 ? aggregate(quickInputs) : null }
   const versions = new Map()
   for (const c of changes) {
     const key = c.generator ? `${c.generator.plugin} ${c.generator.version}` : null
     if (key) versions.set(key, [...(versions.get(key) ?? []), c.change])
   }
-  const usable = everyDir.map((e) => records.get(e.archiveDir)).filter((r) => r.record)
+  const usable = everyDir.map((e) => records.get(e.archiveDir)).filter((r) => r.record && cycleOf(r.record) === 'full')
   return {
     schemaVersion: SIDECAR_VERSION,
     date,

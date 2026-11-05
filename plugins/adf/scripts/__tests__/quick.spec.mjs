@@ -235,6 +235,19 @@ test('tests replaces {files} with the changed paths', () => {
   assert.equal(calls[0].command, `runner 'a.txt' 'base.txt' 'it'\\''s.txt'`)
 })
 
+test('the change directory, the planning guide and the state directory are not test input', () => {
+  const root = worktree()
+  writeFileSync(join(root, 'openspec', 'changes', 'fix-it', 'quick.md'), '# Quick\n')
+  writeFileSync(join(root, 'openspec', 'planning.md'), PLANNING('`runner {files}` '))
+  mkdirSync(join(root, '.superpowers', 'sdd', 'fix-it'), { recursive: true })
+  writeFileSync(join(root, '.superpowers', 'sdd', 'fix-it', 'note.json'), '{}\n')
+  git(root, 'add', 'openspec/changes/fix-it/quick.md')
+  git(root, 'commit', '-q', '-m', 'quick')
+  const { calls, runner } = recorder()
+  testsOf(root, runner)
+  assert.equal(calls[0].command, `runner 'a.txt' 'base.txt' 'it'\\''s.txt'`)
+})
+
 test('an empty section waits and runs nothing', () => {
   const root = worktree('')
   const { calls, runner } = recorder()

@@ -32,9 +32,9 @@ project's own files, proposes it, and writes it here once the developer confirms
 ## Affected tests command
 
 <!-- Optional. The one command, in backticks, that runs the tests a change touches, with `{files}`
-where the changed paths go, for example `npx vitest related --run {files}`. A quick task runs it
-from the change worktree on the files the change changed, each path quoted, and records the
-result; apply's whole-suite command stays the proof for any other change. Delete the section, or
+where the changed paths go, for example `npx vitest related --run --passWithNoTests {files}`. A
+quick task runs it from the change worktree on the files the change changed, each path quoted,
+and records the result; apply's whole-suite command stays the proof for any other change. Delete the section, or
 leave it empty, and a quick task asks for the command. /adf:init proposes a command and writes
 the one the developer confirms. -->
 
