@@ -44,7 +44,7 @@ export const RECORDED_GUIDE = {
   packages: { value: ['packages/shared', 'apps/server', 'apps/client'], source: 'docs/lessons/propose.md: the origin package list and its order (shared, server, client), pending: iteration 15' },
   wholeSuite: { value: 'npm test -- --force', source: 'docs/lessons/apply.md: `npm test -- --force`, a line of the host guide' },
   proof: { value: 'Cached:    0 cached', source: 'docs/lessons/verify.md: the `Cached:` line must read `0 cached`, the guide value written at the switch; the spacing is turbo\'s, as the origin\'s apply test records quote it' },
-  copies: { value: ['.env'], source: 'plugins/adf-postgres/README.md: the env file the database URL is rewritten in must be a worktree copy' }
+  copies: { value: ['.env'], source: 'docs/guide/plugins/adf-postgres.md: the env file the database URL is rewritten in must be a worktree copy' }
 }
 
 // The first ```json block after `marker` in `text`, parsed.
@@ -58,13 +58,13 @@ function jsonAfter(text, marker, where) {
 
 // The registry entries with the values recorded for iteration 15: adf-jira's config from
 // docs/iterations/13-tracker-jira.md `## Inputs for iteration 15`; adf-postgres's from its
-// README's example for a project whose Postgres runs in the Docker container `db` (iteration 12
+// guide page's example for a project whose Postgres runs in the Docker container `db` (iteration 12
 // recorded no block of its own); the others with no recorded value, so their defaults apply.
 // `notes` name what the records say about an entry beyond its config.
 export function recordedRegistry(repo = REPO) {
   const record13 = 'docs/iterations/13-tracker-jira.md'
   const jira = jsonAfter(readFileSync(join(repo, record13), 'utf8'), '## Inputs for iteration 15', record13)
-  const postgresReadme = 'plugins/adf-postgres/README.md'
+  const postgresReadme = 'docs/guide/plugins/adf-postgres.md'
   const postgres = jsonAfter(readFileSync(join(repo, postgresReadme), 'utf8'), 'An example, for a project', postgresReadme)
   const notes = {
     'adf-jira': [`${record13}: the recorded entry; only its config is taken, since the replay registers the plugin by path`],

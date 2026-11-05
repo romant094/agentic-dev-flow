@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Guide review reply",
+  "description": "The claims of the guide pages in one package that the source files contradict.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["findings"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["page", "claim", "source", "fix"],
+        "properties": {
+          "page": { "type": "string", "minLength": 1, "description": "The path of the page, as the package lists it." },
+          "claim": { "type": "string", "minLength": 1, "description": "The sentence or statement of the page that the source contradicts." },
+          "source": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "line"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1, "description": "A source file of the page, as the package lists it." },
+              "line": { "type": "integer", "minimum": 1, "description": "The line of the source that contradicts the claim." }
+            }
+          },
+          "fix": { "type": "string", "minLength": 1, "description": "The corrected statement for the page." }
+        }
+      }
+    }
+  }
+}
