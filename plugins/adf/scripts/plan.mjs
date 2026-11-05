@@ -75,7 +75,7 @@ import {
 } from './lib/plan.mjs'
 import { CORE, hookProviders, knowledgePaths } from './lib/roles.mjs'
 import { readDebtRoot } from './lib/registry.mjs'
-import { loadSchema } from './lib/schema.mjs'
+import { loadSchema, schemaOf } from './lib/schema.mjs'
 import { defaultHome } from './lib/runtime.mjs'
 import { gitIn } from './lib/workspace.mjs'
 
@@ -115,7 +115,7 @@ function changeFiles(root, change) {
   const planPath = join(dir, 'plan.md')
   const planText = read(planPath)
   if (planText === null) throw new Refusal(`${rel(change, 'plan.md')} does not exist`)
-  const tracks = loadSchema().apply?.tracks ?? 'tasks.md'
+  const tracks = schemaOf(root, change).apply?.tracks ?? 'tasks.md'
   return { dir, planPath, planText, tracks, tasksText: read(join(dir, tracks)) }
 }
 

@@ -22,9 +22,9 @@ import { resolve } from 'node:path'
 import { inferChange } from './lib/changes.mjs'
 import { isMain } from './lib/main.mjs'
 import { commitChange, createChange } from './lib/propose.mjs'
-import { loadSchema } from './lib/schema.mjs'
+import { loadSchema, schemaOf } from './lib/schema.mjs'
 
-export const USAGE = 'usage: propose.mjs create --change <name> --branch <branch> --base integration|current [--root <dir>] | propose.mjs commit [--change <name>] [--root <dir>]'
+export const USAGE = 'usage: propose.mjs create --change <name> --branch <branch> --base integration|current [--schema full|quick] [--root <dir>] | propose.mjs commit [--change <name>] [--root <dir>]'
 class Usage extends Error {}
 
 function parse(argv) {
@@ -33,7 +33,7 @@ function parse(argv) {
   const out = {}
   while (args.length) {
     const flag = args.shift()
-    if (!['--change', '--branch', '--base', '--root'].includes(flag)) throw new Usage(`unknown argument ${flag}`)
+    if (!['--change', '--branch', '--base', '--root', '--schema'].includes(flag)) throw new Usage(`unknown argument ${flag}`)
     const value = args.shift()
     if (value === undefined || value.startsWith('--')) throw new Usage(`${flag} needs a value`)
     out[flag.slice(2)] = value
@@ -44,14 +44,14 @@ function parse(argv) {
 export async function run(argv, { env = process.env } = {}) {
   try {
     const o = parse(argv)
-    const schema = loadSchema()
     if (o.command === 'create') {
       if (!o.change || !o.branch || !o.base) throw new Usage('create needs --change, --branch and --base')
-      return { code: 0, result: createChange(o.root, { change: o.change, branch: o.branch, base: o.base }, schema, { env }) }
+      return { code: 0, result: createChange(o.root, { change: o.change, branch: o.branch, base: o.base }, loadSchema(o.schema), { env }) }
     }
     if (o.command === 'commit') {
-      if (o.branch || o.base) throw new Usage('commit takes --change and --root only')
-      const result = await commitChange(o.root, inferChange(o.root, o.change, schema), schema)
+      if (o.branch || o.base || o.schema) throw new Usage('commit takes --change and --root only')
+      const change = inferChange(o.root, o.change, loadSchema())
+      const result = await commitChange(o.root, change, schemaOf(o.root, change))
       return { code: result.ok ? 0 : 1, result }
     }
     throw new Usage(`unknown command "${o.command ?? ''}"`)

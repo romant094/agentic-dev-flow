@@ -1,0 +1,16 @@
+{
+  "name": "quick",
+  "version": 1,
+  "description": "The quick cycle: one file, quick.md, holds the goal, the scope, a plan of one to three steps and, at the end, the summary. It has no apply, verify or specs.",
+  "artifacts": [
+    {
+      "id": "quick",
+      "generates": "quick.md",
+      "description": "Goal, scope, a plan of one to three steps and the closing summary of a small task",
+      "template": "quick.md",
+      "instruction": "quick.md",
+      "gates": ["quick-plan"],
+      "requires": []
+    }
+  ]
+}

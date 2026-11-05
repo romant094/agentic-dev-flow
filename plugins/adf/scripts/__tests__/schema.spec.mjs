@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildOrder, GATES, loadSchema, SCHEMA_DIR, validateSchema } from '../lib/schema.mjs'
+import { buildOrder, checkQuickPlan, checkQuickSummary, GATES, loadSchema, loadSchemaDir, SCHEMA_DIR, validateSchema } from '../lib/schema.mjs'
 import { STEPS } from '../lib/archive.mjs'
 import { STEPS as RETRO_STEPS } from '../lib/retro-run.mjs'
 import { checkRecord } from '../lib/review-state.mjs'
@@ -50,11 +50,11 @@ test('a template, an instruction or an apply block that points at nothing is ref
 test('loadSchema throws with every error', () => {
   const bad = mkdtempSync(join(tmpdir(), 'adf-schema-'))
   writeFileSync(join(bad, 'schema.json'), JSON.stringify(graph(artifact('a', ['a']))))
-  assert.throws(() => loadSchema(bad), /cycle/)
+  assert.throws(() => loadSchemaDir(bad), /cycle/)
   mkdirSync(join(bad, 'templates'))
   writeFileSync(join(bad, 'templates', 'a.md'), 'x')
   writeFileSync(join(bad, 'schema.json'), JSON.stringify(graph(artifact('a', [], { template: 'a.md' }))))
-  assert.equal(loadSchema(bad).name, 'test')
+  assert.equal(loadSchemaDir(bad).name, 'test')
 })
 
 test('guides must name markdown files', () => {
@@ -84,7 +84,44 @@ test('the shipped schema gates specs, tasks and plan with the checks propose use
     tasks: ['tasks-lint'],
     plan: ['plan-symbols', 'plan-lint']
   })
-  assert.deepEqual([...new Set(Object.values(gates).flat())].sort(), [...GATES].sort())
+  const quick = loadSchema('quick').artifacts.flatMap((a) => a.gates ?? [])
+  // quick-summary guards no artifact: the end of a quick change runs it.
+  assert.deepEqual([...new Set([...Object.values(gates).flat(), ...quick, 'quick-summary'])].sort(), [...GATES].sort())
+})
+
+test('full and adf load the core schema, quick loads its own, any other name throws', () => {
+  assert.equal(loadSchema('full').name, 'full')
+  assert.equal(loadSchema('adf').name, 'full')
+  assert.equal(loadSchema().dir, SCHEMA_DIR)
+  const quick = loadSchema('quick')
+  assert.equal(quick.name, 'quick')
+  assert.deepEqual(quick.artifacts.map((a) => a.id), ['quick'])
+  assert.equal(quick.apply, undefined)
+  assert.deepEqual(validateSchema(quick, quick.dir), [])
+  assert.throws(() => loadSchema('other'), { message: 'unknown schema "other"; known: full, quick' })
+})
+
+const STEP = (n, files = '`a.mjs`') => `${n}. Do it\n   **Files:** ${files}\n   **Check:** run\n`
+
+test('the quick-plan gate refuses four steps and a step with no file', () => {
+  const plan = (...steps) => `## Goal\n\ng\n\n## Plan\n\n${steps.join('\n')}\n## Summary\n\n`
+  assert.equal(checkQuickPlan(plan(STEP(1), STEP(2), STEP(3))).ok, true)
+  const four = checkQuickPlan(plan(STEP(1), STEP(2), STEP(3), STEP(4)))
+  assert.equal(four.ok, false)
+  assert.match(four.findings[0].message, /4 steps/)
+  const bare = checkQuickPlan(plan(STEP(1), '2. No file\n   **Check:** run\n'))
+  assert.equal(bare.ok, false)
+  assert.match(bare.findings[0].message, /step 2 names no file/)
+  assert.equal(checkQuickPlan(plan(STEP(1, '<!-- path -->'))).ok, false)
+  assert.equal(checkQuickPlan('## Goal\n\ng\n').ok, false)
+  assert.equal(checkQuickPlan(plan()).ok, false)
+})
+
+test('the shipped quick template fails both gates until it is written', () => {
+  const template = readFileSync(join(loadSchema('quick').dir, 'templates', 'quick.md'), 'utf8')
+  assert.equal(checkQuickPlan(template).ok, false)
+  assert.equal(checkQuickSummary(template).ok, false)
+  assert.equal(checkQuickSummary(`${template}\nFixed it.\n`).ok, true)
 })
 
 test('the core text an agent copies from is written in English', () => {

@@ -58,7 +58,7 @@ import { fileURLToPath } from 'node:url'
 import { run as dispatchCli } from './dispatch.mjs'
 import { isMain } from './lib/main.mjs'
 import { detectRuntime } from './lib/runtime.mjs'
-import { loadSchema } from './lib/schema.mjs'
+import { schemaOf } from './lib/schema.mjs'
 import { runSuite, SECTION_ID } from './lib/suite.mjs'
 import { assemble, computeVerdict, REQUIRED_SECTIONS, renderReport, runChecks, skillCandidates, skillEdit, verifyDir, writeDeveloper } from './lib/verify.mjs'
 
@@ -132,7 +132,7 @@ export function run(argv, { cwd = process.cwd(), env = process.env, runtime = de
   if (!change || extra.length > 0 || !Object.hasOwn(TAKES, command)) throw new UsageError(USAGE)
   const stray = Object.keys(values).filter((k) => k !== 'change' && k !== 'root' && !TAKES[command].includes(k))
   if (stray.length > 0) throw new UsageError(`--${stray.join(', --')} does not belong to ${command}`)
-  const tracks = () => loadSchema().apply?.tracks ?? 'tasks.md'
+  const tracks = () => schemaOf(root, change).apply?.tracks ?? 'tasks.md'
   switch (command) {
     case 'run': {
       const result = runChecks(root, { change, skillEdits: values['skill-edit'] ?? [], fresh: Boolean(values.fresh), tracks: tracks(), env })

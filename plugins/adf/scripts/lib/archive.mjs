@@ -100,7 +100,7 @@ import { debtGroups, findScope, namesKey, SCOPE_FILE, scopeKeys, trackerTargets 
 import { checkResolutions, checkSpecsBase, mergePreview, writeMerge } from './specs.mjs'
 import { writeConflictTexts } from './spec-merge.mjs'
 import { buildLinks, linksInput } from './mr-links.mjs'
-import { loadSchema } from './schema.mjs'
+import { schemaOf } from './schema.mjs'
 import { defaultProjectsDir } from './transcripts.mjs'
 import { fetchRef, LINT_DUE, sinceLastRetro } from './window.mjs'
 import { remove as removeWorktree } from './workspace.mjs'
@@ -381,7 +381,7 @@ export function checkStep(ctx) {
     }
     const dir = join(root, CHANGES_DIR, change)
     readMeta(root, dir)
-    for (const a of changeStatus(root, change, loadSchema()).artifacts) {
+    for (const a of changeStatus(root, change, schemaOf(root, change)).artifacts) {
       if (!['done', 'skipped'].includes(a.status)) warnings.push(`artifact ${a.id} is ${a.status}`)
     }
     const tasksFile = join(dir, 'tasks.md')

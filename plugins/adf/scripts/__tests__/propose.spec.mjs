@@ -153,6 +153,20 @@ test('create makes the worktree, the change with its base, and the propose sessi
   assert.deepEqual([made.active.key, pointerOf(root).change], ['feat/add-thing', 'add-thing'])
 })
 
+test('create --schema quick makes a quick change; next hands out quick.md and done runs quick-plan', async () => {
+  const main = host()
+  const made = await proposeCli(['create', '--change', 'fix-it', '--branch', 'feat/fix-it', '--base', 'integration', '--schema', 'quick', '--root', main], { env })
+  assert.equal(made.code, 0, JSON.stringify(made.result))
+  const root = made.result.root
+  assert.equal(JSON.parse(readFileSync(join(root, 'openspec', 'changes', 'fix-it', '.adf.json'), 'utf8')).schema, 'quick')
+  const quick = loadSchema('quick')
+  const next = await nextArtifact(root, 'fix-it', quick)
+  assert.deepEqual([next.artifact, next.gates], ['quick', ['quick-plan']])
+  write(join(root, 'openspec', 'changes', 'fix-it'), 'quick.md', '## Plan\n\n1. Fix\n   **Files:** `a.mjs`\n')
+  const done = await markDone(root, 'fix-it', 'quick', quick)
+  assert.deepEqual(done.gates.map((g) => [g.gate, g.ok]), [['quick-plan', true]])
+})
+
 test('next hands out each artifact in order, done gates it, and commit takes only the change', async () => {
   const { main, root, dir } = started()
   let next = await nextArtifact(root, 'add-thing', schema)

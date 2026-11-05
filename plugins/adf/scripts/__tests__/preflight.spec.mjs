@@ -87,6 +87,19 @@ test('apply passes in the change worktree and reports what the phase needs', asy
   assert.equal(again.ledger.id, 'session-2')
 })
 
+test('preflight refuses apply on a quick change', async () => {
+  const { change, dir } = host()
+  writeFileSync(join(dir, '.adf.json'), JSON.stringify({ schema: 'quick', schemaVersion: 1, created: '2026-10-15', base: 'develop' }))
+  git(change, 'add', '.')
+  git(change, 'commit', '-q', '-m', 'quick')
+  for (const phase of ['apply', 'verify']) {
+    const out = await check(phase, change)
+    assert.equal(out.ok, false)
+    assert.equal(out.refusal, 'add-x is a quick change; it has no apply or verify')
+  }
+  assert.equal(existsSync(join(change, '.superpowers', 'sdd')), false, 'nothing is written')
+})
+
 test('the Superpowers gate refuses first and nothing is written', async () => {
   const { change } = host()
   const out = await preflight({ phase: 'apply', change: 'add-x', root: change, env, home: home({ superpowers: false }) })

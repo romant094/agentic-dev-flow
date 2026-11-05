@@ -25,6 +25,7 @@ import {
   resolveOutputs
 } from './changes.mjs'
 import { commitPaths } from './commit.mjs'
+import { checkQuickPlan, checkQuickSummary } from './schema.mjs'
 import { mainCheckout } from './installed.mjs'
 import { appendRecord } from './ledger.mjs'
 import { setPointer } from './active.mjs'
@@ -66,7 +67,15 @@ const RUNNERS = {
   'tasks-lint': (root, change) => cliGate(tasksCli(['lint', '--change', change, '--root', root])),
   'plan-symbols': async (root, change) => cliGate(await planSymbolsCli([change, '--root', root])),
   'plan-lint': async (root, change) => cliGate(await planCli(['lint', '--change', change, '--root', root])),
-  'scope-sources': (root, change) => scopeSourcesGate(root, change)
+  'scope-sources': (root, change) => scopeSourcesGate(root, change),
+  'quick-plan': (root, change) => quickGate(root, change, checkQuickPlan),
+  'quick-summary': (root, change) => quickGate(root, change, checkQuickSummary)
+}
+
+// A check over the text of the change's quick.md.
+function quickGate(root, change, check) {
+  const file = join(changeDir(root, change), 'quick.md')
+  return existsSync(file) ? check(readFileSync(file, 'utf8')) : { ok: false, findings: [{ message: 'quick.md does not exist' }] }
 }
 
 export const GATE_RUNNERS = Object.keys(RUNNERS)

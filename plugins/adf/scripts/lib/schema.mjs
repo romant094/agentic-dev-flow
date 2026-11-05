@@ -5,6 +5,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readChangeMeta } from './changes.mjs'
+import { findChangeDir } from './ingest.mjs'
 
 export const SCHEMA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema')
 const ID = /^[a-z][a-z0-9-]*$/
@@ -15,8 +17,61 @@ const GUIDE = /^[a-z0-9][a-z0-9-]*\.md$/
 // check guards which artifact and the agent never decides whether to run one. `specs-base` also
 // writes the change's specs-base.json (lib/specs.mjs writeSpecsBase). `scope-sources` checks
 // that the proposal's `## Scope sources` is the rendering of the change's scope.json, when it
-// has one (lib/scope.mjs).
-export const GATES = ['scope-sources', 'specs-validate', 'specs-capabilities', 'specs-against-main', 'specs-base', 'tasks-lint', 'plan-symbols', 'plan-lint']
+// has one (lib/scope.mjs). `quick-plan` checks the plan of a quick change's quick.md;
+// `quick-summary` checks its `## Summary`, which no artifact lists: the end of a quick change
+// runs it, when the summary is written.
+export const GATES = ['scope-sources', 'specs-validate', 'specs-capabilities', 'specs-against-main', 'specs-base', 'tasks-lint', 'plan-symbols', 'plan-lint', 'quick-plan', 'quick-summary']
+
+const SECTION = /^##[ \t]+(.+?)[ \t]*$/
+const STEP = /^\d+\.[ \t]+/
+const MAX_QUICK_STEPS = 3
+
+// The lines of the `## <heading>` section of a markdown text, up to the next `##` heading; null
+// when the section is missing.
+function section(text, heading) {
+  const lines = text.split(/\r?\n/)
+  const start = lines.findIndex((l) => SECTION.exec(l)?.[1] === heading)
+  if (start === -1) return null
+  const rest = lines.slice(start + 1)
+  const end = rest.findIndex((l) => SECTION.test(l))
+  return end === -1 ? rest : rest.slice(0, end)
+}
+
+// The files a step's `**Files:**` line names: backticks and commas dropped, a comment or a
+// `<placeholder>` of the template not counted.
+function stepFiles(lines) {
+  const line = lines.find((l) => /\*\*Files:\*\*/.test(l))
+  if (line === undefined) return []
+  return line.replace(/^.*\*\*Files:\*\*/, '').replace(/<!--.*?-->/g, ' ').replace(/[`,;]/g, ' ').split(/\s+/).filter((t) => t !== '' && !/^<.*>$/.test(t))
+}
+
+// The quick-plan gate over the text of a quick.md: 1 to 3 numbered steps under `## Plan`, each
+// with a `**Files:**` line that names at least one file. { ok, findings: [{ message }] }.
+export function checkQuickPlan(text) {
+  const plan = section(text, 'Plan')
+  if (plan === null) return { ok: false, findings: [{ message: 'quick.md has no "## Plan" section' }] }
+  const steps = []
+  for (const line of plan) {
+    if (STEP.test(line)) steps.push([line])
+    else if (steps.length > 0) steps.at(-1).push(line)
+  }
+  const findings = []
+  if (steps.length === 0) findings.push({ message: '"## Plan" has no numbered step; write 1 to 3 steps, each as "1. <what>"' })
+  if (steps.length > MAX_QUICK_STEPS) findings.push({ message: `"## Plan" has ${steps.length} steps; a quick plan has at most ${MAX_QUICK_STEPS}; propose the change instead` })
+  steps.forEach((lines, i) => {
+    if (stepFiles(lines).length === 0) findings.push({ message: `plan step ${i + 1} names no file; add a "**Files:**" line with at least one path` })
+  })
+  return { ok: findings.length === 0, findings }
+}
+
+// The quick-summary gate over the text of a quick.md: `## Summary` holds text. The template's
+// comments do not count.
+export function checkQuickSummary(text) {
+  const body = (section(text, 'Summary') ?? []).join('\n').replace(/<!--[\s\S]*?-->/g, '').trim()
+  return body === ''
+    ? { ok: false, findings: [{ message: 'quick.md "## Summary" is empty; write what was wrong, what changed, the tests run and the review result' }] }
+    : { ok: true, findings: [] }
+}
 
 // `skippable: true` lets a change skip an artifact apply needs, with a reason (`changes.mjs skip
 // <id> --reason`): the skipped artifact meets what requires it, and verify and archive read the
@@ -106,11 +161,23 @@ export function buildOrder(schema) {
   return order
 }
 
-export function loadSchema(dir = SCHEMA_DIR) {
+export function loadSchemaDir(dir = SCHEMA_DIR) {
   const schema = JSON.parse(readFileSync(join(dir, 'schema.json'), 'utf8'))
   const errors = validateSchema(schema, dir)
   if (errors.length > 0) throw new Error(`invalid schema in ${dir}: ${errors.join('; ')}`)
   return { ...schema, dir }
+}
+
+// The schema of a cycle: `full` (the core's; `adf`, the name it had, reads as `full`) or `quick`.
+export function loadSchema(name = 'full') {
+  if (name === 'full' || name === 'adf') return loadSchemaDir(SCHEMA_DIR)
+  if (name === 'quick') return loadSchemaDir(join(SCHEMA_DIR, 'quick'))
+  throw new Error(`unknown schema "${name}"; known: full, quick`)
+}
+
+// The schema a named change was created with, read from its metadata; `full` when it names none.
+export function schemaOf(root, change) {
+  return loadSchema(readChangeMeta(root, findChangeDir(root, change))?.schema ?? 'full')
 }
 
 export function readSchemaFile(schema, folder, file) {
