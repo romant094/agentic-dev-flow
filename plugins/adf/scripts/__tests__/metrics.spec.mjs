@@ -10,6 +10,7 @@ import { recordDispatch, recordReply } from '../lib/attempts.mjs'
 import { readSchema, unknownKeywords } from '../lib/json-schema.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
 import { buildRecord, cost, fromV1, GROUPS, PLUGIN_ROOT, RecordError, renderRecord, SCHEMA_PATH, validateRecord } from '../lib/metrics.mjs'
+import { cycleOf } from '../lib/window.mjs'
 import { encodeKeys } from '../lib/transcripts.mjs'
 import { commitIn, git, host } from './git-host.mjs'
 
@@ -97,6 +98,51 @@ test('a record built from SDD records, transcripts and git validates', () => {
   assert.equal(r.isolation.foreignBranchRecords, 1)
   assert.deepEqual(r.isolation.strayWorktrees, [{ path: '.claude/worktrees/add-x--group-A', branch: `${BRANCH}--group-A` }], 'the checkout the record is built in is no stray')
   for (const g of GROUPS) assert.ok(r.sources.coverage[g] === 'record' || r.sources.coverage[g].none, g)
+})
+
+const QUICK_MD = '# Fix\n\n## Plan\n\n1. First\n   **Files:** `a.txt`\n2. Second\n   **Files:** `b.txt`\n\n## Summary\n\nDone.\n'
+const quickHost = () => host({ '.adf.json': JSON.stringify({ schema: 'quick', base: 'develop' }), 'quick.md': QUICK_MD })
+
+test('a quick record has cycle quick and its steps as tasks', () => {
+  const h = quickHost()
+  const empty = realpathSync(mkdtempSync(join(tmpdir(), 'adf-metrics-none-')))
+  const r = buildRecord({ root: h.change, change: CHANGE, now: NOW, projectsDir: empty })
+  assert.deepEqual(validateRecord(JSON.parse(JSON.stringify(r))), [])
+  assert.equal(r.cycle, 'quick')
+  assert.equal(r.timing.tasks, 2)
+  assert.equal(r.verify, null)
+  assert.equal(r.impl, null)
+  assert.deepEqual(r.sources.coverage.verify, { none: 'quick task: no verify' })
+  assert.deepEqual(r.sources.coverage.impl, { none: 'quick task: no impl' })
+  assert.equal(buildRecord({ root: measuredHost().change, change: CHANGE, now: NOW, projectsDir: empty }).cycle, 'full')
+})
+
+test('a record without cycle validates and reads as full', () => {
+  const h = host()
+  const empty = realpathSync(mkdtempSync(join(tmpdir(), 'adf-metrics-none-')))
+  const { cycle: _cycle, ...r } = buildRecord({ root: h.change, change: CHANGE, now: NOW, projectsDir: empty })
+  assert.deepEqual(validateRecord(JSON.parse(JSON.stringify(r))), [])
+  assert.equal(cycleOf(r), 'full')
+  assert.equal(cycleOf({ ...r, cycle: 'quick' }), 'quick')
+})
+
+test("a quick change's byPhase holds the six phases", () => {
+  const h = quickHost()
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'adf-metrics-projects-')))
+  const key = join(dir, encodeKeys(h.change)[0])
+  mkdirSync(key, { recursive: true })
+  const phases = ['gather', 'estimate', 'code', 'tests', 'review', 'end']
+  const env = { CLAUDE_CODE_SESSION_ID: 'q1' }
+  const lines = []
+  phases.forEach((phase, i) => {
+    const t = (min) => `2026-10-03T10:${String(i * 10 + min).padStart(2, '0')}:00.000Z`
+    appendRecord(h.change, CHANGE, 'session', { phase }, { env, now: t(0) })
+    lines.push(user(t(0), `go ${phase}`), assistant(`m${i}a`, t(1), 5), assistant(`m${i}b`, t(3), 5))
+  })
+  writeFileSync(join(key, 'q1.jsonl'), jsonl(lines))
+  const r = buildRecord({ root: h.change, change: CHANGE, now: NOW, projectsDir: dir })
+  assert.deepEqual(Object.keys(r.timing.activeMinutes.byPhase).sort(), [...phases].sort())
+  assert.equal(r.sources.transcripts.sessions[0].phaseSource, 'ledger')
 })
 
 test('metrics in codex: transcript figures null with the reason, record has runtime codex', () => {

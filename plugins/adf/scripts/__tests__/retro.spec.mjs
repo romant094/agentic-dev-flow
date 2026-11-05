@@ -13,7 +13,7 @@ import { DispatchError, retroInputFile } from '../lib/dispatch.mjs'
 import { fromV1, PLUGIN_ROOT, validateRecord } from '../lib/metrics.mjs'
 import { initRegistry } from '../lib/registry.mjs'
 import { checkReply } from '../lib/reply.mjs'
-import { input, lateCaught, prematureDone, RE_DERIVATION_REASON, recordRetroDispatch, recordRetroReply } from '../lib/retro.mjs'
+import { cyclesOf, input, lateCaught, prematureDone, RE_DERIVATION_REASON, recordRetroDispatch, recordRetroReply } from '../lib/retro.mjs'
 import { buildSidecar } from '../lib/window.mjs'
 
 const ARCHIVE = 'openspec/changes/archive'
@@ -108,7 +108,7 @@ function host() {
     },
     '2026-10-02T10:00:00Z'
   )
-  merge('feat/two', { [`${ARCHIVE}/2026-10-05-two/tasks.md`]: '- [x] 1.1 a\n', [`${ARCHIVE}/2026-10-05-two/metrics.json`]: `${JSON.stringify(record('two'))}\n`, 'src/two.txt': 'two\n' }, '2026-10-06T10:00:00Z')
+  merge('feat/two', { [`${ARCHIVE}/2026-10-05-two/tasks.md`]: '- [x] 1.1 a\n', [`${ARCHIVE}/2026-10-05-two/metrics.json`]: `${JSON.stringify({ ...record('two'), cycle: 'quick' })}\n`, 'src/two.txt': 'two\n' }, '2026-10-06T10:00:00Z')
 
   const home = join(tmp, 'home')
   const gitlab = join(tmp, 'cache', 'gitlab')
@@ -158,6 +158,17 @@ function validReply(inp) {
 const checked = (reply, inp) => checkReply('retro', JSON.stringify(reply), { input: inp })
 
 // ---------------------------------------------------------------- input
+
+test('retro groups quick records apart', () => {
+  const { input: inp, sidecar } = fixture()
+  // `one` has no cycle in its record: it reads as full. `two` names the quick cycle.
+  assert.deepEqual(sidecar.changes.map((c) => c.cycle), ['full', 'quick'])
+  assert.deepEqual(inp.changes.map((c) => c.cycle), ['full', 'quick'])
+  assert.deepEqual(Object.keys(inp.cycles), ['full', 'quick'])
+  assert.deepEqual(inp.cycles.full, [{ change: 'one', activeMinutes: null, turns: 1, tokens: 300, usd: null }])
+  assert.deepEqual(inp.cycles.quick.map((c) => [c.change, c.tokens]), [['two', 100]])
+  assert.deepEqual(cyclesOf([{ change: 'x', figures: { tokens: 1 } }]), { full: [{ change: 'x', tokens: 1 }] })
+})
 
 test('the input carries each change, its signals and every citable key with its value', () => {
   const { input: inp } = fixture()

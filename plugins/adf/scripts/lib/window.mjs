@@ -34,7 +34,8 @@ import { ARCHIVE, CHANGES_DIR, globToRegExp, parseTasks } from './changes.mjs'
 import { listTree } from './debt.mjs'
 import { median, TOKEN_FIELDS } from './metrics-facts.mjs'
 import { LAYERS, removalCandidates } from './metrics-records.mjs'
-import { asV2, GROUPS, PLUGIN_ROOT, RECORD_FILE, TRANSCRIPT_GROUPS, validateRecord } from './metrics.mjs'
+import { asV2, cost, GROUPS, PLUGIN_ROOT, RECORD_FILE, TRANSCRIPT_GROUPS, validateRecord } from './metrics.mjs'
+import { readTable } from './prices.mjs'
 import { readDebtRoot } from './registry.mjs'
 
 export const RETRO_DIR = '.adf/retro'
@@ -475,6 +476,22 @@ function valueOf(m, c) {
 
 const round4 = (v) => (num(v) === null ? null : Number(v.toFixed(4)))
 
+// A record's cycle: `quick` or, with none named, `full`.
+export const cycleOf = (record) => record?.cycle ?? 'full'
+
+// What the retrospective shows per change of a cycle: the active minutes, the model turns, the
+// tokens (as `cost.tokens` counts them) and the USD at the price table; each null when the
+// record has no such group.
+export function cycleFigures(record, table) {
+  if (!record) return { activeMinutes: null, turns: null, tokens: null, usd: null }
+  return {
+    activeMinutes: num(record.timing?.activeMinutes?.total),
+    turns: num(record.tokens?.total?.turns),
+    tokens: tokensOf(record.tokens?.total),
+    usd: record.tokens ? cost(record, table).usd : null
+  }
+}
+
 // One change's value of every metric, keyed by metric.
 export function changeValues(c) {
   return Object.fromEntries(METRICS.map((m) => [m.key, round4(valueOf(m, c))]))
@@ -603,6 +620,7 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
   const branchOf = (e) => records.get(e.archiveDir).record?.branch ?? e.branch
   const sessionsOf = (e) => records.get(e.archiveDir).record?.sources?.transcripts?.sessions ?? []
 
+  const table = readTable(root)
   const changes = sel.changes.map((e) => {
     const { record, reason } = records.get(e.archiveDir)
     const coverage = record ? { ...record.sources.coverage } : Object.fromEntries(GROUPS.map((g) => [g, none(reason)]))
@@ -642,7 +660,9 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
       coverage,
       git,
       sharedBranch,
-      values: changeValues(c)
+      values: changeValues(c),
+      cycle: cycleOf(record),
+      figures: cycleFigures(record, table)
     }
   })
 

@@ -28,6 +28,7 @@ import { commitPaths } from './commit.mjs'
 import { checkQuickPlan, checkQuickSummary } from './schema.mjs'
 import { mainCheckout } from './installed.mjs'
 import { appendRecord } from './ledger.mjs'
+import { estimateMark } from './quick.mjs'
 import { setPointer } from './active.mjs'
 import { changeScopeFile, readScope, recordable, scopeSourcesGate } from './scope.mjs'
 import { changeAgainstMain, checkCapabilities, validateProject, writeSpecsBase } from './specs.mjs'
@@ -274,8 +275,19 @@ export function createChange(mainRoot, { change, branch, base }, schema, { env =
   }
   let ledger
   try {
-    const { record, path } = appendRecord(made.root, change, 'session', { phase: 'propose' }, { env })
-    ledger = { recorded: true, id: record.id, path }
+    if (schema.name === 'quick') {
+      // The skill gathered and estimated in the main checkout, before this ledger existed: the
+      // `estimate` mark (lib/quick.mjs) dates the end of gather. gather sorts first, so it is
+      // written a millisecond before the mark; the first record covers its session from the start.
+      const mark = estimateMark(mainCheckout(mainRoot), change)
+      const gather = mark ? new Date(Date.parse(mark) - 1).toISOString() : undefined
+      const first = appendRecord(made.root, change, 'session', { phase: 'gather' }, { env, ...(gather ? { now: gather } : {}) })
+      const { record } = appendRecord(made.root, change, 'session', { phase: 'estimate' }, { env, ...(mark ? { now: mark } : {}) })
+      ledger = { recorded: true, id: first.record.id, ids: [first.record.id, record.id], path: first.path }
+    } else {
+      const { record, path } = appendRecord(made.root, change, 'session', { phase: 'propose' }, { env })
+      ledger = { recorded: true, id: record.id, path }
+    }
   } catch (error) {
     ledger = { recorded: false, error: error.message }
   }

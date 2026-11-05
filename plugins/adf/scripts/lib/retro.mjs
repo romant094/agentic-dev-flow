@@ -46,7 +46,7 @@ import { LAYERS } from './metrics-records.mjs'
 import { checkReply, replyContext } from './reply.mjs'
 import { defaultHome } from './runtime.mjs'
 import { readJson } from './superpowers.mjs'
-import { readBlobs, recordOf } from './window.mjs'
+import { cycleOf, readBlobs, recordOf } from './window.mjs'
 
 export const INPUT_VERSION = 1
 export const ATTEMPTS_FILE = 'attempts.jsonl'
@@ -155,6 +155,7 @@ function changeInput(c, record, events, put) {
     record: c.record,
     generator: c.generator ?? null,
     gaps: Object.fromEntries(Object.entries(c.coverage ?? {}).filter(([, v]) => v?.none).map(([group, v]) => [group, v.none])),
+    cycle: cycleOf(record),
     summary: record ? pick(record, ['impl', 'replies', 'tests', 'outliers']) : null,
     signals
   }
@@ -177,6 +178,14 @@ function changeInput(c, record, events, put) {
     put(`${at}.verify.warnings`, warnings.length)
   }
   if (record?.sources?.disagreements?.length) out.disagreements = record.sources.disagreements
+  return out
+}
+
+// The window's changes by cycle, `{ full: [...], quick: [...] }`, each `{ change, activeMinutes,
+// turns, tokens, usd }` from the sidecar; a cycle with no change is left out.
+export function cyclesOf(changes) {
+  const out = {}
+  for (const c of changes ?? []) (out[c.cycle ?? 'full'] ??= []).push({ change: c.change, ...c.figures })
   return out
 }
 
@@ -218,6 +227,8 @@ export function input(sidecar, { root, home = defaultHome() } = {}) {
     previous: sidecar.previous ?? null,
     flowVersions: sidecar.flowVersions ?? [],
     changes,
+    // The changes by cycle (a record with no `cycle` is a full change): the figures the report shows.
+    cycles: cyclesOf(sidecar.changes),
     delta: sidecar.delta ?? null,
     candidates: sidecar.candidates ?? null,
     removable: {

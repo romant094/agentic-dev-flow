@@ -7,7 +7,9 @@
 // State: <main>/.superpowers/sdd/<change>/quick/ (gitignored): estimate-input.md, the prompt
 // with its candidates and the reply schema; replies/estimate.json, the agent's reply; and
 // estimate.json, the reply once it passed the check. The change's own worktree keeps the same
-// directory for tests.json, the last run of the affected tests command (`tests`).
+// directory for tests.json, the last run of the affected tests command (`tests`). marks.json holds
+// the time `estimate-input` ran, `{ estimate }`: the change's ledger does not exist yet, and
+// `propose.mjs create --schema quick` writes the `estimate` session record at that time.
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -35,6 +37,17 @@ const refuse = (message, extra) => {
 }
 
 export const quickDir = (main, change) => join(sddDir(main, change), 'quick')
+export const MARKS_FILE = 'marks.json'
+
+// The time `estimate-input` ran for the change, or null before it did.
+export function estimateMark(main, change) {
+  try {
+    const at = JSON.parse(readFileSync(join(quickDir(main, change), MARKS_FILE), 'utf8')).estimate
+    return typeof at === 'string' && !Number.isNaN(Date.parse(at)) ? at : null
+  } catch {
+    return null
+  }
+}
 
 function load(root, change) {
   if (!CHANGE.test(change ?? '')) refuse(`"${change ?? ''}" is not a kebab-case change name`)
@@ -90,7 +103,7 @@ export function filter(root, change) {
 
 // The estimate's input and prompt in one file: the prompt, each candidate with its file, and the
 // reply schema. { ok, file, name, ... } with the dispatch fields.
-export function estimateInput(root, change, { runtime = 'claude-code' } = {}) {
+export function estimateInput(root, change, { runtime = 'claude-code', now = new Date() } = {}) {
   const { main, scope } = load(root, change)
   const candidates = candidatesOf(scope)
   if (candidates.length === 0) refuse('no candidate is left to estimate')
@@ -108,6 +121,7 @@ export function estimateInput(root, change, { runtime = 'claude-code' } = {}) {
   })
   const text = `${prompt.trimEnd()}\n\n## Candidates\n\n${lines.join('\n')}\n\n## Reply schema\n\n\`\`\`json\n${readFileSync(ESTIMATE_SCHEMA, 'utf8').trimEnd()}\n\`\`\`\n`
   writeFileSync(file, withPreamble(text, agent.preamble))
+  writeFileSync(join(dir, MARKS_FILE), `${JSON.stringify({ estimate: now.toISOString() }, null, 2)}\n`)
   return { ok: true, change, step: 'estimate-input', file, name: ESTIMATE_NAME, ...agent.fields, worktree: main, replyFile, candidates: candidates.map((i) => i.key), next: `dispatch ${ESTIMATE_NAME} read-only with ${file}; then quick.mjs estimate-check --change ${change} --file ${replyFile}` }
 }
 

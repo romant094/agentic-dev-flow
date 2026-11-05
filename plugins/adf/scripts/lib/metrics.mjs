@@ -28,6 +28,7 @@ import { LAYERS, readSddRecords, removalCandidates, summarizeLedger } from './me
 import { costOf, priceAt } from './prices.mjs'
 import { pluginDir, readRegistry } from './registry.mjs'
 import { detectRuntime } from './runtime.mjs'
+import { quickPlanSteps } from './schema.mjs'
 import { defaultProjectsDir, onChangeBranch, readTranscripts, RUNTIME } from './transcripts.mjs'
 
 export const SCHEMA_VERSION = 2
@@ -36,6 +37,8 @@ export const SCHEMA_PATH = join(PLUGIN_ROOT, 'schema', 'metrics.schema.json')
 export const RECORD_FILE = 'metrics.json'
 // The groups `sources.coverage` names, each `record` or `{ none: reason }`.
 export const GROUPS = ['transcripts', 'range', 'generator', 'dispatches', 'tokens', 'context', 'cacheTtl', 'outliers', 'timing', 'autonomy', 'replies', 'impl', 'tests', 'findings', 'review', 'verify', 'ledger', 'isolation', 'compliance', 'maintainability']
+// The groups a quick change has no source for: its verify is the affected tests, its work no dispatched implementer.
+const QUICK_ABSENT = ['verify', 'impl']
 const SDD_GROUPS = ['replies', 'impl', 'findings', 'compliance', 'tests', 'review', 'verify', 'ledger']
 export const TRANSCRIPT_GROUPS = ['transcripts', 'dispatches', 'tokens', 'context', 'cacheTtl', 'outliers', 'autonomy']
 // The origin's name of the review stage's layer.
@@ -210,8 +213,17 @@ export function buildRecord({ root, change, branch, base, now = new Date(), proj
   const coverage = {}
   const warnings = []
 
+  // A quick change names its schema in its metadata; it has no verify run and no implementer.
+  const quick = dir ? readChangeMeta(root, dir)?.schema === 'quick' : false
   const sdd = readSddRecords(root, change)
   for (const g of SDD_GROUPS) coverage[g] = sdd.coverage[g] === 'record' ? 'record' : none(scrub(sdd.coverage[g].none))
+  if (quick) {
+    for (const g of QUICK_ABSENT) {
+      sdd[g] = null
+      coverage[g] = none(`quick task: no ${g}`)
+    }
+    sdd.isolation = { filesOutsidePlan: null }
+  }
 
   let ledger = []
   try {
@@ -238,7 +250,7 @@ export function buildRecord({ root, change, branch, base, now = new Date(), proj
   warnings.push(...generator.warnings)
 
   const proposedAt = proposedAtOf(git, change, range)
-  const tasksFile = dir ? join(dir, 'tasks.md') : null
+  const tasksFile = dir ? join(dir, quick ? 'quick.md' : 'tasks.md') : null
   const timing = {
     proposedAt,
     extractedAt: at,
@@ -246,7 +258,7 @@ export function buildRecord({ root, change, branch, base, now = new Date(), proj
     first: facts?.timing.first ?? null,
     last: facts?.timing.last ?? null,
     activeMinutes: facts?.timing.activeMinutes ?? null,
-    tasks: tasksFile && existsSync(tasksFile) ? parseTasks(readFileSync(tasksFile, 'utf8')).length : null,
+    tasks: tasksFile && existsSync(tasksFile) ? (quick ? quickPlanSteps : (text) => parseTasks(text).length)(readFileSync(tasksFile, 'utf8')) : null,
     minutesPerTask: facts?.timing.minutesPerTask ?? null
   }
   coverage.timing = 'record'
@@ -269,6 +281,7 @@ export function buildRecord({ root, change, branch, base, now = new Date(), proj
     generatedAt: at,
     generator: generator.value,
     runtime,
+    cycle: quick ? 'quick' : 'full',
     sources: {
       transcripts: tx.value ? { runtime: tx.value.runtime, sessions: transcriptSessions(tx.value, facts), unresolved: tx.value.unresolved } : null,
       disagreements: tx.value ? disagreementsOf(tx.value, ledger) : [],

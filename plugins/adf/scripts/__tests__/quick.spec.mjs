@@ -101,6 +101,16 @@ test('estimate-input writes the prompt, each candidate with its file and the rep
   assert.match(text, /"\$id": "adf\/quick-estimate\.schema\.json"/)
 })
 
+test('estimate-input writes marks.json with the time it ran', () => {
+  const root = host()
+  quick(root, 'filter', '--change', 'fix-it')
+  const before = Date.now()
+  quick(root, 'estimate-input', '--change', 'fix-it')
+  const marks = JSON.parse(readFileSync(join(root, '.superpowers', 'sdd', 'fix-it', 'quick', 'marks.json'), 'utf8'))
+  assert.deepEqual(Object.keys(marks), ['estimate'])
+  assert.ok(Date.parse(marks.estimate) >= before - 1000)
+})
+
 const prepared = () => {
   const root = host()
   quick(root, 'filter', '--change', 'fix-it')

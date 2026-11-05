@@ -60,6 +60,9 @@ export function quickPlanFiles(text) {
   return [...new Set(planSteps(section(text, 'Plan') ?? []).flatMap(stepFiles))]
 }
 
+// The number of numbered steps under a quick.md's `## Plan`; 0 with no `## Plan`.
+export const quickPlanSteps = (text) => planSteps(section(text, 'Plan') ?? []).length
+
 // The quick-plan gate over the text of a quick.md: 1 to 3 numbered steps under `## Plan`, each
 // with a `**Files:**` line that names at least one file. { ok, findings: [{ message }] }.
 export function checkQuickPlan(text) {

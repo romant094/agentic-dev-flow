@@ -25,6 +25,8 @@ The rules of the record:
 - The git figures come from the commits between the merge base and `HEAD` of the change branch. The working tree is not read.
 - A reason names the checkout as `.` and the home directory as `~`.
 
+The key `cycle` names the cycle of the change: `full` or `quick`. A record without `cycle` is a full change. For a quick change, `timing.tasks` counts the numbered steps of `quick.md`. The groups `verify` and `impl` are `null`, and their coverage entries read `quick task: no verify` and `quick task: no impl`. The phases of a quick change are `gather`, `estimate`, `code`, `tests`, `review` and `end`.
+
 The record has these groups:
 
 | Group | Holds |
@@ -55,6 +57,6 @@ The core fetches the rates from a pricing page. The registry key `metrics.prices
 
 ## The retrospective's numbers
 
-`/adf:retro` reads the metrics records of the changes in its window. A script computes every number of the report. The agent that reasons over the numbers writes none of them: each figure it cites is a key that the script computed. The `window` step shows how many of the changes have a metrics record.
+`/adf:retro` reads the metrics records of the changes in its window. It reports the quick changes as their own group. A script computes every number of the report. The agent that reasons over the numbers writes none of them: each figure it cites is a key that the script computed. The `window` step shows how many of the changes have a metrics record.
 
 `metrics.mjs candidates` names the review layers and verify checks that were quiet for three archived changes in a row. The retrospective uses it for its removal candidate. See [/adf:retro](../cycle/retro.md).
