@@ -6,8 +6,6 @@ The versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A version is the package version in `.claude-plugin/marketplace.json`, and its tag is `v<version>`.
 It lists the changes to the flow and its plugins. A change to the documentation alone is not listed and is not a release.
 
-## [Unreleased]
-
 ## [0.20.0] — 2026-11-04
 
 ### Added
