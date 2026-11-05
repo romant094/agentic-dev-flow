@@ -40,7 +40,13 @@ test('replace appends a managed section the new template lacks', () => {
   const ours = '## Format command\n\nnpm run fmt\n'
   const text = replaceFromUpdate('openspec/planning.md', ours, '# Guide\n\n## Other\n\nnew\n')
   assert.equal(text, '# Guide\n\n## Other\n\nnew\n\n## Format command\n\nnpm run fmt\n')
-  assert.equal(MANAGED.length, 4)
+  assert.equal(MANAGED.length, 5)
+})
+
+test('the affected tests section is managed', () => {
+  const ours = '## Affected tests command\n\nnpx vitest related {files}\n'
+  const text = replaceFromUpdate('openspec/planning.md', ours, '# Guide\n\n## Affected tests command\n\nTODO\n')
+  assert.equal(text, '# Guide\n\n## Affected tests command\n\nnpx vitest related {files}\n')
 })
 
 test('mergeKeep carries a template change and keeps a project edit', () => {

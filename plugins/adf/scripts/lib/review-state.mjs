@@ -38,7 +38,9 @@ import { commitPaths } from './commit.mjs'
 import { MAX_ATTEMPTS, parseName } from './dispatch.mjs'
 import { readRecords } from './ledger.mjs'
 import { commentFor, coveringIgnore, parseMarker } from './marker.mjs'
+import { quickDir } from './quick.mjs'
 import { cell, checkFindings, checkFix, CLOSED, computeVerdict, filterPaths, reviewConfig, SEVERITIES, where } from './review.mjs'
+import { schemaOf } from './schema.mjs'
 import { isTestFile } from './tdd-proof.mjs'
 
 export const ROUND_CAP = 3
@@ -48,6 +50,11 @@ export const fixName = (id, round) => `ai-fix ${id} r${round}`
 export const RULINGS = { range: 'review-range', slices: 'review-slices', suite: 'review-suite', round: (k) => `review-round-${k}` }
 export const recordPath = (change) => `openspec/changes/${change}/review.md`
 export const recordMessage = (change) => `docs(openspec): review ${change}`
+// A quick change has one round: the session's own fixes are settled by the affected tests run
+// at HEAD (quick.mjs tests), never by a second review.
+const isQuick = (root, change) => schemaOf(root, change).name === 'quick'
+export const QUICK_ONE_ROUND = 'a quick task has one review round; take the rest to /adf:propose'
+const affectedTests = (root, change) => readJson(join(quickDir(root, change), 'tests.json'))
 // A fix commit touches the finding's file, its tests, or both. A test of a file is a test file
 // (lib/tdd-proof.mjs's recognition) whose name, without its extension and its test marker, is
 // the file's name without its extension: `__tests__/a.spec.ts`, `a.test.ts` or `test_a.py` for `a.ts`.
@@ -205,8 +212,8 @@ export function recordStart(root, change, measured, { fresh = false, now = new D
 
 // Opens the next round and returns its number. Round 1 needs a start with a diff; round k + 1
 // needs round k's findings stored and a fix landed in round k. Past ROUND_CAP each round needs
-// the developer's `review-round-<k>` ruling, which the round records. A round opened and not
-// yet answered is returned as it is.
+// the developer's `review-round-<k>` ruling, which the round records. A quick change has round 1
+// only. A round opened and not yet answered is returned as it is.
 export function openRound(root, change, { now = new Date().toISOString() } = {}) {
   const state = liveState(root, change)
   const git = gitAt(root)
@@ -217,6 +224,7 @@ export function openRound(root, change, { now = new Date().toISOString() } = {})
   let k = 1
   let since = null
   if (last) {
+    if (isQuick(root, change)) refuse(QUICK_ONE_ROUND)
     k = last.round + 1
     if (unreviewedFixes(git, state).length === 0) {
       const { blocking } = computeVerdict(allFindings(state), { blockOn: reviewConfig(root).blockOn, dispositions: dispositionAs(state) })
@@ -614,7 +622,8 @@ function dirtyOutside(git, file) {
 
 // Renders `openspec/changes/<change>/review.md` from the state, the ledger and HEAD, and with
 // `commit` commits it alone. Refuses what no verdict can be given for; an open blocking finding
-// is a BLOCKED record, not a refusal.
+// is a BLOCKED record, not a refusal. For a quick change a fix is not re-reviewed: the affected
+// tests passing at HEAD (quick/tests.json) stand in for the suite, and the record says so.
 export function assemble(rootArg, { change, notReviewed = null, commit = false, now = new Date().toISOString() }) {
   const root = resolve(rootArg)
   const state = liveState(root, change)
@@ -627,6 +636,7 @@ export function assemble(rootArg, { change, notReviewed = null, commit = false, 
   const { blockOn } = config
   const records = rulings(root, change, state)
   const start = state.start
+  const quick = isQuick(root, change)
   const lines = ['# AI Code Review Record', '', `**Change**: \`${change}\``, `**Reviewed at**: \`${stamp(now)}\``, `**Reviewed commit**: \`${head}\``]
   const rangeLine = `**Range**: \`${start.range.spec}\` (${start.range.from === 'range' ? `an explicit range, ${start.rangeRuling.id}: ${start.rangeRuling.reason}` : `the change's base \`${start.range.baseRef}\``})`
   const excludedLine = `**Excluded files**: \`${start.counts.excluded}\` of ${start.counts.changed} by the review filter`
@@ -660,14 +670,21 @@ export function assemble(rootArg, { change, notReviewed = null, commit = false, 
   const fixes = Object.entries(dispositions).filter(([, d]) => d.as === 'fixed')
   const stray = unreviewedCommits(git, last.findings.fixBase, new Set(fixes.map(([, d]) => d.sha)), { change, config })
   if (stray.length > 0) refusals.push(`commit(s) after round ${last.round} that no round reviewed and that are not a recorded fix: ${stray.map((s) => s.slice(0, 7)).join(', ')}; review them in another round or start again`)
-  const suite = state.suite
-  if (fixes.length > 0 && !suite) refusals.push(`a fix landed and the suite has not run after it: suite.mjs run --change ${change} --section review`)
+  const suite = quick ? null : state.suite
+  const tests = quick ? affectedTests(root, change) : null
+  if (quick) {
+    const command = `quick.mjs tests --change ${change}`
+    if (fixes.length > 0 && !tests) refusals.push(`a fix landed and the affected tests have not run after it: ${command}`)
+    else if (fixes.length > 0 && tests.status !== 0) refusals.push(`the affected tests failed at ${String(tests.commit).slice(0, 7)} (exit ${tests.status}): fix them, then run ${command}`)
+    else if (fixes.length > 0 && tests.commit !== head) refusals.push(`the affected tests ran at ${String(tests.commit).slice(0, 7)}, not HEAD ${head.slice(0, 7)}: run ${command} again after the last commit`)
+  } else if (fixes.length > 0 && !suite) refusals.push(`a fix landed and the suite has not run after it: suite.mjs run --change ${change} --section review`)
   else if (fixes.length > 0 && suite.commit !== head) refusals.push(`the suite ran at ${String(suite.commit).slice(0, 7)}, not HEAD ${head.slice(0, 7)}: run it again after the last commit`)
   if (refusals.length > 0) refuse(`the record cannot be assembled: ${refusals.join('; ')}`, { refusals })
 
   const as = Object.fromEntries(Object.entries(dispositions).map(([id, d]) => [id, d.as]))
   const { blocking, counts } = computeVerdict(findings, { blockOn, dispositions: as })
-  const notReReviewed = unreviewedFixes(git, state)
+  const notReReviewed = quick ? [] : unreviewedFixes(git, state)
+  const settled = (d) => (quick && d.as === 'fixed' ? `${describe(d)}, not re-reviewed (quick task)` : describe(d))
   const suiteRuling = lastCheckRuling(records, RULINGS.suite)
   const suiteBlocks = Boolean(suite && fixes.length > 0 && suite.blocking && !suiteRuling)
   const outstanding = [
@@ -679,10 +696,10 @@ export function assemble(rootArg, { change, notReviewed = null, commit = false, 
   const roundRulings = state.rounds.filter((r) => r.meta.ruling)
   lines.push(`**Verdict**: ${verdict}`, '', `**Rounds**: \`${state.rounds.length}\``)
   if (roundRulings.length > 0) lines.push(`**Round cap**: ${ROUND_CAP}, passed by the developer's ruling: ${roundRulings.map((r) => `round ${r.round} (${r.meta.ruling.id}: ${r.meta.ruling.reason})`).join('; ')}`)
-  lines.push(`**Reviewer**: \`ai-review\` at the ${REVIEWER_LEVEL} level; fixes by \`ai-fix\` at the integration level, ${fixLevel(2)} from round 2`, rangeLine, excludedLine)
+  lines.push(`**Reviewer**: \`ai-review\` at the ${REVIEWER_LEVEL} level; ${quick ? 'fixes by the session, one round (quick task)' : `fixes by \`ai-fix\` at the integration level, ${fixLevel(2)} from round 2`}`, rangeLine, excludedLine)
   lines.push('', `**Counts**: ${SEVERITIES.map((s) => `${s} \`${counts[s]}\``).join(' | ')}`, '', '---', '', '## Findings', '', '| # | Round | Severity | Where | Title | Disposition |', '|---|---|---|---|---|---|')
   if (findings.length === 0) lines.push('| — | — | — | — | — | no findings |')
-  for (const f of findings) lines.push(`| ${f.id} | ${f.round} | ${f.severity} | \`${cell(where(f))}\` | ${cell(f.title)} | ${cell(dispositions[f.id] ? describe(dispositions[f.id]) : 'outstanding')} |`)
+  for (const f of findings) lines.push(`| ${f.id} | ${f.round} | ${f.severity} | \`${cell(where(f))}\` | ${cell(f.title)} | ${cell(dispositions[f.id] ? settled(dispositions[f.id]) : 'outstanding')} |`)
   lines.push('')
   if (outstanding.length > 0) lines.push('## Outstanding', '', ...outstanding.map((o) => `- ${o}`), '')
   const kept = findings.filter((f) => ['recorded', 'accepted'].includes(dispositions[f.id]?.as))
@@ -712,7 +729,8 @@ export function assemble(rootArg, { change, notReviewed = null, commit = false, 
     if (suite.newFailures.length) lines.push(`- new failures: ${suite.newFailures.join('; ')}`)
     lines.push('')
   }
-  const rows = findings.filter((f) => blockOn.includes(f.severity)).map((f) => `${f.id} ${f.severity}: ${dispositions[f.id] ? describe(dispositions[f.id]) : 'outstanding'}`)
+  if (tests && fixes.length > 0) lines.push('## Affected tests after the fixes', '', `- command: \`${tests.command}\`; ran at \`${tests.commit}\``, `- result: exit ${tests.status}`, '')
+  const rows = findings.filter((f) => blockOn.includes(f.severity)).map((f) => `${f.id} ${f.severity}: ${dispositions[f.id] ? settled(dispositions[f.id]) : 'outstanding'}`)
   return finish(root, { change, file, lines, verdict, counts, rounds: state.rounds.length, outstanding, commit, rows })
 }
 
@@ -744,7 +762,7 @@ const field = (text, name) => text.split('\n').find((l) => new RegExp(`^\\*\\*${
 // The disposition cell's whole forms, as the template defines them and `describe` renders them;
 // any other cell reads as `other` and is warned about.
 const KINDS = [
-  [/^fixed in `[0-9a-f]{7,40}`$/, 'fixed'],
+  [/^fixed in `[0-9a-f]{7,40}`(?:, not re-reviewed \(quick task\))?$/, 'fixed'],
   [/^dismissed — .+; (?:marker ADF IGNORE(?:-START)? \S+ at `[^`]+`|no marker: .+)$/, 'dismissed'],
   [/^recorded, non-blocking$/, 'recorded'],
   [/^accepted — .+$/, 'accepted'],

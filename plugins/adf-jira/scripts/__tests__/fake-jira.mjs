@@ -42,7 +42,8 @@ export function fakeJira({ token = 'token-value', account = 'dev.login', issues 
     if (method === 'GET' && pathname === '/rest/api/2/myself') return json({ name: account, displayName: 'Dev' })
     if (method === 'POST' && pathname === '/rest/api/2/search') {
       const text = (/text ~ "((?:[^"\\]|\\.)*)"/.exec(body.jql)?.[1] ?? '').replace(/\\(.)/g, '$1')
-      const found = Object.keys(store).filter((k) => store[k].fields.summary.toLowerCase().includes(text.toLowerCase()) && !DONE.has(store[k].fields.status))
+      const types = /issuetype in \(([^)]*)\)/.exec(body.jql)?.[1].match(/"[^"]*"/g)?.map((t) => t.slice(1, -1))
+      const found = Object.keys(store).filter((k) => store[k].fields.summary.toLowerCase().includes(text.toLowerCase()) && !DONE.has(store[k].fields.status) && (!types || types.includes(store[k].fields.issuetype.name)))
       return json({ startAt: 0, maxResults: body.maxResults, total: found.length, issues: found.slice(0, body.maxResults).map((key) => ({ key, fields: {} })) })
     }
     const m = /^\/rest\/api\/2\/issue\/([A-Z][A-Z0-9]*-\d+)(?:\/(comment|transitions))?$/.exec(pathname)

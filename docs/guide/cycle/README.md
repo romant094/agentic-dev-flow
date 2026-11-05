@@ -40,6 +40,17 @@ The command `/adf:land` is not part of this cycle. It follows the merge of the m
 
 The command [/adf:retro](retro.md) is apart from the cycle. It assesses the flow over archived changes.
 
+## Two cycles
+
+The flow has two cycles. Each change names its cycle in its metrics record.
+
+| Cycle | Command | Take it when |
+|---|---|---|
+| full | `/adf:propose`, then the stages above | The change adds a feature or changes what the system does. |
+| quick | [/adf:quick](quick.md) | The change is a small fix that changes no behaviour. |
+
+The quick cycle has one file, `quick.md`, one review round and no specs. When a quick change needs more, it stops and offers `/adf:propose`.
+
 ## The artifacts
 
 | Where | What |

@@ -79,7 +79,7 @@ import {
   statusReport,
   unskipArtifact
 } from './lib/changes.mjs'
-import { buildOrder, loadSchema } from './lib/schema.mjs'
+import { buildOrder, loadSchema, loadSchemaDir, schemaOf } from './lib/schema.mjs'
 import { isMain } from './lib/main.mjs'
 import { findChanges } from './lib/resolve.mjs'
 import { resolveActive } from './lib/active.mjs'
@@ -137,15 +137,19 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
   const allowMain = flag(args, '--allow-main')
   const archived = flag(args, '--archived')
   const reason = option(args, '--reason')
+  const cycle = option(args, '--schema')
   const part = option(args, '--part')
   const [command, target] = args
-  const schema = loadSchema(schemaDir)
+  // The tests inject a directory; otherwise a command on a named change reads the cycle from
+  // the change's metadata, and one that lists or infers uses the full schema.
+  const schema = schemaDir ? loadSchemaDir(schemaDir) : loadSchema()
   const change = () => inferChange(root, given, schema)
+  const schemaFor = (name) => (schemaDir ? schema : schemaOf(root, name))
   const writing = () => refuseMainCheckout(root, { allowMain })
   switch (command) {
     case 'new':
       if (!target) throw new Error('usage: new <name>')
-      return newChange(root, target, schema, { base })
+      return newChange(root, target, cycle === undefined ? schema : loadSchema(cycle), { base })
     case 'list':
       return listChanges(root, schema)
     case 'find': {
@@ -159,7 +163,7 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
     case 'status': {
       if (target) throw new Error(`status takes no "${target}"; usage: status [--change <name>] [--report]`)
       const name = change()
-      const status = changeStatus(root, name, schema)
+      const status = changeStatus(root, name, schemaFor(name))
       if (!report) return status
       const text = statusReport(status, { root: resolve(root), branch: branchOf(root), base: changeMeta(root, name).base ?? null })
       return { ...status, report: text }
@@ -168,9 +172,10 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
       if (!target) throw new Error('usage: instructions <artifact|apply> [--change <name>] [--part <name>]')
       if (part !== undefined && target !== 'apply') throw new Error('--part belongs to instructions apply')
     {
+      const name = change()
       const result = target === 'apply'
-        ? applyInstructions(root, change(), schema, { part: part ?? null })
-        : artifactInstructions(root, change(), target, schema)
+        ? applyInstructions(root, name, schemaFor(name), { part: part ?? null })
+        : artifactInstructions(root, name, target, schemaFor(name))
       // The instruction names the plugin's real directory, not ${CLAUDE_PLUGIN_ROOT}.
       return typeof result.instruction === 'string'
         ? { ...result, instruction: substituteRoot(result.instruction, pluginRoot({ scriptUrl: new URL('./lib/plugin-root.mjs', import.meta.url).href, env }).root) }
@@ -180,7 +185,8 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
       writing()
       const name = change()
       // Recorded after nextArtifact has found the change, so no ledger is made for a typo.
-      return nextArtifact(resolve(root), name, schema).then((result) => ({
+      // A change that cannot be found rejects, as nextArtifact does.
+      return Promise.resolve().then(() => nextArtifact(resolve(root), name, schemaFor(name))).then((result) => ({
         ...result,
         ...(result.artifact === 'brainstorm' ? { knowledge: knowledgeIndex(resolve(root), knowledge) } : {}),
         ledger: recordSessionOnce(resolve(root), name, 'propose', { env })
@@ -189,15 +195,24 @@ export function run(argv, { schemaDir, env = process.env, knowledge = readKnowle
     case 'done':
       if (!target) throw new Error('usage: done <artifact> [--change <name>]')
       writing()
-      return markDone(resolve(root), change(), target, schema)
+    {
+      const name = change()
+      return Promise.resolve().then(() => markDone(resolve(root), name, target, schemaFor(name)))
+    }
     case 'skip':
       if (!target) throw new Error('usage: skip <artifact> [--change <name>] [--reason "<why>"]')
       writing()
-      return skipArtifact(root, change(), target, schema, { reason })
+    {
+      const name = change()
+      return skipArtifact(root, name, target, schemaFor(name), { reason })
+    }
     case 'unskip':
       if (!target) throw new Error('usage: unskip <artifact> [--change <name>]')
       writing()
-      return unskipArtifact(root, change(), target, schema)
+    {
+      const name = change()
+      return unskipArtifact(root, name, target, schemaFor(name))
+    }
     case 'schema':
       return { name: schema.name, version: schema.version, order: buildOrder(schema), apply: schema.apply ?? null }
     case 'archive':

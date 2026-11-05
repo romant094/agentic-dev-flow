@@ -34,7 +34,8 @@ import { ARCHIVE, CHANGES_DIR, globToRegExp, parseTasks } from './changes.mjs'
 import { listTree } from './debt.mjs'
 import { median, TOKEN_FIELDS } from './metrics-facts.mjs'
 import { LAYERS, removalCandidates } from './metrics-records.mjs'
-import { asV2, GROUPS, PLUGIN_ROOT, RECORD_FILE, TRANSCRIPT_GROUPS, validateRecord } from './metrics.mjs'
+import { asV2, cost, GROUPS, PLUGIN_ROOT, RECORD_FILE, TRANSCRIPT_GROUPS, validateRecord } from './metrics.mjs'
+import { readTable } from './prices.mjs'
 import { readDebtRoot } from './registry.mjs'
 
 export const RETRO_DIR = '.adf/retro'
@@ -475,6 +476,22 @@ function valueOf(m, c) {
 
 const round4 = (v) => (num(v) === null ? null : Number(v.toFixed(4)))
 
+// A record's cycle: `quick` or, with none named, `full`.
+export const cycleOf = (record) => record?.cycle ?? 'full'
+
+// What the retrospective shows per change of a cycle: the active minutes, the model turns, the
+// tokens (as `cost.tokens` counts them) and the USD at the price table; each null when the
+// record has no such group.
+export function cycleFigures(record, table) {
+  if (!record) return { activeMinutes: null, turns: null, tokens: null, usd: null }
+  return {
+    activeMinutes: num(record.timing?.activeMinutes?.total),
+    turns: num(record.tokens?.total?.turns),
+    tokens: tokensOf(record.tokens?.total),
+    usd: record.tokens ? cost(record, table).usd : null
+  }
+}
+
 // One change's value of every metric, keyed by metric.
 export function changeValues(c) {
   return Object.fromEntries(METRICS.map((m) => [m.key, round4(valueOf(m, c))]))
@@ -524,6 +541,7 @@ export function delta(prev, cur) {
   const now = cur?.aggregates ?? cur ?? {}
   const out = { improved: [], worsened: [], unchanged: [], notCompared: [] }
   for (const key of [...new Set([...Object.keys(now), ...Object.keys(before)])].sort()) {
+    if (key === 'quick') continue // the quick changes' aggregates are not compared
     const direction = DIRECTION[key]
     const [b, c] = [before[key], now[key]]
     if (!direction) {
@@ -603,6 +621,7 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
   const branchOf = (e) => records.get(e.archiveDir).record?.branch ?? e.branch
   const sessionsOf = (e) => records.get(e.archiveDir).record?.sources?.transcripts?.sessions ?? []
 
+  const table = readTable(root)
   const changes = sel.changes.map((e) => {
     const { record, reason } = records.get(e.archiveDir)
     const coverage = record ? { ...record.sources.coverage } : Object.fromEntries(GROUPS.map((g) => [g, none(reason)]))
@@ -642,19 +661,23 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
       coverage,
       git,
       sharedBranch,
-      values: changeValues(c)
+      values: changeValues(c),
+      cycle: cycleOf(record),
+      figures: cycleFigures(record, table)
     }
   })
 
-  // The aggregates are computed from the same inputs the values came from.
-  const inputs = changes.map((c) => ({ change: c.change, record: records.get(c.archiveDir).record, coverage: c.coverage, git: c.git, tasks: c.tasks, sharedBranch: c.sharedBranch }))
-  const aggregates = aggregate(inputs)
+  // The aggregates are computed from the same inputs the values came from, over the full
+  // changes; the quick changes have aggregates of their own, null when the window has none.
+  const inputs = changes.map((c) => ({ change: c.change, cycle: c.cycle, record: records.get(c.archiveDir).record, coverage: c.coverage, git: c.git, tasks: c.tasks, sharedBranch: c.sharedBranch }))
+  const quickInputs = inputs.filter((c) => c.cycle === 'quick')
+  const aggregates = { ...aggregate(inputs.filter((c) => c.cycle === 'full')), quick: quickInputs.length > 0 ? aggregate(quickInputs) : null }
   const versions = new Map()
   for (const c of changes) {
     const key = c.generator ? `${c.generator.plugin} ${c.generator.version}` : null
     if (key) versions.set(key, [...(versions.get(key) ?? []), c.change])
   }
-  const usable = everyDir.map((e) => records.get(e.archiveDir)).filter((r) => r.record)
+  const usable = everyDir.map((e) => records.get(e.archiveDir)).filter((r) => r.record && cycleOf(r.record) === 'full')
   return {
     schemaVersion: SIDECAR_VERSION,
     date,

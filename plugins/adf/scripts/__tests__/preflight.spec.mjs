@@ -87,6 +87,19 @@ test('apply passes in the change worktree and reports what the phase needs', asy
   assert.equal(again.ledger.id, 'session-2')
 })
 
+test('preflight refuses apply on a quick change', async () => {
+  const { change, dir } = host()
+  writeFileSync(join(dir, '.adf.json'), JSON.stringify({ schema: 'quick', schemaVersion: 1, created: '2026-10-15', base: 'develop' }))
+  git(change, 'add', '.')
+  git(change, 'commit', '-q', '-m', 'quick')
+  for (const phase of ['apply', 'verify', 'review']) {
+    const out = await check(phase, change)
+    assert.equal(out.ok, false)
+    assert.equal(out.refusal, 'add-x is a quick change; it has no apply, verify or review stage: run /adf:quick add-x')
+  }
+  assert.equal(existsSync(join(change, '.superpowers', 'sdd')), false, 'nothing is written')
+})
+
 test('the Superpowers gate refuses first and nothing is written', async () => {
   const { change } = host()
   const out = await preflight({ phase: 'apply', change: 'add-x', root: change, env, home: home({ superpowers: false }) })
@@ -306,6 +319,25 @@ test('archive needs the review artifact and a tree clean outside the change, unl
   const resumed = await check('archive', change)
   assert.equal(resumed.ok, true, resumed.refusal)
   assert.deepEqual(resumed.archive, { started: true, next: 'placements' })
+})
+
+// A quick change has no review artifact in its schema: its review gate is the record review.md,
+// the file the archive's check reads.
+test('archive preflight accepts a quick change', async () => {
+  const { change, dir } = host({ plan: null, tasks: null })
+  writeFileSync(join(dir, '.adf.json'), JSON.stringify({ schema: 'quick', schemaVersion: 1, created: '2026-10-15', base: 'develop' }))
+  writeFileSync(join(dir, 'quick.md'), '## Goal\n\ng\n')
+  git(change, 'add', '.')
+  git(change, 'commit', '-q', '-m', 'quick')
+  const blocked = await check('archive', change)
+  assert.equal(blocked.ok, false)
+  assert.match(blocked.refusal, /archive needs review done first; run \/adf:quick add-x/)
+  writeFileSync(join(dir, 'review.md'), 'x\n')
+  git(change, 'add', '.')
+  git(change, 'commit', '-q', '-m', 'review')
+  const ok = await check('archive', change)
+  assert.equal(ok.ok, true, ok.refusal)
+  assert.equal(ok.state, 'ready')
 })
 
 test('archive passes for a change already moved to the archive, and refuses a change that is nowhere', async () => {

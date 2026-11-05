@@ -13,7 +13,8 @@
 // the hurt signals of this change's record.
 //
 // What each step reads and writes:
-//   check         the review record through review-state's checkRecord: PASS only (one
+//   check         (a quick change: quick.md's `## Summary` must hold text, and no spec base is
+//                 checked) the review record through review-state's checkRecord: PASS only (one
 //                 verdict route: a developer ruling with a reason makes the computed verdict
 //                 PASS), the record committed, the reviewed commit read and an ancestor of HEAD,
 //                 no commit after it touching anything but the record (`git log <sha>..HEAD --
@@ -35,7 +36,8 @@
 //                 uses; an entry already resolved counts as resolved, one in neither file is
 //                 reported as gone, and the debt tree's uncommitted files are recorded: they are
 //                 the placement's.
-//   merge         lib/specs.mjs writeMerge, after the preview: a conflict writes its texts for the
+//   merge         a quick change has no delta specs: `skipped`, reason `quick task`. Otherwise
+//                 lib/specs.mjs writeMerge, after the preview: a conflict writes its texts for the
 //                 `spec-merge <capability>` dispatch and fails the step; a new capability's
 //                 placeholder Purpose refuses until `--purpose <capability>=<file>` gives it.
 //   move          lib/changes.mjs archiveChange: the ledger copied once, the directory moved, on
@@ -100,7 +102,7 @@ import { debtGroups, findScope, namesKey, SCOPE_FILE, scopeKeys, trackerTargets 
 import { checkResolutions, checkSpecsBase, mergePreview, writeMerge } from './specs.mjs'
 import { writeConflictTexts } from './spec-merge.mjs'
 import { buildLinks, linksInput } from './mr-links.mjs'
-import { loadSchema } from './schema.mjs'
+import { checkQuickSummary, schemaOf } from './schema.mjs'
 import { defaultProjectsDir } from './transcripts.mjs'
 import { fetchRef, LINT_DUE, sinceLastRetro } from './window.mjs'
 import { remove as removeWorktree } from './workspace.mjs'
@@ -343,37 +345,51 @@ export function handEditedProse(verifyText) {
 
 // ---------------------------------------------------------------- check
 
+// A quick change has the quick schema; every other change reads as full.
+export const isQuick = (root, change) => schemaOf(root, change).name === 'quick'
+
+// The command that reviews a change again: a quick change has its review inside /adf:quick.
+const reviewCommand = (root, change) =>
+  existsSync(join(root, CHANGES_DIR, change)) && isQuick(root, change) ? `/adf:quick ${change}` : `/adf:review ${change}`
+
 export function checkStep(ctx) {
   return runStep(ctx, 'check', () => {
     const { root, change, git } = ctx
     const record = recordPath(change)
+    const again = reviewCommand(root, change)
     const top = git('read the repository root', 'rev-parse', '--show-toplevel')
     const roots = { change: root, repository: existsSync(top) ? realpathSync(top) : top }
-    if (!existsSync(join(root, record))) refuse(`${record} is missing; run /adf:review ${change}`, { roots })
+    if (!existsSync(join(root, record))) refuse(`${record} is missing; run ${again}`, { roots })
     const parsed = checkRecord(readFileSync(join(root, record), 'utf8'))
-    if (!parsed.ok) refuse(`${record} cannot be read: ${parsed.errors.join('; ')}; run /adf:review ${change} again`, { roots })
+    if (!parsed.ok) refuse(`${record} cannot be read: ${parsed.errors.join('; ')}; run ${again} again`, { roots })
     if (parsed.change && parsed.change !== change) refuse(`${record} is the record of ${parsed.change}, not ${change}`, { roots })
     if (parsed.verdict !== 'PASS') {
-      refuse(`${record} says ${parsed.verdict}; archive proceeds on PASS only: settle each outstanding finding with /adf:review ${change}, where the developer's ruling with a reason accepts a blocking finding`, { verdict: parsed.verdict, roots })
+      refuse(`${record} says ${parsed.verdict}; archive proceeds on PASS only: settle each outstanding finding with ${again}, where the developer's ruling with a reason accepts a blocking finding`, { verdict: parsed.verdict, roots })
     }
     if (git('read the status of the review record', 'status', '--porcelain', '--', record) !== '') refuse(`${record} has uncommitted changes; review.mjs assemble --commit commits it`, { roots })
     if (!git('read the history of the review record', 'log', '-1', '--format=%H', '--', record)) refuse(`${record} is not committed; review.mjs assemble --commit commits it`, { roots })
     const sha = spawnSync('git', ['rev-parse', '--verify', '--quiet', `${parsed.commit}^{commit}`], { cwd: root, encoding: 'utf8' })
-    if (sha.status !== 0) refuse(`the reviewed commit ${parsed.commit} is not in this repository (change root ${roots.change}, repository root ${roots.repository}); run /adf:review ${change} again`, { roots })
+    if (sha.status !== 0) refuse(`the reviewed commit ${parsed.commit} is not in this repository (change root ${roots.change}, repository root ${roots.repository}); run ${again} again`, { roots })
     const commit = sha.stdout.trim()
     if (!gitAsk(root, 'compare the reviewed commit with HEAD', 'merge-base', '--is-ancestor', commit, 'HEAD')) {
-      refuse(`the reviewed commit ${commit.slice(0, 7)} is not an ancestor of HEAD (change root ${roots.change}, repository root ${roots.repository}); run /adf:review ${change} again`, { roots })
+      refuse(`the reviewed commit ${commit.slice(0, 7)} is not an ancestor of HEAD (change root ${roots.change}, repository root ${roots.repository}); run ${again} again`, { roots })
     }
     const after = git('list the commits after the reviewed one', 'log', '--format=%h', `${commit}..HEAD`, '--', '.', `:(exclude)${record}`)
     if (after) {
       const differ = roots.change !== roots.repository ? '; the two roots differ, so pass the worktree top level as --root' : ''
       refuse(
-        `commit(s) ${after.split('\n').join(', ')} after the reviewed commit ${commit.slice(0, 7)} change files other than ${record}: the code changed since it was reviewed; run /adf:review ${change} again (change root ${roots.change}, repository root ${roots.repository}${differ})`,
+        `commit(s) ${after.split('\n').join(', ')} after the reviewed commit ${commit.slice(0, 7)} change files other than ${record}: the code changed since it was reviewed; run ${again} again (change root ${roots.change}, repository root ${roots.repository}${differ})`,
         { roots, stale: after.split('\n') }
       )
     }
-    const base = checkSpecsBase(root, change)
+    const quick = isQuick(root, change)
     const warnings = []
+    if (quick) {
+      const file = join(root, CHANGES_DIR, change, 'quick.md')
+      if (!checkQuickSummary(existsSync(file) ? readFileSync(file, 'utf8') : '').ok) refuse('quick.md has no summary; write ## Summary, then run check again', { roots })
+    }
+    // A quick change has no delta specs, so no base to check.
+    const base = quick ? { ok: true } : checkSpecsBase(root, change)
     if (base.warning) {
       warnings.push(base.warning)
     } else if (!base.ok) {
@@ -381,7 +397,7 @@ export function checkStep(ctx) {
     }
     const dir = join(root, CHANGES_DIR, change)
     readMeta(root, dir)
-    for (const a of changeStatus(root, change, loadSchema()).artifacts) {
+    for (const a of changeStatus(root, change, schemaOf(root, change)).artifacts) {
       if (!['done', 'skipped'].includes(a.status)) warnings.push(`artifact ${a.id} is ${a.status}`)
     }
     const tasksFile = join(dir, 'tasks.md')
@@ -477,6 +493,8 @@ function resolveTakenDebt(ctx, debt) {
 export function mergeStep(ctx, { resolutionFiles = [], purposeFiles = {} } = {}) {
   return runStep(ctx, 'merge', () => {
     const { root, change } = ctx
+    // A quick change has no delta specs to merge.
+    if (isQuick(root, change)) return { state: 'skipped', detail: { reason: 'quick task' } }
     const resolutions = resolutionFiles.flatMap((file) => {
       let value
       try {
@@ -773,6 +791,21 @@ export function deltaScenarios(text, capability) {
 export function mrInput(ctx) {
   const dir = findChangeDir(ctx.root, ctx.change)
   const read = (name) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8') : null)
+  if (isQuick(ctx.root, ctx.change)) {
+    const quick = read('quick.md') ?? ''
+    const text = (title) => (section(quick, title) ?? '').replace(/<!--[\s\S]*?-->/g, '').trim()
+    return {
+      ok: true,
+      change: ctx.change,
+      changeDir: dir,
+      cycle: 'quick',
+      goal: text('Goal'),
+      summary: text('Summary'),
+      plan: text('Plan'),
+      links: buildLinks(ctx.root, changeScope(ctx), baseOf(ctx)),
+      bodyFile: bodyPath(ctx.main, ctx.change)
+    }
+  }
   const tasks = parseTasks(read('tasks.md') ?? '')
   const verify = read('verify.md') ?? ''
   return {

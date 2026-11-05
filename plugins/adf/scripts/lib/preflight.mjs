@@ -26,7 +26,7 @@ import { applyInstructions, ARCHIVE, archivedDirs, artifactInstructions, changeD
 import { checkCommitPlace, Refusal } from './commit.mjs'
 import { mainCheckout } from './installed.mjs'
 import { appendRecord } from './ledger.mjs'
-import { loadSchema } from './schema.mjs'
+import { loadSchema, schemaOf } from './schema.mjs'
 import { checkSuperpowers } from './superpowers.mjs'
 import { runPlanSymbols as planSymbols } from './plan-symbols-repo.mjs'
 import { initSdd } from './sdd.mjs'
@@ -78,6 +78,15 @@ function verifiedCode(root, change, git) {
   return { verify: { verdict, commit } }
 }
 
+// The change's own schema; the full one when the change cannot be found (the archive check says so).
+function schemaOrFull(root, change) {
+  try {
+    return schemaOf(root, change)
+  } catch {
+    return loadSchema()
+  }
+}
+
 async function changePhase(out, { phase, change, root, env, schema, git }) {
   const stop = (refusal) => ({ ...out, ok: false, refusal })
   let place
@@ -90,7 +99,7 @@ async function changePhase(out, { phase, change, root, env, schema, git }) {
   Object.assign(out, { main: place.main, root: place.root, branch: place.branch, protected: place.protected })
   root = place.root
   if (phase === 'archive') {
-    const gated = archiveGate(out, { change, root, schema, git })
+    const gated = archiveGate(out, { change, root, schema: schema ?? schemaOrFull(root, change), git })
     if (gated.refusal) return stop(gated.refusal)
     return record(out, { root, change, phase, env })
   }
@@ -98,6 +107,8 @@ async function changePhase(out, { phase, change, root, env, schema, git }) {
     return stop(`${root} holds no change "${change}"; select the change and its root from changes.mjs find.`)
   }
   out.base = readBase(root, change)
+  schema ??= schemaOf(root, change)
+  if (schema.name === 'quick' && ['apply', 'verify', 'review'].includes(phase)) return stop(`${change} is a quick change; it has no apply, verify or review stage: run /adf:quick ${change}`)
 
   const apply = applyInstructions(root, change, schema)
   out.progress = apply.progress
@@ -169,9 +180,12 @@ function archiveGate(out, { change, root, schema, git }) {
   }
   out.base = readBase(root, change)
   out.progress = applyInstructions(root, change, schema).progress
-  const review = changeStatus(root, change, schema).artifacts.find((a) => a.id === 'review')
-  out.state = review?.status === 'done' ? 'ready' : 'blocked'
-  if (out.state === 'blocked') return { refusal: `archive needs review done first; run /adf:review ${change} to write it.` }
+  // A quick change has no review artifact: its review gate is the record review.md itself, the
+  // file the archive's check reads.
+  const quick = schema.name === 'quick'
+  const reviewed = quick ? existsSync(join(changeDir(root, change), 'review.md')) : changeStatus(root, change, schema).artifacts.find((a) => a.id === 'review')?.status === 'done'
+  out.state = reviewed ? 'ready' : 'blocked'
+  if (out.state === 'blocked') return { refusal: `archive needs review done first; run /adf:${quick ? 'quick' : 'review'} ${change} to write it.` }
   if (out.archive.started) return {}
   let status
   try {
@@ -219,7 +233,7 @@ function proposePhase(out, { change, root, git }) {
   return { ...out, ok: true }
 }
 
-export async function preflight({ phase, change, root, env = process.env, home, schema = loadSchema(), git = gitIn(root) }) {
+export async function preflight({ phase, change, root, env = process.env, home, schema, git = gitIn(root) }) {
   const out = { ok: false, phase, change, main: null, root, branch: null, protected: null, base: null, state: null, progress: null, sdd: null, ledger: null }
   if (!PHASES.includes(phase)) return { ...out, refusal: `phase "${phase}" is not one of ${PHASES.join(', ')}.` }
   if (!NAME.test(change ?? '')) return { ...out, refusal: `change name "${change}" is not kebab-case; pass the resolved change name, never a placeholder.` }

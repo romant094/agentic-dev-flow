@@ -1,5 +1,5 @@
 {
-  "version": "1.10",
+  "version": "1.11",
   "points": {
     "forge": {
       "kind": "role",
@@ -61,8 +61,12 @@
         "check",
         "gather",
         "start",
-        "handoff"
-      ]
+        "handoff",
+        "bugs"
+      ],
+      "operationSince": {
+        "bugs": "1.11"
+      }
     }
   }
 }

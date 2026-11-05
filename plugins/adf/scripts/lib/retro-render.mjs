@@ -8,6 +8,8 @@
 // `issues` are what the `upstream` role's `file` returned (`[{ item, kind, number, url, existed }]`,
 // none when it did not run or filed nothing): each finding gets `issue` and each ADF debt record
 // `filed`, the issue's URL or null.
+import { cyclesOf } from './retro.mjs'
+
 const HEADING = { window: 'Window', change: 'Change', period: 'Period' }
 
 const shown = (v) => (v === null || v === undefined ? 'n/a' : String(v))
@@ -51,6 +53,23 @@ function changesTable(changes) {
     '|---|---|---|---|---|---|',
     ...changes.map((c) => `| ${cell(c.change)} | ${day(c.mergedAt)} | ${cell(c.tasks)} | ${cell(c.git?.diffLines)} | ${cell(c.git?.fixesAfter)} | ${cell(c.record === 'record' ? 'record' : `none: ${c.record?.none}`)} |`)
   ]
+}
+
+const CYCLES = [['full', 'Full cycle'], ['quick', 'Quick cycle']]
+
+// The cost of each change per cycle, under `### Full cycle` and `### Quick cycle`. A window with
+// no quick change shows no such headings: it reads as it did before the quick cycle.
+function cycleSections(changes) {
+  const by = cyclesOf(changes)
+  if (!by.quick) return []
+  return CYCLES.filter(([cycle]) => by[cycle]).flatMap(([cycle, title]) => [
+    `### ${title}`,
+    '',
+    '| Change | Active minutes | Turns | Tokens | Cost (USD) |',
+    '|---|---|---|---|---|',
+    ...by[cycle].map((c) => `| ${cell(c.change)} | ${cell(c.activeMinutes)} | ${cell(c.turns)} | ${cell(c.tokens)} | ${cell(c.usd)} |`),
+    ''
+  ])
 }
 
 function findingLines(f) {
@@ -116,6 +135,7 @@ export function renderRetro(sidecar, computed, issues = []) {
     '',
     ...changesTable(sidecar.changes),
     '',
+    ...cycleSections(sidecar.changes),
     '## Findings',
     '',
     ...(doc.nothingFound ? ['Nothing found.', ''] : doc.findings.flatMap(findingLines)),

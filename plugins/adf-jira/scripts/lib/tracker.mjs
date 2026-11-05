@@ -5,6 +5,8 @@
 //   gather   the named issues and a text search in the allowlisted projects, either or both;
 //            their parent, sub-tasks and linked issues; one JSON file per issue under
 //            input.stateDir
+//   bugs     the open issues of the profile's bug issue types in the allowlisted projects, read as
+//            gather reads them; only open, not excluded items of kind bug are returned
 //   start    a held plan: each issue to the start status, assigned to the developer; an item
 //            with corrections also gets the templated correction comment (decision D7)
 //   handoff  a held plan: the templated comment; for taken and not-reproduced items also the
@@ -37,7 +39,7 @@ import { assertResolvable, placeholderValues, placeholdersIn, resolvePlaceholder
 import { MAX_AGE_DAYS, isStale, profilePaths, readDiscovered } from './profile.mjs'
 import { commentRow, readAllComments } from './readers.mjs'
 
-export const OPERATIONS = ['check', 'gather', 'start', 'handoff']
+export const OPERATIONS = ['check', 'gather', 'bugs', 'start', 'handoff']
 export const TEXT_SEARCH_LIMIT = 20
 const NOTHING_SENT = 'nothing was sent'
 const ISSUE_KEY = /^[A-Z][A-Z0-9]*-\d+$/
@@ -67,6 +69,7 @@ export async function runOperation(operation, payload, deps) {
     if (ready.code !== undefined) return ready
     Object.assign(ctx, ready)
     if (operation === 'gather') return await gather(ctx)
+    if (operation === 'bugs') return await bugs(ctx)
     if (operation === 'start') return await start(ctx)
     return await handoff(ctx)
   } catch (error) {
@@ -201,17 +204,6 @@ async function gather(ctx) {
   if (typeof stateDir !== 'string' || !isAbsolute(stateDir)) throw new Refusal(`stateDir is not an absolute path; ${NOTHING_SENT}.`)
 
   const notes = []
-  const allowed = (key) => env.allowedProjects.includes(projectOf(key))
-  const fieldIds = []
-  const fieldNames = {}
-  for (const name of config.fields) {
-    const id = facts.fieldMap?.[name]
-    if (id) {
-      fieldIds.push(id)
-      fieldNames[id] = name
-    } else notes.push(`field "${name}" is not in the profile's field map; not read`)
-  }
-
   // With keys, `named` is the keys alone and the text search only adds issues; without, it is
   // the search's hits.
   const given = keys === undefined ? [] : [...new Set(keys)]
@@ -223,7 +215,43 @@ async function gather(ctx) {
     if (found.length === TEXT_SEARCH_LIMIT) notes.push(`the text search stopped at ${TEXT_SEARCH_LIMIT} issues; name keys to narrow it`)
     if (found.length === 0) notes.push('the text search found no open issue')
   }
-  const named = keys === undefined ? found : given
+  return readItems(ctx, { given, found, named: keys === undefined ? found : given, notes, related: true })
+}
+
+// The open bugs: the keys come from the profile's bug issue types, the reading is gather's.
+async function bugs(ctx) {
+  const { input, env, client, facts } = ctx
+  const { change, stateDir } = input
+  if (typeof change !== 'string' || change === '') throw new Refusal(`change is missing; ${NOTHING_SENT}.`)
+  if (typeof stateDir !== 'string' || !isAbsolute(stateDir)) throw new Refusal(`stateDir is not an absolute path; ${NOTHING_SENT}.`)
+  const types = (facts.issueTypes ?? []).filter((t) => kindOf(t) === 'bug').map((t) => t.name)
+  if (types.length === 0) return done({ change, items: [], notes: ['the profile has no bug issue type'] })
+  const quote = (list) => list.map((v) => `"${v.replace(/["\\]/g, '\\$&')}"`).join(', ')
+  const jql = `project in (${quote(env.allowedProjects)}) AND issuetype in (${quote(types)}) AND statusCategory != Done ORDER BY updated DESC`
+  const found = (await client.search(jql, ['key'], TEXT_SEARCH_LIMIT)).map((i) => i.key)
+  const notes = []
+  if (found.length === TEXT_SEARCH_LIMIT) notes.push(`the bug search stopped at ${TEXT_SEARCH_LIMIT} issues`)
+  if (found.length === 0) notes.push('the bug search found no open bug')
+  const got = await readItems(ctx, { given: [], found, named: found, notes, related: false })
+  return { ...got, result: { ...got.result, items: got.result.items.filter((i) => i.kind === 'bug' && i.open && !i.excluded) } }
+}
+
+// The reading both gather and bugs share: each primary key, and for gather its parent,
+// sub-tasks and linked issues, one JSON file per issue under input.stateDir.
+async function readItems(ctx, { given, found, named, notes, related }) {
+  const { input, config, env, client, facts } = ctx
+  const { change, stateDir } = input
+  const allowed = (key) => env.allowedProjects.includes(projectOf(key))
+  const fieldIds = []
+  const fieldNames = {}
+  for (const name of config.fields) {
+    const id = facts.fieldMap?.[name]
+    if (id) {
+      fieldIds.push(id)
+      fieldNames[id] = name
+    } else notes.push(`field "${name}" is not in the profile's field map; not read`)
+  }
+
   const primary = [...new Set([...given, ...found])]
 
   const issues = new Map()
@@ -247,7 +275,7 @@ async function gather(ctx) {
   }
 
   for (const key of primary) await read(key)
-  for (const key of primary.filter((k) => issues.has(k))) {
+  for (const key of related ? primary.filter((k) => issues.has(k)) : []) {
     const f = issues.get(key).fields
     if (f.parent?.key) await read(f.parent.key, { key, relation: 'parent of' })
     for (const sub of f.subtasks ?? []) await read(sub.key, { key, relation: 'sub-task of' })

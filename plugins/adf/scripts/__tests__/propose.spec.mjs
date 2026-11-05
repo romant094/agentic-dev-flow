@@ -153,6 +153,33 @@ test('create makes the worktree, the change with its base, and the propose sessi
   assert.deepEqual([made.active.key, pointerOf(root).change], ['feat/add-thing', 'add-thing'])
 })
 
+test('create --schema quick makes a quick change; next hands out quick.md and done runs quick-plan', async () => {
+  const main = host()
+  const made = await proposeCli(['create', '--change', 'fix-it', '--branch', 'feat/fix-it', '--base', 'integration', '--schema', 'quick', '--root', main], { env })
+  assert.equal(made.code, 0, JSON.stringify(made.result))
+  const root = made.result.root
+  assert.equal(JSON.parse(readFileSync(join(root, 'openspec', 'changes', 'fix-it', '.adf.json'), 'utf8')).schema, 'quick')
+  const quick = loadSchema('quick')
+  const next = await nextArtifact(root, 'fix-it', quick)
+  assert.deepEqual([next.artifact, next.gates], ['quick', ['quick-plan']])
+  write(join(root, 'openspec', 'changes', 'fix-it'), 'quick.md', '## Plan\n\n1. Fix\n   **Files:** `a.mjs`\n')
+  const done = await markDone(root, 'fix-it', 'quick', quick)
+  assert.deepEqual(done.gates.map((g) => [g.gate, g.ok]), [['quick-plan', true]])
+})
+
+test('create --schema quick records gather and estimate', async () => {
+  const main = host()
+  const at = '2026-10-03T09:30:00.000Z'
+  mkdirSync(join(main, '.superpowers', 'sdd', 'fix-it', 'quick'), { recursive: true })
+  writeFileSync(join(main, '.superpowers', 'sdd', 'fix-it', 'quick', 'marks.json'), JSON.stringify({ estimate: at }))
+  const made = await proposeCli(['create', '--change', 'fix-it', '--branch', 'feat/fix-it', '--base', 'integration', '--schema', 'quick', '--root', main], { env })
+  assert.equal(made.code, 0, JSON.stringify(made.result))
+  const records = readFileSync(join(made.result.root, '.superpowers', 'sdd', 'fix-it', 'ledger.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l))
+  assert.deepEqual(records.map((r) => [r.kind, r.phase, r.sessionId]), [['session', 'gather', 'session-1'], ['session', 'estimate', 'session-1']])
+  assert.equal(records[1].at, at, 'estimate carries the time estimate-input ran')
+  assert.ok(records[0].at < records[1].at, 'gather sorts before estimate')
+})
+
 test('next hands out each artifact in order, done gates it, and commit takes only the change', async () => {
   const { main, root, dir } = started()
   let next = await nextArtifact(root, 'add-thing', schema)

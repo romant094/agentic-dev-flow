@@ -63,7 +63,7 @@ missing and changes nothing that exists.
    node "${CLAUDE_PLUGIN_ROOT}/scripts/debt.mjs" check
    ```
 
-   Exit code 1 here means the tree has errors: continue, and show them in step 9.
+   Exit code 1 here means the tree has errors: continue, and show them in step 10.
 
    If `root` is not null, change nothing: the `report` of step 1 already holds the debt check.
 
@@ -120,7 +120,7 @@ missing and changes nothing that exists.
    empty, change nothing for the copies.
 
    If `trustHooks` is true, tell the developer: "Open /hooks once and trust the ADF hooks; Codex
-   does not run a hook it has not trusted." Show it again in step 9.
+   does not run a hook it has not trusted." Show it again in step 10.
 
 7. Read the `## Format command` section of `openspec/planning.md`. If it holds no command, read
    the project's format scripts (the `package.json` scripts, the `Makefile`, the git hook
@@ -132,7 +132,16 @@ missing and changes nothing that exists.
    when the developer declines, or the project has no formatter, leave the section as it is.
    If the section holds a command, change nothing.
 
-8. Find the lines of the project's agent instruction files (`CLAUDE.md`, `AGENTS.md` and the
+8. Read the `## Affected tests command` section of `openspec/planning.md`. If it holds no
+   command, read the project's test runner (the `package.json` scripts, the `Makefile`, the CI
+   configuration) and propose one command that runs only the tests of the files it is given, with
+   `{files}` where the paths go, for example `npx vitest related --run {files}`. A quick task
+   runs it on the files it changed. When the developer confirms a command, write it into the
+   section as one line in backticks, adding the section before `## Fresh-run proof` when the
+   guide lacks it; when the developer declines, or the runner cannot select tests by file, leave
+   the section as it is. If the section holds a command, change nothing.
+
+9. Find the lines of the project's agent instruction files (`CLAUDE.md`, `AGENTS.md` and the
    like) that name a previous flow's commands, such as `/opsx:propose` or `openspec/schemas`:
 
    ```bash
@@ -141,7 +150,7 @@ missing and changes nothing that exists.
 
    It changes nothing. Do not edit these files: the developer rewords them for `/adf:*`.
 
-9. Show the `report` of step 1 as it is, with the `report` of step 2 when it ran in place of its
+10. Show the `report` of step 1 as it is, with the `report` of step 2 when it ran in place of its
    branch policy line, one line `Debt store: <root>`, with `(root index created)` when step 4
    created it, and, when step 4 set the root, `Debt check: ok` or the count and every
    `file:line message` of its `errors`. On debt errors, tell the developer the flow refuses to
@@ -150,7 +159,8 @@ missing and changes nothing that exists.
    `Worktree preparation: <n> step(s)`, one line `Whole-suite command: <command>` or
    `Whole-suite command: none; apply asks for it`, one line `Worktree copies: <paths>` or
    `Worktree copies: none`, and one line `Format command: <command>` or
-   `Format command: none`. Then the `report` of step 8 as it is. When `trustHooks` was true in step 6, the
+   `Format command: none`, and one line `Affected tests command: <command>` or
+   `Affected tests command: none`. Then the `report` of step 9 as it is. When `trustHooks` was true in step 6, the
    hook-trust message of step 6. The report includes the
    tracker's check and its notes when a plugin
    provides the tracker; act on a note, for example

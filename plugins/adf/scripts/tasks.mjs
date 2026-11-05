@@ -24,7 +24,7 @@ import { changeDir, parseTasks } from './lib/changes.mjs'
 import { scopeNaming } from './lib/scope.mjs'
 import { commitTick, itemForPlanTask, lintTasks, tickGate, tickTask } from './lib/tasks.mjs'
 import { isMain } from './lib/main.mjs'
-import { loadSchema } from './lib/schema.mjs'
+import { schemaOf } from './lib/schema.mjs'
 
 const USAGE =
   'usage: tasks.mjs tick <item> | --plan-task <N> --change <name> [--root <dir>] [--commit]; tasks.mjs lint --change <name> [--root <dir>]'
@@ -54,7 +54,7 @@ function exec(argv) {
   const commit = flag(args, '--commit')
   const [command, item] = args
   if (!change) throw new Usage('--change is required')
-  const tracks = loadSchema().apply?.tracks ?? 'tasks.md'
+  const tracks = schemaOf(root, change).apply?.tracks ?? 'tasks.md'
   const dir = changeDir(root, change)
   if (command === 'lint') {
     if (args.length > 1 || planTask || commit) throw new Usage('lint takes --change and --root only')

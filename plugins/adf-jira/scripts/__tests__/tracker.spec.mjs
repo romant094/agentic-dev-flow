@@ -12,7 +12,7 @@ const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const NOW = new Date('2026-10-21T10:00:00.000Z')
 const CONFIG = { baseUrl: 'https://jira.example.com', allowlist: ['PROJ'], statuses: { handoff: 'Review', excluded: ['Suspended'] }, fields: ['Reproduce steps'] }
 
-function project({ env = 'JIRA_PAT=token-value\nJIRA_QA=qa.login\n', discoveredAt = '2026-10-20T10:00:00.000Z', profile = true, workflow = WORKFLOW } = {}) {
+function project({ env = 'JIRA_PAT=token-value\nJIRA_QA=qa.login\n', discoveredAt = '2026-10-20T10:00:00.000Z', profile = true, workflow = WORKFLOW, issueTypes = [] } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'adf-jira-'))
   const home = mkdtempSync(join(tmpdir(), 'adf-jira-home-'))
   if (env !== null) {
@@ -24,7 +24,7 @@ function project({ env = 'JIRA_PAT=token-value\nJIRA_QA=qa.login\n', discoveredA
     mkdirSync(dir, { recursive: true })
     writeFileSync(
       join(dir, 'discovered.json'),
-      JSON.stringify({ discoveredAt, instance: {}, project: { key: 'PROJ' }, issueTypes: [], fieldMap: { 'Reproduce steps': 'customfield_1' }, workflow, unsampledStatuses: [], permissions: {} })
+      JSON.stringify({ discoveredAt, instance: {}, project: { key: 'PROJ' }, issueTypes, fieldMap: { 'Reproduce steps': 'customfield_1' }, workflow, unsampledStatuses: [], permissions: {} })
     )
   }
   return { root, home, stateDir: join(root, '.superpowers', 'sdd', 'my-change', 'tracker') }
@@ -271,6 +271,57 @@ describe('tracker gather', () => {
     assert.equal((await call(jira, where, 'gather', { change: 'c', stateDir: where.stateDir })).result.state, 'refused')
     assert.equal((await call(jira, where, 'gather', { keys: ['PROJ-1'], change: 'c', stateDir: 'rel' })).result.state, 'refused')
     assert.equal(jira.calls.length, 0)
+  })
+})
+
+describe('tracker bugs', () => {
+  const TYPES = [
+    { id: '1', name: 'Task', subtask: false },
+    { id: '2', name: 'Bug', subtask: false },
+    { id: '3', name: 'Sub-bug', subtask: true }
+  ]
+  const input = (where) => ({ change: 'c', stateDir: where.stateDir })
+
+  it("builds the JQL from the profile's bug types", async () => {
+    const where = project({ issueTypes: TYPES })
+    const jira = fakeJira({ issues: { 'PROJ-1': issue('PROJ-1', { type: 'Bug' }) } })
+    const { code, result } = await call(jira, where, 'bugs', input(where))
+    assert.equal(code, 0, JSON.stringify(result))
+    const search = jira.calls.find((c) => c.path === '/rest/api/2/search')
+    assert.equal(search.body.jql, 'project in ("PROJ") AND issuetype in ("Bug", "Sub-bug") AND statusCategory != Done ORDER BY updated DESC')
+    assert.equal(search.body.maxResults, 20)
+  })
+
+  it('returns only open bug items', async () => {
+    const where = project({ issueTypes: TYPES })
+    const jira = fakeJira({
+      issues: {
+        'PROJ-1': issue('PROJ-1', { type: 'Bug' }),
+        'PROJ-2': issue('PROJ-2', { type: 'Bug', status: 'Suspended' }),
+        'PROJ-3': issue('PROJ-3', { type: 'Bug', status: 'Closed' }),
+        'PROJ-4': issue('PROJ-4', { type: 'Task' }),
+        'PROJ-5': issue('PROJ-5', { type: 'Bug', parent: 'PROJ-9' }),
+        'PROJ-9': issue('PROJ-9', { type: 'Epic' })
+      }
+    })
+    const { result } = await call(jira, where, 'bugs', input(where))
+    assert.deepEqual(
+      result.items.map((i) => [i.key, i.kind, i.open, i.excluded]),
+      [['PROJ-1', 'bug', true, null], ['PROJ-5', 'bug', true, null]]
+    )
+    assert.ok(!jira.calls.some((c) => c.path === '/rest/api/2/issue/PROJ-9'))
+    assert.ok(result.items[0].file.endsWith('PROJ-1.json'))
+  })
+
+  it('gives no items and a note when the profile has no bug type', async () => {
+    const where = project({ issueTypes: [TYPES[0]] })
+    const jira = fakeJira({ issues: { 'PROJ-1': issue('PROJ-1', { type: 'Bug' }) } })
+    const { code, result } = await call(jira, where, 'bugs', input(where))
+    assert.equal(code, 0)
+    assert.equal(result.state, 'done')
+    assert.deepEqual(result.items, [])
+    assert.deepEqual(result.notes, ['the profile has no bug issue type'])
+    assert.ok(!jira.calls.some((c) => c.path === '/rest/api/2/search'))
   })
 })
 

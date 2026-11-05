@@ -41,7 +41,7 @@ import { applyStatus, recordHandoff, renderReport } from './lib/apply-status.mjs
 import { changeDir } from './lib/changes.mjs'
 import { isMain } from './lib/main.mjs'
 import { parseTaskItems } from './lib/plan.mjs'
-import { loadSchema } from './lib/schema.mjs'
+import { schemaOf } from './lib/schema.mjs'
 
 export const USAGE =
   'usage: apply-status.mjs --change <name> [--root <change worktree>] [--cap <n>] [--report] | apply-status.mjs handoff --change <name> --next "<dispatch>" [--block <G> --reason "<why>"] [--root <dir>]'
@@ -76,12 +76,12 @@ export function run(argv, { cwd = process.cwd(), env = process.env } = {}) {
   if (!change) throw new UsageError(USAGE)
   if (handoff) {
     if (!next) throw new UsageError('handoff needs --next')
-    const tracks = loadSchema().apply?.tracks ?? 'tasks.md'
+    const tracks = schemaOf(root, change).apply?.tracks ?? 'tasks.md'
     return { ok: true, ...recordHandoff(root, change, { next, block, reason, tracks, env }) }
   }
   const cap = capText === undefined ? undefined : Number(capText)
   if (cap !== undefined && (!Number.isInteger(cap) || cap < 1)) throw new UsageError('--cap must be a positive integer')
-  const schema = loadSchema()
+  const schema = schemaOf(root, change)
   const tracks = schema.apply?.tracks ?? 'tasks.md'
   const status = applyStatus(root, change, { tracks, ...(cap ? { cap } : {}) })
   if (!report || !status.ok) return status

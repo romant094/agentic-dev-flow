@@ -27,7 +27,7 @@
 
 | # | Round | Severity | Where | Title | Disposition |
 |---|---|---|---|---|---|
-| F<n> | <k> | <severity> | `<file:line>` | <title> | <fixed in `<sha>` · dismissed — <reason>; marker ADF IGNORE <key> at `<file:line>`, or no marker: <why> · accepted — <reason> · recorded, non-blocking · outstanding> |
+| F<n> | <k> | <severity> | `<file:line>` | <title> | <fixed in `<sha>` · fixed in `<sha>`, not re-reviewed (quick task) · dismissed — <reason>; marker ADF IGNORE <key> at `<file:line>`, or no marker: <why> · accepted — <reason> · recorded, non-blocking · outstanding> |
 
 <!-- With no findings, one row: | — | — | — | — | — | no findings | -->
 
@@ -56,7 +56,13 @@ review-range, review-slices, review-suite; with its reason and ledger record id.
 ## Suite after the fixes
 
 <!-- When a fix landed: the command and the commit it ran at, the result and exit code, the
-output file, the base check and the comparison, pre-existing and new failures. -->
+output file, the base check and the comparison, pre-existing and new failures. A quick change
+has no such section. -->
+
+## Affected tests after the fixes
+
+<!-- A quick change only, when a fix landed: the affected tests command (quick.mjs tests), the
+commit it ran at, which is HEAD, and its exit code, 0. -->
 
 ## Not reviewed
 

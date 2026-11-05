@@ -25,6 +25,7 @@ Each command is a skill of the core plugin `adf`. In Codex, invoke the skill by 
 | `/adf:add` | To enable a plugin, or to change its configuration. | Writes the plugin entry in the registry. |
 | `/adf:remove` | To disable a plugin. | Removes the plugin entry from the registry. |
 | `/adf:propose` | To start a change. | Makes the branch and the worktree, then writes every artifact up to the plan. |
+| `/adf:quick` | To fix a small defect that changes no behaviour. | Takes the fix from a key, a phrase or the open bugs to a merge request, with one `quick.md`, the affected tests and one short review. |
 | `/adf:apply` | After propose. | Executes the plan task by task with subagents, in the worktree. |
 | `/adf:verify` | After apply. | Checks that the code matches the artifacts, and commits the record. |
 | `/adf:review` | After verify. | Runs the project's code review, fixes what blocks, and commits the record. |

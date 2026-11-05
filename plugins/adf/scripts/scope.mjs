@@ -15,6 +15,10 @@
 //       changes whose scope takes a gathered key. A gather again keeps each item's selection and
 //       check, and names only the flags no earlier gather showed.
 //       { ok, tracker, items, inFlight, flags, empty, report, next }; empty: nothing to select
+//   scope.mjs gather --change <name> --bugs [--skip-tracker "<reason>"]
+//       in place of keys and a phrase: the tracker's bugs operation (the open bugs), and every
+//       open defect of the debt, matched as `bugs`; a tracker plugin written before contract
+//       1.11 has no bugs operation, and the report says so
 //   scope.mjs select --change <name> [--take K1,K2] [--partial "K3: <reason>"]...
 //                    [--exclude "K4: <reason>"]... [--rest "<reason>"]
 //       records each choice; a partial or excluded item needs its reason; --rest excludes every
@@ -53,7 +57,7 @@ import { CORE } from './lib/roles.mjs'
 import { answer, check, checkInput, gather, Refusal, render, retest, select, start, state } from './lib/scope.mjs'
 
 export const USAGE = `usage:
-  scope.mjs gather --change <name> [--keys K1,K2] [--text "<phrase>"] [--skip-tracker "<reason>"] [--root <dir>] [--home <dir>]
+  scope.mjs gather --change <name> [--keys K1,K2] [--text "<phrase>"] [--bugs] [--skip-tracker "<reason>"] [--root <dir>] [--home <dir>]
   scope.mjs select --change <name> [--take K1,K2] [--partial "<KEY>: <reason>"]... [--exclude "<KEY>: <reason>"]... [--rest "<reason>"] [--root <dir>]
   scope.mjs check-input --change <name> [--key <KEY>] [--root <dir>] [--home <dir>]
   scope.mjs check --change <name> --key <KEY> --file <reply json> [--root <dir>]
@@ -71,6 +75,7 @@ const OPTIONS = {
   home: { type: 'string' },
   keys: { type: 'string' },
   text: { type: 'string' },
+  bugs: { type: 'boolean' },
   'skip-tracker': { type: 'string' },
   take: { type: 'string', multiple: true },
   partial: { type: 'string', multiple: true },
@@ -85,7 +90,7 @@ const OPTIONS = {
   yes: { type: 'boolean' }
 }
 const TAKES = {
-  gather: ['keys', 'text', 'skip-tracker', 'home'],
+  gather: ['keys', 'text', 'bugs', 'skip-tracker', 'home'],
   select: ['take', 'partial', 'exclude', 'rest'],
   'check-input': ['key', 'home'],
   check: ['key', 'file'],
@@ -128,7 +133,8 @@ export function run(argv, { cwd = process.cwd(), env = process.env, runtime = de
   const core = { ...CORE, home: values.home ?? runtimeHome(runtime, env) }
   switch (command) {
     case 'gather':
-      return gather(root, change, { keys: list(values.keys === undefined ? [] : [values.keys]), text: values.text ?? null, skipTracker: values['skip-tracker'] ?? null, core })
+      if (values.bugs && (values.keys !== undefined || values.text !== undefined)) usage('--bugs takes no --keys and no --text')
+      return gather(root, change, { keys: list(values.keys === undefined ? [] : [values.keys]), text: values.text ?? null, skipTracker: values['skip-tracker'] ?? null, bugs: Boolean(values.bugs), core })
     case 'select':
       return select(root, change, { take: list(values.take), partial: withReason('partial', values.partial), exclude: withReason('exclude', values.exclude), rest: values.rest ?? null })
     case 'check-input':

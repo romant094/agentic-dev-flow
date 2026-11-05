@@ -79,7 +79,7 @@ export const FILES = '{files}'
 export const formatCommandIn = (text) => sectionLine(text, FORMAT_HEADING, 'command')
 
 // A path as one shell word: `/bin/sh -c` on POSIX, `cmd.exe` on Windows.
-const quote = (path) => (process.platform === 'win32' ? `"${path}"` : `'${path.replaceAll("'", "'\\''")}'`)
+export const quote = (path) => (process.platform === 'win32' ? `"${path}"` : `'${path.replaceAll("'", "'\\''")}'`)
 
 // Runs the guide's format command in `root` on the paths that exist, `{files}` replaced by them,
 // through the platform shell: the command is the developer's own line in the guide, not a string

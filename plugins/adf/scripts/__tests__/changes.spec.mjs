@@ -36,9 +36,9 @@ const statuses = (status) => Object.fromEntries(status.artifacts.map((a) => [a.i
 test('new writes the change directory and its metadata, once', () => {
   const root = host()
   const created = newChange(root, 'add-thing', schema, { today: '2026-10-13' })
-  assert.equal(created.schema, 'adf')
+  assert.equal(created.schema, 'full')
   const meta = JSON.parse(readFileSync(join(root, 'openspec/changes/add-thing/.adf.json'), 'utf8'))
-  assert.deepEqual(meta, { schema: 'adf', schemaVersion: 1, created: '2026-10-13' })
+  assert.deepEqual(meta, { schema: 'full', schemaVersion: 1, created: '2026-10-13' })
   assert.throws(() => newChange(root, 'add-thing', schema), /already exists/)
   assert.throws(() => newChange(root, 'Add_Thing', schema), /kebab-case/)
   assert.throws(() => newChange(root, 'archive', schema), /kebab-case/)
@@ -229,7 +229,26 @@ test('the CLI prints JSON and exits 1 on a refusal', () => {
   const refused = run('new', 'add-thing')
   assert.equal(refused.code, 1)
   assert.match(refused.out.error, /already exists/)
-  assert.equal(run('schema').out.name, 'adf')
+  assert.equal(run('schema').out.name, 'full')
+})
+
+test('a change of schema adf reads as full', () => {
+  const root = host()
+  write(root, 'openspec/changes/old/.adf.json', '{"schema":"adf","schemaVersion":1}\n')
+  const cli = (...args) => run([...args, '--root', root])
+  const status = cli('status', '--change', 'old')
+  assert.deepEqual(status.artifacts.map((a) => a.id).sort(), schema.artifacts.map((a) => a.id).sort())
+  assert.equal(status.schemaName, 'full')
+})
+
+test('new --schema quick writes a quick change and status lists the quick artifact', () => {
+  const root = host()
+  const created = run(['new', 'x', '--schema', 'quick', '--root', root])
+  assert.equal(created.schema, 'quick')
+  const meta = JSON.parse(readFileSync(join(root, 'openspec/changes/x/.adf.json'), 'utf8'))
+  assert.equal(meta.schema, 'quick')
+  assert.deepEqual(run(['status', '--change', 'x', '--root', root]).artifacts.map((a) => a.id), ['quick'])
+  assert.throws(() => run(['new', 'y', '--schema', 'other', '--root', root]), /unknown schema "other"; known: full, quick/)
 })
 
 test('new records the base branch when given one', () => {

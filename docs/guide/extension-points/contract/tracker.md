@@ -18,6 +18,7 @@ The Codex form of each command is in [the Codex page](../../getting-started/code
 |---|---|
 | `check` | Reports whether the tracker tool is ready. A degraded result is `missing`, `unauthenticated` or `unconfigured`. It never shows a secret. |
 | `gather` | Returns the issues for a list of keys or a text. Each item has a key, a title, a status and a kind. |
+| `bugs` | Since contract 1.11. Returns the open bugs of the tracker. Each item has the shape of a `gather` item, and its kind is `bug`. |
 | `start` | Starts the issues of the change. It is held for your yes. |
 | `handoff` | Writes a comment on each issue and hands it to its tester. It is held for your yes. |
 
@@ -30,8 +31,11 @@ Every write is held for your yes. The core calls `start` and `handoff` without `
 | Stage | Operation |
 |---|---|
 | [/adf:propose](../../cycle/propose.md) | `check` and `gather` before the branch. `start` after the worktree exists. |
+| [/adf:quick](../../cycle/quick.md) | `bugs` for the open bugs, or `check` and `gather` for keys and a phrase, before the branch. `start` after the worktree exists. |
 | [/adf:verify](../../cycle/verify.md) | The key check maps the tracker key. |
 | [/adf:land](#the-land-command) | `check` and `handoff` after the merge. |
+
+The command `scope.mjs gather --change <name> --bugs` calls `bugs` in place of `gather`. It takes no keys and no phrase. The debt store adds each open entry of class `defect`. So the open defects of both sources show together. A provider written for a contract below 1.11 has no `bugs`. The report says so and asks you to name a key or a phrase.
 
 An item of kind `bug` triggers the bug check of the core. The check needs a reproduction and the expected behaviour.
 
@@ -48,7 +52,7 @@ After a `degraded` check, you may skip the tracker for one change. The scope rec
 
 | Plugin | Notes |
 |---|---|
-| [`adf-jira`](../../plugins/adf-jira.md) | Provides `check`, `gather`, `start` and `handoff`. |
+| [`adf-jira`](../../plugins/adf-jira.md) | Provides `check`, `gather`, `bugs`, `start` and `handoff`. |
 
 ## The land command
 

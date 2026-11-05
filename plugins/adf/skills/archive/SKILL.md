@@ -58,7 +58,7 @@ for the merge request pushed with no CI run.
      missing spec base entry refuses: `specs.mjs base`, commit, and run `check` again.
    - `placements`: put each `detail.unplaced` item to the developer with the destination you
      propose; place it with the commands the instruction names; run `placements` again.
-   - `merge`: show `specs.mjs merge --dry-run` first. Dispatch `spec-merge <capability>` for
+   - `merge`: a quick change skips it; the call alone. Otherwise show `specs.mjs merge --dry-run` first. Dispatch `spec-merge <capability>` for
      each conflict and check each reply with `specs.mjs resolution`; write a new capability's
      Purpose from `proposal.md`; pass them as `--resolutions` and `--purpose`.
    - `move`, `commit-specs`, `commit-memory`, `metrics`, `commit-metrics`, `remove`: the call
@@ -66,7 +66,7 @@ for the merge request pushed with no CI run.
      `--root <main>`.
    - `ingest`: `ingest.mjs stale`, then dispatch `ingest` and pass its reply as `--reply`;
      with no knowledge plugin, the call with no reply.
-   - `mr`: `forge.mjs check`; with a forge, write the body from `archive.mjs mr-input` and pass
+   - `mr`: `forge.mjs check`; with a forge, write the body from `archive.mjs mr-input` (for a quick change, from its `goal` and `summary`) and pass
      `--body` and `--summary`. The body holds the template's sections only. The links of the scope come
      from `scope.json`, listed by `mr-input`. A call with no body holds, `pending`, and names what it needs;
      with no forge, the call with no body. With `--no-ci` in the input, pass `--no-ci` to the

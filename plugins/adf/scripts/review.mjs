@@ -11,7 +11,7 @@
 //       the range, the files the filter keeps and excludes, the diff's bytes, `empty`, and over
 //       review.maxBytes the slices by directory with their coverage proof, which the developer
 //       approves with a `review-slices` ruling. With --change: a warning when the range touches
-//       none of the plan's **Files:** paths; the result is recorded as the run's start; a run
+//       none of the plan's **Files:** paths (quick.md's `## Plan` for a quick change); the result is recorded as the run's start; a run
 //       with rounds is refused unless --fresh, which discards it; --range needs the developer's
 //       `review-range` ruling.
 //       { ok, change, range, counts: { changed, kept, excluded }, kept, excluded, bytes,
@@ -24,8 +24,8 @@
 //   review.mjs round --change <name> [--root <dir>]
 //       open the next round: 1 after start; k + 1 when a fix landed after round k's review;
 //       past round 3 only with the developer's `review-round-<k>` ruling, which the record
-//       names (refused with `escalate: true` otherwise). An open round with no findings yet is
-//       returned again.
+//       names (refused with `escalate: true` otherwise). A quick change has round 1 only: round 2
+//       is refused. An open round with no findings yet is returned again.
 //       { ok, round, already, since, ruling, cap }
 //   review.mjs input --round <k> [--slice <n>] (--change <name> | --range <A..B> [--since <sha>])
 //                    [--prompt <file>] [--out <file>] [--root <dir>]
@@ -91,7 +91,9 @@
 //       after the fixes fails with no `review-suite` ruling. Refused: a dirty tree outside the
 //       record, a non-blocking finding with no disposition, a ruling not applied, a commit no
 //       round reviewed (not one that changes only the change's directory or filtered files),
-//       a fix with no suite run at HEAD (suite.mjs run --section review).
+//       a fix with no suite run at HEAD (suite.mjs run --section review). A quick change: a fix
+//       is settled with no re-review, recorded as `fixed in <sha>, not re-reviewed (quick task)`,
+//       and needs the affected tests passing at HEAD (quick.mjs tests) in place of the suite.
 //       --not-reviewed: the empty-diff record, PASS. --commit commits the record alone.
 //       { ok, file, verdict, commit, counts, rounds, outstanding, report }
 //   review.mjs check --file <review.md> [--root <dir>]

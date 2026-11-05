@@ -63,7 +63,7 @@ test('a merged group, a blocked one and the wave-2 group waiting on it', () => {
   assert.equal(s.lastHandoff.next, 'fix B')
   assert.equal(s.push.state, 'none')
   assert.equal(s.complete, false)
-  assert.match(s.report, /^## Implementation Paused\n\n\*\*Change:\*\* add-x\n\*\*Schema:\*\* adf\n\*\*Progress:\*\* 1\/3 tasks complete/)
+  assert.match(s.report, /^## Implementation Paused\n\n\*\*Change:\*\* add-x\n\*\*Schema:\*\* full\n\*\*Progress:\*\* 1\/3 tasks complete/)
   assert.match(s.report, /- \[x\] 1\.1 first/)
   assert.match(s.report, /group B \(2\) is blocked; its worktree is kept\n<the issue>/)
 })
@@ -94,7 +94,7 @@ test('every group merged and every task ticked renders the Complete block', () =
       '## Implementation Complete',
       '',
       '**Change:** add-x',
-      '**Schema:** adf',
+      '**Schema:** full',
       '**Progress:** 3/3 tasks complete',
       '',
       '### Completed This Session',

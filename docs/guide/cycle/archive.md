@@ -18,10 +18,10 @@ The change name, optional. Add `--no-ci` to push the merge request with no CI ru
 
 The preflight refuses, and writes nothing, in these cases:
 
-- `review.md` is not done. Run `/adf:review`.
+- `review.md` is not done. Run `/adf:review`. For a quick change, the preflight looks for `review.md` itself, and you run `/adf:quick`.
 - A file outside the change directory has uncommitted changes, untracked files included. Archive commits only what it writes. You commit, move or discard these files first. This check applies only before archive starts. A run that resumes skips it.
 
-The `check` step accepts a `PASS` record only. A `BLOCKED` record is refused. It also refuses when a commit after the reviewed commit touches a file other than `review.md`. The code changed since the review: run `/adf:review` again. The one way past a blocking finding is your ruling with a reason at review.
+The `check` step accepts a `PASS` record only. A `BLOCKED` record is refused. It also refuses when a commit after the reviewed commit touches a file other than `review.md`. The code changed since the review: run `/adf:review` again. For a quick change, the refusal names `/adf:quick` in place of `/adf:review`. The one way past a blocking finding is your ruling with a reason at review.
 
 ## The steps
 
@@ -52,6 +52,10 @@ The command ends with a report. It names each step that is not finished and the 
 - Your yes before a local merge, when no forge plugin is enabled.
 
 The command never merges a merge request. You merge it.
+
+## A quick change
+
+A quick change ends in the same steps. Its `check` step also needs text under `## Summary` in `quick.md`. It checks no spec base. The `merge` step is skipped, with the reason `quick task`. The `placements` step runs as usual and resolves the debt the change took. The `mr` body comes from the goal, the summary and the plan. Its test section comes from the check lines of the plan and from the record of the affected tests.
 
 ## The merge step
 

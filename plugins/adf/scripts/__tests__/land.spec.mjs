@@ -91,8 +91,9 @@ function plugin(root, name, file, declaration) {
 // scope; archive's state records the merge request (`forge`) or the local merge. `merged` merges
 // the branch into develop; `forge` is 1.7 (state provided), 1.6 (not provided) or null.
 // `tree` is the debt tree the branch carries after archive, files under debt/; with it the
-// registry's debt.root is debt.
-function landHost({ tracker = true, forge = null, merged = true, scope = SCOPE, forgeState = null, tree = null } = {}) {
+// registry's debt.root is debt. `quick` makes it a quick change: quick.md in place of the full
+// cycle's artifacts.
+function landHost({ tracker = true, forge = null, merged = true, scope = SCOPE, forgeState = null, tree = null, quick = false } = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'adf-land-')))
   git(root, 'init', '-q', '-b', 'develop')
   git(root, 'config', 'user.email', 't@example.com')
@@ -119,11 +120,15 @@ function landHost({ tracker = true, forge = null, merged = true, scope = SCOPE, 
   git(root, 'checkout', '-q', '-b', BRANCH)
   const dir = join(root, ARCHIVED)
   mkdirSync(join(dir, 'specs', 'session-pool'), { recursive: true })
-  writeFileSync(join(dir, '.adf.json'), `${JSON.stringify({ schema: 'adf', schemaVersion: 1, created: '2026-10-15', base: 'develop' })}\n`)
-  writeFileSync(join(dir, 'proposal.md'), '## Why\n\nThe pool leaks.\n')
-  writeFileSync(join(dir, 'tasks.md'), '- [x] 1.1 close the old socket (PROJ-1, snmp-01)\n- [x] 1.2 count the sockets (PROJ-2)\n')
-  writeFileSync(join(dir, 'verify.md'), '# Verify\n\nVerdict: PASS\n')
-  writeFileSync(join(dir, 'specs', 'session-pool', 'spec.md'), '## MODIFIED Requirements\n')
+  writeFileSync(join(dir, '.adf.json'), `${JSON.stringify({ schema: quick ? 'quick' : 'adf', schemaVersion: 1, created: '2026-10-15', base: 'develop' })}\n`)
+  if (quick) {
+    writeFileSync(join(dir, 'quick.md'), '## Goal\n\nThe pool leaks.\n\n## Summary\n\nThe pool closes the old socket.\n')
+  } else {
+    writeFileSync(join(dir, 'proposal.md'), '## Why\n\nThe pool leaks.\n')
+    writeFileSync(join(dir, 'tasks.md'), '- [x] 1.1 close the old socket (PROJ-1, snmp-01)\n- [x] 1.2 count the sockets (PROJ-2)\n')
+    writeFileSync(join(dir, 'verify.md'), '# Verify\n\nVerdict: PASS\n')
+    writeFileSync(join(dir, 'specs', 'session-pool', 'spec.md'), '## MODIFIED Requirements\n')
+  }
   if (scope) writeFileSync(join(dir, 'scope.json'), `${JSON.stringify(scope, null, 2)}\n`)
   writeFileSync(join(root, 'pool.ts'), 'close()\n')
   for (const [path, text] of Object.entries(tree ?? {})) {
@@ -354,6 +359,25 @@ test('a forge that does not provide state falls back to git ancestry and keeps t
   land(degraded, 'check')
   const out = land(degraded, 'wait')
   assert.deepEqual([out.ok, out.state, out.hint, out.next], [true, 'degraded', 'run glab auth login', 'wait'])
+})
+
+test('comment-input gives a quick change quick.md, and the affected tests record while its worktree holds it', () => {
+  const root = landHost({ quick: true })
+  land(root, 'check')
+  land(root, 'wait')
+  const first = JSON.parse(readFileSync(land(root, 'comment-input').dispatches[0].inputFile, 'utf8'))
+  assert.equal(first.artifacts.quick, join(root, ARCHIVED, 'quick.md'))
+  assert.equal(first.artifacts.tests, null, 'the worktree is gone: no record')
+  assert.deepEqual([first.artifacts.proposal, first.artifacts.specs, first.artifacts.tasks, first.artifacts.verify], [null, [], null, null])
+
+  const again = landHost({ quick: true })
+  const record = join(again, '.claude', 'worktrees', CHANGE, '.superpowers', 'sdd', CHANGE, 'quick', 'tests.json')
+  mkdirSync(dirname(record), { recursive: true })
+  writeFileSync(record, '{}\n')
+  land(again, 'check')
+  land(again, 'wait')
+  const second = JSON.parse(readFileSync(land(again, 'comment-input').dispatches[0].inputFile, 'utf8'))
+  assert.equal(second.artifacts.tests, record)
 })
 
 test('comment-input reads the archived change and the debt tree from the merge commit, fetched, when the main checkout lacks them; nothing is pulled', () => {

@@ -13,7 +13,7 @@ import { DispatchError, retroInputFile } from '../lib/dispatch.mjs'
 import { fromV1, PLUGIN_ROOT, validateRecord } from '../lib/metrics.mjs'
 import { initRegistry } from '../lib/registry.mjs'
 import { checkReply } from '../lib/reply.mjs'
-import { input, lateCaught, prematureDone, RE_DERIVATION_REASON, recordRetroDispatch, recordRetroReply } from '../lib/retro.mjs'
+import { cyclesOf, input, lateCaught, prematureDone, RE_DERIVATION_REASON, recordRetroDispatch, recordRetroReply } from '../lib/retro.mjs'
 import { buildSidecar } from '../lib/window.mjs'
 
 const ARCHIVE = 'openspec/changes/archive'
@@ -108,7 +108,7 @@ function host() {
     },
     '2026-10-02T10:00:00Z'
   )
-  merge('feat/two', { [`${ARCHIVE}/2026-10-05-two/tasks.md`]: '- [x] 1.1 a\n', [`${ARCHIVE}/2026-10-05-two/metrics.json`]: `${JSON.stringify(record('two'))}\n`, 'src/two.txt': 'two\n' }, '2026-10-06T10:00:00Z')
+  merge('feat/two', { [`${ARCHIVE}/2026-10-05-two/tasks.md`]: '- [x] 1.1 a\n', [`${ARCHIVE}/2026-10-05-two/metrics.json`]: `${JSON.stringify({ ...record('two'), cycle: 'quick' })}\n`, 'src/two.txt': 'two\n' }, '2026-10-06T10:00:00Z')
 
   const home = join(tmp, 'home')
   const gitlab = join(tmp, 'cache', 'gitlab')
@@ -150,7 +150,7 @@ function validReply(inp) {
     improvements: [
       { what: 'Small', file: 'a.md', expectedEffect: 'a little', saving: 'coverage.changes' },
       { what: 'Large', file: 'b.md', expectedEffect: 'much', saving: 'changes.one.values.cost.tokens' },
-      { what: 'Middle', file: 'c.md', expectedEffect: 'some', saving: 'aggregates.cost.tokens.mean' }
+      { what: 'Middle', file: 'c.md', expectedEffect: 'some', saving: 'aggregates.quick.cost.tokens.mean' }
     ]
   }
 }
@@ -158,6 +158,17 @@ function validReply(inp) {
 const checked = (reply, inp) => checkReply('retro', JSON.stringify(reply), { input: inp })
 
 // ---------------------------------------------------------------- input
+
+test('retro groups quick records apart', () => {
+  const { input: inp, sidecar } = fixture()
+  // `one` has no cycle in its record: it reads as full. `two` names the quick cycle.
+  assert.deepEqual(sidecar.changes.map((c) => c.cycle), ['full', 'quick'])
+  assert.deepEqual(inp.changes.map((c) => c.cycle), ['full', 'quick'])
+  assert.deepEqual(Object.keys(inp.cycles), ['full', 'quick'])
+  assert.deepEqual(inp.cycles.full, [{ change: 'one', activeMinutes: null, turns: 1, tokens: 300, usd: null }])
+  assert.deepEqual(inp.cycles.quick.map((c) => [c.change, c.tokens]), [['two', 100]])
+  assert.deepEqual(cyclesOf([{ change: 'x', figures: { tokens: 1 } }]), { full: [{ change: 'x', tokens: 1 }] })
+})
 
 test('the input carries each change, its signals and every citable key with its value', () => {
   const { input: inp } = fixture()
@@ -184,7 +195,8 @@ test('the input carries each change, its signals and every citable key with its 
   assert.equal(inp.values['changes.one.verify.checks.tests'], 'fail')
   assert.equal(inp.values['changes.one.ledger.deviations'], 1)
   assert.equal(inp.values['changes.one.review.dispositions.fixed'], 2)
-  assert.equal(inp.values['aggregates.cost.tokens.mean'], 200)
+  assert.equal(inp.values['aggregates.cost.tokens.mean'], 300, 'the plain aggregates are over the full changes')
+  assert.equal(inp.values['aggregates.quick.cost.tokens.mean'], 100)
   assert.equal(inp.values['coverage.changes'], 2)
   assert.ok(!('changes.two.signals.lateCaught' in inp.values), 'an unmeasured signal has no key')
   assert.deepEqual(inp.keys, Object.keys(inp.values))
@@ -229,7 +241,7 @@ test('a valid reply is accepted: every key resolved, the plugin version filled, 
     r.improvements.map((m) => [m.what, m.saving.value]),
     [
       ['Large', 300],
-      ['Middle', 200],
+      ['Middle', 100],
       ['Small', 2]
     ]
   )

@@ -19,6 +19,7 @@
     },
     "generatedAt": { "$ref": "#/$defs/time" },
     "runtime": { "enum": ["claude-code", "codex"] },
+    "cycle": { "enum": ["full", "quick"] },
     "generator": {
       "type": ["object", "null"],
       "additionalProperties": false,

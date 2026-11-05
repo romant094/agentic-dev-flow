@@ -644,3 +644,16 @@ test('localMerge refuses a main checkout on another branch or with uncommitted c
   assert.equal(localMerge(h.root, { branch: 'side', base: 'develop', yes: true }).merged, true)
   assert.equal(localMerge(h.root, { branch: 'side', base: 'develop' }).already, true)
 })
+
+test('renderRetro: the cycle headings appear only when a quick change is in the window', () => {
+  const base = { date: DATE, mode: 'window', ref: 'develop', fetchedAt: null, asOf: '2026-10-19T12:00:00.000Z', scope: {}, previous: null, cutoff: null, coverage: { records: 2, changes: 2 }, delta: null }
+  const figures = (n) => ({ activeMinutes: n, turns: n * 2, tokens: n * 100, usd: null })
+  const row = (change, cycle, n) => ({ change, cycle, mergedAt: '2026-10-02T10:00:00Z', tasks: 1, git: { diffLines: 1, fixesAfter: 0 }, record: 'record', figures: figures(n) })
+  const computed = { nothingFound: true, findings: [], decisions: [], removalCandidate: { name: 'none', reason: 'x', basis: [] }, improvements: [] }
+  const full = renderRetro({ ...base, changes: [row('a', 'full', 1)] }, computed)
+  assert.doesNotMatch(full, /### (Full|Quick) cycle/)
+  const both = renderRetro({ ...base, changes: [row('a', 'full', 1), row('q', 'quick', 2)] }, computed)
+  assert.match(both, /### Full cycle\n\n\| Change \| Active minutes \| Turns \| Tokens \| Cost \(USD\) \|\n\|---\|---\|---\|---\|---\|\n\| a \| 1 \| 2 \| 100 \| n\/a \|/)
+  assert.match(both, /### Quick cycle\n\n[^#]*\| q \| 2 \| 4 \| 200 \| n\/a \|/)
+  assert.ok(both.indexOf('### Full cycle') < both.indexOf('### Quick cycle'))
+})

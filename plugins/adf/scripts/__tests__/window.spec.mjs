@@ -176,6 +176,23 @@ test('a change with no record is listed with coverage none and contributes no ze
   assert.equal(s.aggregates['quality.reviewRounds'].perKloc, 3000)
 })
 
+test('a quick change stays out of the full aggregates and has aggregates of its own', () => {
+  const alone = repo()
+  merge(alone, 'feat/a', { ...archived('2026-09-02-a', { record: v2('a', { rounds: 3 }) }), 'src/x.txt': 'x\n' }, '2026-09-02T10:00:00Z')
+  const only = buildSidecar(alone, { ref: 'develop', date: DATE, asOf: AS_OF })
+  assert.equal(only.aggregates.quick, null, 'no quick change: no quick aggregates')
+
+  const root = repo()
+  merge(root, 'feat/a', { ...archived('2026-09-02-a', { record: v2('a', { rounds: 3 }) }), 'src/x.txt': 'x\n' }, '2026-09-02T10:00:00Z')
+  merge(root, 'fix/q', { ...archived('2026-09-03-q', { tasks: 0, record: { ...v2('q', { rounds: 1 }), cycle: 'quick' } }), 'src/y.txt': 'y\n' }, '2026-09-03T10:00:00Z')
+  const both = buildSidecar(root, { ref: 'develop', date: DATE, asOf: AS_OF })
+  const { quick, ...full } = both.aggregates
+  assert.deepEqual(full, Object.fromEntries(Object.entries(only.aggregates).filter(([k]) => k !== 'quick')))
+  assert.equal(quick['quality.reviewRounds'].n, 1)
+  assert.equal(quick['quality.reviewRounds'].mean, 1)
+  assert.deepEqual(both.candidates, only.candidates, 'removal candidates read full changes only')
+})
+
 test('an unmerged window retro does not move the window; a merged one does', () => {
   const root = repo()
   const first = merge(root, 'feat/a', archived('2026-09-02-a'), '2026-09-02T10:00:00Z')

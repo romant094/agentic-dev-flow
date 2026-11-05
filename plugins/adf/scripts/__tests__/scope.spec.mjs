@@ -51,9 +51,9 @@ process.stdin.on('data', (d) => (t += d)).on('end', () => {
   if (config[op] && !(input.apply && config[op + ':apply'])) return out(config[op])
   if (input.apply && config[op + ':apply']) return out(config[op + ':apply'])
   if (op === 'check') return out({ state: 'done', tool: 'ready', account: 'dev' })
-  if (op === 'gather') {
+  if (op === 'gather' || op === 'bugs') {
     mkdirSync(input.stateDir, { recursive: true })
-    const items = config.items ?? []
+    const items = (config.items ?? []).filter((i) => op === 'gather' || i.kind === 'bug')
     for (const i of items) writeFileSync(join(input.stateDir, i.key + '.json'), JSON.stringify(i.body))
     return out({ state: 'done', items: items.map(({ body, ...i }) => ({ ...i, file: i.key + '.json' })), notes: config.notes ?? [] })
   }
@@ -62,7 +62,7 @@ process.stdin.on('data', (d) => (t += d)).on('end', () => {
 })
 `
 
-function host({ tracker = true, config = {}, debt = true } = {}) {
+function host({ tracker = true, config = {}, debt = true, contract = '1.7', operations = ['check', 'gather', 'start', 'handoff'] } = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'adf-scope-')))
   git(root, 'init', '-q', '-b', 'develop')
   git(root, 'config', 'user.email', 't@example.com')
@@ -85,7 +85,7 @@ function host({ tracker = true, config = {}, debt = true } = {}) {
   if (tracker) {
     const dir = join(root, 'plugins', 't')
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'adf-extension.json'), JSON.stringify({ name: 't', contract: '1.7', provides: { tracker: { script: 't.mjs', operations: ['check', 'gather', 'start', 'handoff'] } } }))
+    writeFileSync(join(dir, 'adf-extension.json'), JSON.stringify({ name: 't', contract, provides: { tracker: { script: 't.mjs', operations } } }))
     writeFileSync(join(dir, 't.mjs'), TRACKER)
     writeRegistry(root, { ...readRegistry(root), extensions: [{ path: 'plugins/t', points: ['tracker'], config: { items: ISSUES, ...config } }] })
   }
@@ -114,6 +114,34 @@ test('the phrase words are deterministic: four letters at least, no common word,
   assert.equal(matchesPhrase('Session pool leaks connections', phraseWords('session pool')), true)
   assert.equal(matchesPhrase('Session timeout', phraseWords('session pool')), false)
   assert.equal(matchesPhrase('Pool metrics', phraseWords('pool')), true)
+})
+
+test('gather --bugs merges the tracker\'s bugs and the debt\'s open defects', () => {
+  const root = host({ contract: '1.11', operations: ['check', 'gather', 'bugs', 'start', 'handoff'] })
+  addEntry(join(root, 'docs', 'debt'), { block: 'snmp', title: 'Walker drops the last row', anchors: ['walk.ts:3'], class: 'defect', source: 'review' })
+  const out = scope(root, 'gather', '--change', 'fix-bugs', '--bugs')
+  assert.equal(out.tracker.state, 'done')
+  assert.deepEqual(calls(root).map((c) => c.op), ['check', 'bugs'])
+  assert.deepEqual(readScope(root, 'fix-bugs').items.map((i) => [i.key, i.source, i.matched ?? null]), [['PROJ-1', 'tracker', null], ['snmp-01', 'debt', 'key'], ['snmp-04', 'debt', 'bugs']])
+  assert.match(out.report, /Tracker bugs: 1 item\(s\): PROJ-1/)
+  assert.match(out.report, /Debt: snmp-01 \(tracker key PROJ-1\), snmp-04 \(open defect\)\./)
+  assert.equal(readScope(root, 'fix-bugs').from.bugs, true)
+})
+
+test('a 1.7 tracker has no bugs', () => {
+  const root = host()
+  const out = scope(root, 'gather', '--change', 'fix-bugs', '--bugs')
+  assert.deepEqual(calls(root).map((c) => c.op), ['check'])
+  assert.equal(out.tracker.state, 'none')
+  assert.equal(out.tracker.plugin, 't')
+  assert.match(out.report.split('\n')[0], /the tracker plugin has no bugs operation \(contract 1\.7\); name a key or a phrase/)
+  assert.deepEqual(readScope(root, 'fix-bugs').items.map((i) => [i.key, i.matched ?? null]), [['snmp-01', 'bugs']])
+})
+
+test('--bugs with --keys or --text is a usage error', () => {
+  const root = host()
+  assert.throws(() => scope(root, 'gather', '--change', 'c', '--bugs', '--keys', 'PROJ-1'), /--bugs takes no --keys and no --text/)
+  assert.throws(() => scope(root, 'gather', '--change', 'c', '--bugs', '--text', 'pool'), /--bugs takes no --keys and no --text/)
 })
 
 test('a phrase with no tracker gathers only debt, and the report says the tracker step was skipped', () => {

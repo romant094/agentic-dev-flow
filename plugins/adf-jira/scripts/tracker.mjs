@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // CLI over lib/tracker.mjs: the `tracker` role of the ADF contract on Jira.
 //
-//   tracker.mjs check|gather|start|handoff          (payload on stdin)
+//   tracker.mjs check|gather|bugs|start|handoff          (payload on stdin)
 //
 // The payload is one JSON object, { root, config, input }; the result is one JSON object on
 // stdout with `state` done, degraded or refused. Exit codes: 0 done or degraded, 1 refused.
@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 import { runOperation } from './lib/tracker.mjs'
 import { isMain } from './lib/main.mjs'
 
-const USAGE = 'usage: tracker.mjs check|gather|start|handoff  (payload on stdin)'
+const USAGE = 'usage: tracker.mjs check|gather|bugs|start|handoff  (payload on stdin)'
 const NOTHING_SENT = 'nothing was sent'
 const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 

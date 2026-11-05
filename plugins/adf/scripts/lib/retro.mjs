@@ -19,6 +19,7 @@
 // its own (`quality.findings.re-review`), so a key is looked up whole, never split:
 //
 //   aggregates.<metric>.<stat>        stat n, mean, median, perTask, perKloc, iqr, cv
+//   aggregates.quick.<metric>.<stat>  the same over the quick changes; the plain keys are the full ones
 //   delta.<metric>.<stat>             the current value less the previous window's
 //   coverage.records, coverage.changes, candidates.records
 //   changes.<name>.values.<metric>    one change's value of a metric
@@ -46,7 +47,7 @@ import { LAYERS } from './metrics-records.mjs'
 import { checkReply, replyContext } from './reply.mjs'
 import { defaultHome } from './runtime.mjs'
 import { readJson } from './superpowers.mjs'
-import { readBlobs, recordOf } from './window.mjs'
+import { cycleOf, readBlobs, recordOf } from './window.mjs'
 
 export const INPUT_VERSION = 1
 export const ATTEMPTS_FILE = 'attempts.jsonl'
@@ -155,6 +156,7 @@ function changeInput(c, record, events, put) {
     record: c.record,
     generator: c.generator ?? null,
     gaps: Object.fromEntries(Object.entries(c.coverage ?? {}).filter(([, v]) => v?.none).map(([group, v]) => [group, v.none])),
+    cycle: cycleOf(record),
     summary: record ? pick(record, ['impl', 'replies', 'tests', 'outliers']) : null,
     signals
   }
@@ -180,6 +182,14 @@ function changeInput(c, record, events, put) {
   return out
 }
 
+// The window's changes by cycle, `{ full: [...], quick: [...] }`, each `{ change, activeMinutes,
+// turns, tokens, usd }` from the sidecar; a cycle with no change is left out.
+export function cyclesOf(changes) {
+  const out = {}
+  for (const c of changes ?? []) (out[c.cycle ?? 'full'] ??= []).push({ change: c.change, ...c.figures })
+  return out
+}
+
 // The retro agent's input.json from a sidecar. `root` is a checkout holding the sidecar's ref,
 // whose tree gives each change's record and attempts log; `home` the runtime's home.
 export function input(sidecar, { root, home = defaultHome() } = {}) {
@@ -187,7 +197,9 @@ export function input(sidecar, { root, home = defaultHome() } = {}) {
   const put = (key, value) => {
     if (value !== null && value !== undefined && (typeof value === 'string' || num(value))) values[key] = value
   }
-  for (const [metric, agg] of Object.entries(sidecar.aggregates ?? {})) for (const stat of STATS) put(`aggregates.${metric}.${stat}`, agg[stat])
+  const { quick, ...full } = sidecar.aggregates ?? {}
+  for (const [metric, agg] of Object.entries(full)) for (const stat of STATS) put(`aggregates.${metric}.${stat}`, agg[stat])
+  for (const [metric, agg] of Object.entries(quick ?? {})) for (const stat of STATS) put(`aggregates.quick.${metric}.${stat}`, agg[stat])
   for (const kind of ['improved', 'worsened', 'unchanged']) for (const row of sidecar.delta?.[kind] ?? []) put(`delta.${row.metric}.${row.stat}`, round4(row.current - row.previous))
   put('coverage.records', sidecar.coverage?.records)
   put('coverage.changes', sidecar.coverage?.changes)
@@ -218,6 +230,8 @@ export function input(sidecar, { root, home = defaultHome() } = {}) {
     previous: sidecar.previous ?? null,
     flowVersions: sidecar.flowVersions ?? [],
     changes,
+    // The changes by cycle (a record with no `cycle` is a full change): the figures the report shows.
+    cycles: cyclesOf(sidecar.changes),
     delta: sidecar.delta ?? null,
     candidates: sidecar.candidates ?? null,
     removable: {

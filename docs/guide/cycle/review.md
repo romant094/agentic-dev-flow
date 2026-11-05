@@ -34,6 +34,8 @@ The reviewer reads the diff of the branch against the base, and nothing else. It
 
 A round cap of 3 applies. Past it, the command goes to you with the open findings.
 
+A quick change has one round only. The session fixes the findings itself and records each fix with `review.mjs fix`. No second round re-reviews the fixes. The affected tests must pass at HEAD in place of the suite: run `quick.mjs tests --change <name>` after the last fix. The record marks each fix as not re-reviewed. Take a finding that needs more work to `/adf:propose`.
+
 ## What it asks
 
 - Whether a tool that the change adds must run on a real input first. This applies when no recorded run fed the tool a real input. You run it with the command as a verify check, then run `/adf:verify` again.
@@ -50,7 +52,7 @@ Only your own words make a ruling. Silence never does.
 A script computes the verdict, `PASS` or `BLOCKED`. The verdict is `BLOCKED` in any of these cases:
 
 - A finding of a blocking severity is open.
-- A fix is not re-reviewed.
+- A fix is not re-reviewed. A quick change is the exception: its fixes need no re-review.
 - The suite after the fixes fails, and you gave no ruling.
 
 The registry key `review.blockOn` sets the blocking severities. Its default is `CRITICAL` and `HIGH`. The key `review.maxBytes` sets the largest diff that one reviewer takes. Its default is 400000 bytes.

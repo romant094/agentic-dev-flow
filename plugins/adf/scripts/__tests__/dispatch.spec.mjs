@@ -645,7 +645,7 @@ test('every prompt skeleton reaches its agent through the frame or renderSkeleto
   }
   const prompts = readdirSync(PROMPTS_DIR).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3))
   assert.deepEqual(prompts.filter((p) => !framed.has(p) && !skeletal.has(p)), [])
-  assert.deepEqual([...skeletal].sort(), ['land-comment', 'scope-check'])
+  assert.deepEqual([...skeletal].sort(), ['land-comment', 'quick-estimate', 'scope-check'])
   for (const name of skeletal) assert.ok(renderSkeleton(join(PROMPTS_DIR, `${name}.md`), {}).includes(frameTools()), name)
   assert.ok(frameTools().startsWith('## Tools\n') && !frameTools().includes('\n## ') && !frameTools().includes('<!--'), frameTools())
 })

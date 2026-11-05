@@ -8,6 +8,9 @@ comments and its fields), the change's proposal, delta specs, tasks and `verify.
 check recorded for the issue, and the merge commit. An issue that mirrors a group of debt
 entries has no issue file and no scope check: its `debt` names the entries the change resolved
 and the entries that remain, so `done` covers the resolved ones and `remains` the others.
+A quick change has no proposal, specs, tasks or `verify.md`: the input file names its
+`quick.md` and, when it is still there, its affected tests record. For a quick change, `done`
+comes from the `## Summary` of `quick.md`, and `test` from the **Check:** lines of its `## Plan`.
 
 Write these fields, `{{fields}}`, for the issue's tester:
 

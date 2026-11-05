@@ -575,3 +575,70 @@ test('check reads a record as archive does: the exact verdict token, the sha, th
   assert.deepEqual(checkRecord('**Verdict**: PASS\n**Reviewed commit**: `abc1234`\n').warnings, ['no **Rounds** count', 'no **Counts** line with the four severities', 'no ## Findings section'])
   assert.ok(checkRecord(record('**Verdict**: PASS').replace('fixed in `abc1234` |', 'outstanding |')).warnings.includes('a PASS record lists an outstanding finding'))
 })
+
+// ---------------------------------------------------------------- a quick change
+
+const QUICK_MD = '## Goal\n\nFix a.\n\n## Scope\n\nsrc/a.ts.\n\n## Plan\n\n1. Fix line 2\n   **Files:** `src/a.ts`\n   **Action:** fix it\n   **Check:** the tests\n\n## Summary\n'
+
+// A quick change: its metadata names the quick schema, its plan is quick.md's.
+function setupQuick() {
+  const { change } = host({ '.adf.json': '{"base":"develop","schema":"quick"}\n', 'quick.md': QUICK_MD })
+  commitAll(change, { 'openspec/planning.md': '# Planning\n\n## Whole-suite command\n\ntrue\n', 'src/a.ts': 'line1\nline2\nline3\n' })
+  return change
+}
+
+// The record quick.mjs tests writes: the affected tests command's run at `commit`.
+function affectedTests(change, { commit = git(change, 'rev-parse', 'HEAD'), status = 0 } = {}) {
+  write(change, '.superpowers/sdd/add-x/quick/tests.json', JSON.stringify({ command: 'node --test src/a.test.ts', commit, status, output: 'ok\n' }))
+}
+
+test('a quick change passes with a fixed finding and no second round', () => {
+  const change = setupQuick()
+  assert.deepEqual(R(change, 'start', '--change', 'add-x').plan, { paths: 1, touched: ['src/a.ts'], untouched: [] })
+  reviewed(change, finding('F1', 'HIGH'))
+  const { sha, out } = fix(change, 1, 'F1', { 'src/a.ts': 'line1\nline2 fixed\nline3\n' })
+  assert.equal(out.ok, true, out.error)
+  affectedTests(change)
+  const record = R(change, 'assemble', '--change', 'add-x', '--commit')
+  assert.deepEqual([record.ok, record.verdict, record.rounds, record.outstanding], [true, 'PASS', 1, []], record.error)
+  const md = readFileSync(join(change, record.file), 'utf8')
+  assert.match(md, new RegExp(`\\| F1 \\| 1 \\| HIGH \\| \`src/a\\.ts:2\` \\| title F1 \\| fixed in \`${sha.slice(0, 7)}\`, not re-reviewed \\(quick task\\) \\|`))
+  assert.match(md, /## Affected tests after the fixes\n\n- command: `node --test src\/a\.test\.ts`; ran at `[0-9a-f]{40}`\n- result: exit 0/)
+  assert.doesNotMatch(md, /## Outstanding|## Suite after the fixes/)
+  const check = R(change, 'check', '--file', record.file)
+  assert.deepEqual([check.ok, check.dispositions.map((d) => d.kind), check.warnings], [true, ['fixed'], []])
+})
+
+test('a quick change needs the affected tests at HEAD after a fix', () => {
+  const change = setupQuick()
+  R(change, 'start', '--change', 'add-x')
+  reviewed(change, finding('F1', 'HIGH'))
+  fix(change, 1, 'F1', { 'src/a.ts': 'line1\nline2 fixed\nline3\n' })
+  assert.match(R(change, 'assemble', '--change', 'add-x').error, /a fix landed and the affected tests have not run after it: quick\.mjs tests --change add-x/)
+  affectedTests(change, { status: 1 })
+  assert.match(R(change, 'assemble', '--change', 'add-x').error, /the affected tests failed at [0-9a-f]{7} \(exit 1\).*quick\.mjs tests --change add-x/)
+  affectedTests(change, { commit: git(change, 'rev-parse', 'HEAD~1') })
+  assert.match(R(change, 'assemble', '--change', 'add-x').error, /the affected tests ran at [0-9a-f]{7}, not HEAD [0-9a-f]{7}: run quick\.mjs tests --change add-x again/)
+  commitAll(change, { 'src/b.ts': 'b\n' })
+  affectedTests(change)
+  assert.match(R(change, 'assemble', '--change', 'add-x').error, /commit\(s\) after round 1 that no round reviewed and that are not a recorded fix/)
+})
+
+test('a quick change refuses round 2', () => {
+  const change = setupQuick()
+  R(change, 'start', '--change', 'add-x')
+  reviewed(change, finding('F1', 'HIGH'))
+  fix(change, 1, 'F1', { 'src/a.ts': 'line1\nline2 fixed\nline3\n' })
+  assert.equal(R(change, 'round', '--change', 'add-x').error, 'a quick task has one review round; take the rest to /adf:propose')
+})
+
+test('a full change still needs the re-review', () => {
+  const change = setup()
+  reviewed(change, finding('F1', 'HIGH'))
+  fix(change, 1, 'F1', { 'src/a.ts': 'line1\nline2 fixed\nline3\n' })
+  assert.equal(runSuite(change).ok, true)
+  const out = R(change, 'assemble', '--change', 'add-x')
+  assert.deepEqual([out.ok, out.verdict], [true, 'BLOCKED'], out.error)
+  assert.match(out.outstanding[0], /^F1: fixed in `[0-9a-f]{7}` and not re-reviewed; open round 2/)
+  assert.equal(R(change, 'round', '--change', 'add-x').round, 2)
+})

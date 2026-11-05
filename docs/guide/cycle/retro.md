@@ -2,6 +2,7 @@
 - plugins/adf/skills/retro/**
 - plugins/adf/scripts/retro.mjs
 - plugins/adf/scripts/lib/retro.mjs
+- plugins/adf/scripts/lib/retro-render.mjs
 - plugins/adf/schema/instructions/retro.md
 -->
 
@@ -37,6 +38,8 @@ A script runs each step. One agent reasons over the numbers that the scripts com
 | `record` | Commits both files and the debt tree files that `file` marked. |
 | `publish` | Opens a merge request, or merges locally. |
 | `remove` | Removes the worktree. |
+
+The report has a `Changes` table. When the window holds a quick change, the report adds two sections after it: `### Full cycle` and `### Quick cycle`. Each section lists, for each change of that cycle, the active minutes, the turns, the tokens and the cost. A window with no quick change has neither section.
 
 ## What it asks
 
