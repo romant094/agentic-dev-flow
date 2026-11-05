@@ -67,9 +67,9 @@ for the merge request pushed with no CI run.
    - `ingest`: `ingest.mjs stale`, then dispatch `ingest` and pass its reply as `--reply`;
      with no knowledge plugin, the call with no reply.
    - `mr`: `forge.mjs check`; with a forge, write the body from `archive.mjs mr-input` and pass
-     `--body` and `--summary` (the body holds the template's sections only; the scope's links come
-     from `scope.json`, listed by `mr-input`): a call with no body holds, `pending`, and names what it needs;
-     with none, the call with no body. With `--no-ci` in the input, pass `--no-ci` to the
+     `--body` and `--summary`. The body holds the template's sections only. The links of the scope come
+     from `scope.json`, listed by `mr-input`. A call with no body holds, `pending`, and names what it needs;
+     with no forge, the call with no body. With `--no-ci` in the input, pass `--no-ci` to the
      first step you run, as the instruction's `mr` rule states.
    - `merge-local`: the call shows the commands; ask the developer, then `--yes` or `--no`.
 

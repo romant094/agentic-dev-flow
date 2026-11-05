@@ -459,6 +459,30 @@ test('forge.mjs open --change passes links from scope.json; without --change non
   assert.equal('links' in plain.out.input, false)
 })
 
+test('forge.mjs open with --summary alone passes links', () => {
+  const { root, dir } = started()
+  withLinksForge(root, '1.10')
+  write(dir, 'scope.json', JSON.stringify({ version: 1, change: 'add-thing', items: [{ source: 'tracker', key: 'P-1', title: 'One', kind: 'task', state: 'taken', url: 'https://t/P-1' }] }))
+  const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
+  const opened = node('forge.mjs', ['open', '--summary', 'core: add thing', '--root', root, '--home', home], root)
+  assert.equal(opened.out.state, 'done', JSON.stringify(opened.out))
+  assert.deepEqual(opened.out.input.links, [{ kind: 'tracker', key: 'P-1', title: 'One', url: 'https://t/P-1' }])
+  const refused = node('forge.mjs', ['open', '--summary', 'core: add thing', '--input', '{"links":[]}', '--root', root, '--home', home], root)
+  assert.equal(refused.code, 1)
+  assert.match(refused.out.error, /input\.links is built by the core; leave it out/)
+})
+
+test('forge.mjs finalize --change with a 1.9 provider puts the links in body', () => {
+  const { root, dir } = started()
+  withLinksForge(root, '1.9')
+  write(dir, 'scope.json', JSON.stringify({ version: 1, change: 'add-thing', items: [{ source: 'tracker', key: 'P-1', title: 'One', kind: 'task', state: 'taken', url: 'https://t/P-1' }] }))
+  const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
+  const done = node('forge.mjs', ['finalize', '--change', 'add-thing', '--summary', 'core: add thing', '--input', '{"body":"Text"}', '--root', root, '--home', home], root)
+  assert.equal(done.out.state, 'done', JSON.stringify(done.out))
+  assert.equal('links' in done.out.input, false)
+  assert.match(done.out.input.body, /P-1/)
+})
+
 test('forge.mjs --summary on a branch the developer named without a type prefix refuses and asks for --title', () => {
   const { root } = started()
   mkdirSync(join(root, 'plugins', 'fake', 'scripts'), { recursive: true })

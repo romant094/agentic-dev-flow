@@ -70,12 +70,12 @@ export function run(argv) {
     const name = inferChange(root, change, loadSchema())
     const given = input
     input = forgeInput(operation, readState(root, name), { input, title, summary, draft: draft === undefined ? undefined : draft === 'true' })
-    if (change !== undefined && ['open', 'finalize'].includes(operation)) {
+    if (['open', 'finalize'].includes(operation)) {
       if (given.links !== undefined) throw new Error('input.links is built by the core; leave it out')
       const file = join(findChangeDir(root, name), SCOPE_FILE)
       if (existsSync(file)) {
         const links = buildLinks(root, JSON.parse(readFileSync(file, 'utf8')), input.base)
-        input = linksInput(operation, input, links, provider(root, 'forge', CORE)?.declaration.contract)
+        input = linksInput(operation, input, links, provider(root, 'forge', { ...CORE, home })?.declaration.contract)
       }
     }
   }

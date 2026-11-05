@@ -35,9 +35,9 @@ Contract 1.10 adds the optional `links` input to `open` and `finalize`. The core
 - A debt link holds `kind`, `key`, `title`, `path` and `commit`. The `commit` is the merge base with `origin/<base>`. It is `null` when the entry is not in that commit.
 - The provider writes one line per item at the top of the block of the change.
 - A reused `open` changes no description.
-- A change with no `scope.json`, or with no taken item, has no `links`.
+- A change with no `scope.json`, or with no taken or partial item, has no `links`.
 
-The `forge.mjs` script refuses an input that already holds `links`. The core adds them to `open` and `finalize` when the call names a change.
+The `forge.mjs` script refuses an input that already holds `links`. The core adds them to `open` and `finalize` when the call names a change or the script finds the change from `--title` or `--summary`. A call with none of `--change`, `--title` and `--summary` gets no `links`, and the script does not refuse its `links`.
 
 A provider written for a contract below 1.10 does not take `links`. The core then puts the same lines at the top of `body` at `finalize`. For `open`, the core adds nothing, so the Draft of such a provider shows no links. In that case the lines hold no URL for a debt item, because the core builds no file URL.
 
