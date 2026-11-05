@@ -180,9 +180,12 @@ function archiveGate(out, { change, root, schema, git }) {
   }
   out.base = readBase(root, change)
   out.progress = applyInstructions(root, change, schema).progress
-  const review = changeStatus(root, change, schema).artifacts.find((a) => a.id === 'review')
-  out.state = review?.status === 'done' ? 'ready' : 'blocked'
-  if (out.state === 'blocked') return { refusal: `archive needs review done first; run /adf:review ${change} to write it.` }
+  // A quick change has no review artifact: its review gate is the record review.md itself, the
+  // file the archive's check reads.
+  const quick = schema.name === 'quick'
+  const reviewed = quick ? existsSync(join(changeDir(root, change), 'review.md')) : changeStatus(root, change, schema).artifacts.find((a) => a.id === 'review')?.status === 'done'
+  out.state = reviewed ? 'ready' : 'blocked'
+  if (out.state === 'blocked') return { refusal: `archive needs review done first; run /adf:${quick ? 'quick' : 'review'} ${change} to write it.` }
   if (out.archive.started) return {}
   let status
   try {

@@ -321,6 +321,25 @@ test('archive needs the review artifact and a tree clean outside the change, unl
   assert.deepEqual(resumed.archive, { started: true, next: 'placements' })
 })
 
+// A quick change has no review artifact in its schema: its review gate is the record review.md,
+// the file the archive's check reads.
+test('archive preflight accepts a quick change', async () => {
+  const { change, dir } = host({ plan: null, tasks: null })
+  writeFileSync(join(dir, '.adf.json'), JSON.stringify({ schema: 'quick', schemaVersion: 1, created: '2026-10-15', base: 'develop' }))
+  writeFileSync(join(dir, 'quick.md'), '## Goal\n\ng\n')
+  git(change, 'add', '.')
+  git(change, 'commit', '-q', '-m', 'quick')
+  const blocked = await check('archive', change)
+  assert.equal(blocked.ok, false)
+  assert.match(blocked.refusal, /archive needs review done first; run \/adf:quick add-x/)
+  writeFileSync(join(dir, 'review.md'), 'x\n')
+  git(change, 'add', '.')
+  git(change, 'commit', '-q', '-m', 'review')
+  const ok = await check('archive', change)
+  assert.equal(ok.ok, true, ok.refusal)
+  assert.equal(ok.state, 'ready')
+})
+
 test('archive passes for a change already moved to the archive, and refuses a change that is nowhere', async () => {
   const { change, dir } = host()
   mkdirSync(join(change, 'openspec', 'changes', 'archive'))

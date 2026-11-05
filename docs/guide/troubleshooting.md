@@ -90,6 +90,7 @@ The same preflight checks run for these stages. It also prints these messages:
 | `openspec/changes/<change>/verify.md is not committed; run /adf:verify <change> to assemble and commit it.` | The record is not in a commit. | Run `/adf:verify`. |
 | `commit(s) <shas> after the verify record touch files outside openspec/changes/<change>/: the code changed since it was verified; run /adf:verify <change> again.` | The code changed after verify. | Run `/adf:verify` again. |
 | `archive needs review done first; run /adf:review <change> to write it.` | `review.md` is not done. | Run `/adf:review`. |
+| `archive needs review done first; run /adf:quick <change> to write it.` | A quick change has no `review.md`. | Run `/adf:quick` with the change name. |
 | `uncommitted files outside openspec/changes/<change>/: <files>; archive commits only what it writes, so the developer commits, moves or discards them first.` | The worktree holds other uncommitted files. | Commit, move or discard them. |
 
 ## `/adf:update`

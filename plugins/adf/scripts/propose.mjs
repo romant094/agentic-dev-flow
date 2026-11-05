@@ -2,14 +2,17 @@
 // CLI over lib/propose.mjs: the fixed sequences of /adf:propose. Prints one JSON object on
 // stdout; exit 1 on a refusal, exit 2 on a usage error.
 //
-//   propose.mjs create --change <name> --branch <branch> --base integration|current [--root <main>]
+//   propose.mjs create --change <name> --branch <branch> --base integration|current [--schema full|quick]
+//                      [--root <main>]
 //       From the main checkout, after `preflight.mjs --phase propose` passed and the developer
 //       chose the base and confirmed the branch: makes the branch and its worktree, the change
 //       with its base recorded, and the propose session in the ledger. A scope gathered for the
 //       change (scope.mjs) that holds an item or a skipped tracker is copied into the change as
 //       scope.json, which the commit carries; `scope` names it.
 //       The change becomes the active change of its checkout (lib/active.mjs), `active` naming
-//       the pointer. { ok, change, root, branch, base, baseRef, changeRoot, ledger, active, scope? }
+//       the pointer. --schema names the change's cycle (default full); a quick change records
+//       the ledger phases gather and estimate in place of propose.
+//       { ok, change, root, branch, base, baseRef, changeRoot, ledger, active, scope? }
 //   propose.mjs commit [--change <name>] [--root <worktree>]
 //       Refused until every artifact apply needs is done and every gate of every written
 //       artifact passes; then commits openspec/changes/<name>/ alone with the message

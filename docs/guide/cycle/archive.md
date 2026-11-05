@@ -18,7 +18,7 @@ The change name, optional. Add `--no-ci` to push the merge request with no CI ru
 
 The preflight refuses, and writes nothing, in these cases:
 
-- `review.md` is not done. Run `/adf:review`.
+- `review.md` is not done. Run `/adf:review`. For a quick change, the preflight looks for `review.md` itself, and you run `/adf:quick`.
 - A file outside the change directory has uncommitted changes, untracked files included. Archive commits only what it writes. You commit, move or discard these files first. This check applies only before archive starts. A run that resumes skips it.
 
 The `check` step accepts a `PASS` record only. A `BLOCKED` record is refused. It also refuses when a commit after the reviewed commit touches a file other than `review.md`. The code changed since the review: run `/adf:review` again. The one way past a blocking finding is your ruling with a reason at review.
