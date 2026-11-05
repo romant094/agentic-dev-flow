@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { largeItems } from '../lib/quick.mjs'
+import { largeItems, Refusal } from '../lib/quick.mjs'
 import { readScope, writeScope } from '../lib/scope.mjs'
 import { run } from '../quick.mjs'
 import { run as scopeRun } from '../scope.mjs'
@@ -255,4 +255,21 @@ test('the record names HEAD', () => {
   assert.equal(out.commit, record.commit)
   assert.equal(record.command, out.command)
   assert.equal(record.status, 0)
+})
+
+test('no changed files runs nothing', () => {
+  const root = worktree()
+  git(root, 'checkout', '-q', 'develop')
+  git(root, 'reset', '-q', '--hard')
+  git(root, 'clean', '-fdq')
+  const { calls, runner } = recorder()
+  const out = testsOf(root, runner)
+  assert.deepEqual(out, { ok: true, change: 'fix-it', step: 'tests', skipped: 'no changed files' })
+  assert.equal(calls.length, 0)
+  assert.equal(existsSync(join(root, '.superpowers', 'sdd', 'fix-it', 'quick', 'tests.json')), false)
+})
+
+test('a section of several lines is a refusal', () => {
+  const root = worktree('one\ntwo')
+  assert.throws(() => testsOf(root, recorder().runner), (e) => e instanceof Refusal && /must hold one command/.test(e.message))
 })

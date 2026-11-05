@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { changeMeta } from './changes.mjs'
-import { FILES } from './commit.mjs'
+import { FILES, quote } from './commit.mjs'
 import { dispatchFields, QUICK_ROLES, sddDir, withPreamble } from './dispatch.mjs'
 import { PLANNING_FILE, sectionLine } from './guide.mjs'
 import { mainCheckout } from './installed.mjs'
@@ -174,9 +174,6 @@ const OUTPUT_TAIL = 4000
 
 export const affectedCommandIn = (text) => sectionLine(text, AFFECTED_HEADING, 'command')
 
-// A path as one shell word: `/bin/sh -c` on POSIX, `cmd.exe` on Windows.
-const quote = (path) => (process.platform === 'win32' ? `"${path}"` : `'${path.replaceAll("'", "'\\''")}'`)
-
 const defaultRunner = (command, { cwd }) => spawnSync(command, { cwd, shell: true, encoding: 'utf8', windowsHide: true })
 
 const gitOut = (root, ...args) => {
@@ -211,11 +208,18 @@ export function tests(root, change, { runner = defaultRunner } = {}) {
   if (!CHANGE.test(change ?? '')) refuse(`"${change ?? ''}" is not a kebab-case change name`)
   const top = resolve(root)
   const file = join(top, PLANNING_FILE)
-  const template = existsSync(file) ? affectedCommandIn(readFileSync(file, 'utf8')) : null
+  let template = null
+  try {
+    template = existsSync(file) ? affectedCommandIn(readFileSync(file, 'utf8')) : null
+  } catch (error) {
+    refuse(error.message)
+  }
   if (template === null) {
     return { ok: true, change, step: 'tests', waiting: "the affected tests command: propose one from the project's test runner, and write it under ## Affected tests command in openspec/planning.md on the developer's yes" }
   }
-  const command = template.replaceAll(FILES, changedFiles(top, change).map(quote).join(' '))
+  const changed = changedFiles(top, change)
+  if (changed.length === 0) return { ok: true, change, step: 'tests', skipped: 'no changed files' }
+  const command = template.replaceAll(FILES, changed.map(quote).join(' '))
   const commit = gitOut(top, 'rev-parse', 'HEAD').trim()
   const result = runner(command, { cwd: top })
   const status = result.status ?? 1
