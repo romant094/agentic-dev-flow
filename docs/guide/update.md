@@ -68,7 +68,7 @@ For an `edited` file, the command shows the old template, your file and the new 
 - **Replace from the update.** The file becomes the new template.
 - **Manual.** The command leaves the file for you.
 
-These sections of `openspec/planning.md` hold values that the flow writes: the whole-suite command, the worktree copies, the worktree preparation and the format command. Every choice keeps them.
+These sections of `openspec/planning.md` hold values that the flow writes: the whole-suite command, the worktree copies, the worktree preparation, the format command and the affected tests command. Every choice keeps them.
 
 The pages under `.claude/memory/` are the project's own content. *Replace from the update* empties them. The command warns you before it asks.
 

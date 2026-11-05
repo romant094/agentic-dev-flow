@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { largeItems } from '../lib/quick.mjs'
@@ -179,4 +179,80 @@ test('a corrected verdict with no correction is refused', () => {
 test('the CLI refuses a usage error', () => {
   assert.throws(() => run(['estimate-check', '--change', 'fix-it']), /needs --file/)
   assert.throws(() => run(['filter']), /needs --change/)
+})
+
+// ---------------------------------------------------------------- tests: the affected tests
+
+const git = (root, ...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
+const PLANNING = (body) => `# Guide\n\n## Affected tests command\n\n${body}\n\n## Other\n\nx\n`
+
+function worktree(section = '`runner {files}`') {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'adf-quick-tests-')))
+  git(root, 'init', '-q', '-b', 'develop')
+  git(root, 'config', 'user.email', 't@t')
+  git(root, 'config', 'user.name', 't')
+  mkdirSync(join(root, 'openspec', 'changes', 'fix-it'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'changes', 'fix-it', '.adf.json'), JSON.stringify({ base: 'develop' }))
+  writeFileSync(join(root, 'openspec', 'planning.md'), PLANNING(section))
+  writeFileSync(join(root, 'base.txt'), 'base\n')
+  git(root, 'add', '.')
+  git(root, 'commit', '-q', '-m', 'base')
+  git(root, 'checkout', '-q', '-b', 'fix/it')
+  writeFileSync(join(root, 'a.txt'), 'a\n')
+  git(root, 'add', 'a.txt')
+  git(root, 'commit', '-q', '-m', 'a')
+  writeFileSync(join(root, 'base.txt'), 'changed\n')
+  writeFileSync(join(root, 'it\'s.txt'), 'u\n')
+  return root
+}
+const recorder = (status = 0, stdout = 'ran') => {
+  const calls = []
+  const runner = (command, options) => {
+    calls.push({ command, cwd: options.cwd })
+    return { status, stdout, stderr: '' }
+  }
+  return { calls, runner }
+}
+const testsOf = (root, runner) => run(['tests', '--change', 'fix-it', '--root', root], { runner })
+
+test('tests replaces {files} with the changed paths', () => {
+  const root = worktree()
+  const { calls, runner } = recorder()
+  const out = testsOf(root, runner)
+  assert.equal(out.ok, true)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].cwd, root)
+  assert.equal(calls[0].command, `runner 'a.txt' 'base.txt' 'it'\\''s.txt'`)
+})
+
+test('an empty section waits and runs nothing', () => {
+  const root = worktree('')
+  const { calls, runner } = recorder()
+  const out = testsOf(root, runner)
+  assert.equal(out.ok, true)
+  assert.match(out.waiting, /^the affected tests command: propose one from the project's test runner/)
+  assert.equal(calls.length, 0)
+  assert.equal(existsSync(join(root, '.superpowers', 'sdd', 'fix-it', 'quick', 'tests.json')), false)
+})
+
+test('a failing command is exit 1 and recorded', () => {
+  const root = worktree()
+  const { runner } = recorder(3, 'x'.repeat(5000) + 'END')
+  const out = testsOf(root, runner)
+  assert.equal(out.ok, false)
+  assert.equal(out.status, 3)
+  const record = JSON.parse(readFileSync(join(root, '.superpowers', 'sdd', 'fix-it', 'quick', 'tests.json'), 'utf8'))
+  assert.equal(record.status, 3)
+  assert.equal(record.output.length, 4000)
+  assert.ok(record.output.endsWith('END'))
+})
+
+test('the record names HEAD', () => {
+  const root = worktree()
+  const out = testsOf(root, recorder().runner)
+  const record = JSON.parse(readFileSync(join(root, '.superpowers', 'sdd', 'fix-it', 'quick', 'tests.json'), 'utf8'))
+  assert.equal(record.commit, git(root, 'rev-parse', 'HEAD'))
+  assert.equal(out.commit, record.commit)
+  assert.equal(record.command, out.command)
+  assert.equal(record.status, 0)
 })

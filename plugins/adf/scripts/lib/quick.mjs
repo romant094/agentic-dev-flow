@@ -6,13 +6,19 @@
 //
 // State: <main>/.superpowers/sdd/<change>/quick/ (gitignored): estimate-input.md, the prompt
 // with its candidates and the reply schema; replies/estimate.json, the agent's reply; and
-// estimate.json, the reply once it passed the check.
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+// estimate.json, the reply once it passed the check. The change's own worktree keeps the same
+// directory for tests.json, the last run of the affected tests command (`tests`).
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { changeMeta } from './changes.mjs'
+import { FILES } from './commit.mjs'
 import { dispatchFields, QUICK_ROLES, sddDir, withPreamble } from './dispatch.mjs'
+import { PLANNING_FILE, sectionLine } from './guide.mjs'
 import { mainCheckout } from './installed.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
+import { baseRef } from './plan-symbols.mjs'
 import { answer, readScope, Refusal, renderSkeleton, select, writeScope } from './scope.mjs'
 
 export { Refusal }
@@ -159,4 +165,63 @@ export function estimateCheck(root, change, { file }) {
   mkdirSync(quickDir(main, change), { recursive: true })
   writeFileSync(join(quickDir(main, change), 'estimate.json'), `${JSON.stringify({ items }, null, 2)}\n`)
   return { ok: true, valid: true, change, step: 'estimate-check', items, next: items.some((r) => r.fit === 'quick') ? 'show the estimate to the developer; take the quick items with scope.mjs select' : 'no candidate fits a quick task; take them to /adf:propose' }
+}
+
+// ---------------------------------------------------------------- the affected tests
+
+export const AFFECTED_HEADING = '## Affected tests command'
+const OUTPUT_TAIL = 4000
+
+export const affectedCommandIn = (text) => sectionLine(text, AFFECTED_HEADING, 'command')
+
+// A path as one shell word: `/bin/sh -c` on POSIX, `cmd.exe` on Windows.
+const quote = (path) => (process.platform === 'win32' ? `"${path}"` : `'${path.replaceAll("'", "'\\''")}'`)
+
+const defaultRunner = (command, { cwd }) => spawnSync(command, { cwd, shell: true, encoding: 'utf8', windowsHide: true })
+
+const gitOut = (root, ...args) => {
+  const run = spawnSync('git', args, { cwd: root, encoding: 'utf8' })
+  if (run.status !== 0) refuse(`git ${args.join(' ')} failed in ${root}: ${(run.stderr ?? '').trim() || 'no output'}`)
+  return run.stdout
+}
+
+// The files the change changed: the commits since the merge base with the base branch, then the
+// uncommitted tracked and untracked files, each once, those that still exist.
+function changedFiles(root, change) {
+  const hasRef = (name) => spawnSync('git', ['rev-parse', '--verify', '--quiet', name], { cwd: root }).status === 0
+  const ref = baseRef(changeMeta(root, change), hasRef)
+  const base = gitOut(root, 'merge-base', ref, 'HEAD').trim()
+  const committed = gitOut(root, 'diff', '--name-only', '-z', `${base}..HEAD`).split('\0')
+  const entries = gitOut(root, 'status', '--porcelain=v1', '-z', '-uall').split('\0')
+  const dirty = []
+  for (let n = 0; n < entries.length; n++) {
+    const entry = entries[n]
+    if (entry.length < 4) continue
+    dirty.push(entry.slice(3))
+    if (/[RC]/.test(entry.slice(0, 2))) n++ // a rename or copy names its source in the next entry
+  }
+  return [...new Set([...committed, ...dirty].filter(Boolean))].filter((p) => existsSync(join(root, p)))
+}
+
+// Runs the guide's affected tests command in the change worktree on the files the change
+// changed, `{files}` replaced by them, through the platform shell: the command is the developer's
+// own line in the guide. An empty section runs nothing and waits for a proposal. The run is
+// recorded in quick/tests.json with HEAD.
+export function tests(root, change, { runner = defaultRunner } = {}) {
+  if (!CHANGE.test(change ?? '')) refuse(`"${change ?? ''}" is not a kebab-case change name`)
+  const top = resolve(root)
+  const file = join(top, PLANNING_FILE)
+  const template = existsSync(file) ? affectedCommandIn(readFileSync(file, 'utf8')) : null
+  if (template === null) {
+    return { ok: true, change, step: 'tests', waiting: "the affected tests command: propose one from the project's test runner, and write it under ## Affected tests command in openspec/planning.md on the developer's yes" }
+  }
+  const command = template.replaceAll(FILES, changedFiles(top, change).map(quote).join(' '))
+  const commit = gitOut(top, 'rev-parse', 'HEAD').trim()
+  const result = runner(command, { cwd: top })
+  const status = result.status ?? 1
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}${result.error ? String(result.error.message) : ''}`.slice(-OUTPUT_TAIL)
+  const dir = quickDir(top, change)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'tests.json'), `${JSON.stringify({ command, commit, status, output }, null, 2)}\n`)
+  return { ok: status === 0, change, step: 'tests', command, commit, status }
 }

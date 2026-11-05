@@ -17,17 +17,23 @@
 //       the reply checked against schema/quick-estimate.schema.json and the script's rules; the
 //       verdicts of the tracker issues recorded as `scope.mjs answer --verdict` does; the reply
 //       stored as estimate.json. { ok, valid, errors?, items, next }; a refusal is exit 1
+//   quick.mjs tests --change <name>
+//       run in the change's worktree (--root): the planning guide's affected tests command on the
+//       files the change changed, the commits since the base's merge base plus the uncommitted
+//       files; the run recorded as quick/tests.json. An empty section runs nothing and answers
+//       { ok: true, waiting }. { ok, command, commit, status }; exit 1 on a failure
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { isMain } from './lib/main.mjs'
 import { detectRuntime } from './lib/runtime.mjs'
-import { estimateCheck, estimateInput, filter, Refusal } from './lib/quick.mjs'
+import { estimateCheck, estimateInput, filter, Refusal, tests } from './lib/quick.mjs'
 
 export const USAGE = `usage:
   quick.mjs filter --change <name> [--root <dir>]
   quick.mjs estimate-input --change <name> [--root <dir>]
-  quick.mjs estimate-check --change <name> --file <reply json> [--root <dir>]`
+  quick.mjs estimate-check --change <name> --file <reply json> [--root <dir>]
+  quick.mjs tests --change <name> [--root <worktree>]`
 
 export class UsageError extends Error {}
 
@@ -36,12 +42,12 @@ const OPTIONS = {
   root: { type: 'string' },
   file: { type: 'string' }
 }
-const TAKES = { filter: [], 'estimate-input': [], 'estimate-check': ['file'] }
+const TAKES = { filter: [], 'estimate-input': [], 'estimate-check': ['file'], tests: [] }
 const usage = (message) => {
   throw new UsageError(`${message}\n${USAGE}`)
 }
 
-export function run(argv, { cwd = process.cwd(), env = process.env, runtime = detectRuntime({ env, scriptPath: fileURLToPath(import.meta.url) }) } = {}) {
+export function run(argv, { cwd = process.cwd(), env = process.env, runtime = detectRuntime({ env, scriptPath: fileURLToPath(import.meta.url) }), runner } = {}) {
   let parsed
   try {
     parsed = parseArgs({ args: argv, options: OPTIONS, strict: true, allowPositionals: true })
@@ -60,6 +66,8 @@ export function run(argv, { cwd = process.cwd(), env = process.env, runtime = de
       return filter(root, values.change)
     case 'estimate-input':
       return estimateInput(root, values.change, { runtime })
+    case 'tests':
+      return tests(root, values.change, { runner })
     default:
       if (!values.file) usage('estimate-check needs --file')
       return estimateCheck(root, values.change, { file: resolve(cwd, values.file) })

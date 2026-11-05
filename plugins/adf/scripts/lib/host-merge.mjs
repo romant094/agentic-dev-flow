@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { PLANNING_GUIDE, REVIEW_PROMPT } from './host-files.mjs'
 
 // The sections of openspec/planning.md the project fills in; an update never overwrites them.
-export const MANAGED = ['## Whole-suite command', '## Worktree copies', '## Worktree preparation', '## Format command']
+export const MANAGED = ['## Whole-suite command', '## Worktree copies', '## Worktree preparation', '## Format command', '## Affected tests command']
 
 const PLUGIN_SUFFIX = '@agentic-dev-flow'
 
