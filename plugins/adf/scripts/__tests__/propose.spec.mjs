@@ -437,6 +437,28 @@ test('forge.mjs open --change sends what the core read, and refuses the main che
   assert.equal(opened.out.report, 'Merge request: no link returned (opened as a draft)')
 })
 
+function withLinksForge(root, contract) {
+  mkdirSync(join(root, 'plugins', 'fake', 'scripts'), { recursive: true })
+  writeFileSync(join(root, 'plugins', 'fake', 'adf-extension.json'), JSON.stringify({ name: 'fake', contract, provides: { forge: { script: 'scripts/f.mjs', operations: ['check', 'open', 'push', 'finalize', 'state'] } } }))
+  writeFileSync(join(root, 'plugins', 'fake', 'scripts', 'f.mjs'), ECHO)
+  writeRegistry(root, { ...readRegistry(root), extensions: [{ path: 'plugins/fake' }] })
+}
+
+test('forge.mjs open --change passes links from scope.json; without --change none; an input with links is refused', () => {
+  const { root, dir } = started()
+  withLinksForge(root, '1.10')
+  write(dir, 'scope.json', JSON.stringify({ version: 1, change: 'add-thing', items: [{ source: 'tracker', key: 'P-1', title: 'One', kind: 'task', state: 'taken', url: 'https://t/P-1' }, { source: 'tracker', key: 'P-2', title: 'Two', kind: 'task', state: 'excluded' }] }))
+  const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
+  const opened = node('forge.mjs', ['open', '--change', 'add-thing', '--summary', 'core: add thing', '--root', root, '--home', home], root)
+  assert.equal(opened.out.state, 'done', JSON.stringify(opened.out))
+  assert.deepEqual(opened.out.input.links, [{ kind: 'tracker', key: 'P-1', title: 'One', url: 'https://t/P-1' }])
+  const refused = node('forge.mjs', ['open', '--change', 'add-thing', '--summary', 'core: add thing', '--input', '{"links":[]}', '--root', root, '--home', home], root)
+  assert.equal(refused.code, 1)
+  assert.match(refused.out.error, /input\.links is built by the core; leave it out/)
+  const plain = node('forge.mjs', ['open', '--input', '{"branch":"b"}', '--root', root, '--home', home], root)
+  assert.equal('links' in plain.out.input, false)
+})
+
 test('forge.mjs --summary on a branch the developer named without a type prefix refuses and asks for --title', () => {
   const { root } = started()
   mkdirSync(join(root, 'plugins', 'fake', 'scripts'), { recursive: true })

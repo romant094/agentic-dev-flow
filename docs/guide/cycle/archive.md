@@ -70,7 +70,7 @@ Not checked: whether the instructions make you approve a resolution. They say on
 
 Each commit step stages only its own paths. A step refuses when another uncommitted file is in those places. Then you commit, move or discard that file, and run the step again.
 
-The `mr` step writes the body of the merge request from the scenarios and the evidence in `verify.md`. With a forge plugin, it takes the request out of draft and pushes. The `remove` step refuses a worktree with uncommitted changes.
+The `mr` step writes the body of the merge request from the scenarios and the evidence in `verify.md`. The body does not name the keys of the scope. The core builds the scope's links from `scope.json` and passes them to the forge. With a forge plugin, it takes the request out of draft and pushes. The `remove` step refuses a worktree with uncommitted changes.
 
 ## How it resumes
 

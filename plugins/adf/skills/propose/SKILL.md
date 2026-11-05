@@ -160,7 +160,7 @@ any tracker keys the change works on.
    If it refuses, show `refusal` or `error` and stop.
 
 10. **Open the merge request.** Write the summary as `<scope>: <description>` for the change,
-   with no draft prefix. Run:
+   with no draft prefix. The Draft shows the scope's links, built from `scope.json`. Run:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/forge.mjs" open --change <name> --root <root> --summary "<scope>: <description>"

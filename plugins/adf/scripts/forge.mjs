@@ -14,10 +14,13 @@
 // (lib/roles.mjs forgeReport). With no forge plugin enabled the state is `none`: nothing is pushed
 // and no merge request exists; archive offers to merge the change into its base. Exit 1 only for
 // `refused`.
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { callRole, forgeInput, forgeReport } from './lib/roles.mjs'
+import { callRole, CORE, forgeInput, forgeReport, provider } from './lib/roles.mjs'
+import { buildLinks, linksInput } from './lib/mr-links.mjs'
+import { findChangeDir } from './lib/ingest.mjs'
+import { SCOPE_FILE } from './lib/scope.mjs'
 import { changeDir, inferChange, readChangeMeta, refuseMainCheckout } from './lib/changes.mjs'
 import { readBranches } from './lib/branches.mjs'
 import { loadSchema } from './lib/schema.mjs'
@@ -65,7 +68,16 @@ export function run(argv) {
     if (operation === 'check') throw new Error('check takes no --change, --title or --summary')
     refuseMainCheckout(root)
     const name = inferChange(root, change, loadSchema())
+    const given = input
     input = forgeInput(operation, readState(root, name), { input, title, summary, draft: draft === undefined ? undefined : draft === 'true' })
+    if (change !== undefined && ['open', 'finalize'].includes(operation)) {
+      if (given.links !== undefined) throw new Error('input.links is built by the core; leave it out')
+      const file = join(findChangeDir(root, name), SCOPE_FILE)
+      if (existsSync(file)) {
+        const links = buildLinks(root, JSON.parse(readFileSync(file, 'utf8')), input.base)
+        input = linksInput(operation, input, links, provider(root, 'forge', CORE)?.declaration.contract)
+      }
+    }
   }
   const result = callRole(root, 'forge', operation, input, { coreContract: contract.version, points: contract.points, home })
   return { ...result, report: forgeReport(operation, result) }

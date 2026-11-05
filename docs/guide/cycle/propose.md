@@ -54,7 +54,7 @@ Each artifact has gates. The command fixes the findings of a gate in the artifac
 
 The commit holds the change directory and nothing else. Its message is `docs(openspec): propose <name>`. The commit refuses while an artifact is not done, while a gate fails, or while anything else is staged.
 
-After the commit, the command opens a merge request through the forge plugin. Without a forge plugin, it pushes nothing and the report says that no merge request exists. When the forge refuses, the artifacts stay committed.
+After the commit, the command opens a merge request through the forge plugin. Without a forge plugin, it pushes nothing and the report says that no merge request exists. When the forge refuses, the artifacts stay committed. The draft shows the links of the scope, built from `scope.json`.
 
 The command also records the active change of the worktree in `.adf/active.json`. This file is local and never committed.
 

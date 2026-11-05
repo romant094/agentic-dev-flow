@@ -95,10 +95,11 @@ import { QUIET_RUN } from './metrics-records.mjs'
 import { addEntry, pricesUrl } from './prices.mjs'
 import { readDebtRoot } from './registry.mjs'
 import { checkRecord, ROUND_CAP } from './review-state.mjs'
-import { callRole, CORE, forgeInput, forgeReport, knowledgeReport } from './roles.mjs'
+import { callRole, CORE, forgeInput, forgeReport, knowledgeReport, provider } from './roles.mjs'
 import { debtGroups, findScope, namesKey, SCOPE_FILE, scopeKeys, trackerTargets } from './scope.mjs'
 import { checkResolutions, checkSpecsBase, mergePreview, writeMerge } from './specs.mjs'
 import { writeConflictTexts } from './spec-merge.mjs'
+import { buildLinks, linksInput } from './mr-links.mjs'
 import { loadSchema } from './schema.mjs'
 import { defaultProjectsDir } from './transcripts.mjs'
 import { fetchRef, LINT_DUE, sinceLastRetro } from './window.mjs'
@@ -182,7 +183,7 @@ function gitAsk(root, what, ...args) {
 }
 
 // deps: { now() -> Date, home, knowledge() -> context result, knowledgeLog(input) -> log result,
-// forge(operation, input) -> role result, projectsDir, fetchPrices(url, now) -> fetchEntry result,
+// forge(operation, input) -> role result, forgeContract() -> the forge provider's contract or null, projectsDir, fetchPrices(url, now) -> fetchEntry result,
 // fetchRef(root, { now }) -> lib/window.mjs fetchRef result, fault(step) }. `fault` lets a test
 // fail a step; `projectsDir` is the transcript directory; `fetchRef` runs once, in the report.
 export function archiveContext(rootArg, change, deps = {}) {
@@ -202,6 +203,7 @@ export function archiveContext(rootArg, change, deps = {}) {
     knowledge: () => (context ??= (deps.knowledge ?? (() => callRole(root, 'knowledge', 'context', {}, core)))()),
     knowledgeLog: deps.knowledgeLog ?? ((input) => callRole(root, 'knowledge', 'log', input, core)),
     forge: deps.forge ?? ((operation, input) => callRole(root, 'forge', operation, input, core)),
+    forgeContract: deps.forgeContract ?? (() => provider(root, 'forge', core)?.declaration.contract ?? null),
     home: deps.home,
     projectsDir: deps.projectsDir ?? defaultProjectsDir(),
     fetchPrices: deps.fetchPrices ?? fetchPricesSync,
@@ -779,6 +781,7 @@ export function mrInput(ctx) {
     changeDir: dir,
     tasks: { done: tasks.filter((t) => t.done).map((t) => t.description), open: tasks.filter((t) => !t.done).map((t) => t.description) },
     why: section(read('proposal.md') ?? '', 'Why'),
+    links: buildLinks(ctx.root, changeScope(ctx), baseOf(ctx)),
     scenarios: specCapabilities(dir).flatMap((c) => deltaScenarios(readFileSync(join(dir, 'specs', c, 'spec.md'), 'utf8'), c)),
     evidence: {
       verdict: [...verify.matchAll(/^Verdict: (.+?)\s*$/gm)].at(-1)?.[1] ?? null,
@@ -810,12 +813,18 @@ export function mrStep(ctx, { body = null, title, summary } = {}) {
     } catch (error) {
       return refuse(`--body ${body}: ${error.message}`)
     }
-    const unnamed = unnamedKeys(ctx, text)
-    if (unnamed.length) refuse(`the merge request body names no ${unnamed.join(', ')}; name every key of the change's scope.json (its taken and partial tracker keys and debt ids) in ${body}, then run mr again`, { unnamed })
-    const input = forgeInput(
+    const links = buildLinks(ctx.root, changeScope(ctx), baseOf(ctx))
+    const unnamed = unnamedKeys(ctx, text, links)
+    if (unnamed.length) refuse(`the merge request names no ${unnamed.join(', ')}: neither the body nor the links built from scope.json hold them`, { unnamed })
+    const input = linksInput(
       'finalize',
-      { change: ctx.change, branch: branchOf(ctx), base: baseOf(ctx), protected: readBranches(ctx.root)?.protected ?? null },
-      { input: { body: text, ...ci }, title, summary }
+      forgeInput(
+        'finalize',
+        { change: ctx.change, branch: branchOf(ctx), base: baseOf(ctx), protected: readBranches(ctx.root)?.protected ?? null },
+        { input: { body: text, ...ci }, title, summary }
+      ),
+      links,
+      ctx.forgeContract()
     )
     const result = ctx.forge('finalize', input)
     const report = forgeReport('finalize', result)
@@ -829,10 +838,10 @@ export function mrStep(ctx, { body = null, title, summary } = {}) {
   })
 }
 
-// The keys of the change's scope.json that a merge request body does not name as a whole word.
-// No scope.json, or one that takes nothing, has none.
-function unnamedKeys(ctx, text) {
-  return scopeKeys(changeScope(ctx)).filter((key) => !namesKey(text, key))
+// The keys of the change's scope.json that neither the merge request body names as a whole word
+// nor a link holds. No scope.json, or one that takes nothing, has none.
+export function unnamedKeys(ctx, text, links) {
+  return scopeKeys(changeScope(ctx)).filter((key) => !namesKey(text, key) && !links.some((l) => l.key === key))
 }
 
 // ---------------------------------------------------------------- the local merge
