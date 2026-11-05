@@ -161,8 +161,40 @@ export function mergeDescription(existing, change, block) {
 
 // Written inside the change's marker, so `finalize` replaces it rather than leaving it above
 // the final description.
-export function placeholder(change) {
-  return mergeDescription('', change, `Draft for change ${change}. The description is written when the change is finalized.`)
+export function placeholder(change, linkLines = '') {
+  return mergeDescription('', change, `${linkLines}Draft for change ${change}. The description is written when the change is finalized.`)
+}
+
+// ---------------------------------------------------------------- the scope's links
+
+// The permanent URL of a file in the commit the forge holds: the configured host (else the
+// origin's), the slug of the origin remote. Null when any part is missing.
+export function fileUrl({ run, root, config }, path, commit) {
+  if (!commit || !path) return null
+  const host = configuredHost({ run, root, config })
+  const remote = run('git', ['-C', root, 'remote', 'get-url', 'origin'])
+  if (!host || !ok(remote)) return null
+  const text = String(remote.stdout).trim()
+  const m = /^(?:https?|ssh|git):\/\/(?:[^@/]+@)?[^/]+\/(.+)$/.exec(text) ?? /^(?:[^@\s/]+@)?[^:\s/]+:(?!\/)(.+)$/.exec(text)
+  if (!m) return null
+  const slug = m[1].replace(/\/+$/, '').replace(/\.git$/, '')
+  return /^[^/\s]+(\/[^/\s]+)+$/.test(slug) ? `https://${host}/${slug}/-/blob/${commit}/${path}` : null
+}
+
+// A title on one line, with `]` escaped so it cannot close a link early.
+const oneLine = (title) => String(title).replace(/\]/g, '\\]').replace(/\r?\n|\r/g, ' ')
+
+// The `Scope:` lines for the top of a block; the same text as the core writes for a provider
+// older than 1.10. `urlOf(path, commit)` gives a debt link's URL, or null.
+export function renderLinks(links, urlOf) {
+  if (!Array.isArray(links) || links.length === 0) return ''
+  const lines = links.map((l) => {
+    const label = l.kind === 'debt' ? 'Debt' : 'Issue'
+    const url = l.kind === 'debt' ? urlOf(l.path, l.commit) : l.url
+    const key = url ? `[${l.key}](${url})` : l.key
+    return `- ${label} ${key}: ${oneLine(l.title)}`
+  })
+  return `Scope:\n${lines.join('\n')}\n\n`
 }
 
 // ---------------------------------------------------------------- input
@@ -179,6 +211,12 @@ function validate(input, fields) {
   if (input.protected.includes(input.branch)) return `refusing to act on the protected branch "${input.branch}"`
   if (input.draft !== undefined && typeof input.draft !== 'boolean') return 'input.draft must be true or false'
   if (input.ci !== undefined && typeof input.ci !== 'boolean') return 'input.ci must be true or false'
+  if (
+    input.links !== undefined &&
+    !(Array.isArray(input.links) && input.links.every((l) => l !== null && typeof l === 'object' && ['tracker', 'debt'].includes(l.kind) && typeof l.key === 'string' && l.key.trim() !== ''))
+  ) {
+    return 'input.links must be a list of { kind, key, title } items'
+  }
   return null
 }
 
@@ -239,7 +277,8 @@ export function open(ctx) {
   const problem = validate(input, ['change', 'branch', 'base', 'title'])
   if (problem) return refused(`${problem}; ${NOTHING_SENT}.`)
   const draft = input.draft ?? true
-  const mr = { ...input, draft, description: placeholder(input.change) }
+  const linkLines = renderLinks(input.links, (path, commit) => fileUrl(ctx, path, commit))
+  const mr = { ...input, draft, description: placeholder(input.change, linkLines) }
 
   const tool = detectTool(ctx)
   if (tool.state !== 'done') {
@@ -275,7 +314,8 @@ export function finalize(ctx) {
   if (!parsed.ok) {
     return refused(`Description rejected; nothing was sent. Missing: [${parsed.missing.join(', ')}] Empty: [${parsed.empty.join(', ')}]`)
   }
-  const { change, branch, body } = input
+  const { change, branch } = input
+  const body = renderLinks(input.links, (path, commit) => fileUrl(ctx, path, commit)) + input.body
 
   const tool = detectTool(ctx)
   if (tool.state !== 'done') {

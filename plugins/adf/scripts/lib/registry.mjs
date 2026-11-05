@@ -30,7 +30,7 @@ export function isCompatible(core, plugin) {
 const inside = (path) => typeof path === 'string' && path !== '' && !isAbsolute(path) && !normalize(path).startsWith('..')
 
 // Whether version `a` is at or below version `b`, both major.minor.
-const atOrBelow = (a, b) => {
+export const atOrBelow = (a, b) => {
   const x = parseVersion(a)
   const y = parseVersion(b)
   return Boolean(x && y && (x.major < y.major || (x.major === y.major && x.minor <= y.minor)))

@@ -2,6 +2,7 @@
 - plugins/adf/skills/archive/**
 - plugins/adf/scripts/archive.mjs
 - plugins/adf/scripts/lib/archive.mjs
+- plugins/adf/scripts/lib/mr-links.mjs
 - plugins/adf/schema/instructions/archive.md
 -->
 
@@ -70,7 +71,7 @@ Not checked: whether the instructions make you approve a resolution. They say on
 
 Each commit step stages only its own paths. A step refuses when another uncommitted file is in those places. Then you commit, move or discard that file, and run the step again.
 
-The `mr` step writes the body of the merge request from the scenarios and the evidence in `verify.md`. With a forge plugin, it takes the request out of draft and pushes. The `remove` step refuses a worktree with uncommitted changes.
+The `mr` step writes the body of the merge request from the scenarios and the evidence in `verify.md`. Do not write the keys of the scope in the body. `mr-input` lists them as `links`, and the core builds them from `scope.json`. The `mr` step passes the links to the forge. The final description shows them once, above the body. The `mr` step refuses, and sends nothing, when a key of the scope is in neither the body nor the links. With a forge plugin, it takes the request out of draft and pushes. The `remove` step refuses a worktree with uncommitted changes.
 
 ## How it resumes
 

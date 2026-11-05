@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { run, UsageError } from '../archive.mjs'
 import { run as ingestRun } from '../ingest.mjs'
-import { ago, deltaScenarios, handEditedProse, hurtSignals, statePath, STEPS, unplaced } from '../lib/archive.mjs'
+import { ago, deltaScenarios, handEditedProse, hurtSignals, statePath, STEPS, unnamedKeys, unplaced } from '../lib/archive.mjs'
 import { recordDispatch } from '../lib/attempts.mjs'
 import { entryFromPage } from '../lib/prices.mjs'
 import { encodeKeys } from '../lib/transcripts.mjs'
@@ -852,20 +852,45 @@ const SCOPE = {
   ]
 }
 
-test('mr refuses a body that does not name every in-scope key, sending nothing, and finalizes once it does', () => {
+test('mr passes the scope\'s links to a 1.10 forge', () => {
   const h = archiveHost({ scope: SCOPE })
   const calls = []
-  const deps = { ...NONE, forge: (op, input) => (calls.push({ op, input }), op === 'check' ? { state: 'done', plugin: 'gitlab' } : { state: 'done', plugin: 'gitlab', url: 'https://g/mr/1' }) }
+  const deps = { ...NONE, forgeContract: () => '1.10', forge: (op, input) => (calls.push({ op, input }), op === 'check' ? { state: 'done', plugin: 'gitlab' } : { state: 'done', plugin: 'gitlab', url: 'https://g/mr/1' }) }
   for (const step of BEFORE_MR) assert.equal(call(h, [step], deps).ok, true, step)
   const body = join(h.wt, '..', 'body.md')
-  writeFileSync(body, '## What\n\n- dry store for PROJ-12\n')
-  const refused = call(h, ['mr', '--body', body, '--title', 'feat: x'], deps)
-  assert.deepEqual([refused.ok, refused.state, refused.detail.unnamed], [false, 'failed', ['PROJ-1', 'store-01']])
-  assert.match(refused.refusal, /the merge request body names no PROJ-1, store-01; name every key of the change's scope\.json/)
-  assert.equal(calls.filter((c) => c.op === 'finalize').length, 0, 'nothing was sent')
-  writeFileSync(body, '## What\n\n- dry store (PROJ-1), the dry part of store-01\n')
+  writeFileSync(body, '## What\n\n- dry store\n')
   const done = call(h, ['mr', '--body', body, '--title', 'feat: x'], deps)
   assert.deepEqual([done.ok, done.state, done.detail.branch, done.detail.base], [true, 'done', 'feat/add-x', 'develop'])
+  const sent = calls.find((c) => c.op === 'finalize').input
+  assert.deepEqual(sent.links.map((l) => l.key), ['PROJ-1', 'store-01'])
+  assert.equal(sent.body, '## What\n\n- dry store\n')
+})
+
+test('a provider of contract 1.9 gets the links in body', () => {
+  const h = archiveHost({ scope: SCOPE })
+  const calls = []
+  const deps = { ...NONE, forgeContract: () => '1.9', forge: (op, input) => (calls.push({ op, input }), op === 'check' ? { state: 'done', plugin: 'gitlab' } : { state: 'done', plugin: 'gitlab', url: 'u' }) }
+  for (const step of BEFORE_MR) assert.equal(call(h, [step], deps).ok, true, step)
+  const body = join(h.wt, '..', 'body.md')
+  writeFileSync(body, '## What\n\n- dry store\n')
+  assert.equal(call(h, ['mr', '--body', body, '--title', 'feat: x'], deps).state, 'done')
+  const sent = calls.find((c) => c.op === 'finalize').input
+  assert.match(sent.body, /^Scope:\n- Issue PROJ-1: Wet store\n- Debt store-01: Store rots\n\n## What/)
+  assert.equal('links' in sent, false)
+})
+
+test('the key check still refuses when no link holds the key', () => {
+  const h = archiveHost({ scope: SCOPE })
+  const ctx = { root: h.wt, change: 'add-x' }
+  assert.deepEqual(unnamedKeys(ctx, 'names PROJ-1', []), ['store-01'])
+  assert.deepEqual(unnamedKeys(ctx, 'nothing', [{ key: 'PROJ-1' }]), ['store-01'])
+  assert.deepEqual(unnamedKeys(ctx, 'nothing', [{ key: 'PROJ-1' }, { key: 'store-01' }]), [])
+})
+
+test('mr-input lists the links', () => {
+  const h = archiveHost({ scope: SCOPE })
+  assert.deepEqual(call(h, ['mr-input']).links.map((l) => [l.kind, l.key]), [['tracker', 'PROJ-1'], ['debt', 'store-01']])
+  assert.deepEqual(call(archiveHost(), ['mr-input']).links, [])
 })
 
 test('a scope that takes no key, or a change with no scope.json, is no body check', () => {

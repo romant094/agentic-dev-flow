@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import {
   HOST_TEMPLATE,
   detectTool,
+  fileUrl,
   hostFromRemote,
   installHint,
   loginHint,
@@ -17,6 +18,7 @@ import {
   placeholder,
   pushArgs,
   readTemplate,
+  renderLinks,
   runOperation,
   templateSections
 } from '../lib/forge.mjs'
@@ -604,9 +606,9 @@ test("a failed push is refused with git's output and nothing else changed", () =
   assert.deepEqual(result, { state: 'refused', error: 'git push failed: rejected: non-fast-forward; nothing else changed.' })
 })
 
-test('the declaration names contract 1.7, which defines ci and state', () => {
+test('the declaration names contract 1.10', () => {
   const declared = JSON.parse(readFileSync(join(pluginDir, 'adf-extension.json'), 'utf8'))
-  assert.equal(declared.contract, '1.7')
+  assert.equal(declared.contract, '1.10')
 })
 
 // ---------------------------------------------------------------- ci
@@ -728,4 +730,67 @@ test('state refuses unparseable JSON', () => {
 test('state never writes', () => {
   const { calls } = op('state', { ...stateInput, url: MR_URL }, [...ready, view({ state: 'merged' })])
   assert.deepEqual(touched(calls), ['glab mr view 42 --output json'])
+})
+
+// ---------------------------------------------------------------- the scope's links
+
+const tracker = { kind: 'tracker', key: 'PRJ-1', title: 'First', url: 'https://tracker.example.com/PRJ-1' }
+const debt = { kind: 'debt', key: 'D-0001', title: 'Title', path: 'docs/debt/index.md', commit: 'abc123' }
+const origin = ['git -C /work/host remote get-url origin', yes('git@gitlab.example.com:group/proj.git\n')]
+const descriptionOf = (calls) => {
+  const create = calls.find((c) => c.startsWith('glab mr create'))
+  return create.slice(create.indexOf('--description ') + '--description '.length)
+}
+const SCOPE = 'Scope:\n- Issue [PRJ-1](https://tracker.example.com/PRJ-1): First\n- Debt [D-0001](https://gitlab.example.com/group/proj/-/blob/abc123/docs/debt/index.md): Title\n\n'
+
+test('open writes the links above the placeholder', () => {
+  const { code, calls } = op('open', { ...openInput, links: [tracker, debt] }, [...ready, origin, ['git -C', yes()], mrList([]), ['glab mr create', yes('https://gitlab.example.com/g/p/-/merge_requests/9')]])
+  assert.equal(code, 0)
+  assert.equal(descriptionOf(calls), `<!-- adf:my-change -->\n${SCOPE}Draft for change my-change. The description is written when the change is finalized.\n<!-- /adf:my-change -->\n`)
+})
+
+test('a reused open changes no description', () => {
+  const { code, result, calls } = op('open', { ...openInput, links: [tracker] }, [...ready, ['git -C', yes()], existing])
+  assert.equal(code, 0)
+  assert.equal(result.reused, true)
+  assert.equal(calls.some((c) => c.startsWith('glab mr update')), false)
+})
+
+test('finalize replaces the links open wrote', () => {
+  const before = placeholder('my-change', SCOPE)
+  const { code, calls } = op('finalize', { ...finalInput, links: [tracker, debt] }, [
+    ...ready,
+    origin,
+    mrList([{ iid: 7 }]),
+    ['glab mr view', yes(JSON.stringify({ iid: 7, description: before }))],
+    ['glab mr update', yes()],
+    ['git -C', yes()]
+  ])
+  assert.equal(code, 0)
+  const update = calls.find((c) => c.startsWith('glab mr update'))
+  assert.equal(update.split('Scope:').length - 1, 1)
+  assert.ok(update.includes(`<!-- adf:my-change -->\n${SCOPE}## What`))
+})
+
+test('a debt link gets the permanent file URL', () => {
+  const { run } = record([origin])
+  assert.equal(fileUrl({ run, root: ROOT, config: { host: 'gitlab.example.com' } }, 'docs/debt/index.md', 'abc123'), 'https://gitlab.example.com/group/proj/-/blob/abc123/docs/debt/index.md')
+})
+
+test('a debt link without a commit has no URL', () => {
+  const { run } = record([origin])
+  const urlOf = (path, commit) => fileUrl({ run, root: ROOT, config: { host: 'gitlab.example.com' } }, path, commit)
+  assert.equal(renderLinks([{ ...debt, commit: null }], urlOf), 'Scope:\n- Debt D-0001: Title\n\n')
+})
+
+test('a title with Markdown characters stays on one line', () => {
+  const text = renderLinks([{ ...tracker, title: 'a ] b\nc\r\nd' }], () => null)
+  assert.equal(text, 'Scope:\n- Issue [PRJ-1](https://tracker.example.com/PRJ-1): a \\] b c d\n\n')
+})
+
+test('malformed links are refused with nothing sent', () => {
+  const { code, result, calls } = op('open', { ...openInput, links: [{ kind: 'pr', key: 'x' }] }, ready)
+  assert.equal(code, 1)
+  assert.equal(result.error, 'input.links must be a list of { kind, key, title } items; nothing was pushed and no merge request was touched.')
+  assert.deepEqual(calls, [])
 })
