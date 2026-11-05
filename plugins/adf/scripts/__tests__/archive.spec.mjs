@@ -85,7 +85,7 @@ const VERIFY = '# Verify\n\n## Apply test record\n\n**Result:** PASS, 12 tests\n
 // `ledger` writes the ledger; `debt` sets the registry's debt root; `specsBase` writes the
 // change's specs-base.json, as propose does; `verify` is verify.md's text; `scope` is the change's
 // scope.json, as propose commits it.
-function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widgets dry\n', verdict = 'PASS', ledger = placedLedger, debt = null, extra = {}, meta = {}, omit = [], specsBase = true, verify = VERIFY, scope = null } = {}) {
+function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widgets dry\n', verdict = 'PASS', ledger = placedLedger, debt = null, extra = {}, meta = {}, omit = [], specsBase = true, verify = VERIFY, scope = null, quick = null } = {}) {
   const top = realpathSync(mkdtempSync(join(tmpdir(), 'adf-archive-')))
   const root = join(top, 'host')
   execFileSync('git', ['init', '-q', '-b', 'develop', root])
@@ -112,9 +112,15 @@ function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widg
       ...(scope ? { [`${dir}/scope.json`]: `${JSON.stringify(scope, null, 2)}\n` } : {}),
       'src/x.txt': 'dry\n'
   }
+  if (quick !== null) {
+    // A quick change holds quick.md and nothing else of the full cycle.
+    for (const name of ['brainstorm.md', 'proposal.md', 'design.md', 'tasks.md', 'plan.md', 'verify.md']) delete files[`${dir}/${name}`]
+    files[`${dir}/.adf.json`] = `${JSON.stringify({ schema: 'quick', schemaVersion: 1, created: '2026-10-15', base: 'develop', ...meta })}\n`
+    files[`${dir}/quick.md`] = quick
+  }
   for (const name of omit) delete files[`${dir}/${name}`]
   put(wt, files)
-  if (specsBase) assert.equal(writeSpecsBase(wt, 'add-x').ok, true)
+  if (specsBase && quick === null) assert.equal(writeSpecsBase(wt, 'add-x').ok, true)
   const reviewed = commit(wt, {}, 'feat: store widgets dry')
   commit(wt, { [`${dir}/review.md`]: reviewRecord(reviewed, { verdict }) }, 'docs(openspec): review add-x')
   ledger?.(wt)
@@ -1113,4 +1119,77 @@ test('the CLI: usage errors exit 2, a step out of order exits 1, a pass exits 0'
   assert.equal(cli('check', '--change', 'add-x').code, 0)
   assert.equal(cli('state', '--change', 'add-x').out.steps.check.state, 'done')
   assert.match(cli('check', '--change', 'Add X').out.error, /not kebab-case/)
+})
+
+// ---------------------------------------------------------------- a quick change
+
+const QUICK = (summary = 'Dried the store; the widget test passes; the review passed.') => [
+  '# add-x', '', '## Goal', '', 'Widgets rot in a wet store; dry it.', '', '## Scope', '', 'The store only.', '',
+  '## Plan', '', '1. Dry the store', '   **Files:** src/x.txt', '   **Action:** dry it', '   **Check:** the widget test', '',
+  '## Summary', '', summary, ''
+].join('\n')
+const quickHost = (opts = {}) => archiveHost({ delta: {}, quick: QUICK(), ...opts })
+
+test('archive check refuses a quick change with no summary', () => {
+  const h = quickHost({ quick: QUICK('<!-- written at the end -->') })
+  const out = call(h, ['check'])
+  assert.equal(out.ok, false)
+  assert.match(out.refusal, /quick\.md has no summary; write ## Summary, then run check again/)
+  assert.equal(call(quickHost(), ['check']).ok, true)
+})
+
+test('merge is skipped for a quick change', () => {
+  const h = quickHost()
+  assert.equal(call(h, ['check']).ok, true)
+  assert.equal(call(h, ['placements']).ok, true)
+  const out = call(h, ['merge'])
+  assert.deepEqual([out.ok, out.state, out.detail], [true, 'skipped', { reason: 'quick task' }])
+  assert.equal(git(h.wt, 'status', '--porcelain'), '', 'nothing was written')
+})
+
+test('placements resolves the debt a quick change took', () => {
+  const extra = { ...DEBT_TREE }
+  const h = quickHost({ debt: 'docs/debt', extra, scope: DEBT_SCOPE })
+  assert.equal(call(h, ['check']).ok, true)
+  const placed = call(h, ['placements'])
+  assert.equal(placed.ok, true, placed.refusal)
+  assert.deepEqual([placed.detail.resolvedDebt, placed.detail.goneDebt], [['snmp-01'], ['snmp-03']])
+  assert.equal(readFileSync(join(h.wt, 'docs/debt/snmp/index.md'), 'utf8').includes(DEBT_ROW('snmp-01')), false)
+})
+
+test('mr-input reads quick.md', () => {
+  const h = quickHost({ scope: SCOPE })
+  const out = call(h, ['mr-input'])
+  assert.deepEqual(Object.keys(out), ['ok', 'change', 'changeDir', 'cycle', 'goal', 'summary', 'plan', 'links', 'bodyFile'])
+  assert.equal(out.cycle, 'quick')
+  assert.equal(out.goal, 'Widgets rot in a wet store; dry it.')
+  assert.equal(out.summary, 'Dried the store; the widget test passes; the review passed.')
+  assert.match(out.plan, /^1\. Dry the store\n {3}\*\*Files:\*\* src\/x\.txt/)
+  assert.deepEqual(out.links.map((l) => l.key), ['PROJ-1', 'store-01'])
+})
+
+test('the archive runs a quick change from check to remove', () => {
+  const h = quickHost()
+  const fake = []
+  const deps = { ...NONE, forge: (op, input) => (fake.push(op), op === 'check' ? { state: 'ok', plugin: 'fake' } : { state: 'done', plugin: 'fake', url: 'https://forge.example/mr/1' }) }
+  const first = drive(h, deps)
+  assert.equal(first.at(-1).step, 'mr')
+  assert.equal(first.at(-1).state, 'pending')
+  const body = join(h.root, '.superpowers', 'sdd', 'add-x', 'archive', 'merge-request.md')
+  mkdirSync(dirname(body), { recursive: true })
+  writeFileSync(body, 'Dried the store.\n')
+  const rest = [call(h, ['mr', '--body', body, '--summary', 'store: dry it'], deps)]
+  for (let i = 0; i < STEPS.length; i++) {
+    const { next } = call(h, ['next'], deps)
+    if (!next) break
+    rest.push(call(h, [next], deps))
+  }
+  const all = [...first.filter((s) => s.state !== 'pending'), ...rest]
+  assert.equal(all.every((s) => s.ok), true, JSON.stringify(all.find((s) => !s.ok)))
+  const states = Object.fromEntries(Object.entries(readState(h).steps).map(([k, v]) => [k, v.state]))
+  assert.equal(states.merge, 'skipped')
+  assert.equal(states.mr, 'done')
+  assert.equal(states.remove, 'done')
+  assert.equal(existsSync(h.wt), false)
+  assert.match(git(h.root, 'show', `feat/add-x:${TARGET}/quick.md`), /## Summary/)
 })

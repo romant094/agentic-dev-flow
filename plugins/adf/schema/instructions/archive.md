@@ -66,7 +66,8 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    developer's ruling with a reason at review, which makes the computed verdict `PASS`. The
    record is committed, its reviewed commit is an ancestor of HEAD, and no commit after it
    touches anything but the record; the refusal names the change root and the repository root,
-   so a wrong `--root` shows itself. The spec base is checked as `specs.mjs base --check`
+   so a wrong `--root` shows itself. A quick change must also hold text under `## Summary` in
+   `quick.md`, else `check` refuses; it has no spec base to check. The spec base is checked as `specs.mjs base --check`
    checks it: a requirement the deltas modify, remove or rename with no entry in
    `specs-base.json`, or with an entry taken for another delta text, refuses archive, since the
    merge must not use a base the delta was not written against; run `specs.mjs base` and commit
@@ -123,7 +124,9 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    failure. The debt store's uncommitted files are then recorded as the placement's, and
    `commit-memory` commits them; no commit message names the resolved ids.
 
-4. **`merge`: the delta specs into the main specs.** First show the developer the preview:
+4. **`merge`: the delta specs into the main specs.** A quick change has no delta specs: the step
+   is `skipped` with the reason `quick task`; run `archive.mjs merge` and go on to `move`. Any
+   other change first shows the developer the preview:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/specs.mjs" merge --dry-run --change <change> --root <root>
@@ -269,7 +272,8 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    step is `skipped`, and `merge-local` follows. With a forge, `mr` with no body holds: the step
    stays `pending`, records nothing, and returns the `bodyFile` and what it is `waiting` for.
    Run `archive.mjs mr-input`, and from
-   its `tasks`, `why`, `scenarios` and `evidence` write the merge request body to its `bodyFile`:
+   its `tasks`, `why`, `scenarios` and `evidence` (for a quick change, which has `cycle: quick`:
+   its `goal`, `summary` and `plan`) write the merge request body to its `bodyFile`:
    the sections of the forge plugin's merge request template, the steps a tester follows taken
    from the scenarios, and the evidence `verify.md` recorded. Do not write the scope's keys in the
    body: `mr-input` lists them as `links`, built from `scope.json`, and `mr` passes them to the

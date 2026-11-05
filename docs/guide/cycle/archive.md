@@ -53,6 +53,10 @@ The command ends with a report. It names each step that is not finished and the 
 
 The command never merges a merge request. You merge it.
 
+## A quick change
+
+A quick change ends in the same steps. Its `check` step also needs text under `## Summary` in `quick.md`. It checks no spec base. The `merge` step is skipped, with the reason `quick task`. The `placements` step runs as usual and resolves the debt the change took. The `mr` body comes from the goal and the summary.
+
 ## The merge step
 
 The command writes the Purpose of a new capability from `proposal.md`. It needs at least 50 characters.

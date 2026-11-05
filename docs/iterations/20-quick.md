@@ -115,9 +115,10 @@ the flags, the separate planner and executor agents, the work on the current bra
 - **The end.** After the summary: the ingest (`ingest.mjs`, when the knowledge plugin is
   enabled), the `log.md` entry, the metrics record, the move into `openspec/changes/archive/`,
   the forge's `finalize` (the merge request leaves Draft), and the worktree removed with
-  `teardown` first. The archive's steps are reused; for a quick change the spec merge and the
-  debt placement of review findings are recorded as skipped with the reason "quick task", since
-  `runStep` refuses a step before every earlier one has settled (`lib/archive.mjs:246`). A spec scenario
+  `teardown` first. The archive's steps are reused; for a quick change only the spec merge is
+  recorded as skipped with the reason "quick task", since `runStep` refuses a step before every
+  earlier one has settled (`lib/archive.mjs:246`). `placements` runs as in the full cycle: it also
+  resolves the debt entries the change took. A spec scenario
   the fix shows missing goes to the debt store.
 - **The metrics record.** The same `metrics.json` and schema as the main cycle
   (`contract/metrics-format.md`), written by `metrics.mjs extract` at the end and committed in

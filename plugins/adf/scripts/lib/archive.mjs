@@ -13,7 +13,8 @@
 // the hurt signals of this change's record.
 //
 // What each step reads and writes:
-//   check         the review record through review-state's checkRecord: PASS only (one
+//   check         (a quick change: quick.md's `## Summary` must hold text, and no spec base is
+//                 checked) the review record through review-state's checkRecord: PASS only (one
 //                 verdict route: a developer ruling with a reason makes the computed verdict
 //                 PASS), the record committed, the reviewed commit read and an ancestor of HEAD,
 //                 no commit after it touching anything but the record (`git log <sha>..HEAD --
@@ -35,7 +36,8 @@
 //                 uses; an entry already resolved counts as resolved, one in neither file is
 //                 reported as gone, and the debt tree's uncommitted files are recorded: they are
 //                 the placement's.
-//   merge         lib/specs.mjs writeMerge, after the preview: a conflict writes its texts for the
+//   merge         a quick change has no delta specs: `skipped`, reason `quick task`. Otherwise
+//                 lib/specs.mjs writeMerge, after the preview: a conflict writes its texts for the
 //                 `spec-merge <capability>` dispatch and fails the step; a new capability's
 //                 placeholder Purpose refuses until `--purpose <capability>=<file>` gives it.
 //   move          lib/changes.mjs archiveChange: the ledger copied once, the directory moved, on
@@ -100,7 +102,7 @@ import { debtGroups, findScope, namesKey, SCOPE_FILE, scopeKeys, trackerTargets 
 import { checkResolutions, checkSpecsBase, mergePreview, writeMerge } from './specs.mjs'
 import { writeConflictTexts } from './spec-merge.mjs'
 import { buildLinks, linksInput } from './mr-links.mjs'
-import { schemaOf } from './schema.mjs'
+import { checkQuickSummary, schemaOf } from './schema.mjs'
 import { defaultProjectsDir } from './transcripts.mjs'
 import { fetchRef, LINT_DUE, sinceLastRetro } from './window.mjs'
 import { remove as removeWorktree } from './workspace.mjs'
@@ -343,6 +345,9 @@ export function handEditedProse(verifyText) {
 
 // ---------------------------------------------------------------- check
 
+// A quick change has the quick schema; every other change reads as full.
+export const isQuick = (root, change) => schemaOf(root, change).name === 'quick'
+
 export function checkStep(ctx) {
   return runStep(ctx, 'check', () => {
     const { root, change, git } = ctx
@@ -372,8 +377,14 @@ export function checkStep(ctx) {
         { roots, stale: after.split('\n') }
       )
     }
-    const base = checkSpecsBase(root, change)
+    const quick = isQuick(root, change)
     const warnings = []
+    if (quick) {
+      const file = join(root, CHANGES_DIR, change, 'quick.md')
+      if (!checkQuickSummary(existsSync(file) ? readFileSync(file, 'utf8') : '').ok) refuse('quick.md has no summary; write ## Summary, then run check again', { roots })
+    }
+    // A quick change has no delta specs, so no base to check.
+    const base = quick ? { ok: true } : checkSpecsBase(root, change)
     if (base.warning) {
       warnings.push(base.warning)
     } else if (!base.ok) {
@@ -477,6 +488,8 @@ function resolveTakenDebt(ctx, debt) {
 export function mergeStep(ctx, { resolutionFiles = [], purposeFiles = {} } = {}) {
   return runStep(ctx, 'merge', () => {
     const { root, change } = ctx
+    // A quick change has no delta specs to merge.
+    if (isQuick(root, change)) return { state: 'skipped', detail: { reason: 'quick task' } }
     const resolutions = resolutionFiles.flatMap((file) => {
       let value
       try {
@@ -773,6 +786,21 @@ export function deltaScenarios(text, capability) {
 export function mrInput(ctx) {
   const dir = findChangeDir(ctx.root, ctx.change)
   const read = (name) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8') : null)
+  if (isQuick(ctx.root, ctx.change)) {
+    const quick = read('quick.md') ?? ''
+    const text = (title) => (section(quick, title) ?? '').replace(/<!--[\s\S]*?-->/g, '').trim()
+    return {
+      ok: true,
+      change: ctx.change,
+      changeDir: dir,
+      cycle: 'quick',
+      goal: text('Goal'),
+      summary: text('Summary'),
+      plan: text('Plan'),
+      links: buildLinks(ctx.root, changeScope(ctx), baseOf(ctx)),
+      bodyFile: bodyPath(ctx.main, ctx.change)
+    }
+  }
   const tasks = parseTasks(read('tasks.md') ?? '')
   const verify = read('verify.md') ?? ''
   return {
