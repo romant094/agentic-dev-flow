@@ -59,6 +59,8 @@ the flags, the separate planner and executor agents, the work on the current bra
 10. **With no key and no phrase**, the quick task asks for a key or a phrase. With neither, it asks
     the tracker for the project's open bugs and shows them for the selection. This is a new
     tracker operation and a contract change; `adf-jira` implements it.
+11. **Metrics are mandatory.** Every quick task writes its metrics record, so that its speed and
+    cost can be analysed and compared with the main cycle.
 
 ## Calls made by the designer, not the developer
 
@@ -112,6 +114,16 @@ the flags, the separate planner and executor agents, the work on the current bra
   debt placement of review findings are recorded as skipped with the reason "quick task", since
   `runStep` refuses a step before every earlier one has settled (`lib/archive.mjs:246`). A spec scenario
   the fix shows missing goes to the debt store.
+- **The metrics record.** The same `metrics.json` and schema as the main cycle
+  (`contract/metrics-format.md`), written by `metrics.mjs extract` at the end and committed in
+  its own commit. The record names the change's schema (`quick` or `adf`), a new optional
+  top-level key, so a record without it reads as `adf`. The quick task records its phases in the
+  ledger (`gather`, `estimate`, `code`, `tests`, `review`, `end`), so `activeMinutes.byPhase` and
+  `tokens.byPhase` split by them; `timing.tasks` counts the plan's steps in `quick.md`. Groups
+  with no source in a quick task (verify, the implementer dispatches) are `null` with their
+  `coverage` reason, as the format requires. `/adf:retro` reads quick records and reports them
+  as a group of their own, beside the main cycle's, with the same figures (active minutes,
+  turns, tokens, cost per change).
 - **The success measure.** A one-file fix, from the command to the merge request, takes under
   20 minutes and a small fraction of the cost of the same fix through propose; the metrics
   record of the behaviour check (step 8) shows it.
@@ -140,6 +152,7 @@ the flags, the separate planner and executor agents, the work on the current bra
 | 3 | `## Affected tests command` in the planning guide, `/adf:init`'s proposal of it, and the script that runs it on the branch's changed files | unit tests |
 | 4 | The review of a quick change with `--change` and the branch as its range, one fix round | `review.spec.mjs` |
 | 5 | The end: the archive's steps for a quick change, the skipped ones recorded; `mrInput` from `quick.md` | `archive.spec.mjs` |
+| 5a | Metrics: the record's schema key, the quick phases in the ledger, `timing.tasks` from `quick.md`; `/adf:retro` reports quick changes as their own group | `metrics.spec.mjs`, `retro.spec.mjs` |
 | 6 | The `/adf:quick` skill for Claude Code and Codex, with `list` and the resume | the guide's checks |
 | 7 | The guide: `docs/guide/cycle/quick.md` and the cycle page | `check-guide.mjs` |
 | 8 | A behaviour check: one real small fix in a scratch project, with and without a tracker, from the command to land | the run's notes and metrics in the `## Result` |
