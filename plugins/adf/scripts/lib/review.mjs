@@ -15,6 +15,7 @@ import { changeDir, changeMeta, CHANGES_DIR, globToRegExp } from './changes.mjs'
 import { baseRef } from './plan-symbols.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { readRegistry, SEVERITIES, validateReviewSettings } from './registry.mjs'
+import { quickPlanFiles, schemaOf } from './schema.mjs'
 import { pathMatcher, plannedPaths } from './verify.mjs'
 
 export { SEVERITIES }
@@ -258,12 +259,16 @@ export function coverageProof(files, slices) {
 
 // ---------------------------------------------------------------- the plan's files
 
-// Which of the plan's `**Files:**` paths the range touches. None touched means the code reached
-// the base some other way, and the range reviews only the change's records.
+// Which of the plan's `**Files:**` paths the range touches: plan.md's, or for a quick change the
+// steps of quick.md's `## Plan`. None touched means the code reached the base some other way, and
+// the range reviews only the change's records.
 export function planTouch(root, change, changed) {
-  const path = join(changeDir(root, change), 'plan.md')
-  if (!existsSync(path)) return { paths: 0, touched: [], untouched: [], warning: `${change} has no plan.md: the range is not checked against the plan` }
-  const { paths } = plannedPaths(readFileSync(path, 'utf8'))
+  const quick = schemaOf(root, change).name === 'quick'
+  const name = quick ? 'quick.md' : 'plan.md'
+  const path = join(changeDir(root, change), name)
+  if (!existsSync(path)) return { paths: 0, touched: [], untouched: [], warning: `${change} has no ${name}: the range is not checked against the plan` }
+  const text = readFileSync(path, 'utf8')
+  const paths = quick ? quickPlanFiles(text) : plannedPaths(text).paths
   const prefix = `${CHANGES_DIR}/${change}/`
   const code = changed.filter((f) => !f.startsWith(prefix))
   const touched = paths.filter((p) => {

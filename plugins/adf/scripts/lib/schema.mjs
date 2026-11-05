@@ -45,16 +45,27 @@ function stepFiles(lines) {
   return line.replace(/^.*\*\*Files:\*\*/, '').replace(/<!--.*?-->/g, ' ').replace(/[`,;]/g, ' ').split(/\s+/).filter((t) => t !== '' && !/^<.*>$/.test(t))
 }
 
-// The quick-plan gate over the text of a quick.md: 1 to 3 numbered steps under `## Plan`, each
-// with a `**Files:**` line that names at least one file. { ok, findings: [{ message }] }.
-export function checkQuickPlan(text) {
-  const plan = section(text, 'Plan')
-  if (plan === null) return { ok: false, findings: [{ message: 'quick.md has no "## Plan" section' }] }
+// The numbered steps of a `## Plan` section, each as its lines.
+function planSteps(plan) {
   const steps = []
   for (const line of plan) {
     if (STEP.test(line)) steps.push([line])
     else if (steps.length > 0) steps.at(-1).push(line)
   }
+  return steps
+}
+
+// The files the `**Files:**` lines of a quick.md's plan name, each once; [] with no `## Plan`.
+export function quickPlanFiles(text) {
+  return [...new Set(planSteps(section(text, 'Plan') ?? []).flatMap(stepFiles))]
+}
+
+// The quick-plan gate over the text of a quick.md: 1 to 3 numbered steps under `## Plan`, each
+// with a `**Files:**` line that names at least one file. { ok, findings: [{ message }] }.
+export function checkQuickPlan(text) {
+  const plan = section(text, 'Plan')
+  if (plan === null) return { ok: false, findings: [{ message: 'quick.md has no "## Plan" section' }] }
+  const steps = planSteps(plan)
   const findings = []
   if (steps.length === 0) findings.push({ message: '"## Plan" has no numbered step; write 1 to 3 steps, each as "1. <what>"' })
   if (steps.length > MAX_QUICK_STEPS) findings.push({ message: `"## Plan" has ${steps.length} steps; a quick plan has at most ${MAX_QUICK_STEPS}; propose the change instead` })
