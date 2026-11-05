@@ -31,6 +31,7 @@ Every write is held for your yes. The core calls `start` and `handoff` without `
 | Stage | Operation |
 |---|---|
 | [/adf:propose](../../cycle/propose.md) | `check` and `gather` before the branch. `start` after the worktree exists. |
+| [/adf:quick](../../cycle/quick.md) | `bugs` for the open bugs, or `check` and `gather` for keys and a phrase, before the branch. `start` after the worktree exists. |
 | [/adf:verify](../../cycle/verify.md) | The key check maps the tracker key. |
 | [/adf:land](#the-land-command) | `check` and `handoff` after the merge. |
 

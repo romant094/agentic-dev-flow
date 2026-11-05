@@ -4,7 +4,6 @@
 - plugins/adf/skills/verify/**
 - plugins/adf/skills/review/**
 - plugins/adf/skills/archive/**
-- plugins/adf/skills/quick/**
 - plugins/adf/scripts/propose.mjs
 - plugins/adf/scripts/apply-status.mjs
 - plugins/adf/scripts/verify.mjs
@@ -39,9 +38,19 @@ Each command takes the change name as an optional argument, except `/adf:propose
 
 The command `/adf:land` is not part of this cycle. It follows the merge of the merge request. For the full cycle with `land`, see [the extension points](../extension-points/README.md).
 
-The command `/adf:quick` fixes a small defect that changes no behaviour, in a short cycle of its own.
 
 The command [/adf:retro](retro.md) is apart from the cycle. It assesses the flow over archived changes.
+
+## Two cycles
+
+The flow has two cycles. Each change names its cycle in its metrics record.
+
+| Cycle | Command | Take it when |
+|---|---|---|
+| full | `/adf:propose`, then the stages above | The change adds a feature or changes what the system does. |
+| quick | [/adf:quick](quick.md) | The change is a small fix that changes no behaviour. |
+
+The quick cycle has one file, `quick.md`, one review round and no specs. When a quick change needs more, it stops and offers `/adf:propose`.
 
 ## The artifacts
 
