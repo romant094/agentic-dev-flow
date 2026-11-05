@@ -23,7 +23,7 @@ Every iteration's plan lists the steps an LLM would do, and moves each one a scr
    role, registry key and source file has a guide page, and every link resolves.
 4. `scripts/guide-review.mjs` with no open finding, in every release step: one read-only agent
    per package checks the pages that the release's diff touches against the code.
-5. A release adds its section to `CHANGELOG.md`.
+5. A release adds its section to `CHANGELOG.md`. The changelog lists only changes to the flow and its plugins; a change to the documentation alone gets no entry and no release (the developer's decision, 2026-11-05).
 
 A flow change updates its guide pages in the same commit.
 

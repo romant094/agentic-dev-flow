@@ -23,7 +23,7 @@
   - debt with URL: `- Debt [<key>](<url>): <title>`
   - no URL: `- Issue <key>: <title>` or `- Debt <key>: <title>`
   - the list is preceded by the line `Scope:` and followed by one blank line.
-- A flow change updates its guide pages in the same commit (`docs/roadmap.md`, `## Checks after every iteration`): each task's commit also updates every page of `docs/guide/` whose `sources:` match a file the task changes, and adds its `## [Unreleased]` line to `CHANGELOG.md`; `check-guide.mjs` in `npm test` gates it.
+- A flow change updates its guide pages in the same commit (`docs/roadmap.md`, `## Checks after every iteration`): each task's commit also updates every page of `docs/guide/` whose `sources:` match a file the task changes; `check-guide.mjs` in `npm test` gates it. A task that changes the flow or a plugin adds its `## [Unreleased]` line to `CHANGELOG.md`; a documentation change gets none (the documentation is `docs/`, `README.md`, `CHANGELOG.md` and a plugin's own `README.md`; a skill, a command, an instruction or a template is the flow).
 - Subagents never commit; the controller commits and checks each commit for a forbidden trailer.
 
 ## Review Focus
@@ -119,10 +119,10 @@
 - [ ] **Step 4: Run** `npm test` — Expected: all pass.
 - [ ] **Step 5: Commit** `feat(adf-gitlab): render the scope's links at the top of the change's block`.
 
-### Task 4: The guide and the changelog
+### Task 4: The guide
 
 **Files:**
-- Modify: `docs/guide/plugins/adf-gitlab.md` (rows `open` and `finalize` at `:17-19`; a section "Links to the scope"), `docs/guide/extension-points/contract/forge.md` (the `links` input), `docs/guide/cycle/propose.md`, `docs/guide/cycle/archive.md` (the Draft and the final description carry the links; the body no longer names the keys), `docs/guide/update.md` (a host that has a CI job adding the tracker link removes it in the update merge request; the job skips a key already present, so both can run during the change), `CHANGELOG.md` (`[Unreleased]`: Added, the links; Changed, contract 1.10 and the archive key check)
+- Modify: `docs/guide/plugins/adf-gitlab.md` (rows `open` and `finalize` at `:17-19`; a section "Links to the scope"), `docs/guide/extension-points/contract/forge.md` (the `links` input), `docs/guide/cycle/propose.md`, `docs/guide/cycle/archive.md` (the Draft and the final description carry the links; the body no longer names the keys), `docs/guide/update.md` (a host that has a CI job adding the tracker link removes it in the update merge request; the job skips a key already present, so both can run during the change)
 - Test: `node scripts/check-guide.mjs`
 
 - [ ] **Step 1:** Write the pages in ASD-STE100, each claim checked against the code of Tasks 1–3; add `plugins/adf/scripts/lib/mr-links.mjs` to the `sources:` of `forge.md`, `propose.md` and `archive.md`.
@@ -140,14 +140,14 @@
 
 ### Task 6: Release v0.21.0
 
-After the PR is merged by the developer, on `main`. The `0.20.0`-to-`0.21.0` diff includes iteration 18 (the guide, released with 19) and this iteration.
+After the PR is merged by the developer, on `main`. Iteration 18 changed documentation only, so it is no release of its own and has no changelog entry; its pages ship with this tag.
 
 **Files:**
 - Modify: `.claude-plugin/marketplace.json` (`metadata.version` `0.21.0`; the `version` of each plugin whose files changed since `v0.20.0`: `adf` and `adf-gitlab` at least), each such plugin's `.claude-plugin/plugin.json`; then `node scripts/manifests.mjs` writes the Codex manifests
-- Modify: `CHANGELOG.md` (`## [Unreleased]` becomes `## [0.21.0] — <date>`, a new empty `## [Unreleased]` above it), the pinned tags in `README.md` and `docs/guide/` (`v0.20.0` to `v0.21.0`)
+- Modify: `CHANGELOG.md` (`## [Unreleased]`, which holds only flow and plugin changes, becomes `## [0.21.0] — <date>`, a new empty `## [Unreleased]` above it), the pinned tags in `README.md` and `docs/guide/` (`v0.20.0` to `v0.21.0`)
 
-- [ ] **Step 1:** `git diff --name-only v0.20.0..HEAD -- plugins/` lists the changed plugins; bump each: minor for a new feature, patch for a fix or docs only.
+- [ ] **Step 1:** `git diff --name-only v0.20.0..HEAD -- plugins/` lists the changed plugins; bump each plugin with a change outside its documentation: minor for a new feature, patch for a fix. A plugin whose only changes are documentation keeps its version.
 - [ ] **Step 2: Run** `node scripts/guide-review.mjs input --from v0.20.0 --out .superpowers/guide-review/0.21.0`, dispatch one read-only agent per package, `guide-review.mjs check` each reply; fix every finding in the guide and run it again until none is open.
 - [ ] **Step 3: Run** `npm test` (it includes `check-release.mjs`) — Expected: all pass.
 - [ ] **Step 4: Commit** `npm test && git commit -m "chore(release): v0.21.0"`, push, then `git tag v0.21.0` on that commit and `git push origin v0.21.0`; `npm test` again on the tagged `HEAD` (the tag check) — Expected: all pass.
-- [ ] **Step 5:** Add `Released as v0.21.0` to roadmap rows 18 and 19; commit `docs(roadmap): iterations 18 and 19 released as v0.21.0`.
+- [ ] **Step 5:** Add `Released as v0.21.0` to roadmap row 19; commit `docs(roadmap): iteration 19 released as v0.21.0`.

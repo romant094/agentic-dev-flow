@@ -66,4 +66,4 @@ Each step must pass. A failing step ends the run.
 - Use the active voice. Use one term for one concept.
 - Start each page with a `sources:` comment that lists the files that the page describes. The comment is HTML on the first lines of the page, not front matter.
 - Update the pages in the same commit as the flow change.
-- Add an `## [Unreleased]` entry to `CHANGELOG.md` for the change.
+- Add an `## [Unreleased]` entry to `CHANGELOG.md` for a change to the flow or a plugin. A change to the documentation alone gets no entry.

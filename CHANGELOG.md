@@ -4,21 +4,9 @@ This file lists the changes of each release of ADF.
 The form is [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 A version is the package version in `.claude-plugin/marketplace.json`, and its tag is `v<version>`.
+It lists the changes to the flow and its plugins. A change to the documentation alone is not listed and is not a release.
 
 ## [Unreleased]
-
-### Added
-
-- A user guide in [`docs/guide/`](docs/guide/README.md). It covers the install in Claude Code and in Codex, the main cycle and the extension points. It also covers each plugin, the concepts and the update.
-- `scripts/check-guide.mjs`, in `npm test`. It fails when a skill, a plugin, an extension point or a registry key has no page. It also fails when a link does not resolve.
-- `guide-review`: an agent check, in each release step, that the guide pages still say what the changed code does.
-- This changelog.
-- A rule in `scripts/check-release.mjs`: `CHANGELOG.md` must have a section for the package version.
-- A rule in `scripts/check-release.mjs`: every install command must pin the tag of the package version.
-
-### Changed
-
-- The `README.md` is the product page. The install details, the host files, the layout and the tests moved to the guide.
 
 ## [0.20.0] — 2026-11-04
 

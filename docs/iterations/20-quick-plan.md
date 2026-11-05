@@ -21,7 +21,7 @@
 - The large-item filter (exact): a tracker item of kind `epic` or `story`; a debt item whose `class` is not `defect`; a debt item with more than 3 distinct files in its `anchors`.
 - The quick phases in the ledger (exact names): `gather`, `estimate`, `code`, `tests`, `review`, `end`.
 - `metrics.json` gets the optional top-level key `cycle`: `full` or `quick`; a record without it reads as `full`.
-- A flow change updates its guide pages in the same commit (`docs/roadmap.md`, `## Checks after every iteration`): each task's commit also updates every page of `docs/guide/` whose `sources:` match a file the task changes, and adds its `## [Unreleased]` line to `CHANGELOG.md`; `check-guide.mjs` in `npm test` gates it.
+- A flow change updates its guide pages in the same commit (`docs/roadmap.md`, `## Checks after every iteration`): each task's commit also updates every page of `docs/guide/` whose `sources:` match a file the task changes; `check-guide.mjs` in `npm test` gates it. A task that changes the flow or a plugin adds its `## [Unreleased]` line to `CHANGELOG.md`; a documentation change gets none (the documentation is `docs/`, `README.md`, `CHANGELOG.md` and a plugin's own `README.md`; a skill, a command, an instruction or a template is the flow).
 - Subagents never commit; the controller commits and checks each commit for a forbidden trailer.
 
 ## Ruling against the design
@@ -195,11 +195,11 @@ The design records the archive's `placements` step as skipped for a quick change
 - [ ] **Step 2: Run** `npm test` — Expected: all pass, the skill checks included.
 - [ ] **Step 3: Commit** `feat(adf): the /adf:quick skill`.
 
-### Task 7: The guide and the changelog
+### Task 7: The guide
 
 **Files:**
 - Create: `docs/guide/cycle/quick.md` (sources: `plugins/adf/skills/quick/**`, `plugins/adf/scripts/quick.mjs`, `plugins/adf/scripts/lib/quick.mjs`, `plugins/adf/schema/quick/**`)
-- Modify: `docs/guide/cycle/README.md` (the two cycles, `full` and `quick`, and when to take each), `docs/guide/extension-points/contract/tracker.md` (`bugs`), `docs/guide/plugins/adf-jira.md` (`bugs`), `docs/guide/concepts/metrics.md` (`cycle`), `CHANGELOG.md` (`[Unreleased]`)
+- Modify: `docs/guide/cycle/README.md` (the two cycles, `full` and `quick`, and when to take each), `docs/guide/extension-points/contract/tracker.md` (`bugs`), `docs/guide/plugins/adf-jira.md` (`bugs`), `docs/guide/concepts/metrics.md` (`cycle`)
 - Test: `node scripts/check-guide.mjs`
 
 - [ ] **Step 1:** Write the pages in ASD-STE100, each claim checked against Tasks 1–6.
@@ -221,9 +221,9 @@ After the PR is merged by the developer, on `main`. The `0.21.0`-to-`0.22.0` dif
 
 **Files:**
 - Modify: `.claude-plugin/marketplace.json` (`metadata.version` `0.22.0`; the `version` of each plugin whose files changed since `v0.21.0`: `adf` and `adf-jira` at least), each such plugin's `.claude-plugin/plugin.json`; then `node scripts/manifests.mjs` writes the Codex manifests
-- Modify: `CHANGELOG.md` (`## [Unreleased]` becomes `## [0.22.0] — <date>`, a new empty `## [Unreleased]` above it), the pinned tags in `README.md` and `docs/guide/` (`v0.21.0` to `v0.22.0`)
+- Modify: `CHANGELOG.md` (`## [Unreleased]`, which holds only flow and plugin changes, becomes `## [0.22.0] — <date>`, a new empty `## [Unreleased]` above it), the pinned tags in `README.md` and `docs/guide/` (`v0.21.0` to `v0.22.0`)
 
-- [ ] **Step 1:** `git diff --name-only v0.21.0..HEAD -- plugins/` lists the changed plugins; bump each: minor for a new feature, patch for a fix or docs only.
+- [ ] **Step 1:** `git diff --name-only v0.21.0..HEAD -- plugins/` lists the changed plugins; bump each plugin with a change outside its documentation: minor for a new feature, patch for a fix. A plugin whose only changes are documentation keeps its version.
 - [ ] **Step 2: Run** `node scripts/guide-review.mjs input --from v0.21.0 --out .superpowers/guide-review/0.22.0`, dispatch one read-only agent per package, `guide-review.mjs check` each reply; fix every finding in the guide and run it again until none is open.
 - [ ] **Step 3: Run** `npm test` (it includes `check-release.mjs`) — Expected: all pass.
 - [ ] **Step 4: Commit** `npm test && git commit -m "chore(release): v0.22.0"`, push, then `git tag v0.22.0` on that commit and `git push origin v0.22.0`; `npm test` again on the tagged `HEAD` (the tag check) — Expected: all pass.
