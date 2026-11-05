@@ -4,6 +4,7 @@
 - plugins/adf/skills/verify/**
 - plugins/adf/skills/review/**
 - plugins/adf/skills/archive/**
+- plugins/adf/skills/quick/**
 - plugins/adf/scripts/propose.mjs
 - plugins/adf/scripts/apply-status.mjs
 - plugins/adf/scripts/verify.mjs
@@ -37,6 +38,8 @@ propose -> apply -> verify -> review -> archive
 Each command takes the change name as an optional argument, except `/adf:propose`, which needs a name or a description. Without a name, a command uses the active change. A rerun of a command resumes where the last run stopped.
 
 The command `/adf:land` is not part of this cycle. It follows the merge of the merge request. For the full cycle with `land`, see [the extension points](../extension-points/README.md).
+
+The command `/adf:quick` fixes a small defect that changes no behaviour, in a short cycle of its own.
 
 The command [/adf:retro](retro.md) is apart from the cycle. It assesses the flow over archived changes.
 

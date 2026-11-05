@@ -55,7 +55,7 @@ The command never merges a merge request. You merge it.
 
 ## A quick change
 
-A quick change ends in the same steps. Its `check` step also needs text under `## Summary` in `quick.md`. It checks no spec base. The `merge` step is skipped, with the reason `quick task`. The `placements` step runs as usual and resolves the debt the change took. The `mr` body comes from the goal and the summary.
+A quick change ends in the same steps. Its `check` step also needs text under `## Summary` in `quick.md`. It checks no spec base. The `merge` step is skipped, with the reason `quick task`. The `placements` step runs as usual and resolves the debt the change took. The `mr` body comes from the goal, the summary and the plan. Its test section comes from the check lines of the plan and from the record of the affected tests.
 
 ## The merge step
 

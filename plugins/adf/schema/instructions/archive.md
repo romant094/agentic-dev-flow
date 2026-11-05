@@ -275,8 +275,10 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    its `tasks`, `why`, `scenarios` and `evidence` (for a quick change, which has `cycle: quick`:
    its `goal`, `summary` and `plan`) write the merge request body to its `bodyFile`:
    the sections of the forge plugin's merge request template, the steps a tester follows taken
-   from the scenarios, and the evidence `verify.md` recorded. Do not write the scope's keys in the
-   body: `mr-input` lists them as `links`, built from `scope.json`, and `mr` passes them to the
+   from the scenarios, and the evidence `verify.md` recorded. For a quick change, the QA section
+   takes the plan's **Check:** lines and the affected tests record,
+   `.superpowers/sdd/<change>/quick/tests.json`, in place of the scenarios and the evidence. Do
+   not write the scope's keys in the body: `mr-input` lists them as `links`, built from `scope.json`, and `mr` passes them to the
    forge. `mr` fails the step, and sends nothing, when a key of the scope is in neither the body
    nor the links. Write the body in English:
    it is an ignored file outside the change, so no commit hook checks it. Then:

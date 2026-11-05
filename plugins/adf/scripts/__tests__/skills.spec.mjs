@@ -1,4 +1,4 @@
-// The eleven `adf` commands are skills (iteration 17, section 3): both Claude Code and Codex read
+// The `adf` commands are skills (iteration 17, section 3): both Claude Code and Codex read
 // `plugins/adf/skills/<name>/SKILL.md`, and a runtime that substitutes neither `${CLAUDE_PLUGIN_ROOT}`
 // nor `$ARGUMENTS` is told what they mean by one line after the frontmatter.
 import { test } from 'node:test'
@@ -22,7 +22,7 @@ const frontmatterOf = (text) => /^---\n([\s\S]*?)\n---\n/.exec(text)
 
 test('every adf skill has name equal to its directory', () => {
   const skills = skillsOf('adf')
-  assert.equal(skills.length, 11)
+  assert.equal(skills.length, 12)
   for (const { name, text } of skills) {
     assert.equal(/^name:\s*(.+)$/m.exec(frontmatterOf(text)[1])?.[1], name, name)
   }
