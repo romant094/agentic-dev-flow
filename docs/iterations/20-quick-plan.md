@@ -14,14 +14,14 @@
 
 - English only in every artifact; Conventional Commits; no `Co-Authored-By` or tool credit in a commit or the PR.
 - Gate every commit on the tests: `npm test && git commit ...`; push after each commit; never force, never amend, no `git stash`.
-- Branch `feat/20-quick` from `main` after iteration 19 is merged; one PR. Contract version `1.11` (19 took `1.10`).
+- Branch `feat/20-quick` from `main` after v0.21.0 (iteration 19) is released; one PR. Contract version `1.11` (19 took `1.10`).
 - The cycles are named `full` and `quick`; `adf` in a change's metadata means `full`; nothing in flight or archived is migrated.
 - A quick change never writes `openspec/specs/`, `proposal.md`, `tasks.md`, `plan.md` or `verify.md`.
 - The plan in `quick.md` has 1 to 3 steps; more is refused by the `quick-plan` gate.
 - The large-item filter (exact): a tracker item of kind `epic` or `story`; a debt item whose `class` is not `defect`; a debt item with more than 3 distinct files in its `anchors`.
 - The quick phases in the ledger (exact names): `gather`, `estimate`, `code`, `tests`, `review`, `end`.
 - `metrics.json` gets the optional top-level key `cycle`: `full` or `quick`; a record without it reads as `full`.
-- No release and no tag in this plan.
+- A flow change updates its guide pages in the same commit (`docs/roadmap.md`, `## Checks after every iteration`): each task's commit also updates every page of `docs/guide/` whose `sources:` match a file the task changes, and adds its `## [Unreleased]` line to `CHANGELOG.md`; `check-guide.mjs` in `npm test` gates it.
 - Subagents never commit; the controller commits and checks each commit for a forbidden trailer.
 
 ## Ruling against the design
@@ -214,3 +214,17 @@ The design records the archive's `placements` step as skipped for a quick change
 - [ ] **Step 1:** In a scratch host project with the branch's plugins (the iteration 16 method: a local bare repository, the marketplace renamed), run `/adf:quick` twice: (a) with a debt entry of class `defect` and no tracker, (b) with `adf-jira` against a test project the developer names (ask), from no key to the open bugs. Each run ends at the merge request; the developer merges; `/adf:land`.
 - [ ] **Step 2:** Read each `metrics.json`: `cycle` `quick`, the six phases, the active minutes. The success measure: a one-file fix under 20 active minutes.
 - [ ] **Step 3:** Write the notes, the figures and what was not checked in `## Result`; commit `docs(iterations): the result of iteration 20`.
+
+### Task 9: Release v0.22.0
+
+After the PR is merged by the developer, on `main`. The `0.21.0`-to-`0.22.0` diff includes this iteration.
+
+**Files:**
+- Modify: `.claude-plugin/marketplace.json` (`metadata.version` `0.22.0`; the `version` of each plugin whose files changed since `v0.21.0`: `adf` and `adf-jira` at least), each such plugin's `.claude-plugin/plugin.json`; then `node scripts/manifests.mjs` writes the Codex manifests
+- Modify: `CHANGELOG.md` (`## [Unreleased]` becomes `## [0.22.0] — <date>`, a new empty `## [Unreleased]` above it), the pinned tags in `README.md` and `docs/guide/` (`v0.21.0` to `v0.22.0`)
+
+- [ ] **Step 1:** `git diff --name-only v0.21.0..HEAD -- plugins/` lists the changed plugins; bump each: minor for a new feature, patch for a fix or docs only.
+- [ ] **Step 2: Run** `node scripts/guide-review.mjs input --from v0.21.0 --out .superpowers/guide-review/0.22.0`, dispatch one read-only agent per package, `guide-review.mjs check` each reply; fix every finding in the guide and run it again until none is open.
+- [ ] **Step 3: Run** `npm test` (it includes `check-release.mjs`) — Expected: all pass.
+- [ ] **Step 4: Commit** `npm test && git commit -m "chore(release): v0.22.0"`, push, then `git tag v0.22.0` on that commit and `git push origin v0.22.0`; `npm test` again on the tagged `HEAD` (the tag check) — Expected: all pass.
+- [ ] **Step 5:** Add `Released as v0.22.0` to roadmap row 20; commit `docs(roadmap): iteration 20 released as v0.22.0`.

@@ -23,7 +23,7 @@
   - debt with URL: `- Debt [<key>](<url>): <title>`
   - no URL: `- Issue <key>: <title>` or `- Debt <key>: <title>`
   - the list is preceded by the line `Scope:` and followed by one blank line.
-- No release and no tag in this plan; `adf` and `adf-gitlab` keep their versions. The release is decided after the PR merges.
+- A flow change updates its guide pages in the same commit (`docs/roadmap.md`, `## Checks after every iteration`): each task's commit also updates every page of `docs/guide/` whose `sources:` match a file the task changes, and adds its `## [Unreleased]` line to `CHANGELOG.md`; `check-guide.mjs` in `npm test` gates it.
 - Subagents never commit; the controller commits and checks each commit for a forbidden trailer.
 
 ## Review Focus
@@ -137,3 +137,17 @@
 - [ ] **Step 1:** In a scratch GitLab project the developer names (ask; do not create one), with the PR branch's plugins installed in a scratch host: run `forge.mjs open --change` and `archive.mjs mr` for (a) a scope with one tracker item and one debt entry committed on the base, (b) debt only, no tracker plugin.
 - [ ] **Step 2:** Check in the GitLab interface: the Draft shows the links at the top; the final description shows them once; the debt link opens the entry's file at the merge-base commit.
 - [ ] **Step 3:** Write the run's notes, the merge request URLs and what was not checked in `## Result`; commit `docs(iterations): the result of iteration 19`.
+
+### Task 6: Release v0.21.0
+
+After the PR is merged by the developer, on `main`. The `0.20.0`-to-`0.21.0` diff includes iteration 18 (the guide, released with 19) and this iteration.
+
+**Files:**
+- Modify: `.claude-plugin/marketplace.json` (`metadata.version` `0.21.0`; the `version` of each plugin whose files changed since `v0.20.0`: `adf` and `adf-gitlab` at least), each such plugin's `.claude-plugin/plugin.json`; then `node scripts/manifests.mjs` writes the Codex manifests
+- Modify: `CHANGELOG.md` (`## [Unreleased]` becomes `## [0.21.0] — <date>`, a new empty `## [Unreleased]` above it), the pinned tags in `README.md` and `docs/guide/` (`v0.20.0` to `v0.21.0`)
+
+- [ ] **Step 1:** `git diff --name-only v0.20.0..HEAD -- plugins/` lists the changed plugins; bump each: minor for a new feature, patch for a fix or docs only.
+- [ ] **Step 2: Run** `node scripts/guide-review.mjs input --from v0.20.0 --out .superpowers/guide-review/0.21.0`, dispatch one read-only agent per package, `guide-review.mjs check` each reply; fix every finding in the guide and run it again until none is open.
+- [ ] **Step 3: Run** `npm test` (it includes `check-release.mjs`) — Expected: all pass.
+- [ ] **Step 4: Commit** `npm test && git commit -m "chore(release): v0.21.0"`, push, then `git tag v0.21.0` on that commit and `git push origin v0.21.0`; `npm test` again on the tagged `HEAD` (the tag check) — Expected: all pass.
+- [ ] **Step 5:** Add `Released as v0.21.0` to roadmap rows 18 and 19; commit `docs(roadmap): iterations 18 and 19 released as v0.21.0`.
