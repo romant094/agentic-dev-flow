@@ -14,9 +14,9 @@
 | Operation | Does |
 |---|---|
 | `check` | Reports whether `glab` is installed and logged in. It gives the install or login command when it is not. |
-| `open` | Pushes the change branch and opens a merge request into the base of the change, as a Draft by default. It reuses an open merge request for the branch. The first description is a placeholder inside the marker block of the change. It returns the number and the URL of the merge request. |
+| `open` | Pushes the change branch and opens a merge request into the base of the change, as a Draft by default. It reuses an open merge request for the branch. The first description is the links of the scope and a placeholder, inside the marker block of the change. A reused merge request keeps its description. It returns the number and the URL of the merge request. |
 | `push` | Pushes the change branch and changes nothing else. It refuses when the root has another branch checked out, such as a group worktree. It needs only git, so it never degrades on `glab`. |
-| `finalize` | Validates the description against the sections of the template. It merges the description into the existing one inside the marker block. It takes the merge request out of draft in the same call. Then it pushes the last commit. |
+| `finalize` | Validates the description against the sections of the template. It puts the links of the scope above the description. It merges the description into the existing one inside the marker block. It takes the merge request out of draft in the same call. Then it pushes the last commit. |
 | `state` | Reads the merge request with `glab mr view <number\|branch> --output json` and writes nothing. |
 
 Every push is `git push --set-upstream origin <branch>`. The plugin never forces a push.
@@ -33,6 +33,20 @@ The marker block of a change is `<!-- adf:<change> -->` ... `<!-- /adf:<change> 
 The input is `{ change, branch, base, url? }`. The number in `url` wins over the branch, because the source branch may be deleted on merge.
 
 It returns `number`, `url` and `status`: `open`, `draft`, `merged` or `closed`. It returns `mergedAt` and `mergeCommit` too. Both are `null` unless the merge request is merged. `mergeCommit` is `merge_commit_sha`, else `squash_commit_sha`. The operation refuses a failed call or unreadable JSON.
+
+### The links of the scope
+
+`open` and `finalize` take an optional `links` list. Each item is `{ kind: "tracker", key, title, url }` or `{ kind: "debt", key, title, path, commit }`. The core builds the list from the scope of the change.
+
+The plugin writes the links at the top of the marker block of the change, as a `Scope:` line and one line for each item:
+
+- `- Issue KEY: TITLE` for a tracker item. When the item has a URL, the key is a Markdown link to it.
+- `- Debt KEY: TITLE` for a debt item. When the item has a `commit`, the key is a Markdown link. The URL is `https://<host>/<group>/<project>/-/blob/<commit>/<path>`. The host is the `host` key of the config, else the host of the `origin` remote. The group and project come from the `origin` remote.
+- A key with no URL stays plain text.
+
+A title stays on one line. The plugin writes each `]` as `\]` and each new line as one space. `finalize` replaces the links that `open` wrote. The description that `finalize` validates does not include the links.
+
+The plugin refuses a `links` value that is not a list of items with `kind` `tracker` or `debt` and a `key`. Nothing is pushed.
 
 ### Skip the pipeline
 
