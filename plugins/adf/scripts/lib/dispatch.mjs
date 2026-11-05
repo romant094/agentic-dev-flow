@@ -73,6 +73,13 @@ export const RETRO_ROLES = {
 export const SCOPE_ROLES = {
   'scope-check': { level: 'integration', schema: 'scope-check.schema.json' }
 }
+// The quick task's estimate: one read-only agent for all candidates, named `quick-estimate`,
+// replying in JSON checked by `quick.mjs estimate-check` (lib/quick.mjs). It runs in the main
+// checkout before the change has a worktree; its input and reply live in
+// .superpowers/sdd/<change>/quick/.
+export const QUICK_ROLES = {
+  'quick-estimate': { level: 'integration', schema: 'quick-estimate.schema.json' }
+}
 // A scope item's key: a tracker key or a debt id, with no space, colon, pipe or backtick.
 export const SCOPE_KEY = /^[^\s:|`]+$/
 export const scopeCheckName = (key) => {

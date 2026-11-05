@@ -42,7 +42,7 @@ Each task of `plan.md` carries a `**Level:**` line with one of the three levels.
 | `/adf:review`: a fixer | `integration`. A fixer from round 2 on goes one level up. |
 | `/adf:archive`: the spec merge adjudication and the ingest | `architecture`. |
 | `/adf:retro`: the retrospective agent | `architecture`. |
-| The scope check of `/adf:propose`, the hand-off comment of `/adf:land` | `integration`. |
+| The scope check of `/adf:propose`, the estimate of a quick task, the hand-off comment of `/adf:land` | `integration`. |
 
 The level above `architecture` is `architecture`.
 

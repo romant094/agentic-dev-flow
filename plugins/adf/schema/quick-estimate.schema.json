@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf/quick-estimate.schema.json",
+  "title": "ADF quick estimate reply",
+  "description": "The estimate of a quick task's candidates: for each one, whether it fits a quick task, where the fix goes, and whether it changes behaviour. quick.mjs estimate-check also refuses what the schema cannot see: a candidate left out or named twice, a key that is no candidate, a tracker item marked quick with no verdict, a verdict of corrected with no correction, and a behaviour change marked quick.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "fit", "reason", "files", "behaviourChange"],
+        "properties": {
+          "key": { "type": "string", "minLength": 1 },
+          "fit": { "enum": ["quick", "propose"] },
+          "reason": { "type": "string", "minLength": 1 },
+          "files": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "behaviourChange": { "type": "boolean" },
+          "verdict": { "enum": ["current", "corrected", "obsolete"] },
+          "corrections": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    }
+  }
+}
