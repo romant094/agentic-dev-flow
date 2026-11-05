@@ -32,7 +32,7 @@ the `forge` operations' `ci` field and the `upstream` role; `1.5` gives `upstrea
 adds the first hooks, `provision`, `teardown` and `verify-check`; `1.7` adds the `tracker` role
 and the `forge` operation `state`, and checks a declaration against the operations of its own
 contract version. `1.8` adds the optional declaration field `requiredConfig`. `1.9` adds the optional declaration
-field `migrations`.
+field `migrations`. `1.10` adds the optional `links` input of the `forge` operations `open` and `finalize`.
 
 ## Calling convention
 
@@ -70,16 +70,16 @@ the point's only provider, the result is `none` with `absent` (`[{ id, reason }]
 
 ## Points
 
-### `forge` (role, since 1.1; `push` since 1.2; `ci` since 1.4; `state` since 1.7)
+### `forge` (role, since 1.1; `push` since 1.2; `ci` since 1.4; `state` since 1.7; `links` since 1.10)
 
 Pushes the change branch and keeps its merge request. The core never names a forge.
 
 | Operation | Input | Result when `done` |
 |---|---|---|
 | `check` | `{}` | `tool: "ready"`; degraded: `tool` is `missing` or `unauthenticated`, with `hint` |
-| `open` | `change`, `branch`, `base`, `title`, `draft` (default true), `protected` | the branch pushed, never forced; a merge request into `base`, reused when one is open: `number`, `url`, `reused` |
+| `open` | `change`, `branch`, `base`, `title`, `draft` (default true), `protected`, `links` (optional) | the branch pushed, never forced; a merge request into `base`, reused when one is open: `number`, `url`, `reused` |
 | `push` (since 1.2) | `change`, `branch`, `protected` | the branch pushed, never forced; nothing else changes |
-| `finalize` | `change`, `branch`, `base`, `title`, `body`, `protected` | the description holds `body` in this change's block, other text kept; the merge request leaves draft, then the branch is pushed: `number`, `url` |
+| `finalize` | `change`, `branch`, `base`, `title`, `body`, `protected`, `links` (optional) | the description holds `body` in this change's block, other text kept; the merge request leaves draft, then the branch is pushed: `number`, `url` |
 | `state` (since 1.7) | `change`, `branch`, `base`, `url` (optional: the merge request archive recorded, preferred to the branch) | the merge request's state, nothing sent: `number`, `url`, `status` (`open`, `draft`, `merged` or `closed`), and when merged `mergedAt` and `mergeCommit`; degraded as `check` |
 
 `open`, `push` and `finalize` take an optional `ci` (boolean, since 1.4, default `true`).
@@ -87,6 +87,14 @@ Pushes the change branch and keeps its merge request. The core never names a for
 push the operation does. A provider whose forge cannot skip CI on a push refuses (`refused`,
 exit 1) with nothing sent. Skipping CI is this field only, never a marker in a title, a
 description or a commit message.
+
+`links` (since 1.10) is the change's scope as data, built by the core from `scope.json`: a list
+of `{ kind: "tracker", key, title, url }` (`url` a string or `null`) and `{ kind: "debt", key,
+title, path, commit }` (`path` the entry's block index, relative to the main checkout; `commit`
+the merge base with `origin/<base>`, or `null` when the entry is not in it). The provider renders
+it at the top of this change's block, before the template's sections, one line per item. A reused
+`open` changes no description. For a provider written before 1.10, the core puts the same lines
+at the top of `body` at `finalize` and passes no `links`.
 
 A provider refuses a branch that is empty or in `protected`. `body` holds the sections of the
 plugin's merge request template. Default with no provider: nothing is pushed, no merge request

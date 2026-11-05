@@ -11,7 +11,7 @@ The Codex form of each command is in [the Codex page](../../getting-started/code
 
 ## What the point is
 
-`forge` is a role. The provider pushes the change branch and keeps the merge request of the change. The core never names a forge. The contract is in [the contract README](../../../../plugins/adf/contract/README.md#forge-role-since-11-push-since-12-ci-since-14-state-since-17).
+`forge` is a role. The provider pushes the change branch and keeps the merge request of the change. The core never names a forge. The contract is in [the contract README](../../../../plugins/adf/contract/README.md#forge-role-since-11-push-since-12-ci-since-14-state-since-17-links-since-110).
 
 | Operation | What it does |
 |---|---|
@@ -24,6 +24,19 @@ The Codex form of each command is in [the Codex page](../../getting-started/code
 The provider never forces a push. It refuses an empty branch and a protected branch.
 
 `open`, `push` and `finalize` take an optional `ci` field. With `ci: false`, the provider asks the forge to start no pipeline. `/adf:archive --no-ci` sets it. A provider whose forge cannot skip CI refuses.
+
+## The `links` input
+
+Contract 1.10 adds the optional `links` input to `open` and `finalize`. The core builds it from the `scope.json` of the change. The agent never writes it.
+
+- `links` lists the taken and partial scope items. Tracker items come first.
+- A tracker link holds `kind`, `key`, `title` and `url`. The `url` is `null` when the tracker gave none.
+- A debt link holds `kind`, `key`, `title`, `path` and `commit`. The `commit` is the merge base with `origin/<base>`. It is `null` when the entry is not in that commit.
+- The provider writes one line per item at the top of the block of the change.
+- A reused `open` changes no description.
+- A change with no `scope.json`, or with no taken item, has no `links`.
+
+A provider written for a contract below 1.10 ignores `links`. The core then puts the same lines at the top of `body` at `finalize`.
 
 ## When it acts
 
