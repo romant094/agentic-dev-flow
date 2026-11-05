@@ -14,7 +14,7 @@
 
 - English only in every artifact; Conventional Commits; no `Co-Authored-By` or tool credit in a commit or the PR.
 - Gate every commit on the tests: `npm test && git commit ...`; push after each commit; never force, never amend, no `git stash`.
-- Branch `feat/20-quick` from `main` after v0.21.0 (iteration 19) is released; one PR. Contract version `1.11` (19 took `1.10`).
+- Branch `feat/20-quick` stacked on `feat/19-merge-request-links` (the developer's decision, 2026-11-05); one PR into it. Contract version `1.11` (19 took `1.10`).
 - The cycles are named `full` and `quick`; `adf` in a change's metadata means `full`; nothing in flight or archived is migrated.
 - A quick change never writes `openspec/specs/`, `proposal.md`, `tasks.md`, `plan.md` or `verify.md`.
 - The plan in `quick.md` has 1 to 3 steps; more is refused by the `quick-plan` gate.
@@ -215,16 +215,16 @@ The design records the archive's `placements` step as skipped for a quick change
 - [ ] **Step 2:** Read each `metrics.json`: `cycle` `quick`, the six phases, the active minutes. The success measure: a one-file fix under 20 active minutes.
 - [ ] **Step 3:** Write the notes, the figures and what was not checked in `## Result`; commit `docs(iterations): the result of iteration 20`.
 
-### Task 9: Release v0.22.0
+### Task 9: Release v0.20.0, iterations 19 and 20
 
-After the PR is merged by the developer, on `main`. The `0.21.0`-to-`0.22.0` diff includes this iteration.
+After the PR is merged by the developer, on `main`. Both PRs (iteration 19, then this one) are merged. One release carries both iterations (the developer's decision, 2026-11-05); iteration 18 changed documentation only and gets no changelog entry.
 
 **Files:**
-- Modify: `.claude-plugin/marketplace.json` (`metadata.version` `0.22.0`; the `version` of each plugin whose files changed since `v0.21.0`: `adf` and `adf-jira` at least), each such plugin's `.claude-plugin/plugin.json`; then `node scripts/manifests.mjs` writes the Codex manifests
-- Modify: `CHANGELOG.md` (a new section `## [0.22.0] — <date>` above `## [0.21.0]`, written from `git log v0.21.0..HEAD`: the changes to the flow and the plugins only, under Added, Changed and Fixed; no `[Unreleased]` section), the pinned tags in `README.md` and `docs/guide/` (`v0.21.0` to `v0.22.0`)
+- Modify: `.claude-plugin/marketplace.json` (`metadata.version` `0.21.0`; the `version` of each plugin whose files changed since `v0.20.0`: `adf`, `adf-gitlab` and `adf-jira` at least), each such plugin's `.claude-plugin/plugin.json`; then `node scripts/manifests.mjs` writes the Codex manifests
+- Modify: `CHANGELOG.md` (a new section `## [0.21.0] — <date>` above `## [0.20.0]`, written from `git log v0.20.0..HEAD`: the changes to the flow and the plugins only, under Added, Changed and Fixed; no `[Unreleased]` section), the pinned tags in `README.md` and `docs/guide/` (`v0.20.0` to `v0.21.0`)
 
-- [ ] **Step 1:** `git diff --name-only v0.21.0..HEAD -- plugins/` lists the changed plugins; bump each plugin with a change outside its documentation: minor for a new feature, patch for a fix. A plugin whose only changes are documentation keeps its version.
-- [ ] **Step 2: Run** `node scripts/guide-review.mjs input --from v0.21.0 --out .superpowers/guide-review/0.22.0`, dispatch one read-only agent per package, `guide-review.mjs check` each reply; fix every finding in the guide and run it again until none is open.
+- [ ] **Step 1:** `git diff --name-only v0.20.0..HEAD -- plugins/` lists the changed plugins; bump each plugin with a change outside its documentation: minor for a new feature, patch for a fix. A plugin whose only changes are documentation keeps its version.
+- [ ] **Step 2: Run** `node scripts/guide-review.mjs input --from v0.20.0 --out .superpowers/guide-review/0.21.0`, dispatch one read-only agent per package, `guide-review.mjs check` each reply; fix every finding in the guide and run it again until none is open.
 - [ ] **Step 3: Run** `npm test` (it includes `check-release.mjs`) — Expected: all pass.
-- [ ] **Step 4: Commit** `npm test && git commit -m "chore(release): v0.22.0"`, push, then `git tag v0.22.0` on that commit and `git push origin v0.22.0`; `npm test` again on the tagged `HEAD` (the tag check) — Expected: all pass.
-- [ ] **Step 5:** Add `Released as v0.22.0` to roadmap row 20; commit `docs(roadmap): iteration 20 released as v0.22.0`.
+- [ ] **Step 4: Commit** `npm test && git commit -m "chore(release): v0.21.0"`, push, then `git tag v0.21.0` on that commit and `git push origin v0.21.0`; `npm test` again on the tagged `HEAD` (the tag check) — Expected: all pass.
+- [ ] **Step 5:** Add `Released as v0.21.0` to roadmap rows 19 and 20; commit `docs(roadmap): iterations 19 and 20 released as v0.21.0`.

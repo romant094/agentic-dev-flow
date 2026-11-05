@@ -138,16 +138,6 @@
 - [ ] **Step 2:** Check in the GitLab interface: the Draft shows the links at the top; the final description shows them once; the debt link opens the entry's file at the merge-base commit.
 - [ ] **Step 3:** Write the run's notes, the merge request URLs and what was not checked in `## Result`; commit `docs(iterations): the result of iteration 19`.
 
-### Task 6: Release v0.21.0
+### Task 6: No release of its own
 
-After the PR is merged by the developer, on `main`. Iteration 18 changed documentation only, so it is no release of its own and has no changelog entry; its pages ship with this tag.
-
-**Files:**
-- Modify: `.claude-plugin/marketplace.json` (`metadata.version` `0.21.0`; the `version` of each plugin whose files changed since `v0.20.0`: `adf` and `adf-gitlab` at least), each such plugin's `.claude-plugin/plugin.json`; then `node scripts/manifests.mjs` writes the Codex manifests
-- Modify: `CHANGELOG.md` (a new section `## [0.21.0] — <date>` above `## [0.20.0]`, written from `git log v0.20.0..HEAD`: the changes to the flow and the plugins only, under Added, Changed and Fixed; no `[Unreleased]` section), the pinned tags in `README.md` and `docs/guide/` (`v0.20.0` to `v0.21.0`)
-
-- [ ] **Step 1:** `git diff --name-only v0.20.0..HEAD -- plugins/` lists the changed plugins; bump each plugin with a change outside its documentation: minor for a new feature, patch for a fix. A plugin whose only changes are documentation keeps its version.
-- [ ] **Step 2: Run** `node scripts/guide-review.mjs input --from v0.20.0 --out .superpowers/guide-review/0.21.0`, dispatch one read-only agent per package, `guide-review.mjs check` each reply; fix every finding in the guide and run it again until none is open.
-- [ ] **Step 3: Run** `npm test` (it includes `check-release.mjs`) — Expected: all pass.
-- [ ] **Step 4: Commit** `npm test && git commit -m "chore(release): v0.21.0"`, push, then `git tag v0.21.0` on that commit and `git push origin v0.21.0`; `npm test` again on the tagged `HEAD` (the tag check) — Expected: all pass.
-- [ ] **Step 5:** Add `Released as v0.21.0` to roadmap row 19; commit `docs(roadmap): iteration 19 released as v0.21.0`.
+The developer's decision (2026-11-05): iterations 19 and 20 go out in one release, v0.21.0, after both PRs merge. Iteration 20's Task 9 makes it and names this iteration's changes in the changelog section.
