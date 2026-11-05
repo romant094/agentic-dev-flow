@@ -2,6 +2,7 @@
 - plugins/adf/contract/README.md
 - plugins/adf/scripts/forge.mjs
 - plugins/adf/scripts/lib/local-merge.mjs
+- plugins/adf/scripts/lib/mr-links.mjs
 - plugins/adf/scripts/lib/roles.mjs
 -->
 
@@ -36,7 +37,9 @@ Contract 1.10 adds the optional `links` input to `open` and `finalize`. The core
 - A reused `open` changes no description.
 - A change with no `scope.json`, or with no taken item, has no `links`.
 
-A provider written for a contract below 1.10 ignores `links`. The core then puts the same lines at the top of `body` at `finalize`.
+The `forge.mjs` script refuses an input that already holds `links`. The core adds them to `open` and `finalize` when the call names a change.
+
+A provider written for a contract below 1.10 does not take `links`. The core then puts the same lines at the top of `body` at `finalize`. For `open`, the core adds nothing, so the Draft of such a provider shows no links. In that case the lines hold no URL for a debt item, because the core builds no file URL.
 
 ## When it acts
 

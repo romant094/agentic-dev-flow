@@ -2,6 +2,7 @@
 - plugins/adf/skills/propose/**
 - plugins/adf/scripts/propose.mjs
 - plugins/adf/scripts/lib/propose.mjs
+- plugins/adf/scripts/lib/mr-links.mjs
 - plugins/adf/schema/instructions/propose.md
 -->
 
@@ -54,7 +55,7 @@ Each artifact has gates. The command fixes the findings of a gate in the artifac
 
 The commit holds the change directory and nothing else. Its message is `docs(openspec): propose <name>`. The commit refuses while an artifact is not done, while a gate fails, or while anything else is staged.
 
-After the commit, the command opens a merge request through the forge plugin. Without a forge plugin, it pushes nothing and the report says that no merge request exists. When the forge refuses, the artifacts stay committed. The draft shows the links of the scope, built from `scope.json`.
+After the commit, the command opens a merge request through the forge plugin. Without a forge plugin, it pushes nothing and the report says that no merge request exists. When the forge refuses, the artifacts stay committed. The Draft shows the links of the scope: one line for each taken or partial item, built from `scope.json` by a script. You do not write them. A change with no scope has no links in its Draft. A forge provider written for a contract below 1.10 shows no links in the Draft.
 
 The command also records the active change of the worktree in `.adf/active.json`. This file is local and never committed.
 

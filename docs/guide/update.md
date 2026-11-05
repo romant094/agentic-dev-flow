@@ -86,6 +86,15 @@ A project install can print the first two lines together. The pin line comes fir
 
 Any error in the hook prints nothing.
 
+## A CI job that adds the tracker link
+
+Some projects have a CI job that adds a tracker link to the merge request description. The flow now writes the links of the scope itself, so this job is not needed.
+
+1. Find the job in the CI configuration of the project.
+2. Remove the job in the update merge request.
+
+The job that the origin of the flow used skips a key that is already in the description. Both can run during the transition, and the description shows the key once. Not checked: the behaviour of a job that your project wrote itself. Check that your job also skips a key that is already present.
+
 ## After the merge request
 
 1. Pull the integration branch into the main checkout.
