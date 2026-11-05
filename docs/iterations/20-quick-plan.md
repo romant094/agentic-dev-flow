@@ -215,7 +215,7 @@ The design records the archive's `placements` step as skipped for a quick change
 - [ ] **Step 2:** Read each `metrics.json`: `cycle` `quick`, the six phases, the active minutes. The success measure: a one-file fix under 20 active minutes.
 - [ ] **Step 3:** Write the notes, the figures and what was not checked in `## Result`; commit `docs(iterations): the result of iteration 20`.
 
-### Task 9: Release v0.20.0, iterations 19 and 20
+### Task 9: Release v0.21.0, iterations 19 and 20
 
 After the PR is merged by the developer, on `main`. Both PRs (iteration 19, then this one) are merged. One release carries both iterations (the developer's decision, 2026-11-05); iteration 18 changed documentation only and gets no changelog entry.
 
