@@ -34,6 +34,9 @@ branch.
 node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" run --change <change> --root <root> --suite
 ```
 
+It may run the whole suite: wait for it as the apply instruction's whole-suite rule states, in
+the foreground with the maximum timeout, never with a scheduled wakeup.
+
 A run in a session other than the one that wrote `<verify>run.json`, or at a HEAD other than
 the one it names, clears `<verify>` first and starts a new verify session: a section left by an
 earlier session describes a HEAD that may have moved. HEAD moved only by commits under the

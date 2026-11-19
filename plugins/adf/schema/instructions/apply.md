@@ -582,6 +582,13 @@ count from the round's start, so each starts anew. Then run verify again.
 node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" run --change <change> --root <root> --base-check --record --commit
 ```
 
+**Wait for the run in the foreground,** as one Bash call with the tool's maximum timeout,
+600000 ms, and read its JSON when it returns; the session ends when the run ends. Run it in the
+background only when the project's suite is known to take more than 10 minutes, such as a
+recorded run that took that long, and then wait for the background task's notification alone.
+Never schedule a wakeup (`ScheduleWakeup`, `CronCreate`) to wait for it, in any session of the
+flow: a pending wakeup keeps a headless session alive after its work is done, until it fires.
+
 It runs the `## Whole-suite command` of the project's planning guide, `openspec/planning.md`,
 uncached, with `<root>` as the working directory, its output to a file, never to your context.
 When the guide has a `## Fresh-run proof` line, a run whose output lacks it fails: it may be

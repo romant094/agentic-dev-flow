@@ -67,6 +67,8 @@ The command pushes the change branch through the forge plugin after each group m
 
 When the project has no whole-suite command in `openspec/planning.md`, the command finds one with you and records it.
 
+The command waits for the whole suite in the foreground, for up to 10 minutes. Only a suite that is known to take longer runs in the background. The command never schedules a wakeup, so a headless session ends when its work ends.
+
 ## How it resumes
 
 Run `/adf:apply` again. A script reads the state again from the Execution Graph in `plan.md`, from git, from `tasks.md` and from the ledger. Ticked tasks and merged groups stay done.

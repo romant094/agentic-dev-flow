@@ -208,7 +208,8 @@ are `review-range`, `review-slices`, `review-suite`, `review-round-<k>` on a che
     ```
 
     It runs the planning guide's whole-suite command with the base check and writes the result
-    the record reads. A new failure blocks the verdict. The resolution is another fix, which
+    the record reads. Wait for it as the apply instruction's whole-suite rule states: in the
+    foreground with the maximum timeout, never with a scheduled wakeup. A new failure blocks the verdict. The resolution is another fix, which
     the next round re-reviews, or the developer's `review-suite` ruling with their reason. A
     commit after the run makes it stale: run it again.
 
