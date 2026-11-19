@@ -223,6 +223,11 @@ test('signals: a task review left open counts nothing late; a DONE impl followed
   const open = [ev('T1 review', 'valid', { result: 'clean' }), ev('T2 review', 'valid', { result: 'fix' })]
   assert.deepEqual(lateCaught({ findings: { 'ai-review': { findings: 4 } } }, open), { value: 0, taskReviewsPassed: false, notClean: [2], caught: [] })
   assert.match(lateCaught(null, []).reason, /no accepted task review/)
+  // A review whose findings went to the developer's rulings, accepted, passed: the task was done.
+  const ruled = [ev('T1 review', 'valid', { result: 'rule' }), ev('T2 review', 'valid', { result: 'fix' }), ev('T2 re-review r1', 'valid', { result: 'clean' })]
+  assert.deepEqual(lateCaught({ findings: { 'ai-review': { findings: 1 } }, verify: { checks: { tests: 'pass' } } }, ruled), { value: 1, taskReviewsPassed: true, ruled: [1], caught: [{ stage: 'review', findings: 1 }] })
+  const ruledThenFixed = [ev('T1 review', 'valid', { result: 'rule' }), ev('T1 re-review r1', 'valid', { result: 'fix' })]
+  assert.deepEqual(lateCaught({}, ruledThenFixed), { value: 0, taskReviewsPassed: false, notClean: [1], caught: [] }, 'the last accepted review decides')
   const round = [ev('T3 impl', 'valid', { status: 'DONE' }), ev('T3 review', 'valid'), ev('T3 re-review r1', 'dispatch')]
   assert.equal(prematureDone(round).cases[0].how, 're-review round')
   const concerns = [ev('T4 impl', 'valid', { status: 'DONE_WITH_CONCERNS' }), ev('T4 review', 'valid', { result: 'fix' })]

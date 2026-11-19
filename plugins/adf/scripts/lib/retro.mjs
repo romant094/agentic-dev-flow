@@ -33,7 +33,8 @@
 //
 // The signals, computed per change from its record and its archived attempts.jsonl:
 //   lateCaught     the review stage's findings and the failed (or ruled) verify checks, when
-//                  every task's last accepted review or re-review was clean; 0 when one was not
+//                  every task's last accepted review or re-review passed: `clean`, or `rule`,
+//                  its findings sent to the developer's rulings; 0 when one did not pass
 //   prematureDone  each impl or fix reply computed DONE that its task's next accepted review or
 //                  re-review sent back to fixing, or, for an impl, that a re-review round followed
 //   reDerivation   not counted: a record carries no file reads per dispatch
@@ -69,6 +70,9 @@ const readOr = (path) => {
 // ---------------------------------------------------------------- signals
 
 const TASK_REVIEWS = ['review', 're-review']
+// A task review passed: clean, or its findings ruled by the developer and accepted. A ruling that
+// sends the task back to fixing leads to a re-review, whose result is then the last.
+const PASSED = ['clean', 'rule']
 const DONE_ROLES = ['impl', 'fix']
 const taskOf = (e) => parseName(e.name)
 
@@ -81,13 +85,14 @@ export function lateCaught(record, events) {
     if (e.event === 'valid' && p?.task !== undefined && TASK_REVIEWS.includes(p.role) && typeof e.result?.result === 'string') last.set(p.task, e.result.result)
   }
   if (last.size === 0) return { value: null, reason: `no accepted task review with a result in ${ATTEMPTS_FILE}` }
-  const open = [...last].filter(([, result]) => result !== 'clean').map(([task]) => task)
+  const open = [...last].filter(([, result]) => !PASSED.includes(result)).map(([task]) => task)
   if (open.length > 0) return { value: 0, taskReviewsPassed: false, notClean: open.sort((a, b) => a - b), caught: [] }
   const caught = []
   const review = record?.findings?.['ai-review']?.findings
   if (num(review) && review > 0) caught.push({ stage: 'review', findings: review })
   for (const [check, verdict] of Object.entries(record?.verify?.checks ?? {})) if (verdict === 'fail' || verdict === 'ruled') caught.push({ stage: 'verify', check, verdict })
-  return { value: caught.reduce((n, c) => n + (c.findings ?? 1), 0), taskReviewsPassed: true, caught }
+  const ruled = [...last].filter(([, result]) => result === 'rule').map(([task]) => task)
+  return { value: caught.reduce((n, c) => n + (c.findings ?? 1), 0), taskReviewsPassed: true, ruled: ruled.sort((a, b) => a - b), caught }
 }
 
 // Each DONE impl or fix reply of a task that the task's next events show was not done: up to the
