@@ -587,8 +587,9 @@ describe('tracker handoff', () => {
     const plan = JSON.parse(readFileSync(result.file, 'utf8'))
     assert.deepEqual(
       plan.rows.map((r) => `${r.key} ${r.step} ${r.from ?? '-'}`),
-      ['PROJ-1 transition In Progress', 'PROJ-1 comment Review', 'PROJ-1 assignee Review', 'PROJ-2 comment -', 'PROJ-3 transition In Progress', 'PROJ-3 comment Review', 'PROJ-3 assignee Review']
+      ['PROJ-1 transition In Progress', 'PROJ-1 comment Review', 'PROJ-1 assignee Review', 'PROJ-2 comment -', 'PROJ-3 assignee In Progress', 'PROJ-3 transition In Progress', 'PROJ-3 comment Review', 'PROJ-3 assignee Review']
     )
+    assert.ok(result.preview.includes('PROJ-3 Summary of PROJ-3: assignee dev.login first; In Progress → Review; assignee qa.login; comment:'), 'an unassigned issue is taken first too')
     assert.equal(rowOf(plan, 'PROJ-1', 'assignee').steps[0].fields.assignee.name, '<JIRA_QA>')
     assert.match(rowOf(plan, 'PROJ-3', 'comment').steps[0].comment.body, /does not reproduce on commit abc1234/)
   })
@@ -607,6 +608,26 @@ describe('tracker handoff', () => {
       'h3. Done\n# The form validates the port.\n\nh3. How to test\n# Open the port page.\n# Enter 70000 and save.\n\nMerge request: https://git.example.com/group/repo/-/merge_requests/7'
     )
     assert.match(jira.comments['PROJ-2'][0].body, /h3\. How to test\n# Edit one port and save 70000\.\n\nh3\. Remains\n# The bulk edit is not covered\./)
+  })
+
+  it('takes an issue that is not the developer\'s before moving it, then gives it to the tester: a retest of an issue start never took', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: { 'PROJ-4': issue('PROJ-4', { status: 'Opened', type: 'Bug', assignee: 'other.login' }) } })
+    const { result: held } = await call(jira, where, 'handoff', { items: [{ ...retest, key: 'PROJ-4' }], mr: null, stateDir: where.stateDir })
+    assert.ok(held.preview.includes('PROJ-4 Summary of PROJ-4: assignee dev.login first; Opened → In Progress → Review; assignee qa.login; comment:'), held.preview.join('\n'))
+    const plan = JSON.parse(readFileSync(held.file, 'utf8'))
+    assert.deepEqual(
+      plan.rows.map((r) => `${r.step} ${r.from} ${r.steps[0].fields?.assignee.name ?? ''}`.trim()),
+      ['assignee Opened <JIRA_ASSIGNEE>', 'transition Opened', 'comment Review', 'assignee Review <JIRA_QA>']
+    )
+    const { result } = await call(jira, where, 'handoff', { stateDir: where.stateDir, apply: held.plan })
+    assert.deepEqual(result.applied, ['PROJ-4'])
+    assert.deepEqual(
+      jira.writes().map((c) => `${c.method} ${c.path}`),
+      ['PUT /rest/api/2/issue/PROJ-4', 'POST /rest/api/2/issue/PROJ-4/transitions', 'POST /rest/api/2/issue/PROJ-4/transitions', 'POST /rest/api/2/issue/PROJ-4/comment', 'PUT /rest/api/2/issue/PROJ-4']
+    )
+    assert.equal(jira.store['PROJ-4'].fields.status, 'Review')
+    assert.deepEqual(jira.store['PROJ-4'].fields.assignee, { name: 'qa.login' })
   })
 
   it('hands over with every action on the issue first and the assignee last: transition, comment, assignee', async () => {

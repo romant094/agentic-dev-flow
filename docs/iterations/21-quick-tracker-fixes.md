@@ -60,6 +60,8 @@ the module that the issue names. No fix changes the contract: the tracker's `sta
   (`taken` or `not-reproduced`) and has a transition to make gets a leading assignee row to the
   developer (`<JIRA_ASSIGNEE>`) when its assignee is not the developer, as `start` does. The
   trailing row to the tester stays. A land hand-off of an issue that `start` took is unchanged.
+  The issue that mirrors a debt group is never started, so its land hand-off now takes it first
+  too: the same workflow condition would refuse its transition.
   A `partial` item keeps its rows: it stays with its assignee, and it was taken at start. An
   unassigned issue counts as not the developer's, as at `start`. The preview names both
   assignees: `assignee <developer> first; <route>; assignee <tester>`.

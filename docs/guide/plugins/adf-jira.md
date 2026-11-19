@@ -180,6 +180,8 @@ With `apply: <plan id>`, the plan runs.
 | `partial` | `done`, `test`, `remains` (lists); `commit` | the route back to `statuses.initial`, never through `statuses.handoff`, then the comment; with no `statuses.initial`, the comment only and the status stays; `check` then notes that `config.statuses.initial` is unset; with `statuses.initial` set but no route back, the comment only and the status stays, and `unmoved` in the plan names why |
 | `not-reproduced` | `tried`, `commit`; `test` | as `taken`: the comment says the issue does not reproduce on that commit, and the tester retests it |
 
+A `taken` or `not-reproduced` issue that is not assigned to the developer gets one more row first: the developer as assignee, before the route. A workflow may offer a transition to the assignee only, and a retest hands off an issue that `start` never took. The tester row stays last. The preview names both: `assignee <developer> first; <route>; assignee <tester>`.
+
 The required fields are the core's. The core sends every text field as a list of one-line texts. The plugin checks them again before it sends anything. It refuses three things: a field that is not such a list, a text that holds a link or a URL, and a `commit` that is not a commit hash. The core checks the wording. The plugin renders the markup.
 
 ### Held plans and resume
