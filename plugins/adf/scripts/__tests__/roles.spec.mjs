@@ -49,6 +49,19 @@ test('the payload reaches stdin as a file, and a provider past the timeout is st
   }
 })
 
+// A host whose node comes from a version manager has no `node` on PATH in a non-interactive
+// shell: the provider runs with the node that runs the core.
+test('a provider runs with the node that runs the core, not the node on PATH', () => {
+  const root = host(`console.log(JSON.stringify({state:'done',node:process.execPath}))`)
+  const path = process.env.PATH
+  process.env.PATH = mkdtempSync(join(tmpdir(), 'adf-no-node-'))
+  try {
+    assert.deepEqual(callRole(root, 'forge', 'check', {}, { ...CORE, home }), { state: 'done', node: process.execPath, plugin: 'fake' })
+  } finally {
+    process.env.PATH = path
+  }
+})
+
 test('with no forge enabled the state is none and nothing runs', () => {
   assert.deepEqual(forge(host(), 'check'), {
     code: 0,

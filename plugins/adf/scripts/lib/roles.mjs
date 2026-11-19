@@ -50,8 +50,9 @@ export const PROVIDER_TIMEOUT_MS = 20 * 60 * 1000
 
 // One provider's run: its script with the operation as its argument, in `root`. The payload
 // reaches stdin from a file, not a pipe: with `spawnSync`'s `input` the child once waited for an
-// end of input that never came. A script that prints no result, or runs past the timeout, is
-// refused.
+// end of input that never came. The script runs with the node that runs the core, not the one on
+// PATH: a node from a version manager is often not on PATH in a non-interactive shell. A script
+// that prints no result, or runs past the timeout, is refused.
 function runProvider(root, found, point, operation, input) {
   const script = join(found.dir, found.declaration.provides[point].script)
   const timeout = Number(process.env.ADF_PROVIDER_TIMEOUT_MS) || PROVIDER_TIMEOUT_MS
@@ -61,7 +62,7 @@ function runProvider(root, found, point, operation, input) {
   const fd = openSync(file, 'r')
   let run
   try {
-    run = spawnSync('node', [script, operation], { cwd: root, stdio: [fd, 'pipe', 'pipe'], encoding: 'utf8', maxBuffer: 1 << 24, timeout })
+    run = spawnSync(process.execPath, [script, operation], { cwd: root, stdio: [fd, 'pipe', 'pipe'], encoding: 'utf8', maxBuffer: 1 << 24, timeout })
   } finally {
     closeSync(fd)
     rmSync(dir, { recursive: true, force: true })

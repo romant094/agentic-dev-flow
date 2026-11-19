@@ -36,8 +36,9 @@ field `migrations`. `1.10` adds the optional `links` input of the `forge` operat
 
 ## Calling convention
 
-The core runs `node <plugin dir>/<script> <operation>` with the working directory set to the
-host root (a change's worktree, when the change has one) and writes one JSON object to stdin:
+The core runs `node <plugin dir>/<script> <operation>`, with the node that runs the core
+(`process.execPath`, not the `node` on `PATH`), with the working directory set to the host root
+(a change's worktree, when the change has one), and writes one JSON object to stdin:
 
 ```json
 { "root": "<absolute host root>", "config": { "...": "the registry entry's config, or {}" }, "input": { } }

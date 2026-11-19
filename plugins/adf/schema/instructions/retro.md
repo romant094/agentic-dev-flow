@@ -61,7 +61,9 @@ write `state.json`.
    dispatch recorded. `detail.changes` lists the changes, `detail.coverage` how many have a
    metrics record and `detail.adfDebt` the debt not yet filed: show them. `detail.dispatch` is
    the plan of the dispatch. The agent sees the debt, so that a finding can name the record it
-   is seen again in.
+   is seen again in. When the knowledge provider is enabled and its `context` call is refused or
+   degraded, `window` fails and writes nothing: the knowledge base's files would count in the
+   git figures. Show the refusal; once the provider answers, run `window` again.
 
 3. **`reply`: the `retro <id>` agent.** Dispatch the content of `detail.dispatch.promptFile` as
    it is, to `detail.dispatch.agent`, named `detail.dispatch.name`, in `<wt>`. The agent writes

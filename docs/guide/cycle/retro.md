@@ -31,7 +31,7 @@ A script runs each step. One agent reasons over the numbers that the scripts com
 | Step | What it does |
 |---|---|
 | `start` | Fetches the integration branch. Makes the branch `chore/retro/<id>` and its worktree. |
-| `window` | Selects the changes. Writes the input and the prompt for the agent. |
+| `window` | Selects the changes. Leaves the files of the knowledge base out of the git figures. Writes the input and the prompt for the agent. |
 | `reply` | Checks the reply of the `retro <id>` agent. |
 | `file` | Files the findings and the open ADF debt upstream, through the upstream role. |
 | `render` | Writes the report and the sidecar. |
@@ -66,6 +66,7 @@ Run `/adf:retro` again. A script keeps the state of each step in `.superpowers/r
 - A `done` or `skipped` step is not run again.
 - A `failed` or `degraded` step runs again. The exception is `file` after `render` has run.
 - A step that waits for your yes holds. Nothing is recorded until you answer.
+- When the knowledge plugin is enabled and does not answer, `window` fails and writes nothing. Otherwise the files of the knowledge base would count as delivered work. Repair the plugin, then run `/adf:retro` again.
 - A refused reply goes back once to the same agent. After a second refusal, the retrospective ends.
 - A local merge starts the next window only after you push the integration branch.
 
