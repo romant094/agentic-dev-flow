@@ -19,8 +19,9 @@ lands in them, if one depends on another. -->
 
 ## How to run the checks
 
-<!-- The commands that build, test and lint the project, and which of them a task's
-verification runs. -->
+<!-- The commands that install, build, test, lint, format and type-check the project, one per
+line, and which of them a task's verification runs. Every implementer and fixer prompt quotes
+these lines, and the agent runs them as written instead of guessing a command. -->
 
 ## Whole-suite command
 

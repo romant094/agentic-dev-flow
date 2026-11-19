@@ -28,3 +28,22 @@ export function sectionLine(text, heading, what) {
   const inline = /^`([^`]+)`\.?$/.exec(line)
   return (inline ? inline[1] : line).trim() || null
 }
+
+// The planning guide's check commands (#51): each line of `## How to run the checks`, HTML
+// comments, fence lines and a list marker removed; [] when the section is absent or empty. The
+// implementer and fix prompts quote them, so a dispatched agent runs the project's own commands.
+export const CHECKS_HEADING = '## How to run the checks'
+
+export function checkCommands(text) {
+  const lines = String(text ?? '').split(/\r?\n/)
+  const bounds = sectionBounds(lines, CHECKS_HEADING)
+  if (!bounds) return []
+  return lines
+    .slice(bounds.start, bounds.end)
+    .join('\n')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !/^(```|~~~)/.test(l))
+    .map((l) => l.replace(/^[-*]\s+/, ''))
+}

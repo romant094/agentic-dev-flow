@@ -253,6 +253,22 @@ test('an implementer prompt carries every fixed field and clause, with paths abs
   assert.doesNotMatch(prompt, /\$\{CLAUDE_PLUGIN_ROOT\}|<change>|<root>|<worktree>|<!--/)
 })
 
+// #51: the implementer and the fixers run the project's own commands, never a guessed one.
+test('the implementer and fix prompts carry the planning guide\'s check commands', () => {
+  const root = host()
+  const q = join(root, 'q.txt')
+  writeFileSync(q, 'Do it.')
+  const field = (prompt) => /- Check commands:.*(\n  - .*)*/.exec(prompt)?.[0]
+  assert.equal(field(call(root, 'prompt', '--role', 'impl', '--task', '1', '--question-file', q).prompt), '- Check commands: none in the planning guide, openspec/planning.md')
+  mkdirSync(join(root, 'openspec'), { recursive: true })
+  writeFileSync(join(root, 'openspec', 'planning.md'), '# Planning\n\n## How to run the checks\n\n<!-- The commands. -->\n\n- Install: `npm ci`\n- Test one file: `npx vitest run <file>`\n\n```sh\nnpm run lint\n```\n\n## Whole-suite command\n\n`npm test`\n')
+  const expected = '- Check commands:\n  - Install: `npm ci`\n  - Test one file: `npx vitest run <file>`\n  - npm run lint'
+  for (const role of ['impl', 'fix']) assert.equal(field(call(root, 'prompt', '--role', role, '--task', '1', '--round', '1', '--question-file', q).prompt), expected, role)
+  assert.equal(field(call(root, 'prompt', '--role', 'review', '--task', '1', '--question-file', q).prompt), undefined)
+  const prompt = call(root, 'prompt', '--role', 'impl', '--task', '1', '--question-file', q).prompt
+  assert.match(prompt, /run the project's checks only with the commands the\s+`Check commands` field quotes/)
+})
+
 test('a review proves the test can fail only for a test-first task; its question is required', () => {
   const { root, base, head, home } = rangeHost()
   const q = join(root, 'q.txt')
@@ -958,6 +974,8 @@ test('the fixer prompt reads its finding from the round findings file, only for 
   assert.ok(prompt.includes(`valid under \`${join(PLUGIN_ROOT, 'schema', 'review-fix.schema.json')}\``))
   assert.ok(prompt.includes(`Write it to\n\`${out.replyFile}\``) || prompt.includes(`Write it to \`${out.replyFile}\``))
   assert.match(prompt, /`failureMode` states the failure/)
+  assert.ok(prompt.includes('- Check commands: none in the planning guide, openspec/planning.md'), prompt)
+  assert.match(prompt, /with the commands the `Check commands` field\s+quotes/)
   assert.match(prompt, /`git -C /)
   assert.doesNotMatch(prompt, /reply\.mjs|\{\{|\$\{CLAUDE_PLUGIN_ROOT\}|<worktree>|<!--|Rejected false-positive argument/)
   roundFile(2, 'findings.json', stored)

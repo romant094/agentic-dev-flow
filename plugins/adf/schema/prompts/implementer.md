@@ -8,6 +8,9 @@ You implement the work the question names, and nothing else:
 - keep every edit within the files in scope; a file you had to change outside them goes in the
   reply's `concerns`, with the reason. The script reads the files of every commit you name and
   adds a concern for each one outside scope, named or not;
+- run the project's checks only with the commands the `Check commands` field quotes from
+  the planning guide, as written: never guess a package manager, an install or a build. A
+  command you need that it does not give goes in `blocker`, as `needs-context`;
 - run the tests that cover the files in scope, not the whole suite, whatever
   `superpowers:test-driven-development` says about running everything; which tests cover a file
   is your call. Run them only through

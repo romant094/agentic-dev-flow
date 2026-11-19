@@ -100,6 +100,10 @@
 //       `debt` records in the same call, once per requirement over both passes (lib/sweep.mjs
 //       recordDispositions), listed as `debt`: each id, or why it was skipped
 //
+// An `impl`, a `fix` and an `ai-fix` prompt carry `Check commands`, the lines of the planning
+// guide's `## How to run the checks` (lib/guide.mjs checkCommands), so the agent runs the
+// project's own install, build, test and lint commands.
+//
 // prompt reads the loop state by script (lib/loop.mjs). A `fix` or `re-review` whose subject (the
 // task, the group, or the final review) has an accepted review carries `Open findings`, rendered
 // from the results and the rulings, so its question file becomes optional; with no open finding
@@ -166,6 +170,7 @@ import { readTaskProof, taskProof } from './lib/tdd-proof.mjs'
 import { gitIn } from './lib/workspace.mjs'
 import { c4Inputs, candidatesFile, recordVerifyReply, schemaPath } from './lib/verify-reply.mjs'
 import { skillCandidates } from './lib/verify.mjs'
+import { checkCommands, PLANNING_FILE } from './lib/guide.mjs'
 
 export const PLUGIN_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const PROMPTS_DIR = join(PLUGIN_ROOT, 'schema', 'prompts')
@@ -238,10 +243,17 @@ function reviewFields(inputs, plan, root) {
   const where = `${join(plan.worktree, finding.file)}${Number.isInteger(finding.line) ? `:${finding.line}` : ''}`
   fields.push(['Worktree', plan.worktree], ['Finding', `${plan.finding} (${finding.severity}): ${finding.title}`], ['Findings file', findingsFile], ['Files in scope', [where]])
   if (rejected) fields.push(['Rejected false-positive argument', rejected.argument], ["Developer's decision", rejected.decision])
-  return [...fields, ['Reply file', plan.replyFile]]
+  return [...fields, ['Check commands', checksField(root)], ['Reply file', plan.replyFile]]
 }
 
 const shown = (path) => path ?? 'absent'
+
+// The `Check commands` field of the implementer and fix prompts: the planning guide's check
+// commands (lib/guide.mjs checkCommands), or a line saying the guide gives none.
+function checksField(root) {
+  const commands = checkCommands(readOr(join(root, PLANNING_FILE)))
+  return commands.length ? commands : `none in the planning guide, ${PLANNING_FILE}`
+}
 
 // spec-merge: the capability's unresolved conflicts, each text in a file the agent reads.
 function specMergeFields(inputs, plan, root) {
@@ -377,6 +389,7 @@ function promptFor(inputs, plan, values, root, planText, main, cut) {
   if (inputs.task === undefined) tokens[' --task <n>'] = ''
   if (inputs.role !== 'verify') {
     fields.push(['Plan', join(root, 'openspec', 'changes', change, 'plan.md')])
+    if (inputs.role === 'impl' || inputs.role === 'fix') fields.push(['Check commands', checksField(root)])
     // A fix and its re-review carry the subject's open findings, rendered from the accepted
     // review results and the rulings, once a review of the subject is recorded.
     if ((inputs.role === 'fix' || inputs.role === 're-review') && inputs.subject === SWEEP_SUBJECT) {
