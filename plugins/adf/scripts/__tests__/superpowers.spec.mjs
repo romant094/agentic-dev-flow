@@ -1,11 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { claudeHome, isAvailable, mergeSettings, PLUGIN_ID } from '../lib/superpowers.mjs'
+import { checkSuperpowers, claudeHome, isAvailable, mergeSettings, PLUGIN_ID } from '../lib/superpowers.mjs'
 
 const cli = join(dirname(fileURLToPath(import.meta.url)), '..', 'superpowers.mjs')
 const root = '/work/host'
@@ -93,6 +93,46 @@ test('the CLI prints JSON and exits 1 with the install command', () => {
   mkdirSync(join(host, '.claude'))
   writeFileSync(join(host, '.claude', 'settings.local.json'), JSON.stringify({ enabledPlugins: { [PLUGIN_ID]: false } }))
   assert.match(run().out.reason, /disabled/)
+})
+
+// A git repository with one worktree, both real paths.
+function repoWithWorktree() {
+  const main = realpathSync(mkdtempSync(join(tmpdir(), 'adf-main-')))
+  const git = (...args) => execFileSync('git', ['-C', main, ...args], { stdio: 'ignore' })
+  git('init', '-q', '-b', 'develop')
+  git('-c', 'user.email=t@example.com', '-c', 'user.name=T', 'commit', '-q', '--allow-empty', '-m', 'init')
+  const tree = join(realpathSync(tmpdir()), `adf-sp-tree-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+  git('worktree', 'add', '-q', tree)
+  return { main, tree }
+}
+
+test('in Claude Code the gate counts the main directory\'s project install from a worktree, and reads its settings', () => {
+  const { main, tree } = repoWithWorktree()
+  const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
+  mkdirSync(join(home, 'plugins'))
+  writeFileSync(join(home, 'plugins', 'installed_plugins.json'), JSON.stringify(file([{ scope: 'project', projectPath: main, installPath: home }])))
+  assert.deepEqual(checkSuperpowers(tree, { runtime: 'claude-code', home }), { ok: true, reason: null })
+  mkdirSync(join(main, '.claude'))
+  writeFileSync(join(main, '.claude', 'settings.local.json'), JSON.stringify({ enabledPlugins: { [PLUGIN_ID]: false } }))
+  assert.match(checkSuperpowers(tree, { runtime: 'claude-code', home }).reason, /disabled/)
+})
+
+test('in Claude Code the gate passes for a trusted project with no install record and the plugin in the cache', () => {
+  const { main, tree } = repoWithWorktree()
+  const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
+  mkdirSync(join(home, 'plugins'))
+  writeFileSync(join(home, 'plugins', 'installed_plugins.json'), JSON.stringify({ version: 2, plugins: {} }))
+  mkdirSync(join(main, '.claude'))
+  writeFileSync(join(main, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { [PLUGIN_ID]: true } }))
+  const missing = checkSuperpowers(tree, { runtime: 'claude-code', home })
+  assert.equal(missing.ok, false)
+  assert.equal(missing.install, 'claude plugin install superpowers@claude-plugins-official')
+  // The official marketplace lists Superpowers by a git source, with no version.
+  const market = join(home, 'plugins', 'marketplaces', 'claude-plugins-official', '.claude-plugin')
+  mkdirSync(market, { recursive: true })
+  writeFileSync(join(market, 'marketplace.json'), JSON.stringify({ plugins: [{ name: 'superpowers', source: { source: 'url', url: 'https://github.com/obra/superpowers.git' } }] }))
+  mkdirSync(join(home, 'plugins', 'cache', 'claude-plugins-official', 'superpowers', '7.0.2'), { recursive: true })
+  assert.deepEqual(checkSuperpowers(tree, { runtime: 'claude-code', home }), { ok: true, reason: null })
 })
 
 test('superpowers gate passes in codex with superpowers@claude-plugins-official enabled and cached', () => {

@@ -82,6 +82,35 @@ test('a plugin enabled in project settings and present in the cache counts with 
   assert.equal(installedPath(ID, tree, { home: h }), cached)
 })
 
+test('at equal scope the main directory\'s record wins over the worktree\'s', () => {
+  const main = realpathSync(mkdtempSync(join(tmpdir(), 'adf-main-')))
+  const tree = worktreeOf(main)
+  const records = [
+    { scope: 'project', projectPath: tree, installPath: '/stale-worktree', version: '0.1.0' },
+    { scope: 'project', projectPath: main, installPath: '/main', version: '0.2.0' }
+  ]
+  assert.deepEqual(selectInstall(ID, tree, { home: home(records), exists: always }), { path: '/main', version: '0.2.0' })
+  // A local record of the worktree is still more specific than the main directory's project one.
+  const local = [...records, { scope: 'local', projectPath: tree, installPath: '/local' }]
+  assert.equal(installedPath(ID, tree, { home: home(local), exists: always }), '/local')
+})
+
+test('a trusted plugin whose marketplace lists no version is its only cached version', () => {
+  const main = realpathSync(mkdtempSync(join(tmpdir(), 'adf-main-')))
+  mkdirSync(join(main, '.claude'))
+  writeFileSync(join(main, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { [ID]: true } }))
+  const h = home([])
+  const market = join(h, 'plugins', 'marketplaces', 'market', '.claude-plugin')
+  mkdirSync(market, { recursive: true })
+  writeFileSync(join(market, 'marketplace.json'), JSON.stringify({ plugins: [{ name: 'tool', source: { source: 'url', url: 'https://example.com/tool.git' } }] }))
+  const cached = join(h, 'plugins', 'cache', 'market', 'tool', '7.0.2')
+  mkdirSync(cached, { recursive: true })
+  assert.deepEqual(selectInstall(ID, main, { home: h }), { path: cached, version: '7.0.2' })
+  // Two cached versions and nothing to choose by: not installed.
+  mkdirSync(join(h, 'plugins', 'cache', 'market', 'tool', '6.4.1'))
+  assert.throws(() => installedPath(ID, main, { home: h }), /not installed for this project/)
+})
+
 test('the refusal names the main directory', () => {
   const main = realpathSync(mkdtempSync(join(tmpdir(), 'adf-main-')))
   const tree = worktreeOf(main)

@@ -5,7 +5,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { dirname, isAbsolute, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateBranches } from './branches.mjs'
-import { installedPath, PLUGIN_ID } from './installed.mjs'
+import { installedPath, mainCheckout, PLUGIN_ID } from './installed.mjs'
 import { detectRuntime, installCommand } from './runtime.mjs'
 import { trackerReport } from './roles.mjs'
 
@@ -401,7 +401,9 @@ export function checkRegistry(root, { coreContract, points, home }) {
       // A plugin that is not installed or is disabled is optional: the flow runs without it, so it only warns.
       const { id, reason } = error.absent ?? {}
       const runtime = detectRuntime({ scriptPath: fileURLToPath(import.meta.url) })
-      if (reason === 'not-installed') warnings.push(`${id} is in the registry but not installed; its points are skipped (run: ${installCommand(runtime, id, 'project')})`)
+      // A project install counts in every worktree only when it is made in the main checkout.
+      const where = runtime === 'codex' ? '' : `; run it from ${mainCheckout(root)}`
+      if (reason === 'not-installed') warnings.push(`${id} is in the registry but not installed; its points are skipped (run: ${installCommand(runtime, id, 'project')}${where})`)
       else if (reason === 'disabled') warnings.push(`${id} is in the registry but disabled; its points are skipped (run: ${runtime === 'codex' ? `set enabled = true under [plugins."${id}"] in config.toml` : `claude plugin enable ${id}`})`)
       else errors.push(error.message)
     }

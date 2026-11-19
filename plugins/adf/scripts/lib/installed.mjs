@@ -4,7 +4,8 @@
 //
 // Claude Code records a project- or local-scope install once per checkout, worktrees
 // included, and a change worktree is rarely opened as a session of its own. The plugin is
-// therefore looked up for the main checkout, whatever worktree the core runs in.
+// therefore looked up for the main checkout, whatever worktree the core runs in; a record for
+// the worktree the core runs in counts as well, below the main checkout's at the same scope.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -51,11 +52,14 @@ export function selectInstall(id, root, { runtime = detectRuntime({ scriptPath: 
     readJson(join(main, '.claude', 'settings.local.json'))
   )
   if (settings.enabledPlugins[id] === false) throw absent(`${id} is installed but disabled`, id, 'disabled')
-  // The most specific install wins: local, then project, then user.
+  // The most specific install wins: local, then project, then user. At the same scope the main
+  // checkout's record wins over a worktree's: the update reinstalls in the main checkout, and a
+  // worktree's record may be left from a removed worktree whose path was used again.
   const rank = { local: 0, project: 1, user: 2 }
+  const worktree = (r) => (countsHere(r, main) ? 0 : 1)
   const found = here
     .filter((r) => r.installPath && exists(r.installPath))
-    .sort((a, b) => (rank[a.scope] ?? 2) - (rank[b.scope] ?? 2))[0]
+    .sort((a, b) => (rank[a.scope] ?? 2) - (rank[b.scope] ?? 2) || worktree(a) - worktree(b))[0]
   if (found) return { path: found.installPath, version: found.version ?? null }
   // Project trust enables a plugin with no record of its own; its cache directory is the install.
   if (settings.enabledPlugins[id] === true) {
@@ -65,12 +69,15 @@ export function selectInstall(id, root, { runtime = detectRuntime({ scriptPath: 
   throw absent(`${id} is not installed for this project; run: ${installCommand('claude-code', id, 'project')}; run it from ${main}`, id, 'not-installed')
 }
 
-// The cache directory of the version the marketplace clone lists for the plugin.
+// The cache directory of the version the marketplace clone lists for the plugin, else the only
+// version directory in the cache: a plugin with a git source, such as Superpowers in the official
+// marketplace, is listed with no version.
 function cachedInstall(id, home) {
   const [name, marketplace] = id.split('@')
+  const cache = join(home, 'plugins', 'cache', marketplace, name)
   const listed = readJson(join(home, 'plugins', 'marketplaces', marketplace, '.claude-plugin', 'marketplace.json'))
-  const version = listed?.plugins?.find((p) => p.name === name)?.version
-  return version ? { path: join(home, 'plugins', 'cache', marketplace, name, version), version } : null
+  const version = listed?.plugins?.find((p) => p.name === name)?.version ?? onlyVersion(cache)
+  return version ? { path: join(cache, version), version } : null
 }
 
 // Codex: `[plugins."<id>"] enabled` from the user's config.toml, then the project's own
