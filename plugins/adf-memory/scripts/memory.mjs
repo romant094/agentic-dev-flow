@@ -13,8 +13,9 @@
 //                  [--amend] [--root <dir>]
 //   memory.mjs log --type task --title <t> --commit <sha>[,<sha>] --reason <r> [--amend] [--root <dir>]
 //
-// `log` reads the time from the clock, in UTC, and the author from `git config user.name`;
-// it rotates the log first, then inserts the entry at its timestamp's place. `--amend`
+// `log` reads the time from the clock, in UTC, and the author from `git var GIT_AUTHOR_IDENT`,
+// else from the last commit, and is refused when neither names one; it never sets git's
+// configuration. It rotates the log first, then inserts the entry at its timestamp's place. `--amend`
 // replaces the uncommitted entry with the same title, and is refused when there is none.
 //
 // `check` leaves out the pages the `exclude` globs match, relative to the knowledge base

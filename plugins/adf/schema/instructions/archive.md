@@ -11,7 +11,10 @@ and `<main>` the main checkout, `main` in the preflight's result.
 Every deterministic step is one call of `archive.mjs`, whose header lists what each step reads
 and writes. `archive.mjs` is the only sanctioned executor of archive: if it cannot run, stop and
 report why. Archive stages, moves and deletes nothing by hand: no `git add`, `git mv`, `git rm`
-or `git commit` of your own; the steps commit only the paths they wrote. What stays with the
+or `git commit` of your own; the steps commit only the paths they wrote. Archive changes no git
+configuration either (the `git config` rule under `## Tools` in
+`${CLAUDE_PLUGIN_ROOT}/schema/prompts/frame.md`): a step refused for a missing value, such as a
+git author name, stops; show the refusal, and the developer sets the value. What stays with the
 orchestrator, and with nobody's script:
 
 - the talk with the developer about where each unplaced item goes;

@@ -112,6 +112,18 @@ function removeEntry(text, header) {
   return lines.join('\n')
 }
 
+// The author of a log entry: the name git would write on a commit (`git var GIT_AUTHOR_IDENT`,
+// which reads user.name, GIT_AUTHOR_NAME and the system), else the author of the last commit.
+// Null when neither gives a name fit for the header. The log never sets git's configuration.
+function authorName(git) {
+  const fit = (name) => (name && !name.includes('|') ? name : null)
+  const ident = git(['var', 'GIT_AUTHOR_IDENT'])
+  const fromIdent = ident.status === 0 ? fit(/^(.*?)\s*<[^>]*>/.exec(ident.stdout)?.[1].trim()) : null
+  if (fromIdent) return fromIdent
+  const last = git(['log', '-1', '--format=%an'])
+  return last.status === 0 ? fit(last.stdout.trim()) : null
+}
+
 // input: { type, title, bullets: [string] | commit + reason, amend }. ctx: { now: Date,
 // git(args) -> { status, stdout }, template: the skeleton log.md text }.
 export function log(root, input, { now, git, template }) {
@@ -119,9 +131,8 @@ export function log(root, input, { now, git, template }) {
   if (!oneLine(input.title) || input.title.includes('|')) return refused('title must be one non-empty line without "|"; nothing was written')
   const body = entryBody(input)
   if (body.error) return refused(`${body.error}; nothing was written`)
-  const author = git(['config', 'user.name'])
-  const name = author.status === 0 ? author.stdout.trim() : ''
-  if (!name || name.includes('|')) return refused('git config user.name is not set (or holds "|"); set it, then log again; nothing was written')
+  const name = authorName(git)
+  if (!name) return refused('no git author found: git var GIT_AUTHOR_IDENT and the last commit give no name without "|"; the developer gives git an author name, then log again; nothing was written')
   const title = input.title.trim()
   const dir = join(root, BASE)
   const logPath = join(dir, 'log.md')

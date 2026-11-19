@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFi
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BASE, check, entryBody, globTest, insertEntry, links, sortLog, utcStamp } from '../lib/memory.mjs'
+import { BASE, check, entryBody, globTest, insertEntry, links, log, sortLog, utcStamp } from '../lib/memory.mjs'
 import { main } from '../memory.mjs'
 
 const pluginDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -116,8 +116,34 @@ test('log refuses bad input and writes nothing', () => {
   assert.equal(read(logPath(root)), before)
   const anonymous = host({ name: '' })
   const unnamed = role(anonymous, 'log', { type: 'task', title: 't', bullets: ['b'] }, at('2026-10-19T10:00:00Z'))
-  // A global user.name on the machine running the test would fill it; only assert when unset.
-  if (unnamed.code === 1) assert.match(unnamed.result.error, /git config user\.name is not set/)
+  // The machine's git identity or the init commit names an author; only assert when none does.
+  if (unnamed.code === 1) assert.match(unnamed.result.error, /no git author found/)
+})
+
+test('log takes the author from git var GIT_AUTHOR_IDENT, else the last commit, and never sets git config', () => {
+  const root = host()
+  const template = read(join(pluginDir, 'host', 'log.md'))
+  const input = { type: 'task', title: 't', bullets: ['b'] }
+  const calls = []
+  // A git whose `config` has no user.name; `var` and `log` answer as the case gives.
+  const fake = ({ ident, last }) => (args) => {
+    calls.push(args)
+    if (args[0] === 'var') return ident ? { status: 0, stdout: `${ident} <d@example.com> 1760000000 +0000\n` } : { status: 128, stdout: '' }
+    if (args[0] === 'log') return last ? { status: 0, stdout: `${last}\n` } : { status: 128, stdout: '' }
+    if (args[0] === 'config') return { status: 1, stdout: '' }
+    return { status: 128, stdout: '' }
+  }
+  const now = new Date('2026-10-19T10:00:00Z')
+  const byIdent = log(root, input, { now, git: fake({ ident: 'Ident Person', last: 'Last Author' }), template })
+  assert.equal(byIdent.state, 'done')
+  assert.match(byIdent.entry, / \| t \| Ident Person\n/)
+  const byCommit = log(root, { ...input, title: 'u' }, { now, git: fake({ last: 'Last Author' }), template })
+  assert.match(byCommit.entry, / \| u \| Last Author\n/)
+  const none = log(root, { ...input, title: 'v' }, { now, git: fake({}), template })
+  assert.equal(none.state, 'refused')
+  assert.match(none.error, /no git author found/)
+  assert.doesNotMatch(none.error, /git config/)
+  assert.equal(calls.some((args) => args[0] === 'config'), false)
 })
 
 test('log --amend replaces the uncommitted entry of the same title, and is refused without one', () => {

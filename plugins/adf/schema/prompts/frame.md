@@ -18,6 +18,8 @@ You are dispatched as `{{name}}`, at the {{level}} capability level, for {{subje
   shell variable, no redirect and no here-document. Read a script's JSON from its output.
 - Write no file outside the worktree and the change root this prompt names, except the reply
   file it names.
+- Never run `git config` to set a value: the developer's git configuration is theirs. When a
+  step needs a value that is not set, report it and stop that step.
 - One denied call is not a lost tool: continue with the named scripts, one plain command per
   call. Report `blocked`, naming the script, only when a named script itself is refused.
 - Dispatch every agent in the foreground, and wait for every dispatched agent's reply before

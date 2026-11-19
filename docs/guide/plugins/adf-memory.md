@@ -78,7 +78,7 @@ The `findings` of `check` are `unindexed`, `broken-link`, `malformed-header`, `o
 
 ## The log
 
-- The header is `## [YYYY-MM-DD HH:MM] <type> | <title> | <author>`. The time is UTC. The script reads it from the clock; you never type it. The author is `git config user.name`. With none set, `log` is refused.
+- The header is `## [YYYY-MM-DD HH:MM] <type> | <title> | <author>`. The time is UTC. The script reads it from the clock; you never type it. The author is the name that git writes on a commit, from `git var GIT_AUTHOR_IDENT`: `user.name`, `GIT_AUTHOR_NAME` or the system. With no such name, the author is the author of the last commit. With neither, `log` is refused, and you give git an author name yourself. The flow never runs `git config` to set a value.
 - Every `log` call rotates first. Entries from a month before the current UTC month move to `log-archive/YYYY-MM.md`, newest first, each copied once. The script creates the directory when it is missing. A legacy header with a zone suffix, such as `[2026-07-13 15:40 +03]`, starts an entry too.
 - The entry goes below the heading and its rotation note, at the place of its timestamp: above the first entry that is not newer. `check` reports a log whose order a merge broke.
 - An entry has no blank line inside it. `log` refuses a bullet that holds one.

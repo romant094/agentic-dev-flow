@@ -53,6 +53,8 @@ The command ends with a report. It names each step that is not finished and the 
 
 The command never merges a merge request. You merge it.
 
+The command never runs `git config` to set a value. When a step needs a value that is not set, for example a git author name for the log entry of the ingest, the step stops and shows the refusal. You set the value, then run `/adf:archive` again.
+
 ## A quick change
 
 A quick change ends in the same steps. Its `check` step also needs text under `## Summary` in `quick.md`. It checks no spec base. The `merge` step is skipped, with the reason `quick task`. The `placements` step runs as usual and resolves the debt the change took. The `mr` body comes from the goal, the summary and the plan. Its test section comes from the check lines of the plan and from the record of the affected tests.
