@@ -50,7 +50,7 @@ The command filters the candidates before it makes a branch. It excludes these:
 
 It never excludes a key that you named. It flags that item as too large, and you decide. When no candidate is left, it offers `/adf:propose` and stops.
 
-Then one read-only agent, `quick-estimate`, estimates every candidate. For each one it names the files of the fix and says whether the fix changes behaviour. It gives a `fit`: `quick` or `propose`. For a tracker issue it also gives a verdict: `current`, `corrected` or `obsolete`. A script checks the reply. The agent gets one retry. After a second refusal, the candidates go to `/adf:propose`.
+Then one read-only agent, `quick-estimate`, estimates every candidate. For each one it names the files of the fix and says whether the fix changes behaviour. It gives a `fit`: `quick` or `propose`. For a tracker issue it also gives a verdict: `current`, `corrected` or `obsolete`. A `corrected` verdict lists each correction as one text. The start comment names each one once. A script checks the reply. The agent gets one retry. After a second refusal, the candidates go to `/adf:propose`.
 
 The command shows each item with its `fit`, its reason and its files. You select the items to take. An item with `fit` `propose` goes to `/adf:propose`. This command never takes it. A behaviour change is always a `propose`, whatever the agent marked.
 

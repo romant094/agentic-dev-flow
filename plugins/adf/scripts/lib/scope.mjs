@@ -761,9 +761,12 @@ export function answer(root, change, { key, question = null, text: given = null,
 
 const cell = (value) => String(value ?? '').replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|')
 
+// A correction with no subject, or one equal to the correction (a quick estimate's), is named once.
 function noteOf(item) {
   const parts = []
-  for (const c of item.check?.corrections ?? []) parts.push(`corrected: ${c.what}${c.was ? ` (was ${c.was})` : ''}, now ${c.now}`)
+  for (const c of item.check?.corrections ?? []) {
+    parts.push(c.what && c.what !== c.now ? `corrected: ${c.what}${c.was ? ` (was ${c.was})` : ''}, now ${c.now}` : `corrected: ${c.now}${c.was ? ` (was ${c.was})` : ''}`)
+  }
   for (const q of item.check?.questions ?? []) parts.push(`asked: ${q.question}${q.answer ? ` answered: ${q.answer}` : ''}`)
   return parts.join('; ')
 }

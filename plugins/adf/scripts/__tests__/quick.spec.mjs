@@ -168,7 +168,7 @@ test('estimate-check records the verdicts that scope.mjs start requires', () => 
   assert.equal(quick(root, 'estimate-check', '--change', 'fix-it', '--file', reply(root, body)).ok, true)
   const item = stateOf(root, 'P-3')
   assert.equal(item.verdict, 'corrected')
-  assert.deepEqual(item.check.corrections, [{ what: 'the pool closes on reconnect', was: '', now: 'the pool closes on reconnect' }])
+  assert.deepEqual(item.check.corrections, [{ what: '', was: '', now: 'the pool closes on reconnect' }])
   // start now passes the verdict check; it stops at the missing worktree, which a later step makes.
   assert.throws(start, /start runs after the branch and the worktree exist/)
 })

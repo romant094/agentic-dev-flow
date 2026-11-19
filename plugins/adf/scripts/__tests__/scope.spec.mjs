@@ -206,6 +206,12 @@ test('gather returns resolved debt as precedents, never as items; check-input gi
   assert.match(section, /\| snmp-05 \| debt \| Pool reconnect drops the session \| taken \|.*\n\nPrecedent: snmp-02, Trailing index parsed twice, resolved by `openspec\/changes\/archive\/2026-10-01-fix-index` on 2026-10-01\.\nPrecedent: snmp-04, Session pool reconnect leaks sockets, resolved by `openspec\/changes\/archive\/2026-10-02-fix-old-pool` on 2026-10-02\.$/)
 })
 
+test('render names a correction once when it has no subject of its own, or one equal to the correction', () => {
+  const check = { corrections: [{ what: '', was: '', now: 'the pool closes on reconnect' }, { what: 'the unit', was: '', now: 'the unit' }, { what: 'unit', was: 'count', now: 'gauge' }], questions: [] }
+  const section = renderSection({ tracker: { state: 'done', plugin: 'adf-jira' }, items: [{ key: 'P-3', source: 'tracker', title: 'Pool', state: 'taken', reason: null, verdict: 'corrected', check }] })
+  assert.match(section, /\| P-3 \| tracker \| Pool \| taken \| {2}\| corrected \| corrected: the pool closes on reconnect; corrected: the unit; corrected: unit \(was count\), now gauge \|$/m)
+})
+
 test('keys gather the tracker items, the debt holding a key, and a change in flight holding one; a flag is shown once', () => {
   const root = host()
   mkdirSync(join(root, 'openspec', 'changes', 'other-change'), { recursive: true })

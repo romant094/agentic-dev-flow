@@ -147,11 +147,18 @@ export function renderComment(template, state, fields, mr) {
 
 // The correction comment of a start item: one line per correction (`what: now (was was)`) and
 // one per answered question (`question — answer`), whitespace folded so each stays one list line.
+// A correction with no subject, or one equal to the correction (the quick estimate gives one
+// text), is named once: `now (was was)`.
 const oneLine = (text) => String(text ?? '').replace(/\s+/g, ' ').trim()
+
+function correctionLine({ what, was, now }) {
+  const subject = oneLine(what) && oneLine(what) !== oneLine(now) ? `${oneLine(what)}: ` : ''
+  return `${subject}${oneLine(now)}${oneLine(was) ? ` (was ${oneLine(was)})` : ''}`
+}
 
 export function renderCorrection(template, corrections = [], answers = []) {
   const values = {
-    corrections: corrections.map(({ what, was, now }) => `${oneLine(what)}: ${oneLine(now)}${oneLine(was) ? ` (was ${oneLine(was)})` : ''}`),
+    corrections: corrections.map(correctionLine),
     answers: answers.map(({ question, answer }) => `${oneLine(question)} — ${oneLine(answer)}`)
   }
   return renderSection(template.corrected, values, CORRECTION.lists)

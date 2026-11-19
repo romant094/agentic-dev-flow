@@ -168,7 +168,8 @@ export function estimateCheck(root, change, { file }) {
     const item = scope.items.find((i) => i.key === r.key)
     if (item.source !== 'tracker' || r.verdict === undefined) continue
     // The check `answer` and `start` read: no question, the corrections as the verdict gave them.
-    item.check = { verdict: r.verdict, requirements: [], bug: null, corrections: (r.corrections ?? []).map((c) => ({ what: c, was: '', now: c })), questions: [], checked: [], reply: `.superpowers/sdd/${change}/quick/estimate.json` }
+    // A quick correction is one text: it is the correction's `now`, with no subject (`what`).
+    item.check = { verdict: r.verdict, requirements: [], bug: null, corrections: (r.corrections ?? []).map((c) => ({ what: '', was: '', now: c })), questions: [], checked: [], reply: `.superpowers/sdd/${change}/quick/estimate.json` }
     item.verdict = null
   }
   writeScope(main, change, scope)

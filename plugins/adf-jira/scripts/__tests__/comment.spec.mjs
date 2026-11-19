@@ -2,7 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { checkFields, checkMr, escapeWiki, loadTemplate, parseTemplate, renderComment } from '../lib/comment.mjs'
+import { checkFields, checkMr, escapeWiki, loadCorrectionTemplate, loadTemplate, parseTemplate, renderComment, renderCorrection } from '../lib/comment.mjs'
 
 const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const template = loadTemplate({ root: '/nowhere', pluginRoot: PLUGIN_ROOT })
@@ -90,5 +90,18 @@ describe('checkMr', () => {
     assert.deepEqual(checkMr(MR), [])
     assert.equal(checkMr(undefined).length, 1)
     assert.equal(checkMr({ url: 'not a url' }).length, 1)
+  })
+})
+
+describe('renderCorrection', () => {
+  const corrections = loadCorrectionTemplate({ root: '/nowhere', pluginRoot: PLUGIN_ROOT })
+
+  it('names a correction once when it has no subject of its own, as the quick estimate gives it', () => {
+    const body = renderCorrection(corrections, [{ what: '', was: '', now: 'The anchor moved to b.ts:49.' }, { what: 'The anchor moved.', was: '', now: 'The anchor moved.' }])
+    assert.equal(body, 'h3. Corrected before the work started\n# The anchor moved to b.ts:49.\n# The anchor moved.')
+  })
+
+  it('keeps the subject and the old value of a full correction', () => {
+    assert.equal(renderCorrection(corrections, [{ what: 'The port range', was: '1-65535', now: '1-65534' }]), 'h3. Corrected before the work started\n# The port range: 1-65534 (was 1-65535)')
   })
 })
