@@ -108,6 +108,16 @@ test('the copy candidates are the ignored .env files of the main checkout, never
   assert.deepEqual(copyCandidates(root), ['apps/server/.env.local'])
 })
 
+test('in a worktree the copy candidates are the main checkout\'s, less those the worktree\'s guide names', () => {
+  const root = repo({ '.gitignore': '.env*\n.claude/worktrees/\n' })
+  write(root, { '.env': 'X=1\n', 'apps/.env.local': 'Y=1\n' })
+  const tree = join(root, '.claude', 'worktrees', 'switch')
+  git(root, 'worktree', 'add', '-q', '-b', 'switch', tree)
+  assert.deepEqual(copyCandidates(tree), ['.env', 'apps/.env.local'])
+  writeCopies(tree, ['.env'])
+  assert.deepEqual(copyCandidates(tree), ['apps/.env.local'])
+})
+
 test('the copy scan collapses an ignored directory: none of its files is listed, a nested .env in a tracked directory is', () => {
   const root = repo({ '.gitignore': '.env*\nnode_modules/\nvendor/\n', 'apps/server/index.js': '\n' })
   write(root, { 'apps/server/.env': 'X=1\n', 'vendor/.env': 'V=1\n' })
