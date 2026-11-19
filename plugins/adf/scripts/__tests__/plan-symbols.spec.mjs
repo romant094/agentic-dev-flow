@@ -389,6 +389,18 @@ test('a ticked task is skipped only under --phase apply', async () => {
   assert.equal((await checkPlanSymbols(open)).length, 1)
 })
 
+// #55: a plan revised after a task is done keeps that task's Create, the record of what it did.
+test('propose checks no Create of a done task; its other lines and an open task\'s Create are checked', async () => {
+  const plan = `${task(1, '- Create: `src/made.ts` — x\n- Modify: `src/gone.ts` — y')}\n${task(2, '- Create: `src/also.ts` — z')}`
+  const tasks = '- [x] 1.1 done\n- [ ] 2.1 open'
+  const fs = { 'src/made.ts': 'made', 'src/also.ts': 'there' }
+  assert.deepEqual(await checkPlanSymbols(world({ plan, tasks, fs, phase: 'propose' })), [
+    'Task 1: Modify src/gone.ts — path does not exist',
+    'Task 2: Create src/also.ts — path already exists'
+  ])
+  assert.deepEqual(await checkPlanSymbols(world({ plan, tasks, fs })), await checkPlanSymbols(world({ plan, tasks, fs, phase: 'propose' })))
+})
+
 test("apply exempts a Create in the branch's added files and a range on its modified files; propose does not", async () => {
   const plan = task(
     1,
