@@ -95,8 +95,8 @@ metric defects as findings of the flow, and deferred a decision because of them:
   deferred to the developer.
 - The commands the core prints for the agent (`node "<script>" ...`) and the host's own commands
   (the planning guide's format command, a teardown script): the agent's shell or the host runs
-  them, with its own `PATH`. The `record` and `remove` failures named in #44 came from that
-  `PATH`, not from the core; they stay open as a host setup note.
+  them, with its own `PATH`. The `record` failure named in #44 came from that `PATH`, not from
+  the core; it stays open as a host setup note.
 - `scripts/parity/`: retired since iteration 16, kept as the record of what was compared.
 - Splitting the orchestrator's records between two trees that ran at the same time.
 
@@ -108,3 +108,44 @@ metric defects as findings of the flow, and deferred a decision because of them:
 | 2 | #49: `lateCaught` counts a `rule` review as passed, and names the ruled tasks | `retro.spec.mjs` |
 | 3 | #47: the change's agent tree for a shared session (scope `tree`), none with a reason when it cannot be found; the window's `sharedSession` for the records already written; the format and the metrics guide page | `transcripts.spec.mjs`, `window.spec.mjs` |
 | 4 | The whole suite, the guide check | `npm test` |
+
+## Result
+
+Each fix was written test first: the new test failed on the code before the fix and passed
+after it.
+
+- **#44.** `lib/roles.mjs` `runProvider` runs a provider with `process.execPath`; the contract's
+  calling convention says so. Proved by `roles.spec.mjs` "a provider runs with the node that runs
+  the core, not the node on PATH", which empties `PATH`. `lib/retro-run.mjs` `windowStep` fails on
+  a `refused` or `degraded` knowledge call, with the provider's error and the reason, and writes
+  no sidecar, input or dispatch; a rerun after the provider answers is `done`. Proved by
+  `retro-cli.spec.mjs` "window fails on a refused or degraded knowledge call ...". The retro
+  instructions, the retro skill and the guide page `cycle/retro.md` say what to do.
+- **#49.** `lib/retro.mjs` `lateCaught` counts a task whose last accepted review or re-review is
+  `rule` as passed, and names those tasks in `ruled`; a later re-review still decides. Proved by
+  the added cases of `retro.spec.mjs` "signals: a task review left open counts nothing late ...".
+  The issue's stricter form (every finding of the review ruled in the ledger) is not read: the
+  designer's call above.
+- **#47.** `lib/transcripts.mjs`: a session with no record on the change branch whose dispatched
+  agents also worked on another change is measured as the change's agent trees and the
+  orchestrator's records made while they ran (scope `tree`); with no tree of the change, or a
+  tree that also worked on another change, the change's transcripts are `null` with the reason.
+  A session that ran no other change's agents is measured whole, as before. Proved by three
+  tests of `transcripts.spec.mjs` on a two-change orchestrator fixture. `lib/window.mjs` drops
+  the transcript figures of a change whose `session`-scope session another archived record holds
+  (`sharedSession`), for the records written before this fix; a `tree` share stays. Proved by
+  `window.spec.mjs` "a session counted whole that another record also holds ...". The format
+  (`contract/metrics-format.md`) and the guide page `concepts/metrics.md` name the new scope and
+  the rule; the schema is unchanged, so every older record stays valid. The lesson evidence of
+  `readSubagents` (`docs/lessons/metrics.md`) follows its new signature.
+
+Checks: `npm test` green at every commit; at the last fix 1840 tests, 1835 passed, 0 failed,
+5 skipped; `check-lessons.mjs`, `check-release.mjs` and `check-guide.mjs` with no error.
+
+Open:
+
+- The `remove` failure named in #44, the `adf-postgres` teardown, ran through the same
+  `runProvider` and is fixed with it. The `record` failure came from the planning guide's format
+  command, a host command run with the shell's `PATH`; the core does not choose its `node`. A
+  host whose node comes from a version manager must put it on `PATH` for non-interactive shells.
+- #36 and #46 are deferred to the developer.
