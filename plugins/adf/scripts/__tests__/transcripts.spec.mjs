@@ -279,3 +279,74 @@ test('a skill invocation is marked like a command', () => {
   assert.deepEqual(commandsOf(records), [{ at: '2026-11-04T10:24:52.479Z', name: 'adf:init' }])
   assert.deepEqual(autonomyOf(records), { developerMessages: 0, askUserQuestion: 0, clears: 0 })
 })
+
+// One orchestrator session on develop in the main checkout runs several changes, each through a
+// dispatched agent ("Quick <issue> end to end") whose own dispatches name the change's worktree
+// or run on its branch. Each change's ledger names the session: a dispatched agent ran the
+// preflight in it.
+function orchestrator(trees) {
+  const dir = mkdtempSync(join(tmpdir(), 'adf-transcripts-'))
+  const write = (file, text) => {
+    mkdirSync(join(dir, MAIN, ...file.split('/').slice(0, -1)), { recursive: true })
+    writeFileSync(join(dir, MAIN, file), text)
+  }
+  const dev = { branch: 'develop' }
+  write('o1.jsonl', jsonl([
+    user('2026-10-07T10:00:00.000Z', 'run the quick fixes A and B', dev),
+    assistant('o-before', '2026-10-07T10:01:00.000Z', usage({ output: 1, thinking: 0 }), dev),
+    assistant('o-a', '2026-10-07T10:10:00.000Z', usage({ output: 2, thinking: 0 }), dev),
+    assistant('o-b', '2026-10-07T10:30:00.000Z', usage({ output: 3, thinking: 0 }), dev),
+    assistant('o-after', '2026-10-07T10:50:00.000Z', usage({ output: 4, thinking: 0 }), dev)
+  ]))
+  for (const [id, { parent = null, description, from, to, prompt = 'go', branch = 'develop' }] of Object.entries(trees)) {
+    write(`o1/subagents/agent-${id}.meta.json`, JSON.stringify({ agentType: 'general-purpose', description, ...(parent ? { parentAgentId: parent } : {}) }))
+    write(`o1/subagents/agent-${id}.jsonl`, jsonl([
+      { ...user(from, prompt, { branch }), isSidechain: true, cwd: REPO },
+      assistant(`m-${id}`, to, usage({ output: 10, thinking: 0 }), { branch, sidechain: true })
+    ]))
+  }
+  return dir
+}
+
+const TWO_CHANGES = {
+  qa: { description: 'Quick A end to end', from: '2026-10-07T10:05:00.000Z', to: '2026-10-07T10:20:00.000Z' },
+  ta: { parent: 'qa', description: 'T1 review', from: '2026-10-07T10:08:00.000Z', to: '2026-10-07T10:12:00.000Z', prompt: `Worktree: ${REPO}/.claude/worktrees/feat-a\nReview T1.` },
+  qb: { description: 'Quick B end to end', from: '2026-10-07T10:25:00.000Z', to: '2026-10-07T10:40:00.000Z' },
+  tb: { parent: 'qb', description: 'T1 review', from: '2026-10-07T10:28:00.000Z', to: '2026-10-07T10:35:00.000Z', branch: 'feat/b' }
+}
+const sharedLedger = (at) => [{ id: 'session-1', kind: 'session', at, sessionId: 'o1', phase: 'quick' }]
+const readChange = (dir, name, branch, at = '2026-10-07T10:06:00.000Z') =>
+  readTranscripts({ repoPath: `${REPO}/.claude/worktrees/${name}`, commonDir: `${REPO}/.git`, branch, base: 'develop', ledger: sharedLedger(at), projectsDir: dir })
+
+test('a shared orchestrator session counts only the change\'s agent tree and the orchestrator turns made while it ran', () => {
+  const dir = orchestrator(TWO_CHANGES)
+  const a = readChange(dir, 'feat-a', BRANCH)
+  assert.equal(a.reason, null)
+  const [o1] = a.value.sessions
+  assert.deepEqual([o1.id, o1.source, o1.scope], ['o1', 'ledger', 'tree'])
+  assert.deepEqual(o1.responses.map((r) => r.id), ['o-a'], 'the orchestrator turns of the tree\'s span only')
+  assert.deepEqual(o1.subagents.map((s) => [s.agentId, s.description, s.responses.length]), [['qa', 'Quick A end to end', 1], ['ta', 'T1 review', 1]])
+  assert.deepEqual([o1.first, o1.last], ['2026-10-07T10:10:00.000Z', '2026-10-07T10:10:00.000Z'])
+  // Change B's tree is found by its branch.
+  const b = readChange(dir, 'feat-b', 'feat/b', '2026-10-07T10:26:00.000Z')
+  assert.deepEqual(b.value.sessions[0].subagents.map((s) => s.agentId), ['qb', 'tb'])
+  assert.deepEqual(b.value.sessions[0].responses.map((r) => r.id), ['o-b'])
+})
+
+test('a shared session with no agent tree of the change, or a tree that also worked on another change, gives no transcript figures', () => {
+  const c = readChange(orchestrator(TWO_CHANGES), 'feat-c', 'feat/c')
+  assert.equal(c.value, null)
+  assert.equal(c.reason, 'session o1 is shared with other changes (feat-a, feat/b), and no agent tree of it worked on this change')
+  const mixed = orchestrator({ ...TWO_CHANGES, tx: { parent: 'qa', description: 'T2 review', from: '2026-10-07T10:14:00.000Z', to: '2026-10-07T10:15:00.000Z', prompt: `Worktree: ${REPO}/.claude/worktrees/feat-b` } })
+  const a = readChange(mixed, 'feat-a', BRANCH)
+  assert.equal(a.value, null)
+  assert.equal(a.reason, 'session o1 is shared with other changes (feat-b, feat/b), and the agent tree of qa worked on another change too')
+})
+
+test('a session off the change branch that ran no other change\'s agents is measured whole, as before', () => {
+  const { qa, ta } = TWO_CHANGES
+  const [o1] = readChange(orchestrator({ qa, ta }), 'feat-a', BRANCH).value.sessions
+  assert.equal(o1.scope, 'session')
+  assert.deepEqual(o1.responses.map((r) => r.id), ['o-before', 'o-a', 'o-b', 'o-after'])
+  assert.deepEqual(o1.subagents.map((s) => s.agentId), ['qa', 'ta'])
+})

@@ -24,6 +24,7 @@ The rules of the record:
 - A value that the flow could not read is `null`, never `0`. The key `sources.coverage` names each group of the record as `"record"` or as `{ "none": "<reason>" }`.
 - The git figures come from the commits between the merge base and `HEAD` of the change branch. The working tree is not read.
 - A reason names the checkout as `.` and the home directory as `~`.
+- One session can run several changes through dispatched agents. Then the record of a change counts only the agents that worked on that change, and the turns of the session made while they ran. The record finds these agents by the branch or the worktree of the change. When it cannot find them, every transcript group is `null`, and its coverage entry names the shared session. The retrospective also leaves out the transcript figures of an older record that counted a shared session whole.
 
 The key `cycle` names the cycle of the change: `full` or `quick`. A record without `cycle` is a full change. For a quick change, `timing.tasks` counts the numbered steps of `quick.md`. The groups `verify` and `impl` are `null`, and their coverage entries read `quick task: no verify` and `quick task: no impl`. The phases of a quick change are `gather`, `estimate`, `code`, `tests`, `review` and `end`.
 
