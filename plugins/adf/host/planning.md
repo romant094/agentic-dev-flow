@@ -39,6 +39,14 @@ and records the result; apply's whole-suite command stays the proof for any othe
 leave it empty, and a quick task asks for the command. /adf:init proposes a command and writes
 the one the developer confirms. -->
 
+## Failed-tests command
+
+<!-- Optional. The one command, in backticks, that runs only the tests it is given, with `{tests}`
+where their names go, for example `npx vitest run {tests}`. When the whole suite fails, the flow
+checks each failure on the change's base after the run; with this command it runs only the
+tests that failed, each name quoted, instead of the whole suite a second time. Delete the
+section, or leave it empty, to run the whole suite on the base. -->
+
 ## Fresh-run proof
 
 <!-- One line, in backticks, that the whole-suite output contains only when nothing was replayed

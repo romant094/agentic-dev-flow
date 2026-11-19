@@ -609,7 +609,8 @@ cached.
 It is the whole suite, not the parts this change touched: this is the only point where a
 cross-group regression shows, since two groups green in isolation can merge red. A failure
 blocks unless it also fails on the change's base. `--base-check` checks that in a throwaway
-worktree of the base, never by stashing, made as `workspace.mjs base-check-add --change <change>
+worktree of the base, never by stashing, after the main run and, when the planning guide has a
+`## Failed-tests command`, on the failed tests alone, made as `workspace.mjs base-check-add --change <change>
 --root <root>` makes it and removed, never forced; `preExisting` failures are named as separate
 work and do not block, `newFailures` pause apply like any other implementation issue, and a
 base that cannot run the command blocks until the developer rules. When the runner's names

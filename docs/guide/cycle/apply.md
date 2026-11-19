@@ -68,6 +68,8 @@ The command pushes the change branch through the forge plugin after each group m
 
 When the project has no whole-suite command in `openspec/planning.md`, the command finds one with you and records it.
 
+When the whole suite fails, the command runs it again on the base branch after the main run, to find the failures that are not new. When `openspec/planning.md` has a `## Failed-tests command` with `{tests}`, the command runs only the failed tests on the base.
+
 The command waits for the whole suite in the foreground, for up to 10 minutes. Only a suite that is known to take longer runs in the background. The command never schedules a wakeup, so a headless session ends when its work ends.
 
 ## How it resumes

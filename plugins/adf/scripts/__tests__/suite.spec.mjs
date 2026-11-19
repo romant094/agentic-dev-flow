@@ -27,6 +27,8 @@ const changeFile = (file) => `openspec/changes/${CHANGE}/${file}`
 // `+junk` suffix leaves an untracked file behind, which makes git refuse to remove a worktree.
 const FAKE_SUITE = `import { readFileSync, writeFileSync } from 'node:fs'
 const [mode, extra] = readFileSync('mode.txt', 'utf8').trim().split('+')
+const picked = process.argv.slice(2)
+if (picked.length) console.log('SELECTED ' + picked.join(' '))
 if (extra === 'junk') writeFileSync('junk.txt', 'x')
 console.log('MARKER-RAW-OUTPUT')
 if (mode === 'anon') { console.error('Error: boom'); process.exit(1) }
@@ -56,7 +58,7 @@ if (mode.startsWith('spec:')) {
   for (const name of names) console.log('\u2716 ' + name + ' (0.2ms)')
   process.exit(1)
 }
-const failing = mode.startsWith('fail:') ? mode.slice(5).split(',') : []
+const failing = (mode.startsWith('fail:') ? mode.slice(5).split(',') : []).filter((name) => !picked.length || picked.includes(name))
 console.log('TAP version 13')
 console.log('ok 1 - stays')
 failing.forEach((name, i) => console.log('not ok ' + (i + 2) + ' - ' + name))
@@ -238,6 +240,24 @@ test('a failure that also fails on the base is pre-existing; a partial overlap b
   const partial = host({ baseMode: 'fail:a', headMode: 'fail:a,b' })
   const p = runSuite(partial.root, { change: CHANGE, baseCheck: true })
   assert.deepEqual([p.preExisting, p.newFailures, p.blocking], [['a'], ['b'], true])
+})
+
+// #54: the base check runs after the main run, on the failed tests alone when the runner can
+// select them, so it never doubles the load of a whole run.
+test('the base check runs the failed tests alone when the guide gives a failed-tests command', () => {
+  const { main, root } = host({ baseMode: 'fail:a,c', headMode: 'fail:a,b' })
+  commit(root, { 'openspec/planning.md': `${readFileSync(join(main, 'openspec/planning.md'), 'utf8')}\n## Failed-tests command\n\n\`node suite.mjs {tests}\`\n` }, 'guide')
+  const r = runSuite(root, { change: CHANGE, baseCheck: true })
+  assert.deepEqual(r.base.selected, ['a', 'b'])
+  assert.match(readFileSync(join(root, r.base.outputFile), 'utf8'), /^SELECTED a b$/m)
+  assert.doesNotMatch(readFileSync(join(root, r.outputFile), 'utf8'), /SELECTED/)
+  assert.deepEqual([r.base.failing, r.preExisting, r.newFailures, r.status], [['a'], ['a'], ['b'], 'fail'])
+  // A main run that names no failing test leaves nothing to select: the whole command runs.
+  const anon = host({ baseMode: 'anon', headMode: 'anon' })
+  commit(anon.root, { 'openspec/planning.md': `${readFileSync(join(anon.main, 'openspec/planning.md'), 'utf8')}\n## Failed-tests command\n\n\`node suite.mjs {tests}\`\n` }, 'guide')
+  const whole = runSuite(anon.root, { change: CHANGE, baseCheck: true })
+  assert.equal(whole.base.selected, undefined)
+  assert.doesNotMatch(readFileSync(join(anon.root, whole.base.outputFile), 'utf8'), /SELECTED/)
 })
 
 test('a base that fails at scale on one environment error is environment-broken, never pre-existing', () => {
