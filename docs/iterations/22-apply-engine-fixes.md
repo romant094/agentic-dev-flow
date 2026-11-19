@@ -94,6 +94,11 @@ before the iteration began, and the rest during it.
 
 Decided during the iteration:
 
+- **#27, #43.** The main checkout's fast-forward is read from its HEAD reflog: every entry since
+  the snapshot's HEAD says `Fast-forward` (`git pull`, `git merge --ff-only`). A commit made in the
+  main checkout also moves HEAD forward, and the reflog is what tells the two apart. A branch
+  switch on one commit, which the guard did not see before, is now a move, where the snapshot
+  recorded the branch.
 - **#28.** The ledger accepts `--as fix` for a `U<n>`; a sweep finding is still never ruled fix.
   A `U<n>` ruled fix leaves `unverifiable` and enters `open` until a re-review answers it as
   addressed; the re-review's `previous` takes a `U<n>` id. It is rendered as

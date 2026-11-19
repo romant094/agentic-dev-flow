@@ -126,7 +126,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs" compare --change <change> --root 
 ```
 
 `ok` false means a dispatch wrote outside its worktree, into the main checkout, a sibling's
-worktree or another change's: STOP apply and show `changed`. Three times an implementer wrote
+worktree or another change's: STOP apply and show `changed`. `foreign` lists the moves the round
+could not cause, each with its `reason`: a commit or an edit in the worktree of another active
+change, made by the session that drives it, and a fast-forward of a protected branch in the main
+checkout. They do not stop the round and need no deviation; name them in the report. Three times an implementer wrote
 where it was not sent, and nothing noticed but a refused merge and a crashed server. One
 snapshot is open at a time, so no orchestrator write (a tick, a merge) happens inside a round.
 

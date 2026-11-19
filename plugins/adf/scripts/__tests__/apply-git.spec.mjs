@@ -104,13 +104,42 @@ test('the guard passes a dispatch that wrote only in its target, and names any o
   const watched = snapshot(change, { change: 'add-x', targets: [group.root] }).watched.sort()
   assert.deepEqual(watched, [change, root].sort())
   commitIn(group.root, 'g.txt', 'g\n')
-  assert.deepEqual(compare(change, { change: 'add-x' }), { ok: true, targets: [group.root], changed: [] })
+  assert.deepEqual(compare(change, { change: 'add-x' }), { ok: true, targets: [group.root], changed: [], foreign: [] })
   writeFileSync(join(root, 'stray.txt'), 'x\n')
   const after = compare(change, { change: 'add-x' })
   assert.equal(after.ok, false)
   assert.deepEqual(after.changed.map((c) => c.root), [root])
   assert.throws(() => compare(change, { change: 'other' }), /no snapshot/)
   assert.throws(() => snapshot(change, { change: 'add-x', targets: [] }), /dispatch targets/)
+})
+
+// #27, #43: a move the round could not cause is reported as foreign, not as a change.
+test('the guard reports a commit in another change\'s worktree and a fast-forward of the main checkout as foreign', () => {
+  const { root, change } = host()
+  const other = create(root, { change: 'add-b', branch: 'feat/add-b', base: 'integration' }).root
+  mkdirSync(join(other, 'openspec/changes/add-b'), { recursive: true })
+  commitIn(other, 'openspec/changes/add-b/tasks.md', '- [ ] 1.1 b\n')
+  const stray = create(root, { change: 'fix-y', branch: 'fix/fix-y', base: 'integration' }).root
+  snapshot(change, { change: 'add-x', targets: [change] })
+  // Another session commits in its change's worktree, and edits there; a pull fast-forwards develop.
+  commitIn(other, 'b.txt', 'b\n')
+  writeFileSync(join(other, 'wip.txt'), 'w\n')
+  git(root, 'merge', '-q', '--ff-only', 'feat/add-b')
+  const after = compare(change, { change: 'add-x' })
+  assert.deepEqual([after.ok, after.changed], [true, []])
+  assert.deepEqual(after.foreign.map((f) => f.root).sort(), [other, root].sort())
+  assert.match(after.foreign.find((f) => f.root === other).reason, /another active change: add-b/)
+  assert.match(after.foreign.find((f) => f.root === root).reason, /fast-forward of develop/)
+  // A commit in the main checkout, a commit in a worktree of no change, and a branch switch in
+  // another change's worktree are not foreign: the round may have made them.
+  snapshot(change, { change: 'add-x', targets: [change] })
+  commitIn(root, 'm.txt', 'm\n')
+  commitIn(stray, 's.txt', 's\n')
+  git(other, 'checkout', '-q', '-b', 'feat/elsewhere')
+  const caught = compare(change, { change: 'add-x' })
+  assert.equal(caught.ok, false)
+  assert.deepEqual(caught.changed.map((c) => c.root).sort(), [other, root, stray].sort())
+  assert.deepEqual(caught.foreign, [])
 })
 
 test('a worktree with no readable change is listed as unresolved, never dropped', () => {
