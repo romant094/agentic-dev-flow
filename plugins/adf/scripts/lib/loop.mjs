@@ -8,17 +8,18 @@
 //   ledger.mjs ruling --change <c> --subject <subject> --finding <id> --as accepted|dismissed|fix
 //                     --decision "<why>"
 //
-// accepted and dismissed close the item; fix sends a plan-mandated finding, or a deferred one,
-// into the fix loop. The last ruling of an id wins.
+// accepted and dismissed close the item; fix sends a plan-mandated finding, a deferred one or an
+// unverifiable item into the fix loop. The last ruling of an id wins.
 //
 // loopState(history, rulings): the subject's
-//   open          the last result's open set, plus each finding ruled fix that no re-review has
-//                 addressed, less the ones ruled accepted or dismissed: what the next fix
-//                 fixes and its re-review answers;
+//   open          the last result's open set, plus each finding or unverifiable item ruled fix
+//                 that no re-review has addressed, less the ones ruled accepted or dismissed:
+//                 what the next fix fixes and its re-review answers;
 //   toRule        every plan-mandated finding of the history no ruling names (a re-review does
 //                 not carry them forward, so they are collected from every result);
-//   unverifiable  every item a review could not verify, U<k> in log order, not yet accepted or
-//                 dismissed (a defect found while checking one is a new review's finding);
+//   unverifiable  every item a review could not verify, U<k> in log order, not yet ruled (a
+//                 defect found while checking one is a new review's finding); `checks` holds
+//                 them all, ruled or not, for the prompts;
 //   state         unreviewed (no result) | rule (toRule or unverifiable left) | fix (open left)
 //                 | clean.
 //
@@ -87,19 +88,19 @@ export function subjectRulings(records, subject, since = null) {
 }
 
 export function loopState(history, rulings = new Map()) {
-  if (history.length === 0) return { state: 'unreviewed', findings: [], open: [], toRule: [], unverifiable: [], addressed: [] }
+  if (history.length === 0) return { state: 'unreviewed', findings: [], open: [], toRule: [], unverifiable: [], checks: [], addressed: [] }
   const findings = new Map(history.flatMap((r) => r.findings ?? []).map((f) => [f.id, f]))
+  const checks = history.flatMap((r) => r.unverifiable ?? []).map((u, i) => ({ id: `U${i + 1}`, ...u }))
   const addressed = new Set(history.flatMap((r) => r.addressed ?? []))
   const as = (id) => rulings.get(id)?.as
-  const ruledFix = [...rulings.keys()].filter((id) => as(id) === 'fix' && findings.has(id) && !addressed.has(id))
+  const known = (id) => findings.has(id) || checks.some((u) => u.id === id)
+  const ruledFix = [...rulings.keys()].filter((id) => as(id) === 'fix' && known(id) && !addressed.has(id))
   const open = unique([...history.at(-1).open, ...ruledFix]).filter((id) => !CLOSING.includes(as(id)))
   const toRule = unique(history.flatMap((r) => r.toRule ?? [])).filter((id) => !rulings.has(id))
-  const unverifiable = history
-    .flatMap((r) => r.unverifiable ?? [])
-    .map((u, i) => ({ id: `U${i + 1}`, ...u }))
-    .filter((u) => !CLOSING.includes(as(u.id)))
+  // An item ruled fix is the fix loop's, in `open`, until a re-review answers it.
+  const unverifiable = checks.filter((u) => !rulings.has(u.id))
   const state = toRule.length || unverifiable.length ? 'rule' : open.length ? 'fix' : 'clean'
-  return { state, findings: [...findings.values()], open, toRule, unverifiable, addressed: [...addressed] }
+  return { state, findings: [...findings.values()], open, toRule, unverifiable, checks, addressed: [...addressed] }
 }
 
 // One subject's loop state, read from the change worktree's events log and ledger.
@@ -137,6 +138,13 @@ export function renderFinding(f, ruling) {
   return indent(`${f.id} (${f.severity}, ${f.category}) ${where(f)}: ${f.title}\n${f.body}${decided}`)
 }
 
+// One unverifiable item ruled fix, as a prompt field entry: the id, the requirement, the check
+// the reviewer could not make, and the ruling's decision.
+export function renderUnverifiable(u, ruling) {
+  const decided = ruling?.as === 'fix' ? `\nRuled fix: ${ruling.decision}` : ''
+  return indent(`${u.id} (unverifiable): ${u.requirement}\nCheck: ${u.check}${decided}`)
+}
+
 // The subject's open findings, each rendered; refuses when there is none to fix.
 export function openFindings(state, change) {
   if (state.open.length === 0) {
@@ -144,7 +152,8 @@ export function openFindings(state, change) {
     throw new Error(`${state.subject} has no open finding to fix${why}`)
   }
   const byId = new Map(state.findings.map((f) => [f.id, f]))
-  return state.open.map((id) => renderFinding(byId.get(id), state.rulings?.get(id)))
+  const checks = new Map((state.checks ?? []).map((u) => [u.id, u]))
+  return state.open.map((id) => (checks.has(id) ? renderUnverifiable(checks.get(id), state.rulings?.get(id)) : renderFinding(byId.get(id), state.rulings?.get(id))))
 }
 
 // ---------------------------------------------------------------- the test-first proof

@@ -1134,6 +1134,21 @@ test('the fix and re-review prompts render the open findings, honour the rulings
   assert.throws(() => call(root, 'prompt', '--role', 'fix', '--group', 'A', '--round', '1'), /A has no open finding to fix; A is not clean \(to rule F1\)/)
 })
 
+// #28: an unverifiable item ruled fix is an open finding of the fix loop, like an F<n>.
+test('an unverifiable item ruled fix shows among the open findings, and the re-review settles it', () => {
+  const root = host()
+  const reviewed = call(root, 'reply', '--name', 'T1 review', '--file', writeReply(root, 'T1-review', loopReview([], [{ requirement: 'The cache expires after an hour', check: 'No test sets the clock' }])))
+  assert.deepEqual([reviewed.result.open, reviewed.result.result], [[], 'rule'])
+  appendRecord(root, CHANGE, 'ruling', { subject: 'T1', finding: 'U1', as: 'fix', decision: 'add a test with a fake clock' })
+  const state = subjectState(root, CHANGE, 'T1')
+  assert.deepEqual([state.state, state.open, state.unverifiable], ['fix', ['U1'], []])
+  const fix = call(root, 'prompt', '--role', 'fix', '--task', '1', '--round', '1').prompt
+  assert.ok(fix.includes('- Open findings:\n  - U1 (unverifiable): The cache expires after an hour\n    Check: No test sets the clock\n    Ruled fix: add a test with a fake clock'), fix)
+  const done = call(root, 'reply', '--name', 'T1 re-review r1', '--file', writeReply(root, 'rr-u', loopReReview([['U1', 'addressed']])))
+  assert.deepEqual([done.valid, done.result.open, done.result.result], [true, [], 'clean'])
+  assert.equal(subjectState(root, CHANGE, 'T1').state, 'clean')
+})
+
 test('the deferred minors and out-of-scope items are collected into deferred.json and fed to the final review', () => {
   const root = host()
   const q = join(root, 'q.txt')

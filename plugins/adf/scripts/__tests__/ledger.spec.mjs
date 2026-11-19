@@ -68,7 +68,8 @@ test('a ruling on an apply loop or sweep item names its subject, an id of that s
   assert.throws(() => buildRecord('ruling', { subject: 'sweep', finding: 'X1', as: 'dismissed', decision: 'd' }), /a sweep finding id such as S2/)
   // The sweep's subject also holds its consolidation's review loop.
   assert.equal(buildRecord('ruling', { subject: 'sweep', finding: 'F1', as: 'fix', decision: 'the export breaks a caller' }).finding, 'F1')
-  assert.throws(() => buildRecord('ruling', { subject: 'T2', finding: 'U1', as: 'fix', decision: 'd' }), /U1 is accepted or dismissed, never ruled fix/)
+  // An unverifiable item ruled fix enters the fix loop (#28); a sweep finding is consolidated.
+  assert.equal(buildRecord('ruling', { subject: 'T2', finding: 'U1', as: 'fix', decision: 'check it with a test' }).as, 'fix')
   assert.throws(() => buildRecord('ruling', { subject: 'sweep', finding: 'S1', as: 'fix', decision: 'd' }), /consolidated/)
   assert.throws(() => buildRecord('ruling', { subject: 'T2', finding: 'F3', as: 'accepted', decision: 'd', check: 'x' }), /ruling takes no --subject/)
 })

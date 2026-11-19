@@ -43,8 +43,9 @@ export const RULING_AS = ['dismissed', 'accepted', 'fix']
 // A ruling on one item of an apply review loop or of the reuse sweep: `ruling --subject
 // T<n>|<G>|final|sweep --finding <id> --as dismissed|accepted|fix --decision <reason>`, where the
 // id is the computed result's F<n>, an unverifiable item's U<n> or a sweep finding's S<n>
-// (lib/loop.mjs reads it; the review stage's rulings carry no subject). An unverifiable item or a
-// sweep finding is accepted or dismissed, never ruled fix: a sweep finding is consolidated.
+// (lib/loop.mjs reads it; the review stage's rulings carry no subject). A sweep finding is
+// accepted or dismissed, never ruled fix: it is consolidated. An unverifiable item ruled fix
+// enters the fix loop like a finding (#28).
 export const SUBJECT_RULING = { required: ['subject', 'finding', 'as', 'decision'], optional: ['task'] }
 export const SUBJECT = /^(T[1-9]\d*|[A-Z]|final|sweep)$/
 // A recorded or accepted review finding is placed like a debt: `resolve --finding F<n> --as
@@ -96,8 +97,8 @@ export function buildRecord(kind, fields, { existing = [], sessionId = null, now
     // The sweep's subject also holds its consolidation's review loop (`re-review sweep r<k>`).
     const id = fields.subject === 'sweep' ? /^[SFU][1-9]\d*$/ : /^[FU][1-9]\d*$/
     if (!id.test(fields.finding)) throw new Error(`--finding must be ${fields.subject === 'sweep' ? 'a sweep finding id such as S2, or a finding of its consolidation such as F1' : 'a finding id such as F3, or an unverifiable item such as U1'}, got "${fields.finding}"`)
-    if (fields.as === 'fix' && (fields.finding.startsWith('S') || fields.finding.startsWith('U'))) {
-      throw new Error(`${fields.finding} is accepted or dismissed, never ruled fix: ${fields.finding.startsWith('S') ? 'a sweep finding is consolidated by a fix and its re-review' : 'a defect found while checking it is a finding of its own'}`)
+    if (fields.as === 'fix' && fields.finding.startsWith('S')) {
+      throw new Error(`${fields.finding} is accepted or dismissed, never ruled fix: a sweep finding is consolidated by a fix and its re-review`)
     }
   }
   if (kind === 'skill-edit' && !SHA.test(fields.sha)) throw new Error(`--sha must be a commit sha in lower-case hex, got "${fields.sha}"`)

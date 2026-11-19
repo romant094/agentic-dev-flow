@@ -321,7 +321,9 @@ load beside `subagent-driven-development`:
   ```
 
   `accepted` and `dismissed` close the item; `fix` sends it into the fix loop, whose next prompt
-  lists it among the open findings. The last ruling of an id wins.
+  lists it among the open findings. The last ruling of an id wins. An unverifiable item ruled
+  `fix` is listed with the check the reviewer could not make, and its re-review answers it by
+  its `U<n>`; a sweep finding is never ruled `fix`, since a consolidation fixes it.
 - **Per task, the covering tests; once, the whole suite.** The whole suite runs once, at the end.
 - **One task, one commit,** also when the skill batches small same-shape tasks into one
   dispatch. A verification-only task, whose Commit step in `plan.md` says none, commits
