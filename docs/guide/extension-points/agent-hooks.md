@@ -59,7 +59,7 @@ The hook prints a message at session start in two cases:
 - A newer ADF release exists.
 - The project pins a release that is not installed.
 
-The message names the update command. In Claude Code it is `/adf:update`. The hook asks the remote once a day. When there is nothing to say, or an error occurs, it prints nothing and exits 0.
+The message names the update command. In Claude Code it is `/adf:update`. The hook asks the remote once a day, and at every session start while its last answer is the release that the project pins. When there is nothing to say, or an error occurs, it prints nothing and exits 0.
 
 For the update steps, see [update](../update.md).
 

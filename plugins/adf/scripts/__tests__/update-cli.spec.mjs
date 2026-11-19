@@ -134,6 +134,23 @@ test('notice reads the cache within a day', () => {
   assert.equal(calls, 2)
 })
 
+test('notice asks again within a day when the cached tag is the pinned ref', () => {
+  const { root, home } = setup({ ref: 'v0.10.0', installedProject: '0.10.0' })
+  const now = Date.now()
+  let tags = TAGS
+  let calls = 0
+  const counting = () => (calls++, tags)
+  assert.equal(run(['notice', '--root', root, '--home', home], { git: counting, now }), null)
+  assert.equal(calls, 1)
+  tags = `${TAGS}c\trefs/tags/v0.11.0\n`
+  const later = run(['notice', '--root', root, '--home', home], { git: counting, now: now + 3600_000 })
+  assert.equal(calls, 2)
+  assert.deepEqual(later, { systemMessage: 'ADF v0.11.0 is available; this project is on v0.10.0. Run /adf:update.' })
+  // A cached tag newer than the pin is kept for the day.
+  run(['notice', '--root', root, '--home', home], { git: counting, now: now + 2 * 3600_000 })
+  assert.equal(calls, 2)
+})
+
 test('notice is silent with scope none and writes no cache', () => {
   const { root, home } = setup()
   assert.equal(run(['notice', '--root', root, '--home', home], { git: git(TAGS) }), null)
