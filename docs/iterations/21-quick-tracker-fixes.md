@@ -82,3 +82,35 @@ the module that the issue names. No fix changes the contract: the tracker's `sta
 | 3 | #41: `suggest --type`, the refused unknown flag, the quick and propose skills, the worktrees page | `workspace.spec.mjs` |
 | 4 | #42: the leading developer row in a hand-off of an issue that is not the developer's; the preview; the adf-jira page | `tracker.spec.mjs` |
 | 5 | `npm test` after every step | the counts in `## Result` |
+
+## Result
+
+- **#39.** `quick.mjs estimate-check` writes a quick correction as `{ what: '', was: '', now }`.
+  `renderCorrection` (`adf-jira`) and the scope note (`noteOf`, core) print a correction with no
+  subject, or with a subject equal to the correction, once: `# The anchor moved to b.ts:49.`. A
+  full correction keeps `what: now (was was)`. The correction template's preface, the adf-jira
+  page and the quick page say so. Tests: `comment.spec.mjs` (`renderCorrection`, two cases),
+  `scope.spec.mjs` (render names a correction once), `quick.spec.mjs` (the recorded shape).
+- **#40.** `quick.mjs filter` counts a debt entry whose `tracker` is a named key as named: it is
+  never excluded, and its first flag is `<id> mirrors <KEY>, a key you named; take it with
+  <KEY>`. A large mirror also gets the too-large flag. The quick skill's step 4 takes a flagged
+  mirror together with its key; the quick page says so. Test: `quick.spec.mjs` (filter keeps the
+  mirror and flags it, once on a rerun).
+- **#41.** `suggest` takes `type`, refused unless it is one of `COMMIT_TYPES`, and it wins over
+  the name prefix: `suggest --change proj-1 --key PROJ-1 --type fix` gives `fix/PROJ-1/proj-1`.
+  `workspace.mjs` reads `--type` and refuses every flag that no command reads. The quick skill
+  passes `--type fix`; the propose skill asks for the type and passes it when `branch` is null.
+  The worktrees page says so. Tests: `workspace.spec.mjs` (the lib call, and the CLI with
+  `--type` and with an unknown flag).
+- **#42.** `adf-jira` `handoff` gives a `taken` or `not-reproduced` item with a route a leading
+  assignee row to the developer when its assignee is not the developer (unassigned included):
+  assignee, transition, comment, assignee. The preview shows `assignee <developer> first`. The
+  adf-jira page says so. Tests: `tracker.spec.mjs` (a retest of an issue assigned to someone
+  else, held and applied, in Jira's write order; the unassigned not-reproduced issue of the row
+  test), `tracker-plugins.spec.mjs` (the land hand-off of the debt-group issue, never started).
+
+Checks: `npm test` before the first change, 1834 tests, 1829 passed, 0 failed, 5 skipped; after
+each fix commit green; after the last, 1841 tests, 1836 passed, 0 failed, 5 skipped.
+`check-guide.mjs` passed inside each run.
+
+Nothing is left open.
