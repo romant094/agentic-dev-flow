@@ -76,6 +76,25 @@ test('suggest with a key names the branch <type>/<KEY>/<change>; the worktree pa
   assert.throws(() => suggest(root, 'add-thing', { key: 'a b' }), /cannot name a branch/)
 })
 
+test('suggest takes a Conventional Commits type, which wins over the name prefix, and refuses another word', () => {
+  const root = host()
+  const s = suggest(root, 'proj-1', { key: 'PROJ-1', type: 'fix' })
+  assert.deepEqual([s.type, s.branch], ['fix', 'fix/PROJ-1/proj-1'])
+  assert.equal(suggest(root, 'add-thing', { type: 'fix' }).branch, 'fix/add-thing')
+  assert.throws(() => suggest(root, 'proj-1', { type: 'bugfix' }), /"bugfix" is not a Conventional Commits type: feat, fix, /)
+})
+
+test('workspace.mjs suggest reads --type, and refuses a flag it does not read', () => {
+  const root = host()
+  const cli = (...args) => spawnSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), '..', 'workspace.mjs'), ...args, '--root', root], { encoding: 'utf8' })
+  const typed = cli('suggest', '--change', 'proj-1', '--key', 'PROJ-1', '--type', 'fix')
+  assert.equal(typed.status, 0, typed.stdout)
+  assert.equal(JSON.parse(typed.stdout).branch, 'fix/PROJ-1/proj-1')
+  const unknown = cli('suggest', '--change', 'proj-1', '--kind-of', 'fix')
+  assert.equal(unknown.status, 1)
+  assert.deepEqual(JSON.parse(unknown.stdout), { ok: false, error: 'workspace.mjs suggest does not read --kind-of' })
+})
+
 test('suggest keeps every dirty line as git prints it, the first one included', () => {
   const root = host({ remote: false })
   writeFileSync(join(root, 'README.md'), 'changed\n')

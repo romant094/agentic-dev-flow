@@ -143,12 +143,12 @@ The branch and `quick.md` stay for the developer to keep or remove.
    flight: resume it as in step 1. Then get the branch:
 
    ```bash
-   node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" suggest --change <name>
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" suggest --change <name> --type fix
    ```
 
-   On `keyChoices`, ask which key names the branch, and run suggest again with `--key <KEY>`.
-   Ask the developer, in one question, for the base (`bases`) and the branch name. The name is
-   `branch`; when it is null, ask for the type. Wait for an explicit answer. Then:
+   A quick task's type is `fix`. On `keyChoices`, ask which key names the branch, and run
+   suggest again with `--key <KEY> --type fix`. Ask the developer, in one question, for the base
+   (`bases`) and the branch name (`branch`). Wait for an explicit answer. Then:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/propose.mjs" create --change <name> --branch <branch> --base <integration|current> --schema quick

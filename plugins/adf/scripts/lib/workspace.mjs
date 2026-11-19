@@ -13,6 +13,7 @@ import { isProtected, requireBranches } from './branches.mjs'
 import { ARCHIVE, archivedDirs, CHANGES_DIR, isMainCheckout, LEDGER_FILE } from './changes.mjs'
 import { ledgerPath } from './ledger.mjs'
 import { teardownWorktree } from './provision.mjs'
+import { COMMIT_TYPES } from './roles.mjs'
 
 export const WORKTREES_DIR = '.claude/worktrees'
 
@@ -55,14 +56,17 @@ export function worktreePath(root, change) {
 
 // A key (a tracker issue's branch token) names the branch `<type>/<key>/<change>`; the worktree
 // path stays per change name. `keyChoices` lists the keys of a tie, for the developer to choose.
+// A given `type`, a Conventional Commits type, wins over the change name's prefix: a quick change
+// named from its keys has no prefix.
 const BRANCH_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
-export function suggest(root, change, { git = gitIn(root), key = null, keyChoices = null } = {}) {
+export function suggest(root, change, { git = gitIn(root), key = null, keyChoices = null, type: given = null } = {}) {
   if (key !== null && !BRANCH_TOKEN.test(key)) throw new Error(`"${key}" cannot name a branch: a key is letters, digits, dots, underscores and hyphens`)
+  if (given !== null && !COMMIT_TYPES.includes(given)) throw new Error(`"${given}" is not a Conventional Commits type: ${COMMIT_TYPES.join(', ')}`)
   const branches = requireBranches(root)
   const current = attempt(git, 'branch', '--show-current') || null
   const currentProtected = current === null || isProtected(branches, current)
-  const type = branchType(change)
+  const type = given ?? branchType(change)
   return {
     change,
     integration: branches.integration,

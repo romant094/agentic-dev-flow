@@ -100,8 +100,9 @@ any tracker keys the change works on.
 
    On `keyChoices`, ask which key names the branch and run suggest again with `--key <KEY>`.
    Ask the developer, in one question, for the base (`bases`; offer `current` only when it is
-   listed, and name both branches) and for the branch name (`branch`, or ask for the type when
-   it is null). Wait for an explicit answer.
+   listed, and name both branches) and for the branch name (`branch`). When `branch` is null,
+   ask for the type first, and run suggest again with `--type <type>`. Wait for an explicit
+   answer.
 
 7. **Make the branch, the worktree and the change.**
 

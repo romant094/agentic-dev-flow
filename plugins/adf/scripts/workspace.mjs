@@ -2,13 +2,15 @@
 // CLI over lib/workspace.mjs. Prints one JSON object on stdout and exits 1 on a refusal, or
 // when the result says `ok: false`.
 //
-//   workspace.mjs suggest --change <name> [--key <KEY>]
+//   workspace.mjs suggest --change <name> [--key <KEY>] [--type <type>]
 //       the branch policy, the current branch, the bases the developer may choose, a branch
 //       name to propose, the worktree path, and any uncommitted tracked changes. With a key the
 //       branch is <type>/<KEY>/<change>; without one, the scope's key of the lowest rank
 //       (scope.mjs select's `branch`) names it, its branch token as `key`; a tie leaves the
 //       branch keyless and lists the tied items' tokens in `keyChoices`. The worktree path stays
-//       per change name
+//       per change name. --type, a Conventional Commits type, names the branch's type in place of
+//       the change name's prefix (add-, fix-, restructure-, refactor-); with neither, `branch` is
+//       null
 //   workspace.mjs create --change <name> --branch <branch> --base integration|current
 //       make the branch and its worktree; prints the worktree root and the base branch
 //   workspace.mjs provision --change <name> [--worktree <path>] [--kind change|group|base-check|proof]
@@ -51,6 +53,8 @@
 //       metadata's base, the remote-tracking ref when it exists) to check whether a whole-suite
 //       failure is pre-existing, and provision it with no needs; remove it again after its
 //       teardown, never forced
+//
+// A flag that the command does not read is refused.
 //
 // --root <dir> names the host project's main checkout, or for a group, base-check or provision
 // command the change worktree (default: the current directory). --home names the Claude Code
@@ -132,14 +136,18 @@ export function run(argv) {
   const kind = option(args, '--kind')
   const need = repeated(args, '--need')
   const key = option(args, '--key')
+  const type = option(args, '--type')
   const [command] = args
+  // A flag no command reads is refused, not ignored: an ignored --type left the branch null.
+  const unread = args.filter((a) => a.startsWith('--'))
+  if (unread.length) throw new Error(`workspace.mjs ${command ?? '<command>'} does not read ${unread.join(', ')}`)
   if (!change) throw new Error('usage: workspace.mjs <command> --change <name>')
   // The contract and home the hooks of a worktree are called with.
   const c = contract()
   const core = { coreContract: c.version, points: c.points, home: home ?? defaultHome() }
   switch (command) {
     case 'suggest':
-      return suggest(root, change, scopeKey(root, change, key))
+      return suggest(root, change, { ...scopeKey(root, change, key), ...(type === undefined ? {} : { type }) })
     case 'create':
       return create(root, { change, branch, base })
     case 'provision':
