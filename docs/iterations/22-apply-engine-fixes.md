@@ -113,7 +113,7 @@ Decided during the iteration:
   `openspec/changes/<change>/windows-pass.md`; `--commit` commits it with the tick. A task whose
   Commit step does not say none is refused, and so is `--evidence` without `--plan-task`.
   `group-merge` makes an empty merge commit (`git commit-tree` of HEAD's tree, parents HEAD and the
-  group tip, subject `Merge branch '<group branch>'`) when the group branch's reflog shows it never
+  group tip, subject `Merge branch '<group branch>' into <change branch>`) when the group branch's reflog shows it never
   moved since it was made, so `groupState` reads the group as merged by the subject it already
   reads. The result says `empty: true`, and an empty merge needs no merge review. A group branch
   that is in the change branch by a fast-forward someone made by hand is still refused.
@@ -160,7 +160,7 @@ Decided during the iteration:
 |---|---|---|
 | 1 | #27, #43: `foreign` moves in `guard.mjs compare` | `apply-git.spec.mjs` |
 | 2 | #28: a `U<n>` ruled fix enters the fix loop | `dispatch.spec.mjs`, `ledger.spec.mjs` |
-| 3 | #29: the whole-suite wait in `apply.md`, `review.md` and `verify.md` | `dispatch.spec.mjs` (instruction text), `check-guide.mjs` |
+| 3 | #29: the whole-suite wait in `apply.md`, `review.md` and `verify.md` | `changes.spec.mjs` (instruction parts), `check-guide.mjs` |
 | 4 | #48: `tick --evidence`, the empty group merge | `tasks.spec.mjs`, `apply-git.spec.mjs` |
 | 5 | #51: the `Check commands` field | `dispatch.spec.mjs` |
 | 6 | #52: `R<k>-S<n>` sweep ids in an apply round | `consolidation.spec.mjs`, `ledger.spec.mjs` |
@@ -168,3 +168,63 @@ Decided during the iteration:
 | 8 | #54: the base check on the failed tests | `suite.spec.mjs` |
 | 9 | #55: `Create:` of a done task at `--phase propose` | `plan-symbols.spec.mjs` |
 | 10 | The guide pages of every changed source | `check-guide.mjs` |
+
+## Result
+
+One commit per issue on `feat/22-apply-engine-fixes`, each test written first and seen failing,
+each commit gated on the full `npm test`.
+
+- **#27, #43** (`lib/guard.mjs`). `snapshot` records each watched checkout's branch, the main
+  checkout as `main`, and the change directories of another change's worktree. `compare` puts a
+  forward move on the same branch in such a worktree, and a reflog-proven fast-forward of a
+  protected branch in the main checkout, into `foreign` with its `reason`; `ok` stays true. A
+  commit in the main checkout, a commit in a worktree of no change and a branch switch still
+  fail. `apply.md` and the guide's apply page say so. Test: `apply-git.spec.mjs`, "the guard
+  reports a commit in another change's worktree and a fast-forward of the main checkout as
+  foreign".
+- **#28** (`lib/ledger.mjs`, `lib/loop.mjs`, `re-review.schema.json`). A `U<n>` may be ruled
+  `fix`; it leaves `unverifiable`, enters `open`, renders as `U<n> (unverifiable): …`, `Check: …`,
+  `Ruled fix: …`, and the re-review answers it by its id. Tests: `dispatch.spec.mjs`, "an
+  unverifiable item ruled fix shows among the open findings, and the re-review settles it";
+  `ledger.spec.mjs`.
+- **#29** (`apply.md`, `review.md`, `verify.md`). The whole-suite run is waited for in the
+  foreground with the 600000 ms timeout; the background only for a suite known to exceed 10
+  minutes, on its task notification; never a scheduled wakeup. No test asserts that text; the
+  instruction-part size test (`changes.spec.mjs`) and `check-guide.mjs` pass.
+- **#48** (`tasks.mjs`, `lib/tasks.mjs`, `lib/groups.mjs`, `workspace.mjs`). `tick --plan-task <N>
+  --evidence <file>` ticks a task whose Commit step says none on a non-empty file in the change
+  directory and commits it with the tick. `group-merge` merges a group branch that never moved as
+  an empty merge commit, `empty: true`, with no review package. The `apply.md` paragraph sits in
+  the `groups` part: the `dispatch` part is held under 16 KB by `changes.spec.mjs`. Tests:
+  `tasks.spec.mjs`, "a verification-only task closes on a recorded evidence file, committed with
+  its tick"; `apply-git.spec.mjs`, "a group with no commit of its own merges as an empty merge
+  commit and counts as merged".
+- **#51** (`dispatch.mjs`, `lib/guide.mjs`, `implementer.md`, `ai-fix.md`, `host/planning.md`).
+  The `impl`, `fix` and `ai-fix` prompts carry `Check commands`, the lines of the guide's
+  `## How to run the checks`. Tests: `dispatch.spec.mjs`, "the implementer and fix prompts carry
+  the planning guide's check commands", and the fixer prompt test.
+- **#52** (`lib/loop.mjs`, `lib/ledger.mjs`, `lib/reply.mjs`, `re-review.schema.json`). Apply
+  round `k` numbers its sweep findings `R<k>-S<n>`; the ledger, the re-review and its
+  `notConsolidated` take them. The lessons row of the apply-round sweep names the renamed test.
+  Tests: `consolidation.spec.mjs`, "an apply round sweeps its own diff: findings and
+  consolidation rounds count from the round, ids carry it"; `ledger.spec.mjs`.
+- **#53** (`lib/preflight.mjs`, `propose.md`). The apply preflight adds an `unplanned-item`
+  finding to `planFindings` for each open `tasks.md` item no plan task names, and refuses. The
+  propose instruction states that a revision after the plan revises `plan.md`. Test:
+  `preflight.spec.mjs`, "apply refuses a tasks.md item no plan task covers, naming it in
+  planFindings".
+- **#54** (`lib/suite.mjs`, `host/planning.md`). The base run was already sequential; with the
+  guide's `## Failed-tests command` it runs only the main run's failing tests, recorded in
+  `base.selected` and in the test record. Test: `suite.spec.mjs`, "the base check runs the failed
+  tests alone when the guide gives a failed-tests command".
+- **#55** (`lib/plan-symbols.mjs`). At `--phase propose` a ticked task's `Create:` lines are not
+  checked; its other lines are. Test: `plan-symbols.spec.mjs`, "propose checks no Create of a
+  done task; its other lines and an open task's Create are checked".
+
+Checks: `npm test` before the iteration, 1834 tests, 1829 pass, 5 skipped, 0 fail; after it, 1842
+tests, 1837 pass, 5 skipped, 0 fail, with `check-lessons.mjs`, `check-release.mjs` and
+`check-guide.mjs` green. Nothing was run in a scratch project, and `guide-review.mjs` is left to
+the release step of v0.22.0.
+
+Left open: none of the ten issues. The design commit was made before the suite ran on it; it
+holds this record alone, and the next commit's run covers it.
