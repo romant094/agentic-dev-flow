@@ -45,7 +45,7 @@ It stops and reports in these cases:
 1. Provision the worktree with the hooks of the project's plugins.
 2. Show the progress: the tasks complete, the tasks remaining, and the test-first tasks.
 3. Dispatch an implementer and reviewers for each task, into the worktree of its task group. The main session never implements a task.
-4. Tick each task when its review loop is clean.
+4. Tick each task when its review loop is clean. A task with no code whose check only you can run, such as a bench pass, is ticked on the file that records your result.
 5. Merge each group when every task of it is complete. A scoped review checks the merge.
 6. Run the final review, the reuse sweep and the whole suite.
 

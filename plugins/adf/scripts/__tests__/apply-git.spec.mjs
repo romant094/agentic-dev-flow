@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setBranches } from '../lib/branches.mjs'
-import { addBaseCheck, addGroup, baseCheckPath, listGroups, mergeGroup, removeBaseCheck, removeGroup } from '../lib/groups.mjs'
+import { addBaseCheck, addGroup, baseCheckPath, groupState, listGroups, mergeGroup, removeBaseCheck, removeGroup } from '../lib/groups.mjs'
 import { compare, snapshot } from '../lib/guard.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { initRegistry } from '../lib/registry.mjs'
@@ -84,6 +84,30 @@ test('a group is made from the change branch at the main checkout, merged and re
   assert.deepEqual([removed.removed, removed.branch, removed.teardown.state], [made.root, 'feat/add-x--group-1', 'none'])
   assert.deepEqual(listGroups(change, 'add-x'), [])
   assert.throws(() => addGroup(change, { change: 'add-x', group: 0 }), /not a positive number/)
+})
+
+// #48: a group whose tasks commit nothing, such as a bench pass, merges as an empty merge commit.
+test('a group with no commit of its own merges as an empty merge commit and counts as merged', () => {
+  const { change } = host()
+  const bench = addGroup(change, { change: 'add-x', group: 1 })
+  const coded = addGroup(change, { change: 'add-x', group: 2 })
+  commitIn(coded.root, 'g2.txt', 'two\n')
+  assert.equal(mergeGroup(change, { change: 'add-x', group: 2 }).merged, true)
+  const tree = git(change, 'rev-parse', 'HEAD^{tree}')
+  const merged = mergeGroup(change, { change: 'add-x', group: 1 })
+  assert.deepEqual([merged.merged, merged.empty, merged.already], [true, true, false])
+  assert.equal(git(change, 'log', '-1', '--format=%s'), "Merge branch 'feat/add-x--group-1' into feat/add-x")
+  assert.deepEqual([git(change, 'rev-parse', 'HEAD^{tree}'), merged.firstParent], [tree, git(change, 'rev-parse', 'HEAD^1')])
+  assert.equal(git(change, 'status', '--porcelain', '--untracked-files=no'), '')
+  assert.deepEqual(groupState(change, 'add-x')(1), { merged: true, kept: true })
+  // Called again, it reports the same merge; then the group is removed like any merged group.
+  assert.deepEqual([mergeGroup(change, { change: 'add-x', group: 1 }).already, mergeGroup(change, { change: 'add-x', group: 1 }).mergeCommit], [true, merged.mergeCommit])
+  assert.equal(removeGroup(change, { change: 'add-x', group: 1 }).removed, bench.root)
+  // A group branch fast-forwarded into the change branch by hand moved since it was made: refused.
+  const hand = addGroup(change, { change: 'add-x', group: 3 })
+  commitIn(hand.root, 'g3.txt', 'three\n')
+  git(change, 'merge', '-q', '--ff-only', 'feat/add-x--group-3')
+  assert.throws(() => mergeGroup(change, { change: 'add-x', group: 3 }), /without a merge commit/)
 })
 
 test('a conflicting merge lists the files and stays in progress for the resolver', () => {

@@ -131,6 +131,33 @@ test('tick --plan-task resolves the item from the back-reference and --commit co
   assert.equal(run(['tick', '1.1', '--plan-task', '1', '--change', 'c', '--root', root]).code, 2)
 })
 
+// #48: a task with no code, such as the developer's bench pass, has no review to wait for.
+test('a verification-only task closes on a recorded evidence file, committed with its tick', () => {
+  const root = repo()
+  const bench = "## Execution Graph\n\nsingle group\n\n### Task 1: bench\n\n> Implements `tasks.md` 1.2.\n\n- [ ] **Step 1: Commit** — none: the developer's bench pass\n\n### Task 2: b\n\n"
+  writeFileSync(join(root, 'openspec', 'changes', 'c', 'plan.md'), bench)
+  git(root, 'commit', '-q', '-am', 'plan')
+  const tick = (...extra) => run(['tick', '--plan-task', '1', '--change', 'c', '--root', root, ...extra])
+  const evidence = 'openspec/changes/c/bench.md'
+  assert.match(tick().result.error, /no accepted review of T1 is recorded/)
+  assert.match(tick('--evidence', evidence).result.error, /bench\.md does not exist/)
+  writeFileSync(join(root, evidence), '\n')
+  assert.match(tick('--evidence', evidence).result.error, /bench\.md is empty/)
+  writeFileSync(join(root, 'notes.md'), 'passed\n')
+  assert.match(tick('--evidence', 'notes.md').result.error, /lies outside openspec\/changes\/c\//)
+  writeFileSync(join(root, evidence), 'Passed on the Windows bench.\n')
+  const out = tick('--evidence', evidence, '--commit')
+  assert.equal(out.code, 0, JSON.stringify(out.result))
+  assert.deepEqual([out.result.item, out.result.evidence, out.result.paths], ['1.2', evidence, ['openspec/changes/c/tasks.md', evidence]])
+  assert.equal(git(root, 'log', '-1', '--format=%s'), 'chore(openspec): tick 1.2 of c')
+  assert.equal(git(root, 'status', '--porcelain'), '?? notes.md')
+  // A task that commits code closes on its review, never on evidence; evidence names a plan task.
+  const coded = repo()
+  writeFileSync(join(coded, evidence), 'passed\n')
+  assert.match(run(['tick', '--plan-task', '1', '--change', 'c', '--root', coded, '--evidence', evidence]).result.error, /Task 1's Commit step does not say none/)
+  assert.equal(run(['tick', '1.2', '--change', 'c', '--root', coded, '--evidence', evidence]).code, 2)
+})
+
 test('tick --commit refuses, and ticks nothing, while another path is staged', () => {
   const root = repo()
   writeFileSync(join(root, 'other.txt'), 'x\n')

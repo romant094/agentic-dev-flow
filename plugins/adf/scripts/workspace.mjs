@@ -30,7 +30,9 @@
 //   group-merge, once the merge is made (by it, or by the resolver's commit and a second call):
 //       { merged: true, already, mergeCommit, firstParent, package } — package is
 //       `sdd.mjs package` of firstParent..mergeCommit, the merge review's input
-//       ({ ok, file, ... }, or { ok: false, error }: the merge stands either way)
+//       ({ ok, file, ... }, or { ok: false, error }: the merge stands either way). A group with
+//       no commit of its own merges as an empty merge commit: `empty: true` and no package,
+//       since there is nothing to review
 //   workspace.mjs group-finish --change <name> --group <n> [--home <dir>]
 //       after the merge review passed: remove the group's worktree and branch, then push the
 //       change branch through the forge role with the branch and the protected list read from
@@ -74,7 +76,7 @@ const contract = () => JSON.parse(readFileSync(join(here, '..', 'contract', 'con
 
 // The merge review's package; a failure to cut it leaves the merge standing and is reported.
 function withPackage(root, change, merge, home) {
-  if (!merge.merged) return merge
+  if (!merge.merged || merge.empty) return merge
   let pkg
   try {
     pkg = reviewPackage(root, change, merge.firstParent, merge.mergeCommit, { home })

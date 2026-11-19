@@ -321,9 +321,7 @@ load beside `subagent-driven-development`:
   ```
 
   `accepted` and `dismissed` close the item; `fix` sends it into the fix loop, whose next prompt
-  lists it among the open findings. The last ruling of an id wins. An unverifiable item ruled
-  `fix` is listed with the check the reviewer could not make, and its re-review answers it by
-  its `U<n>`; a sweep finding is never ruled `fix`, since a consolidation fixes it.
+  lists it among the open findings, a `U<n>` with its check. The last ruling of an id wins.
 - **Per task, the covering tests; once, the whole suite.** The whole suite runs once, at the end.
 - **One task, one commit,** also when the skill batches small same-shape tasks into one
   dispatch. A verification-only task, whose Commit step in `plan.md` says none, commits
@@ -367,7 +365,7 @@ It ticks the `tasks.md` item the plan task's back-reference names and commits it
 never a group's, so two groups never conflict over `tasks.md`, and committing at once leaves the
 change worktree clean for the next merge.
 
-<!-- part: groups | when a group's tasks are complete: work added during apply, a delta edited after propose, merging and pushing a group, wave 2 and a blocked group -->
+<!-- part: groups | when a group's tasks are complete: work added during apply, a delta edited after propose, a bench pass, merging and pushing a group, wave 2 and a blocked group -->
 **Work added during apply is recorded against the plan.**
 
 Every fix (a task's fix round, a merge fix, the final-review fix, the sweep's consolidation) is
@@ -393,6 +391,19 @@ the edit and commit `specs-base.json` with it; verify's `specs-base` check state
 node "${CLAUDE_PLUGIN_ROOT}/scripts/specs.mjs" base --change <change> --root <root>
 ```
 
+**A bench pass is ticked on its evidence.** A verification-only task whose check no agent can
+run, such as the developer's bench pass, has no implementer and no review. Ask the developer to
+run it, record what they report in a file in the change directory, such as
+`openspec/changes/<change>/bench-pass.md`, and tick the task on that file:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tasks.mjs" tick --plan-task <N> --evidence <file> --change <change> --root <root> --commit
+```
+
+The script refuses a task whose Commit step does not say none, and an evidence file that is
+missing, empty or outside the change directory; `--commit` commits the file with the tick. No
+deviation and no tick by hand.
+
 **Merge a group as soon as every task of it is complete.**
 
 From the change worktree, never a group's:
@@ -402,6 +413,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" group-merge --change <change>
 ```
 
 - `merged` true: the merge is made, but not done; `package` is the merge-review package.
+- `merged` and `empty` true: the group's tasks committed nothing, a bench pass for example, and
+  the merge is an empty merge commit. There is nothing to review: run `group-finish` now.
 - `merged` false: `conflicts` lists the files and the merge is left in progress. Dispatch a
   scoped resolver, `fix` with `--group`, with the conflict list and both groups' tasks in the
   question. Any conflict goes to it, not only mechanical hunks. It completes the merge commit;
