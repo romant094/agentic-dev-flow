@@ -108,6 +108,12 @@ or rename, which archive's three-way check reads as the base. `propose.mjs commi
 with the artifacts; write and edit it never by hand. A requirement's `SHALL` or `MUST` MUST be
 on the first line of its body: the validator does not scan past it.
 
+**An artifact revised after the plan revises the plan.** When a change in flight is updated
+after `plan.md` is written, its proposal, design, specs or tasks revised, revise `plan.md` in the
+same pass and commit them together: each new or changed `tasks.md` item gets its plan task with
+its back-reference, and a removed item loses its task. Apply's preflight refuses a change with an
+open `tasks.md` item no plan task covers, and lists each one in `planFindings`.
+
 **Context, rules and guides guide the author and never reach the artifact.**
 
 The `context`, `rules` and `guides` fields of the instructions are constraints for you. Copied

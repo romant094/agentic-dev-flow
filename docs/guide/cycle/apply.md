@@ -22,6 +22,7 @@ The command refuses, and changes nothing, in these cases:
 - The change root that the command resolves is the main checkout, or its branch is unnamed or protected.
 - The plan is missing. The message sends you to `/adf:propose <name>`.
 - The plan names a file or symbol that the tree does not hold. Correct `plan.md` first.
+- An open item of `tasks.md` has no plan task, for example after an update of the change. Revise `plan.md` first.
 - Every task is complete. The message sends you to `/adf:verify`.
 - Every task is complete and `verify.md` says `Verdict: FAIL`. Open an apply round with `plan.mjs reopen`.
 

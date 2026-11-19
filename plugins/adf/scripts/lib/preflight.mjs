@@ -29,11 +29,31 @@ import { appendRecord } from './ledger.mjs'
 import { loadSchema, schemaOf } from './schema.mjs'
 import { checkSuperpowers } from './superpowers.mjs'
 import { runPlanSymbols as planSymbols } from './plan-symbols-repo.mjs'
+import { parsePlan, parseTaskItems } from './plan.mjs'
 import { initSdd } from './sdd.mjs'
 import { gitIn, suggest } from './workspace.mjs'
 
 export const PHASES = ['propose', 'apply', 'verify', 'review', 'archive']
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/
+
+// The open tasks.md items no plan task's back-reference names (#53): a change updated after its
+// plan was written, whose new items apply has nothing to schedule for. A ticked item is done
+// work, whatever ticked it, and is not reported. Findings in the shape of planFindings.
+export function unplannedItems(root, change, tracks = 'tasks.md') {
+  const dir = changeDir(root, change)
+  let tasksText
+  let planText
+  try {
+    tasksText = readFileSync(join(dir, tracks), 'utf8')
+    planText = readFileSync(join(dir, 'plan.md'), 'utf8')
+  } catch {
+    return []
+  }
+  const planned = new Set(parsePlan(planText).tasks.map((t) => t.implements).filter(Boolean))
+  return parseTaskItems(tasksText)
+    .filter((item) => !item.done && !planned.has(item.id))
+    .map((item) => ({ task: null, kind: 'unplanned-item', item: item.id, file: `${CHANGES_DIR}/${change}/${tracks}`, line: item.line, message: `${tracks} ${item.id} has no plan task; revise plan.md to cover it` }))
+}
 
 function readBase(root, change, dir = changeDir(root, change)) {
   const base = readChangeMeta(root, dir)?.base
@@ -124,9 +144,11 @@ async function changePhase(out, { phase, change, root, env, schema, git }) {
       return stop('Every task is complete; run /adf:verify next.')
     }
     const { code, result } = await planSymbols([change, '--root', root, '--phase', 'apply'])
-    out.planFindings = result.findings
+    const unplanned = unplannedItems(root, change, schema.apply?.tracks ?? 'tasks.md')
+    out.planFindings = [...result.findings, ...unplanned]
     if (code === 1) return stop(`The plan names ${result.findings.length} thing(s) the tree does not hold; correct plan.md from planFindings, then run apply again.`)
     if (code !== 0) return stop(`The plan symbol check could not run (${result.error}); fix that, then run apply again.`)
+    if (unplanned.length) return stop(`The change has ${unplanned.length} item(s) of tasks.md no plan task covers; revise plan.md from planFindings, then run apply again.`)
     out.sdd = initSdd(root, change)
     if (!out.sdd.ok) return stop(out.sdd.error)
   } else {

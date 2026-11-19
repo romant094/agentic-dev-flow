@@ -167,6 +167,17 @@ test('apply refuses without a plan, with every task done, on a plan finding and 
   assert.match(foreign.refusal, /^STOP: .*other/)
 })
 
+// #53: a change updated after its plan leaves tasks.md items no plan task covers.
+test('apply refuses a tasks.md item no plan task covers, naming it in planFindings', async () => {
+  const stale = await check('apply', host({ tasks: '## 1. G\n\n- [x] 1.1 a\n- [ ] 1.2 added by the update\n- [x] 1.3 ticked by hand\n' }).change)
+  assert.equal(stale.ok, false)
+  assert.deepEqual(stale.planFindings, [
+    { task: null, kind: 'unplanned-item', item: '1.2', file: 'openspec/changes/add-x/tasks.md', line: 4, message: 'tasks.md 1.2 has no plan task; revise plan.md to cover it' }
+  ])
+  assert.match(stale.refusal, /1 item\(s\) of tasks\.md no plan task covers; revise plan\.md from planFindings, then run apply again/)
+  assert.equal(stale.ledger, null)
+})
+
 test('a progress.md of another plan in the change workspace refuses', async () => {
   const { change } = host()
   mkdirSync(join(change, '.superpowers', 'sdd', 'add-x'), { recursive: true })
