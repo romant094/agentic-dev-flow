@@ -23,7 +23,8 @@
 //   state         unreviewed (no result) | rule (toRule or unverifiable left) | fix (open left)
 //                 | clean.
 //
-// sweepState(root, change): the reuse sweep's findings, S<k> by first report, and the open ones.
+// sweepState(root, change): the reuse sweep's findings, S<k> by first report (R<r>-S<k> in apply
+// round r, so an id names one finding across the change's rounds), and the open ones.
 // The first sweep is two passes, `sweep p1` and `sweep p2`, read as one run once both are
 // accepted on one HEAD (`ran` false until then, with `missing` naming the pass not yet accepted,
 // or `error` when the HEADs differ); the re-sweeps `sweep r<k>` follow. One duplicate keeps one
@@ -264,6 +265,8 @@ export const renderSweepFinding = (f) => `${f.id} ${f.introduced} repeats ${f.ex
 export function sweepState(root, change, { git = gitIn(root) } = {}) {
   const records = readRecords(root, change)
   const since = roundStart(records)
+  const round = applyRound(records)?.round
+  const prefix = round ? `R${round}-` : ''
   const events = parseEvents(readLog(attemptsFile(root, change))).filter((e) => e.event === 'valid' && e.result).filter(atOrAfter(since))
   const sweeps = events.filter((e) => parseName(e.name)?.role === 'sweep')
   const first = firstPass(root, sweeps)
@@ -294,7 +297,7 @@ export function sweepState(root, change, { git = gitIn(root) } = {}) {
     for (const f of run.findings) {
       let entry = [...known.values()].find((k) => k.seen.some((s) => sameDuplicate(s, f)))
       if (!entry) {
-        entry = { id: `S${known.size + 1}`, first: f, seen: [] }
+        entry = { id: `${prefix}S${known.size + 1}`, first: f, seen: [] }
         known.set(entry.id, entry)
       }
       entry.seen.push(f)

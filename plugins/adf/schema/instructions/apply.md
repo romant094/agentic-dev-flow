@@ -500,7 +500,7 @@ recorded, and the first consolidation waits for both.
 
 **A sweep finding naming both locations blocks apply from concluding.** It is the only
 maintainability finding that blocks; every other stays advisory. `apply-status.mjs` lists the
-open ones as `sweep.open`, each `S<n>` by its first report, `sweep p1`'s before `sweep p2`'s,
+open ones as `sweep.open`, each `S<n>` by its first report (in apply round k, `R<k>-S<n>`), `sweep p1`'s before `sweep p2`'s,
 and reports `complete` false while one is open; a later report at shifted lines keeps the id.
 Resolution is one of two things: consolidate on the existing code, or the developer dismisses
 the finding. A consolidation clears it when a later sweep no longer reports it and its

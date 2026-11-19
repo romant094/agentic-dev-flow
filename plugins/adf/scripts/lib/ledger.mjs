@@ -47,6 +47,10 @@ export const RULING_AS = ['dismissed', 'accepted', 'fix']
 // accepted or dismissed, never ruled fix: it is consolidated. An unverifiable item ruled fix
 // enters the fix loop like a finding (#28).
 export const SUBJECT_RULING = { required: ['subject', 'finding', 'as', 'decision'], optional: ['task'] }
+// A sweep finding's id: S<n> in round 0, R<k>-S<n> in apply round k, so no id of a change names
+// two findings across its rounds (#52; lib/loop.mjs sweepState numbers them).
+export const SWEEP_ID = /^(R[1-9]\d*-)?S[1-9]\d*$/
+export const isSweepId = (id) => SWEEP_ID.test(String(id ?? ''))
 export const SUBJECT = /^(T[1-9]\d*|[A-Z]|final|sweep)$/
 // A recorded or accepted review finding is placed like a debt: `resolve --finding F<n> --as
 // <destination> --where <where>`, the second shape of the `resolve` kind. The origin's `resolve`
@@ -95,9 +99,9 @@ export function buildRecord(kind, fields, { existing = [], sessionId = null, now
   if (subjectRuling) {
     if (!SUBJECT.test(fields.subject)) throw new Error(`--subject must be T<n>, a group letter, final or sweep, got "${fields.subject}"`)
     // The sweep's subject also holds its consolidation's review loop (`re-review sweep r<k>`).
-    const id = fields.subject === 'sweep' ? /^[SFU][1-9]\d*$/ : /^[FU][1-9]\d*$/
-    if (!id.test(fields.finding)) throw new Error(`--finding must be ${fields.subject === 'sweep' ? 'a sweep finding id such as S2, or a finding of its consolidation such as F1' : 'a finding id such as F3, or an unverifiable item such as U1'}, got "${fields.finding}"`)
-    if (fields.as === 'fix' && fields.finding.startsWith('S')) {
+    const loopId = /^[FU][1-9]\d*$/.test(fields.finding)
+    if (!(loopId || (fields.subject === 'sweep' && isSweepId(fields.finding)))) throw new Error(`--finding must be ${fields.subject === 'sweep' ? 'a sweep finding id such as S2 or R1-S2, or a finding of its consolidation such as F1' : 'a finding id such as F3, or an unverifiable item such as U1'}, got "${fields.finding}"`)
+    if (fields.as === 'fix' && isSweepId(fields.finding)) {
       throw new Error(`${fields.finding} is accepted or dismissed, never ruled fix: a sweep finding is consolidated by a fix and its re-review`)
     }
   }

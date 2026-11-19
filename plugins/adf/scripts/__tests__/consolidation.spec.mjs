@@ -158,8 +158,9 @@ test('the fix of a consolidation asks to reuse an existing helper before writing
 })
 
 // An apply round (`plan.mjs reopen`) sweeps again: its range starts at the round's base, and its
-// findings, their ids, rulings and consolidation rounds start anew; round 0's stay where they were.
-test('an apply round sweeps its own diff: findings, ids and consolidation rounds count from the round', () => {
+// findings, rulings and consolidation rounds start anew; round 0's stay where they were. Its ids
+// carry the round (#52), so no id of the change names two findings.
+test('an apply round sweeps its own diff: findings and consolidation rounds count from the round, ids carry it', () => {
   const T0 = '2000-01-01T00:00:00.000Z'
   const made = host({ 'plan.md': PLAN })
   const { change } = made
@@ -180,10 +181,19 @@ test('an apply round sweeps its own diff: findings, ids and consolidation rounds
   const fresh = { introduced: 'src/c.ts:1', existing: 'src/a.ts:1', why: 'Same constant again.' }
   bothPasses(change, [fresh], head1)
   const state = sweepState(change, 'add-x')
-  assert.deepEqual(state.open.map((f) => [f.id, f.introduced]), [['S1', 'src/c.ts:1']], "round 0's ruling on S1 does not reach the round's S1")
+  assert.deepEqual(state.open.map((f) => [f.id, f.introduced]), [['R1-S1', 'src/c.ts:1']], "round 0's ruling on S1 does not reach the round's finding")
   const out = sweep(['consolidate', '--change', 'add-x', '--reason', 'consolidate', '--root', change])
-  assert.deepEqual([out.round, out.fix, out.already], [1, 'fix sweep r1', false])
-  assert.equal(call(change, 'prompt', '--role', 'fix', '--subject', 'sweep', '--round', '1').name, 'fix sweep r1')
+  assert.deepEqual([out.round, out.fix, out.already, out.findings], [1, 'fix sweep r1', false, ['R1-S1']])
+  const fix = call(change, 'prompt', '--role', 'fix', '--subject', 'sweep', '--round', '1')
+  assert.equal(fix.name, 'fix sweep r1')
+  assert.ok(fix.prompt.includes('- Open findings:\n  - R1-S1 src/c.ts:1 repeats src/a.ts:1: Same constant again.'), fix.prompt)
+  // The consolidation's re-review answers it by the round's id.
+  const reReview = { role: 're-review', summary: 'Checked.', previous: [{ id: 'R1-S1', status: 'not-addressed', file: 'src/c.ts', line: 1 }], findings: [], outOfScope: [] }
+  const checked = checkReply('re-review', JSON.stringify(reReview), () => replyContext(change, 'add-x', 're-review sweep r1'))
+  assert.deepEqual([checked.errors, checked.result.notConsolidated], [[], ['R1-S1']])
+  // The developer's dismissal names the round's id; round 0's S1 ruling stays round 0's.
+  appendRecord(change, 'add-x', 'ruling', { subject: 'sweep', finding: 'R1-S1', as: 'dismissed', decision: 'kept per round' })
+  assert.deepEqual(sweepState(change, 'add-x').cleared.map((c) => [c.id, c.by]), [['R1-S1', 'ruling']])
 })
 
 test('the first consolidation waits for both passes, and passes on different HEADs are refused', () => {
