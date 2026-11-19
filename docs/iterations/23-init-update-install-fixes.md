@@ -108,3 +108,79 @@ this iteration; the designer's calls are recorded below.
 | 5 | #24: the notice asks again when the cached tag equals the pinned ref | `update-cli.spec.mjs` |
 | 6 | #33: the log author from `git var GIT_AUTHOR_IDENT` or the last commit; the `git config` rule in the archive instruction and `frame.md` | `adf-memory` `memory.spec.mjs` |
 | 7 | `## Result` with the checks run | `npm test` |
+
+## Result
+
+Six commits on `feat/23-init-update-install-fixes`, one per issue (#12 and #18 share one, since
+they are one rule). Each fix's test was written first and seen to fail.
+
+- **#13** (f1ea861). `copyCandidates` runs `git ls-files --others --ignored` in
+  `mainCheckout(root)`; the paths the root's `## Worktree copies` names are still left out.
+  Test: `init.spec.mjs`, `in a worktree the copy candidates are the main checkout's, less those the
+  worktree's guide names`.
+- **#12, #18** (2e493bf). One install rule for every lookup:
+  - `checkSuperpowers` in Claude Code goes through `selectInstall`, as it already did in Codex: a
+    record for the main directory or the current worktree, the main directory's settings, the
+    cache of a plugin a trusted project enables with no record. `isAvailable` stays only for the
+    parity record (`scripts/parity/origin-superpowers.mjs`); the gate's reason "recorded but no
+    install path exists on disk" is gone, and such a record now reads "not installed".
+  - `cachedInstall` takes the only cached version when the marketplace lists none, so the
+    fallback works for `superpowers`, which the official marketplace lists by a git source.
+  - At the same scope the main directory's record wins over a worktree's.
+  - The registry check's warning for an absent plugin ends `run it from <main>` in Claude Code.
+  - The guide: `projects/several-projects.md` (the rule, the main directory defined, the
+    settings file the install rewrites), `troubleshooting.md`, `getting-started/switching.md`
+    (step 10 and the developer's guide: install from the main directory, also in a switch made in
+    a worktree). The input of `18-documentation.md` is corrected. The evidence of
+    `docs/lessons/superpowers-gate.md` follows the code.
+  - Tests: `installed.spec.mjs` (`at equal scope the main directory's record wins over the
+    worktree's`, `a trusted plugin whose marketplace lists no version is its only cached
+    version`), `superpowers.spec.mjs` (`in Claude Code the gate counts the main directory's project
+    install from a worktree, and reads its settings`, `in Claude Code the gate passes for a trusted
+    project with no install record and the plugin in the cache`), `registry.spec.mjs` (the
+    warning's text).
+- **#19** (2cc9b0b). The clause "and the registry check still warns about it" is gone from
+  `plugins/adf/contract/README.md`. The guide did not repeat it. No test: documentation only.
+- **#24** (5c5d74a). `update.mjs notice` passes the pinned `ref` to `cachedLatest`, which asks the
+  remote again when the cached tag equals it; any other cached answer, a failed ask included,
+  stands for the day. The guide's `update.md` and `extension-points/agent-hooks.md` say so. Test:
+  `update-cli.spec.mjs`, `notice asks again within a day when the cached tag is the pinned ref`.
+- **#33** (2e1bdfd). `adf-memory`'s `log` takes the author from `git var GIT_AUTHOR_IDENT`, else
+  from `git log -1 --format=%an`, and is refused only when neither gives a name; the refusal no
+  longer tells the agent to set anything. `frame.md` `## Tools` states the rule "Never run
+  `git config` to set a value"; the archive instruction points to it (the flow-regression test
+  refuses a rule stated in full on two surfaces) and stops a step refused for a missing value.
+  The guide's `plugins/adf-memory.md` and `cycle/archive.md` say so. Test: `memory.spec.mjs`, `log
+  takes the author from git var GIT_AUTHOR_IDENT, else the last commit, and never sets git
+  config`.
+
+### #14: cause not found in this repository; left open
+
+Checked:
+
+- Nothing in this repository sets or resolves `${CLAUDE_PLUGIN_ROOT}`: Claude Code substitutes it
+  in the command text. `plugin-root.mjs` only reads the root a script runs from.
+- `/adf:init` never declares a directory marketplace in a host: `marketplaceSource`
+  (`plugins/adf/scripts/lib/host-settings.mjs:27-30`) drops a `directory` source.
+- `update.mjs pull` runs `claude plugin marketplace update` and `claude plugin install|update`
+  only; it names no path.
+- The only code that writes a directory marketplace pointing at this repository is the parity
+  replay (`scripts/parity/lib/replay-host.mjs:96-97`), and only into the sandbox's own
+  `CLAUDE_CONFIG_DIR`; the sandbox refuses the real home (test `the real HOME is refused`).
+- Outside the code: the rehearsal (iteration 14b, finding F8) declared the marketplace by an
+  absolute local path in project settings, and iteration 17 ran Claude Code with `--plugin-dir
+  <this repository>/plugins/adf`. Either can leave state in Claude Code (a directory marketplace
+  of the same name, a cached command expansion) that this repository cannot see or change. The
+  report of the issue says the session started as plain `claude`.
+
+The detection from iteration 16 stays: `extensions.mjs where` warns when the scripts run from
+outside the plugin cache, and `/adf:init` and `/adf:update` show the warning. The issue stays
+open for a reproduction on a machine with Claude Code's state at hand.
+
+### Checks
+
+- `npm test` before the iteration (5328c4f): 1834 tests, 1829 pass, 0 fail, 5 skipped.
+- `npm test` before every commit, green each time; at the last fix commit: 1841 tests, 1836 pass,
+  0 fail, 5 skipped. `check-lessons.mjs`, `check-release.mjs` and `check-guide.mjs` pass.
+- `scripts/guide-review.mjs` is not run here: it is a release step (roadmap, "Checks after every
+  iteration", item 4), and iterations 21 to 27 are released together.
