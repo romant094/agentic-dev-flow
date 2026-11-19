@@ -125,8 +125,9 @@ The branch and `quick.md` stay for the developer to keep or remove.
 
    On a refusal, send `errors` to the same agent once. After a second refusal, take the
    candidates to `/adf:propose`. Show each item's `fit`, `reason` and `files`. The developer
-   selects. Offer an item of fit `propose` to `/adf:propose`; this task never takes it. Record
-   the selection, and repeat until `undecided` is empty:
+   selects. Offer an item of fit `propose` to `/adf:propose`; this task never takes it. A debt
+   entry flagged as the mirror of a key is taken together with that key, so that archive
+   resolves it. Record the selection, and repeat until `undecided` is empty:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/scope.mjs" select --change <name> --take K1,K2 [--exclude "<KEY>: <reason>"] [--rest "<reason>"]

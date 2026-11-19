@@ -79,21 +79,26 @@ export const largeItems = (scope) => scope.items.filter((i) => i.state !== 'excl
 const candidatesOf = (scope) => scope.items.filter((i) => i.state !== 'excluded')
 
 // Excludes each large candidate as `scope.mjs select --exclude` does. A key the developer named
-// is never excluded: its item gets a flag line instead, once.
+// is never excluded: its item gets a flag line instead, once. A debt entry whose Tracker key the
+// developer named mirrors that issue, so it counts as named too; its first flag says to take it
+// with the issue, since archive resolves only a taken entry.
 export function filter(root, change) {
   const { main, scope } = load(root, change)
   const named = new Set(scope.from?.keys ?? [])
+  const mirrors = (item) => item.source === 'debt' && named.has(item.tracker)
+  const large = new Map(largeItems(scope).map((l) => [l.key, l.reason]))
   const excluded = []
   const flagged = []
-  for (const large of largeItems(scope)) {
-    if (!named.has(large.key)) {
-      excluded.push(large)
-      continue
-    }
-    const item = scope.items.find((i) => i.key === large.key)
-    const flag = `${large.key} looks too large for a quick task (${large.reason})`
-    if (!item.flags.includes(flag)) item.flags.push(flag)
-    flagged.push({ key: large.key, flag })
+  const flag = (item, text) => {
+    if (!item.flags.includes(text)) item.flags.push(text)
+    flagged.push({ key: item.key, flag: text })
+  }
+  for (const item of candidatesOf(scope)) {
+    if (mirrors(item)) flag(item, `${item.key} mirrors ${item.tracker}, a key you named; take it with ${item.tracker}`)
+    if (!large.has(item.key)) continue
+    const reason = large.get(item.key)
+    if (named.has(item.key) || mirrors(item)) flag(item, `${item.key} looks too large for a quick task (${reason})`)
+    else excluded.push({ key: item.key, reason })
   }
   if (flagged.length) writeScope(main, change, scope)
   if (excluded.length) select(root, change, { exclude: excluded.map(({ key, reason }) => ({ key, reason: `too large for a quick task (${reason})` })) })

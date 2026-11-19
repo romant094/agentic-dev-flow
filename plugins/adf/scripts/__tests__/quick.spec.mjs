@@ -87,6 +87,25 @@ test('filter keeps a named key and flags it', () => {
   assert.equal(stateOf(root, 'P-1').flags.length, 1, 'a second filter adds no second flag')
 })
 
+test('filter keeps the debt entry that mirrors a named key, and flags it to be taken with that key', () => {
+  const root = host({ keys: ['P-3'] })
+  const scope = readScope(root, 'fix-it')
+  scope.items.find((i) => i.key === 'd-1').tracker = 'P-3'
+  scope.items.find((i) => i.key === 'd-3').tracker = 'P-3'
+  writeScope(root, 'fix-it', scope)
+  const out = quick(root, 'filter', '--change', 'fix-it')
+  assert.deepEqual(out.excluded.map((e) => e.key), ['P-1', 'P-2', 'd-2'])
+  assert.deepEqual(out.candidates, ['P-3', 'd-1', 'd-3'])
+  assert.deepEqual(out.flagged, [
+    { key: 'd-1', flag: 'd-1 mirrors P-3, a key you named; take it with P-3' },
+    { key: 'd-1', flag: 'd-1 looks too large for a quick task (class debt)' },
+    { key: 'd-3', flag: 'd-3 mirrors P-3, a key you named; take it with P-3' }
+  ])
+  assert.deepEqual(stateOf(root, 'd-1').flags, ['d-1 mirrors P-3, a key you named; take it with P-3', 'd-1 looks too large for a quick task (class debt)'])
+  quick(root, 'filter', '--change', 'fix-it')
+  assert.equal(stateOf(root, 'd-1').flags.length, 2, 'a second filter adds no second flag')
+})
+
 test('estimate-input writes the prompt, each candidate with its file and the reply schema', () => {
   const root = host()
   quick(root, 'filter', '--change', 'fix-it')
