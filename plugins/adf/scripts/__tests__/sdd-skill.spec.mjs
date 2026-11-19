@@ -2,12 +2,13 @@
 // And the concept guard: the installed skill still decides on the concepts the computed reply
 // results carry, so a Superpowers update that renames one fails here, not in a live apply.
 import { strict as assert } from 'node:assert'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { selectInstall } from '../lib/installed.mjs'
 import { ROLES } from '../lib/reply.mjs'
+import { PLUGIN_ID as SUPERPOWERS_ID } from '../lib/superpowers.mjs'
 import { run } from '../sdd.mjs'
 import { commitIn, host, superpowersHome } from './git-host.mjs'
 
@@ -61,26 +62,23 @@ test('brief and package refuse without their arguments, a plan, or the skill', (
 
 // ---------------------------------------------------------------- the concept guard
 
-const SP_CACHE = join(homedir(), '.claude', 'plugins', 'cache', 'claude-plugins-official', 'superpowers')
 const SKILL_PATH = join('skills', 'subagent-driven-development', 'SKILL.md')
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..')
 
-// The highest installed version's SKILL.md, or null when Superpowers is not installed here.
+// The SKILL.md of the release installed for this repository, or null when Superpowers is not
+// installed here. The cache keeps older and newer releases beside it; only the installed one counts.
 function installedSkill() {
-  if (!existsSync(SP_CACHE)) return null
-  const version = (v) => v.split('.').map((n) => Number.parseInt(n, 10))
-  const newer = (a, b) => {
-    const [x, y] = [version(a), version(b)]
-    for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (y[i] ?? 0) - (x[i] ?? 0)
-    return 0
+  try {
+    const { path, version } = selectInstall(SUPERPOWERS_ID, REPO)
+    const file = path && join(path, SKILL_PATH)
+    return file && existsSync(file) ? { version: version ?? path, file } : null
+  } catch {
+    return null
   }
-  const found = readdirSync(SP_CACHE)
-    .filter((v) => /^\d+(\.\d+)*$/.test(v) && existsSync(join(SP_CACHE, v, SKILL_PATH)))
-    .sort(newer)
-  return found.length ? { version: found[0], file: join(SP_CACHE, found[0], SKILL_PATH) } : null
 }
 
 const SKILL = installedSkill()
-const NO_SKILL = SKILL ? false : `Superpowers subagent-driven-development is not installed under ${SP_CACHE}: the concept guard has nothing to read`
+const NO_SKILL = SKILL ? false : `Superpowers subagent-driven-development is not installed for ${REPO}: the concept guard has nothing to read`
 
 test('the installed skill still names the four implementer statuses that the impl result computes', { skip: NO_SKILL }, () => {
   const text = readFileSync(SKILL.file, 'utf8')
