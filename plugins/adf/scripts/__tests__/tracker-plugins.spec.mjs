@@ -232,8 +232,7 @@ test('land hands off taken, partial and debt-group issues through adf-jira, the 
   assert.deepEqual([held.code, held.ok, held.state, held.mr], [0, true, 'pending', { url: MR }], JSON.stringify(held))
   assert.ok(held.preview.includes('PROJ-1 Summary of PROJ-1: In Progress → Review; assignee qa.login; comment:'), held.preview.join('\n'))
   assert.ok(held.preview.includes('PROJ-2 Summary of PROJ-2: comment:'), held.preview.join('\n'))
-  // PROJ-7 mirrors the debt group: start never took it, so the hand-off takes it first.
-  assert.ok(held.preview.includes('PROJ-7 Summary of PROJ-7: assignee dev.login first; Opened → In Progress → Review; assignee qa.login; comment:'), held.preview.join('\n'))
+  assert.ok(held.preview.includes('PROJ-7 Summary of PROJ-7: Opened → In Progress → Review; assignee qa.login; comment:'), held.preview.join('\n'))
   assert.deepEqual(writes(h), [], 'nothing is sent before the yes')
 
   const applied = cli(h, 'land.mjs', 'handoff', '--yes')

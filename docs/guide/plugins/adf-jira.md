@@ -180,7 +180,14 @@ With `apply: <plan id>`, the plan runs.
 | `partial` | `done`, `test`, `remains` (lists); `commit` | the route back to `statuses.initial`, never through `statuses.handoff`, then the comment; with no `statuses.initial`, the comment only and the status stays; `check` then notes that `config.statuses.initial` is unset; with `statuses.initial` set but no route back, the comment only and the status stays, and `unmoved` in the plan names why |
 | `not-reproduced` | `tried`, `commit`; `test` | as `taken`: the comment says the issue does not reproduce on that commit, and the tester retests it |
 
-A `taken` or `not-reproduced` issue that is not assigned to the developer and has a route to `statuses.handoff` gets one more row first: the developer as assignee, before the route. An issue already in `statuses.handoff` gets no such row. A workflow may offer a transition to the assignee only, and a retest hands off an issue that `start` never took. The tester row stays last. The preview names both: `assignee <developer> first; <route>; assignee <tester>`.
+Before it plans the route of a `taken` or `not-reproduced` issue, the plugin asks Jira which transitions the developer may run on the issue now (`GET /rest/api/2/issue/<key>/transitions?expand=transitions.fields`). Jira applies the workflow's conditions there. The rows follow the answer:
+
+- Jira offers the route's first transition: transition, comment, tester. The plugin does not take the issue.
+- Jira does not offer it, and the issue is not assigned to the developer: the developer as assignee first, then transition, comment, tester. The preview names both: `assignee <developer> first; <route>; assignee <tester>`.
+- Jira does not offer it, and the issue is the developer's already: the plan skips the issue. The reason names the transition and the status.
+- The transition's screen requires a field that the plan does not fill: the plan skips the issue. The reason names the field. A field with a default value does not count. The plugin never fills a required field, the assignee included.
+
+The issue can change between the plan and your yes. So, before each of these transitions, apply asks Jira again. When the transition is not offered, or a required field is missing, the row fails. Its reason names the transition and the status, or the field. Apply sends nothing more for that issue, and never adds a row that the plan does not show. A `partial` issue is not checked this way.
 
 The required fields are the core's. The core sends every text field as a list of one-line texts. The plugin checks them again before it sends anything. It refuses three things: a field that is not such a list, a text that holds a link or a URL, and a `commit` that is not a commit hash. The core checks the wording. The plugin renders the markup.
 

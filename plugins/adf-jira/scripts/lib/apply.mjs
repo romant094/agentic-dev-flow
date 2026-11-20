@@ -7,6 +7,9 @@
 // status, and the row is skipped as drifted when it does not match `shape`, a regular expression
 // tested against its lines (bodyLines); when it already equals the description the row's
 // `fields` step would write, nothing is sent and the row is done, counted as unchanged.
+// A transition step marked `check` (a hand-off's) runs only when Jira offers it to the current
+// user now and its screen requires no field the step does not fill; else the row fails with a
+// reason that names the transition and the status, and nothing more is sent for it.
 import { resolvePlaceholders } from './placeholders.mjs'
 import { readAllComments } from './readers.mjs'
 
@@ -145,6 +148,11 @@ async function runStep(client, row, step) {
     return
   }
   if (step.transitionId !== undefined) {
+    if (step.check) {
+      const offer = await transitionOffer(client, row.key, step)
+      if (!offer.offered) throw new Error(`${transitionText(step)} is not offered to the current user; run the operation again without apply for a new plan`)
+      if (offer.missing.length > 0) throw new Error(`${transitionText(step)} requires ${offer.missing.join(', ')}`)
+    }
     await client.post(`/rest/api/2/issue/${row.key}/transitions`, {
       transition: { id: step.transitionId },
       ...(step.fields === undefined ? {} : { fields: step.fields })
@@ -166,3 +174,18 @@ async function runStep(client, row, step) {
   }
   throw new Error(`Step for ${row.key} has no create, worklog, comment, transitionId, fields or link.`)
 }
+
+// What Jira offers the calling user on the issue now, for one transition step: whether the
+// transition is offered (Jira applies the workflow's conditions here), and the names of the
+// required screen fields the step does not fill. A field with a default value is filled by Jira.
+export async function transitionOffer(client, key, step) {
+  const reply = await client.get(`/rest/api/2/issue/${key}/transitions?expand=transitions.fields`)
+  const offered = (reply?.transitions ?? []).find((t) => String(t.id) === String(step.transitionId))
+  if (!offered) return { offered: false, missing: [] }
+  const missing = Object.entries(offered.fields ?? {})
+    .filter(([id, f]) => f?.required === true && f.hasDefaultValue !== true && !(id in (step.fields ?? {})))
+    .map(([id, f]) => f.name ?? id)
+  return { offered: true, missing }
+}
+
+export const transitionText = (step) => `the transition "${step.name ?? step.transitionId}" from "${step.from}"`

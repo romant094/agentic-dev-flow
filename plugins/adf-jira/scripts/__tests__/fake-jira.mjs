@@ -32,6 +32,16 @@ export function fakeJira({ token = 'token-value', account = 'dev.login', issues 
     }
   }
 
+  // The transitions the calling account may run now, as Jira applies the workflow's conditions:
+  // every one out of the status (`offers` unset), only to the assignee (`assignee`), or none.
+  const offered = (key) => {
+    const issue = store[key]
+    const out = graph[issue.fields.status] ?? []
+    if (issue.offers === 'none') return []
+    if (issue.offers === 'assignee' && issue.fields.assignee?.name !== account) return []
+    return out
+  }
+
   const fetch = async (url, init = {}) => {
     const method = init.method ?? 'GET'
     const { pathname, searchParams } = new URL(url)
@@ -57,8 +67,12 @@ export function fakeJira({ token = 'token-value', account = 'dev.login', issues 
       const max = Number(searchParams.get('maxResults') ?? 50)
       return json({ startAt, maxResults: max, total: all.length, comments: all.slice(startAt, startAt + max) })
     }
+    if (method === 'GET' && sub === 'transitions') {
+      const screens = store[key].screens ?? {}
+      return json({ transitions: offered(key).map((t) => ({ id: t.id, name: t.name, to: { name: t.to }, ...(searchParams.get('expand') === 'transitions.fields' ? { fields: screens[t.id] ?? {} } : {}) })) })
+    }
     if (method === 'POST' && sub === 'transitions') {
-      const hop = (graph[store[key].fields.status] ?? []).find((t) => t.id === body.transition.id)
+      const hop = offered(key).find((t) => t.id === body.transition.id)
       if (!hop) return json({ errorMessages: ['Transition not valid'] }, 400)
       store[key].fields.status = hop.to
       return empty()
@@ -78,8 +92,12 @@ export function fakeJira({ token = 'token-value', account = 'dev.login', issues 
   return { fetch, calls, writes, store, comments: posted }
 }
 
-export function issue(key, { summary = `Summary of ${key}`, status = 'Opened', type = 'Task', subtask = false, parent, subtasks = [], links = [], assignee = null, fields = {}, created = '2026-09-01T10:00:00.000+0300', changelog } = {}) {
+// `offers` (`assignee` or `none`) narrows the transitions Jira offers; `screens` gives a
+// transition's screen fields by its id, `{ <field id>: { name, required } }`.
+export function issue(key, { summary = `Summary of ${key}`, status = 'Opened', type = 'Task', subtask = false, parent, subtasks = [], links = [], assignee = null, fields = {}, created = '2026-09-01T10:00:00.000+0300', changelog, offers, screens } = {}) {
   return {
+    ...(offers === undefined ? {} : { offers }),
+    ...(screens === undefined ? {} : { screens }),
     fields: {
       summary,
       description: `Description of ${key}`,
