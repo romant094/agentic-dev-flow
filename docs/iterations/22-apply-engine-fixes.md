@@ -209,13 +209,17 @@ One commit per issue on `feat/22-apply-engine-fixes`, each test written first an
 each commit gated on the full `npm test`.
 
 - **#27, #43** (`lib/guard.mjs`). `snapshot` records each watched checkout's branch, the main
-  checkout as `main`, and the change directories of another change's worktree. `compare` puts a
-  forward move on the same branch in such a worktree, and a reflog-proven fast-forward of a
-  protected branch in the main checkout, into `foreign` with its `reason`; `ok` stays true. A
-  commit in the main checkout, a commit in a worktree of no change and a branch switch still
-  fail. `apply.md` and the guide's apply page say so. Test: `apply-git.spec.mjs`, "the guard
-  reports a commit in another change's worktree and a fast-forward of the main checkout as
-  foreign".
+  checkout as `main`, and for another change's worktree its change directories and the size and
+  time of their `attempts.jsonl` and `ledger.jsonl`. `compare` puts forward commits on the same
+  branch in such a worktree, the status unchanged, into `foreign` when that change's records name
+  every new commit or advanced in the round, and a reflog-proven fast-forward of a protected
+  branch in the main checkout; `ok` stays true. An uncommitted edit in another change's worktree,
+  a commit there with no proof, a commit in the main checkout, a commit in a worktree of no change
+  and a branch switch fail. `apply.md` and the guide's apply page say so. Test:
+  `apply-git.spec.mjs`, "the guard reports a commit in another change's worktree and a
+  fast-forward of the main checkout as foreign": a commit named by the other change's records, a
+  commit while its records advanced, our commit with its records still (fails), an uncommitted
+  edit (fails).
 - **#28** (`lib/ledger.mjs`, `lib/loop.mjs`, `re-review.schema.json`). A `U<n>` may be ruled
   `fix`; it leaves `unverifiable`, enters `open`, renders as `U<n> (unverifiable): …`, `Check: …`,
   `Ruled fix: …`, and the re-review answers it by its id. Tests: `dispatch.spec.mjs`, "an
@@ -223,8 +227,17 @@ each commit gated on the full `npm test`.
   `ledger.spec.mjs`.
 - **#29** (`apply.md`, `review.md`, `verify.md`). The whole-suite run is waited for in the
   foreground with the 600000 ms timeout; the background only for a suite known to exceed 10
-  minutes, on its task notification; never a scheduled wakeup. No test asserts that text; the
-  instruction-part size test (`changes.spec.mjs`) and `check-guide.mjs` pass.
+  minutes; never a scheduled wakeup. Enforced by script (`lib/suite-run.mjs`, `suite.mjs`,
+  `lib/apply-status.mjs`, `lib/metrics-records.mjs`): the run marker `suite/run.json` (and
+  `base-run.json`), `suite.mjs wait` (done at once, `running` with exit 3 after `--max-minutes`,
+  a refusal for a dead or missing run, `readAt` on the first read only), the apply report's
+  refusal without a done marker for the recorded run, and the metrics `tests.suiteRun { durationMs,
+  idleMs }`. Tests: `suite.spec.mjs`, "a run writes its marker…", "wait returns a done run at
+  once and records when it was first read; a repeated wait keeps that time" (read right after
+  the end, read with a delay, a repeated wait), "wait gives up on a running run before the Bash
+  limit, and calls a run with a dead process or past its time stale"; `apply-status.spec.mjs`,
+  "every group merged and every task ticked renders the Complete block" (the refusal);
+  `metrics-records.spec.mjs`, the test runs test (the idle field).
 - **#48** (`tasks.mjs`, `lib/tasks.mjs`, `lib/groups.mjs`, `workspace.mjs`). `tick --plan-task <N>
   --evidence <file>` ticks a task whose Commit step says none on a non-empty file in the change
   directory and commits it with the tick. `group-merge` merges a group branch that never moved as
@@ -255,8 +268,9 @@ each commit gated on the full `npm test`.
   checked; its other lines are. Test: `plan-symbols.spec.mjs`, "propose checks no Create of a
   done task; its other lines and an open task's Create are checked".
 
-Checks: `npm test` before the iteration, 1834 tests, 1829 pass, 5 skipped, 0 fail; after it, 1842
-tests, 1837 pass, 5 skipped, 0 fail, with `check-lessons.mjs`, `check-release.mjs` and
+Checks: `npm test` before the iteration, 1834 tests, 1829 pass, 5 skipped, 0 fail; after the ten
+fixes, 1842 tests, 1837 pass; after the follow-ups (the run marker and `wait`, the guard's proof),
+1845 tests, 1840 pass, 5 skipped, 0 fail, with `check-lessons.mjs`, `check-release.mjs` and
 `check-guide.mjs` green. Nothing was run in a scratch project, and `guide-review.mjs` is left to
 the release step of v0.22.0.
 
