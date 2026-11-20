@@ -31,7 +31,7 @@ A script runs each step. One agent reasons over the numbers that the scripts com
 | Step | What it does |
 |---|---|
 | `start` | Fetches the integration branch. Makes the branch `chore/retro/<id>` and its worktree. |
-| `window` | Selects the changes. Leaves the files of the knowledge base out of the git figures. Writes the input and the prompt for the agent. |
+| `window` | Selects the changes. Leaves the files of the knowledge base out of the git figures. Writes the input and the prompt for the agent. With metrics off in the registry, it says that the window has no records. See [Metrics](../concepts/metrics.md). |
 | `reply` | Checks the reply of the `retro <id>` agent. |
 | `file` | Files the findings and the open ADF debt upstream, through the upstream role. |
 | `render` | Writes the report and the sidecar. |

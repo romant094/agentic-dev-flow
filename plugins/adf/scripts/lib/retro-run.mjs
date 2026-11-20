@@ -25,7 +25,8 @@
 //            excluded from the diff figures and the ADF debt not yet filed; the agent's input (lib/retro.mjs input) and its
 //            prompt written; the dispatch recorded and its plan returned for the orchestrator. A
 //            refused or degraded knowledge call fails the step with nothing written: the
-//            knowledge base's files would count in the diff figures
+//            knowledge base's files would count in the diff figures. With the registry's metrics
+//            switch off, detail.metrics says the window has no records (window.mjs metricsOffReport)
 //   reply    lib/retro.mjs recordRetroReply: a refused reply is retried once, the second stops
 //            the retrospective; on `retry` the next attempt's dispatch is recorded here, so the
 //            metrics count every dispatch; a valid one's computed result is kept in the state
@@ -62,7 +63,7 @@ import { renderRetro, retroDocument } from './retro-render.mjs'
 import { readDebtRoot } from './registry.mjs'
 import { callRole, CORE, coreRepository, forgeInput, forgeReport, hostSlug, knowledgePaths, upstreamReport } from './roles.mjs'
 import { defaultHome, detectRuntime } from './runtime.mjs'
-import { buildSidecar, fetchRef, MODES, RETRO_DIR, sinceLastRetro } from './window.mjs'
+import { buildSidecar, fetchRef, metricsOffReport, MODES, RETRO_DIR, sinceLastRetro } from './window.mjs'
 import { create, gitIn, remove as removeWorktree, worktreePath, worktrees } from './workspace.mjs'
 
 export const STEPS = ['start', 'window', 'reply', 'file', 'render', 'record', 'publish', 'remove']
@@ -280,6 +281,7 @@ export function windowStep(ctx) {
         inputFile,
         changes: sidecar.changes.map((c) => c.change),
         coverage: sidecar.coverage,
+        ...(metricsOffReport(sidecar.coverage) ? { metrics: metricsOffReport(sidecar.coverage) } : {}),
         adfDebt: sidecar.adfDebt.map(titled),
         dispatch: { ...withoutAgent(plan), ...agent.fields, promptFile, attempt: attempt.attempt }
       }

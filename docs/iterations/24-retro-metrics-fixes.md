@@ -149,3 +149,47 @@ Open:
   command, a host command run with the shell's `PATH`; the core does not choose its `node`. A
   host whose node comes from a version manager must put it on `PATH` for non-interactive shells.
 - #36 and #46 are deferred to the developer.
+
+## Follow-up: the metrics switch (#36)
+
+The developer's decision (2026-11-20, the issue's last comment): a registry switch for the
+metrics record, on by default and asked at `/adf:init`, and a section at the top of the guide
+page `concepts/metrics.md` that says what is collected, where it is kept, what leaves the
+machine and why it is worth keeping on.
+
+What changed:
+
+- `lib/registry.mjs`: `metrics.enabled`, `true` or `false`, checked by
+  `validateMetricsSettings`; `metricsSwitch` reads it (a missing key is on, `recorded` false)
+  and `setMetricsSwitch` writes it. `metrics.mjs switch [--set true|false]` is the CLI.
+- `/adf:init` asks in a new step 10, only when `recorded` is false, and reports
+  `Metrics record: on|off`.
+- `lib/archive.mjs`: with the switch off, `metrics` is `skipped` with no record and no price
+  fetch, `detail.report` saying so; `commit-metrics` commits the ledger copy alone, or is
+  `skipped` when the copy is current; the report says the hurt signals were not read.
+- `/adf:quick` writes its record through the same archive steps, so the switch covers it with
+  no change of its own.
+- `lib/window.mjs`: with the switch off, the sidecar's coverage holds `metrics: "off"`, an absent
+  record's reason names the switch, and `metricsOffReport` gives the line `retro.mjs window`
+  returns as `detail.metrics`; the rendered report's Records line says metrics are off.
+- `/adf:update`: nothing. A registry with no key keeps metrics on, so no migration is needed.
+
+Calls made by the implementer, not the developer:
+
+- **The key is `metrics.enabled`, not a boolean `metrics`.** The registry already holds a
+  `metrics` object with `pricesUrl`; a boolean in its place would drop that setting. The
+  switch lives beside it.
+- **`commit-metrics` still copies the ledger with metrics off.** The step also carries the
+  ledger records written after `move` into the archived change; skipping it whole would lose
+  them. With metrics off it commits that copy alone, `chore(archive): copy the ledger of
+  <name>`, and is `skipped` only when the copy is current.
+- **A record written before the switch was turned off still counts in the retrospective.** The
+  window line says the window has no records when none is there, else that it has no new ones
+  and how many were written before.
+- **`metrics.mjs prices fetch` by hand still fetches.** The switch governs archive's automatic
+  fetch; a developer's explicit fetch is their own call.
+- **No contract version change.** The key is a core registry setting, not a field of the
+  extension contract that a plugin reads.
+
+Checks: `npm test` green at each commit; 1882 tests, 1877 passed, 0 failed, 5 skipped;
+`check-lessons.mjs`, `check-release.mjs` and `check-guide.mjs` with no error.

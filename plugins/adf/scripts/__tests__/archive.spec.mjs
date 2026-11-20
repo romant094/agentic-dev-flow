@@ -20,7 +20,7 @@ import { setBranches } from '../lib/branches.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
 import { readPointers, setPointer } from '../lib/active.mjs'
-import { initRegistry, setDebtRoot } from '../lib/registry.mjs'
+import { initRegistry, setDebtRoot, setMetricsSwitch } from '../lib/registry.mjs'
 import { writeSpecsBase } from '../lib/specs.mjs'
 import { create } from '../lib/workspace.mjs'
 import { pagePatch } from './fixtures/page-patch.mjs'
@@ -85,7 +85,7 @@ const VERIFY = '# Verify\n\n## Apply test record\n\n**Result:** PASS, 12 tests\n
 // `ledger` writes the ledger; `debt` sets the registry's debt root; `specsBase` writes the
 // change's specs-base.json, as propose does; `verify` is verify.md's text; `scope` is the change's
 // scope.json, as propose commits it.
-function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widgets dry\n', verdict = 'PASS', ledger = placedLedger, debt = null, extra = {}, meta = {}, omit = [], specsBase = true, verify = VERIFY, scope = null, quick = null } = {}) {
+function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widgets dry\n', verdict = 'PASS', ledger = placedLedger, debt = null, extra = {}, meta = {}, omit = [], specsBase = true, verify = VERIFY, scope = null, quick = null, metrics = null } = {}) {
   const top = realpathSync(mkdtempSync(join(tmpdir(), 'adf-archive-')))
   const root = join(top, 'host')
   execFileSync('git', ['init', '-q', '-b', 'develop', root])
@@ -95,6 +95,7 @@ function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widg
   initRegistry(root, '1.3')
   setBranches(root, { integration: 'develop', protected: [] })
   if (debt) setDebtRoot(root, debt)
+  if (metrics !== null) setMetricsSwitch(root, metrics)
   ignoreLocalDirs(root)
   git(root, 'add', '.')
   git(root, 'commit', '-q', '-m', 'init')
@@ -299,6 +300,57 @@ test('a price fetch is no step failure: none and stale are recorded, a changed t
   assert.ok(stale.detail.files.includes('.adf/prices/2026-10-19.json'), 'the entry an earlier run wrote is still committed')
   const commit = call(h, ['commit-metrics'])
   assert.deepEqual(commit.detail.files, ['.adf/prices/2026-10-19.json', `${TARGET}/metrics.json`])
+})
+
+// The registry's metrics switch off: no record, no price fetch, and the report says so.
+const NO_FETCH = { ...NONE, fetchPrices: () => assert.fail('metrics off: the price page is not fetched') }
+
+test('metrics off: the metrics step is skipped with no record and no price fetch, commit-metrics commits the ledger copy alone, and the report says so', () => {
+  const h = archiveHost({ metrics: false })
+  for (const step of ['check', 'placements', 'merge', 'move', 'commit-specs']) assert.equal(call(h, [step], NO_FETCH).ok, true, step)
+  // A record written after the move, so the archived ledger copy is behind the live ledger.
+  appendRecord(h.wt, 'add-x', 'session', { phase: 'archive' }, { env: { CLAUDE_CODE_SESSION_ID: 's2' } })
+  for (const step of ['ingest', 'commit-memory']) assert.equal(call(h, [step], NO_FETCH).ok, true, step)
+  const metrics = call(h, ['metrics'], NO_FETCH)
+  assert.deepEqual([metrics.ok, metrics.state, metrics.next], [true, 'skipped', 'commit-metrics'])
+  assert.deepEqual(metrics.detail, { off: true, report: 'metrics are off in the registry (metrics.enabled false): no record written, no price fetched' })
+  assert.equal(existsSync(join(h.wt, TARGET, 'metrics.json')), false)
+  assert.equal(existsSync(join(h.wt, '.adf', 'prices')), false)
+  const committed = call(h, ['commit-metrics'], NO_FETCH)
+  assert.deepEqual([committed.ok, committed.state], [true, 'done'])
+  assert.equal(committed.detail.off, true)
+  assert.deepEqual(committed.detail.files, [`${TARGET}/ledger.jsonl`])
+  assert.equal(git(h.wt, 'log', '-1', '--format=%s', committed.detail.commit), 'chore(archive): copy the ledger of add-x')
+  assert.equal(git(h.wt, 'status', '--porcelain'), '')
+  const rest = drive(h, NO_FETCH)
+  assert.ok(rest.every((r) => r.ok), JSON.stringify(rest.find((r) => !r.ok)))
+  const report = call(h, ['report'], NO_FETCH)
+  assert.equal(report.complete, true)
+  assert.match(report.report, /- metrics: skipped — metrics are off in the registry \(metrics\.enabled false\): no record written, no price fetched/)
+  assert.match(report.report, /- commit-metrics: done — the ledger copy at [0-9a-f]{7}; metrics off/)
+  assert.match(report.report, /No metrics record: metrics are off in the registry \(metrics\.enabled false\); the hurt signals were not read\./)
+  assert.equal(report.signals, null)
+})
+
+test('metrics off with the ledger copy current: commit-metrics is skipped too, nothing committed', () => {
+  const h = archiveHost({ metrics: false })
+  for (const step of METRICS) assert.equal(call(h, [step], NO_FETCH).ok, true, step)
+  assert.equal(call(h, ['metrics'], NO_FETCH).state, 'skipped')
+  const head = git(h.wt, 'rev-parse', 'HEAD')
+  const committed = call(h, ['commit-metrics'], NO_FETCH)
+  assert.deepEqual([committed.ok, committed.state, committed.detail], [true, 'skipped', { off: true, report: 'metrics off; the ledger copy is current, nothing to commit' }])
+  assert.equal(git(h.wt, 'rev-parse', 'HEAD'), head)
+  assert.match(call(h, ['report'], NO_FETCH).report, /- commit-metrics: skipped — metrics off; the ledger copy is current, nothing to commit/)
+})
+
+test('metrics on in the registry, or no key at all, keeps the record: the switch changes nothing for an existing project', () => {
+  for (const metrics of [true, null]) {
+    const h = archiveHost({ metrics })
+    for (const step of METRICS) assert.equal(call(h, [step]).ok, true, step)
+    const out = call(h, ['metrics'])
+    assert.equal(out.state, 'degraded', String(metrics))
+    assert.ok(existsSync(join(h.wt, TARGET, 'metrics.json')), String(metrics))
+  }
 })
 
 test('the archived ledger is copied again at the last commit, so it holds every record written after the move', () => {
@@ -1162,6 +1214,14 @@ test('placements resolves the debt a quick change took', () => {
   assert.equal(placed.ok, true, placed.refusal)
   assert.deepEqual([placed.detail.resolvedDebt, placed.detail.goneDebt], [['snmp-01'], ['snmp-03']])
   assert.equal(readFileSync(join(h.wt, 'docs/debt/snmp/index.md'), 'utf8').includes(DEBT_ROW('snmp-01')), false)
+})
+
+test('metrics off skips the record of a quick change too: /adf:quick runs the same archive steps', () => {
+  const h = quickHost({ metrics: false })
+  const steps = drive(h, NO_FETCH)
+  const metrics = steps.find((s) => s.step === 'metrics')
+  assert.deepEqual([metrics.state, metrics.detail.off], ['skipped', true])
+  assert.equal(existsSync(join(rootOf(h), TARGET, 'metrics.json')), false)
 })
 
 test('mr-input reads quick.md', () => {

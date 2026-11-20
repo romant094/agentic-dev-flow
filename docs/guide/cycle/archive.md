@@ -36,8 +36,8 @@ A script runs each step. The steps run in this order, one at a time.
 | `commit-specs` | Commits the move and the merged specs. |
 | `ingest` | Dispatches an agent to update the knowledge base. |
 | `commit-memory` | Commits the knowledge base and debt changes. |
-| `metrics` | Writes `metrics.json` in the archived change. |
-| `commit-metrics` | Commits the metrics. |
+| `metrics` | Writes `metrics.json` in the archived change. Skipped when the registry key `metrics.enabled` is `false`: no record, no price fetch. |
+| `commit-metrics` | Commits the metrics. With metrics off, commits only the ledger copy, or is skipped when that copy is current. |
 | `mr` | Finalizes the merge request. |
 | `merge-local` | Merges locally. Runs only when no forge plugin is enabled. |
 | `remove` | Removes the worktree. The branch stays. |
@@ -74,6 +74,7 @@ Not checked: whether the instructions make you approve a resolution. They say on
 | `docs(specs): archive <name>` | The old and the new change directory, and the merged main specs. |
 | `docs(memory): ingest what <name> taught` | The knowledge-base edits and the debt placements. No commit when nothing changed. |
 | `chore(metrics): record <name>` | The metrics record and the ledger copy. No commit when nothing changed. |
+| `chore(archive): copy the ledger of <name>` | With metrics off: the ledger copy only. No commit when nothing changed. |
 
 Each commit step stages only its own paths. A step refuses when another uncommitted file is in those places. Then you commit, move or discard that file, and run the step again.
 
@@ -90,6 +91,7 @@ Run `/adf:archive` again. The command asks for the next step and resumes at the 
 - A step runs only after the step before it settles.
 - A failed step shows its refusal. Fix the cause, then run the command again.
 - A `degraded` `metrics` step does not stop archive.
+- With metrics off, the report says that no record was written. See [Metrics](../concepts/metrics.md).
 - The `ingest` step stops after a second refused reply. Only a developer reset ends the stop.
 - After `remove`, the worktree is gone. Run `/adf:archive <name>` from the main checkout to see the report.
 

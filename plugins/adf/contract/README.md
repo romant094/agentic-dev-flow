@@ -283,11 +283,18 @@ passed to the plugin's operations. `extensions.mjs config <name or id> --config 
 replaces an enabled entry's `config` in place, so its position, the hooks' call order, is kept;
 `config` and `remove` take a plugin's name or its id.
 
+`metrics.enabled` (optional) is the switch for the change's metrics record, `true` or `false`;
+`/adf:init` asks for it, and a registry without it has metrics on, so a project set up before
+the switch needs no migration. With `false`, archive's `metrics` step is skipped, no record
+written and no price page fetched, its `commit-metrics` step commits only the ledger copy, and
+the retrospective's `window` step says the window has no records. `metrics.mjs switch [--set
+true|false]` reads and records it.
+
 `metrics.pricesUrl` (optional) is the page archive fetches the model price table from, an http
 or https URL; without it the core uses its default, and `/adf:init` does not ask for it:
 
 ```json
-{ "metrics": { "pricesUrl": "https://platform.claude.com/docs/en/about-claude/pricing.md" } }
+{ "metrics": { "enabled": true, "pricesUrl": "https://platform.claude.com/docs/en/about-claude/pricing.md" } }
 ```
 
 ## The core's host directory

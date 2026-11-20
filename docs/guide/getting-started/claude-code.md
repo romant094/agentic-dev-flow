@@ -77,7 +77,8 @@ Restart Claude Code in the project. The skills load at the restart.
 - the command that runs the whole test suite;
 - the untracked files that every worktree copies from the main checkout, for example the env file;
 - the format command that every commit of the flow runs;
-- the command that runs the tests of the changed files, which a quick task uses.
+- the command that runs the tests of the changed files, which a quick task uses;
+- whether archive keeps a metrics record of each change (yes by default). See [Metrics](../concepts/metrics.md).
 
 `/adf:init` writes these files:
 
