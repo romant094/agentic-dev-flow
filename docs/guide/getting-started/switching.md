@@ -78,7 +78,7 @@ Paths and names on this page are examples. `develop` stands for the integration 
     {
       "extraKnownMarketplaces": {
         "agentic-dev-flow": {
-          "source": { "source": "git", "url": "https://github.com/romant094/agentic-dev-flow.git", "ref": "v0.21.0" }
+          "source": { "source": "git", "url": "https://github.com/romant094/agentic-dev-flow.git", "ref": "v0.22.0" }
         }
       },
       "enabledPlugins": {

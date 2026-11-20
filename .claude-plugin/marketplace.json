@@ -5,7 +5,7 @@
     "name": "Anton Romankov"
   },
   "metadata": {
-    "version": "0.21.0"
+    "version": "0.22.0"
   },
   "allowCrossMarketplaceDependenciesOn": [
     "claude-plugins-official"
@@ -14,7 +14,7 @@
     {
       "name": "adf",
       "description": "Agentic Dev Flow core: the spec-driven change cycle and the contract its plugins extend",
-      "version": "0.21.0",
+      "version": "0.22.0",
       "source": "./plugins/adf"
     },
     {
@@ -26,13 +26,13 @@
     {
       "name": "adf-english-check",
       "description": "Blocks an agent's git commit when a file in scope holds non-English prose",
-      "version": "0.8.1",
+      "version": "0.8.2",
       "source": "./plugins/adf-english-check"
     },
     {
       "name": "adf-memory",
       "description": "ADF knowledge plugin: an indexed wiki memory, a log rotated monthly, and the ingest, query and lint workflows",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "source": "./plugins/adf-memory"
     },
     {
@@ -50,7 +50,7 @@
     {
       "name": "adf-postgres",
       "description": "ADF provisioning for PostgreSQL: a database per worktree, named from its branch, its URL in the worktree's env file, dropped at teardown",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "source": "./plugins/adf-postgres"
     },
     {
@@ -62,7 +62,7 @@
     {
       "name": "adf-jira",
       "description": "ADF tracker for Jira: gathers issues at propose, starts them and hands them to the tester after the merge, plus guarded two-phase Jira skills",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "source": "./plugins/adf-jira"
     }
   ]

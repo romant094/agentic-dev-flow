@@ -39,7 +39,7 @@ A script runs each step. One agent reasons over the numbers that the scripts com
 | `publish` | Opens a merge request, or merges locally. |
 | `remove` | Removes the worktree. |
 
-The report has a `Changes` table. When the window holds a quick change, the report adds two sections after it: `### Full cycle` and `### Quick cycle`. Each section lists, for each change of that cycle, the active minutes, the turns, the tokens and the cost. A window with no quick change has neither section.
+The report has a `Changes` table. When the window holds a quick change, the report adds a section after it for each cycle that has a change in the window: `### Full cycle` and `### Quick cycle`. A window with only quick changes has the `### Quick cycle` section only. Each section lists, for each change of that cycle, the active minutes, the turns, the tokens and the cost. A window with no quick change has neither section.
 
 ## What it asks
 

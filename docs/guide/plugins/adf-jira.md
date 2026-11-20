@@ -159,7 +159,7 @@ With no bug issue type in the profile, `bugs` returns no item and the note "the 
 
 1. The developer as assignee, when the issue is not assigned to the developer. This row comes first, because a workflow may offer the start transition to the assignee only.
 2. The shortest route from the status of the issue to `statuses.start`.
-3. For an item with `corrections`, the correction comment. It holds the corrections and the `answers` of the developer. The plugin renders it with `templates/corrections.md`, or with the file named by `config.correctionTemplate`. The template has one `<!-- corrected -->` section, and lists `corrections` and `answers`. A correction line is `what: now (was was)`. A correction with no `what`, or with `what` equal to `now`, is `now` alone: a quick task's estimate gives each correction as one text.
+3. For an item with `corrections`, the correction comment. It holds the corrections and the `answers` of the developer. The plugin renders it with `templates/corrections.md`, or with the file named by `config.correctionTemplate`. The template has one `<!-- corrected -->` section, and lists `corrections` and `answers`. A correction line is `what: now (was was)`. A correction with no `what`, or with `what` equal to `now`, drops the subject: the line is `now (was was)`, or `now` alone when there is no `was`. A quick task's estimate gives each correction as one text.
 
 An item with no corrections gets no comment. The plan skips an issue with its reason when:
 
