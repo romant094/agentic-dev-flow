@@ -47,7 +47,8 @@
 //       committed false, with commitError, for `commit` to finish. With a move of the flow's
 //       directory, `migration` adds { notes, mentions: [{ file, lines }] }: the worktree holds
 //       `git mv openspec adf`, the old guide converted into adf/settings.json and adf/guide.md
-//       (lib/flow-migrate.mjs), review.prompt moved with the directory, all staged with -A
+//       (lib/flow-migrate.mjs), review.prompt moved with the directory, all staged with -A.
+//       The move refuses, before anything is written, while `migration.inFlight` names a change
 //   update.mjs commit --worktree <dir> --to <tag>
 //       { worktree, branch, committed }: stages the files apply wrote and the manual ones (after
 //       a move, everything under adf/ too), and commits; refuses while one holds a conflict marker, or when nothing is left to commit

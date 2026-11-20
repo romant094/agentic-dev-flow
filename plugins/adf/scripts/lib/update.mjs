@@ -543,7 +543,12 @@ export async function applyUpdate(root, { to, clones, base, choices = {} }) {
   const files = classified(state, clones)
   const missing = files.filter((f) => f.class === 'edited' && !Object.hasOwn(choices, f.path)).map((f) => f.path)
   if (missing.length) throw new Error(`no choice for ${missing.join(', ')}: each edited host file needs keep, replace or manual`)
+  // The freeze (#26): the flow moves no change branch and reads no openspec/ fallback, so the
+  // move waits until every change in flight is archived or dropped.
   const migration = migrationAt(root, state)
+  if (migration?.inFlight.length) {
+    throw new Error(`the move of ${migration.from}/ to ${migration.to}/ waits for the changes in flight: ${migration.inFlight.join(', ')}; archive or drop each, then run /adf:update again`)
+  }
   if (migration?.reviewPrompt) registry.review.prompt = migration.reviewPrompt.to
 
   source.ref = to

@@ -74,7 +74,10 @@ Never merge it: the developer merges it.
      to `to`/, with every change and the `archived` archived changes; the planning guide
      converted into `adf/settings.json` (the values) and `adf/guide.md` (the prose) when `guide`
      is true; `review.prompt` moved from `reviewPrompt.from` to `reviewPrompt.to` when it is not
-     null. The archived changes keep their text, old paths included.
+     null. The archived changes keep their text, old paths included. When `migration.inFlight`
+     is not empty, the move waits: development stops, and each change it names is archived or
+     dropped first, since the flow moves no change branch. `apply` refuses until the list is
+     empty. Name each change, remove the clones (step 10) and stop.
 
    Ask the developer whether to go on. On a no, remove the clones (step 10) and stop.
 

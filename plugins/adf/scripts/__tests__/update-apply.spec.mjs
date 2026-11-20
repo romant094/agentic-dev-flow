@@ -366,6 +366,19 @@ test('apply moves openspec/ to adf/, converts the guide, moves the review prompt
   assert.equal(git(wt, 'log', '-1', '--format=%s').trim(), 'chore(adf): update to v0.2.0')
 })
 
+test('the freeze: apply refuses the move while a change is in flight, naming each, and writes nothing', async () => {
+  const legacy = { ...LEGACY, 'openspec/changes/add-x/proposal.md': 'p\n', 'openspec/changes/fix-y/quick.md': 'q\n' }
+  const { root, plan } = planned({ legacy })
+  assert.deepEqual(plan.migration.inFlight, ['add-x', 'fix-y'])
+  await assert.rejects(apply(root, plan), /the move of openspec\/ to adf\/ waits for the changes in flight: add-x, fix-y; archive or drop each/)
+  assert.equal(existsSync(join(root, '.claude', 'worktrees', 'adf-update-0.2.0')), false)
+  assert.equal(git(root, 'branch', '--list', 'chore/adf-update-0.2.0').trim(), '')
+  // A change worktree is in flight too, even with no directory on the integration branch.
+  const other = planned({ legacy: LEGACY })
+  mkdirSync(join(other.root, '.claude', 'worktrees', 'add-z'), { recursive: true })
+  await assert.rejects(apply(other.root, other.plan), /waits for the changes in flight: add-z;/)
+})
+
 test('a move left uncommitted is finished by commit, the moved files staged', async () => {
   const { root, plan } = planned({ legacy: LEGACY })
   const hook = join(root, '.git', 'hooks', 'pre-commit')

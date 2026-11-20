@@ -85,6 +85,8 @@ Releases before v0.22.0 kept the files of the flow in `openspec/`. When the inte
 3. `review.prompt` in the registry moves with the directory when it names a path under `openspec/`.
 4. Everything is staged with `git add -A` and committed with the update.
 
+The move needs a freeze. The flow does not move a change branch, and it reads only `adf/`. So `apply` refuses the move while a change is in flight, and names each one: a directory of `openspec/changes/` other than `archive/`, or a worktree under `.claude/worktrees/`. Stop the development, archive or drop each change, then run `/adf:update` again. Development continues after the merge of the update.
+
 `apply` then lists in `migration.mentions` every tracked file outside `adf/` that still names `openspec/`, such as `CLAUDE.md`, memory pages, `.gitignore` or a CI file, with its lines. You fix them; the update does not edit them.
 
 ## The notice at the session start
