@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join } from 'node:path'
 import { changeDir, changeMeta } from './changes.mjs'
 import { baseRef } from './plan-symbols.mjs'
-import { CHANGES_DIR, specPath, SPECS_DIR } from './layout.mjs'
+import { CHANGES_DIR, FLOW_ROOTS, SPECS_DIR } from './layout.mjs'
 
 export const MIN_PURPOSE_LENGTH = 50
 export const MAX_REQUIREMENT_TEXT_LENGTH = 500
@@ -1029,13 +1029,17 @@ export function changeMergeBase(root, change) {
   }
 }
 
-// A capability's main spec at a commit; null when it has none there.
-function mainSpecAt(root, rev, capability) {
-  try {
-    return gitText(root, 'show', `${rev}:./${specPath(capability)}`)
-  } catch {
-    return null
+// A capability's main spec at a commit; null when it has none there. An old commit may hold it
+// under the legacy root (lib/layout.mjs FLOW_ROOTS).
+export function mainSpecAt(root, rev, capability) {
+  for (const flowRoot of FLOW_ROOTS) {
+    try {
+      return gitText(root, 'show', `${rev}:./${flowRoot}/specs/${capability}/spec.md`)
+    } catch {
+      // not under this root
+    }
   }
+  return null
 }
 
 const deltaCapabilities = (root, change) => {

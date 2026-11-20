@@ -20,6 +20,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readBranches } from './branches.mjs'
 import { ARCHIVE, CHANGES_DIR, changeDirOf, parseTasks, readChangeMeta } from './changes.mjs'
+import { FLOW_ROOTS } from './layout.mjs'
 import { parseName } from './dispatch.mjs'
 import { readSchema, validateJson } from './json-schema.mjs'
 import { readRecords } from './ledger.mjs'
@@ -74,8 +75,9 @@ function gitOf(root) {
   }
 }
 
-// Spec files of a change, active or archived: `openspec/changes/[archive/]<dir>/specs/<cap>/`.
-const CAPABILITY = new RegExp(`^${CHANGES_DIR}/(?:${ARCHIVE}/)?[^/]+/specs/([^/]+)/`)
+// Spec files of a change, active or archived: `<root>/changes/[archive/]<dir>/specs/<cap>/`, under
+// either flow root (lib/layout.mjs FLOW_ROOTS), since a range may span the directory's move.
+const CAPABILITY = new RegExp(`^(?:${FLOW_ROOTS.join('|')})/changes/(?:${ARCHIVE}/)?[^/]+/specs/([^/]+)/`)
 
 // The diff of the change's range: lines added and removed in all, per file (null for a binary
 // file), and per capability the lines changed under the changes' delta specs. Renames are not
@@ -99,9 +101,12 @@ export function maintainabilityOf(git, range) {
 }
 
 // The author time of the first commit that added a file under the change's directory, within
-// the range when there is one.
+// the range when there is one. The directory under either flow root (lib/layout.mjs FLOW_ROOTS):
+// the commit that moved the flow's directory adds the files again under the new root, and is
+// never the earliest.
 export function proposedAtOf(git, change, range) {
-  const text = git('log', '--reverse', '--diff-filter=A', '--format=%aI', range ? `${range.base}..${range.head}` : 'HEAD', '--', `${CHANGES_DIR}/${change}/`)
+  const paths = FLOW_ROOTS.map((root) => `${root}/changes/${change}/`)
+  const text = git('log', '--reverse', '--diff-filter=A', '--format=%aI', range ? `${range.base}..${range.head}` : 'HEAD', '--', ...paths)
   return text ? text.split('\n')[0] || null : null
 }
 

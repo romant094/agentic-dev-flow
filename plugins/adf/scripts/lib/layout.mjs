@@ -30,3 +30,24 @@ export const flowPath = (file) => `${ROOT}/${file}`
 export const changePath = (change, file) => (file === undefined ? `${CHANGES_DIR}/${change}` : `${CHANGES_DIR}/${change}/${file}`)
 // A capability's main spec, relative to the project root.
 export const specPath = (capability) => `${SPECS_DIR}/${capability}/spec.md`
+
+// ---------------------------------------------------------------- history
+
+// The roots a past commit may hold the flow's files under: the current one and the legacy one.
+// Live code reads only ROOT; the readers of past commits (the retrospective's window, the main
+// specs at an old base, a change's proposal time, the path filters over a commit range) use
+// these, so a range that spans the move of the directory reads the same as one that does not.
+export const FLOW_ROOTS = [...new Set([ROOT, LEGACY_ROOT])]
+
+// The path below `<root>/<under>/` for whichever flow root it lies under, or null for any other
+// path; `under` '' takes the whole root.
+export function flowRelative(path, under = '', roots = FLOW_ROOTS) {
+  for (const root of roots) {
+    const prefix = under ? `${root}/${under}/` : `${root}/`
+    if (path.startsWith(prefix)) return path.slice(prefix.length)
+  }
+  return null
+}
+
+// Whether a path lies under `<root>/<under>/` of either flow root.
+export const isFlowPath = (path, under = '', roots = FLOW_ROOTS) => flowRelative(path, under, roots) !== null

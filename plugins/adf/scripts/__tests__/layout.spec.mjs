@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ARCHIVE_DIR, CHANGES_DIR, changePath, CONTEXT_FILE, flowPath, PLANNING_FILE, REVIEW_PROMPT, ROOT, RULES_DIR, SPECS_DIR, specPath } from '../lib/layout.mjs'
+import { ARCHIVE_DIR, CHANGES_DIR, changePath, CONTEXT_FILE, FLOW_ROOTS, flowPath, flowRelative, isFlowPath, LEGACY_ROOT, PLANNING_FILE, REVIEW_PROMPT, ROOT, RULES_DIR, SPECS_DIR, specPath } from '../lib/layout.mjs'
 
 test('lib/layout.mjs derives every path from the one root', () => {
   for (const path of [CHANGES_DIR, ARCHIVE_DIR, SPECS_DIR, CONTEXT_FILE, RULES_DIR, PLANNING_FILE, REVIEW_PROMPT]) {
@@ -11,4 +11,17 @@ test('lib/layout.mjs derives every path from the one root', () => {
   assert.equal(changePath('add-x', 'plan.md'), `${ROOT}/changes/add-x/plan.md`)
   assert.equal(specPath('auth'), `${ROOT}/specs/auth/spec.md`)
   assert.equal(flowPath('planning.md'), PLANNING_FILE)
+})
+
+test('the history readers know the current and the legacy root', () => {
+  assert.ok(FLOW_ROOTS.includes(ROOT))
+  assert.ok(FLOW_ROOTS.includes(LEGACY_ROOT))
+  const roots = ['adf', 'openspec']
+  assert.equal(flowRelative('adf/changes/archive/2026-01-01-x/tasks.md', 'changes/archive', roots), '2026-01-01-x/tasks.md')
+  assert.equal(flowRelative('openspec/changes/archive/2026-01-01-x/tasks.md', 'changes/archive', roots), '2026-01-01-x/tasks.md')
+  assert.equal(flowRelative('openspec/specs/auth/spec.md', '', roots), 'specs/auth/spec.md')
+  assert.equal(flowRelative('src/openspec/changes/x', 'changes', roots), null)
+  assert.equal(isFlowPath('adf/specs/auth/spec.md', 'specs', roots), true)
+  assert.equal(isFlowPath('adfx/specs/auth/spec.md', 'specs', roots), false)
+  assert.equal(isFlowPath('openspec', '', roots), false)
 })

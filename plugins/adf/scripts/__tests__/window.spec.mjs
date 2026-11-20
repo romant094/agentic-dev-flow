@@ -13,7 +13,7 @@ import { setBranches } from '../lib/branches.mjs'
 import { fromV1, validateRecord } from '../lib/metrics.mjs'
 import { addAdfRecord, markFiled } from '../lib/debt.mjs'
 import { initRegistry, setDebtRoot, setMetricsSwitch } from '../lib/registry.mjs'
-import { aggregate, buildSidecar, changeValues, metricsOffReport, delta, DIRECTION, fetchRef, integrationRef, METRICS, previousRetro, readWaiting, selectWindow, sinceLastRetro, unfiledAdfDebt, waitingItems } from '../lib/window.mjs'
+import { aggregate, archivedEntries, buildSidecar, changeValues, metricsOffReport, delta, DIRECTION, fetchRef, integrationRef, METRICS, previousRetro, readWaiting, selectWindow, sinceLastRetro, unfiledAdfDebt, waitingItems } from '../lib/window.mjs'
 
 const ARCHIVE = 'openspec/changes/archive'
 const DATE = '2026-10-19'
@@ -543,4 +543,25 @@ test('every waiting item names a lessons row that exists', async () => {
     const rows = text.split('\n').filter((line) => line.startsWith(`| ${item.lessons.row}`))
     assert.equal(rows.length, 1, `${item.id}: ${item.lessons.file} row "${item.lessons.row}"`)
   }
+})
+
+test('archivedEntries reads the archive under either flow root: the move of the directory adds no change', () => {
+  const roots = ['adf', 'openspec']
+  const commit = (sha, files, subject = 'Merge branch \'feat/x\'') => ({ sha, parents: ['p', 'q'], at: `2026-11-0${sha.length}T00:00:00Z`, subject, files: new Map(files) })
+  const add = (path) => [path, { status: 'A', lines: 1 }]
+  const del = (path) => [path, { status: 'D', lines: 1 }]
+  const before = [
+    commit('a', [add('openspec/changes/archive/2026-01-01-one/tasks.md')]),
+    commit('bb', [add('openspec/changes/archive/2026-01-02-two/tasks.md')])
+  ]
+  const move = commit('ccc', [add('adf/changes/archive/2026-01-01-one/tasks.md'), add('adf/changes/archive/2026-01-02-two/tasks.md'), del('openspec/changes/archive/2026-01-01-one/tasks.md'), del('openspec/changes/archive/2026-01-02-two/tasks.md')], 'chore(adf): move the flow to adf/')
+  const after = commit('dddd', [add('adf/changes/archive/2026-02-01-three/tasks.md')])
+  const shape = (entries) => entries.map((e) => [e.change, e.mergeSha])
+  const unmoved = archivedEntries([...before, commit('dddd', [add('openspec/changes/archive/2026-02-01-three/tasks.md')])], roots)
+  const moved = archivedEntries([...before, move, after], roots)
+  assert.deepEqual(shape(moved), shape(unmoved))
+  assert.deepEqual(shape(moved), [['one', 'a'], ['two', 'bb'], ['three', 'dddd']])
+  // Each directory is read where the ref holds it now.
+  assert.deepEqual(moved.map((e) => e.archiveDir), ['adf/changes/archive/2026-01-01-one', 'adf/changes/archive/2026-01-02-two', 'adf/changes/archive/2026-02-01-three'])
+  assert.deepEqual(unmoved.map((e) => e.archiveDir), ['openspec/changes/archive/2026-01-01-one', 'openspec/changes/archive/2026-01-02-two', 'openspec/changes/archive/2026-02-01-three'])
 })
