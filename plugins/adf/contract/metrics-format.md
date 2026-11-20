@@ -42,8 +42,18 @@ person. A plugin reads records; it never writes one.
   its records on the change branch count, `session` when all do; with `branch`, the records on
   the base or an integration branch from the change's first ledger entry up to the session's
   first record on the change branch count too, so propose's start from the main checkout is
-  measured), `first`, `last`,
+  measured; `tree` (since 0.22.0) for a session with no record on the change branch whose
+  dispatched agents also worked on another change, an orchestrator that ran several changes:
+  only the change's own agent trees count, each a top-level agent and its descendants by
+  `parentAgentId`, found by a record on the change branch or a `cwd` or prompt naming the
+  change's worktree, and the session's records made while one of them ran), `first`, `last`,
   `phaseSource` (`ledger`, `commands` or `none`). `unresolved`: ledger sessions with no transcript.
+  When such a shared session holds no agent tree of the change, or a tree of it also worked on
+  another change, the change's share cannot be told: `transcripts` is `null` and every transcript
+  group's coverage is `{ "none": "transcripts: session <id> is shared with other changes (...),
+  and ..." }`. A record written before 0.22.0 may count such a session whole as `session`; the
+  retrospective's window drops the transcript figures of a change whose `session`-scope session
+  another archived record also holds (`sharedSession`), as it does for a shared branch.
 - `disagreements`: `{ sessionId, issue }` where the ledger and the transcripts disagree on the
   change's sessions.
 - `coverage`: one entry per group, and `transcripts`, `range` and `generator`.

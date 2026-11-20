@@ -13,6 +13,12 @@
 // every session with records on the change's branch (`sliceByBranch`), each marked `ledger`,
 // `branch` or `both`; a ledger session whose transcript is gone is named in `unresolved`. Each
 // transcript file is read and parsed once. No transcripts at all is `{ value: null, reason }`.
+//
+// A session's scope: `branch`, its records on the change's branch (and the lead-in); `session`,
+// all of it, when it has no record on the branch; `tree`, when it has none and its dispatched
+// agents also worked on another change (an orchestrator running several changes): the change's
+// own agent trees and the orchestrator's records made while they ran. When that share cannot be
+// told, the change has no transcripts, `{ value: null, reason }`, rather than the whole session.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
@@ -29,6 +35,8 @@ export const WORKTREE_KEY = '--claude-worktrees-'
 // Branches every change's sessions run on: discovering by them would give one change the whole
 // project's sessions.
 export const INTEGRATION_BRANCHES = new Set(['', 'HEAD', 'develop', 'main', 'master'])
+// Where the flow makes its worktrees in the main checkout (lib/workspace.mjs WORKTREES_DIR).
+const WORKTREES_DIR = join('.claude', 'worktrees')
 
 const present = (value) => ({ value, reason: null })
 const absent = (reason) => ({ value: null, reason })
@@ -252,14 +260,16 @@ function readMeta(file) {
 // the change's; `window` is the parent session's lead-in (sliceByBranch `from`, `until`, `bases`).
 // An agent whose `.meta.json` has no transcript beside it is kept, `missing`, with the reason, so
 // it is named rather than dropped.
-export function readSubagents(dir, branch = null, window = {}) {
+// `only`, when given, is the set of agent ids to read (a change's agent trees, `agentTrees`).
+export function readSubagents(dir, branch = null, window = {}, only = null) {
   if (!existsSync(dir)) return []
   const names = readdirSync(dir)
-  const ids = unique(names.map((n) => /^agent-(.+?)(?:\.meta\.json|\.jsonl)$/.exec(n)?.[1]).filter(Boolean)).sort()
+  const ids = agentIds(names)
   const metas = Object.fromEntries(ids.map((id) => [id, names.includes(`agent-${id}.meta.json`) ? readMeta(join(dir, `agent-${id}.meta.json`)) : {}]))
   const parents = new Set(Object.values(metas).map((m) => m.parentAgentId).filter(Boolean))
   const out = []
   for (const agentId of ids) {
+    if (only && !only.has(agentId)) continue
     const meta = metas[agentId]
     const base = {
       agentId,
@@ -282,8 +292,113 @@ export function readSubagents(dir, branch = null, window = {}) {
   return out
 }
 
-function buildSession({ id, key, source, records, branch, window, projectsDir }) {
+const agentIds = (names) => unique(names.map((n) => /^agent-(.+?)(?:\.meta\.json|\.jsonl)$/.exec(n)?.[1]).filter(Boolean)).sort()
+const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+// Where one dispatched agent worked, from its records: `mine` when a record is on the change's
+// branch, or its `cwd` or a text it was given names the change's worktree (or one of its group or
+// base-check worktrees); `others` the other branches it worked on, neither an integration branch
+// nor the base, and the other flow worktrees it names. `where`: { branch, bases, own, main }, own
+// the change's worktree (null when the change has none), main the main checkout (null unknown).
+function placesOf(records, { branch, bases, own, main }) {
+  let mine = false
+  const others = []
+  // Either separator: a path in a prompt may be written with `/` on Windows too.
+  const flow = main ? new RegExp(`${join(main, WORKTREES_DIR).split(/[\\/]/).map(escapeRe).join('[\\\\/]')}[\\\\/]([A-Za-z0-9_-]+)`, 'g') : null
+  const ownName = own ? basename(own) : null
+  const isOwn = (name) => name === ownName || name.startsWith(`${ownName}--group-`) || name === `${ownName}--base-check`
+  for (const r of records) {
+    if (typeof r.gitBranch === 'string' && r.gitBranch !== '') {
+      if (onChangeBranch(r.gitBranch, branch)) mine = true
+      else if (!INTEGRATION_BRANCHES.has(r.gitBranch) && !bases.includes(r.gitBranch)) others.push(r.gitBranch)
+    }
+    if (!flow) continue
+    const texts = [typeof r.cwd === 'string' ? r.cwd : null, r.type === 'user' ? userText(r) : null].filter(Boolean)
+    for (const text of texts) {
+      for (const m of text.matchAll(flow)) {
+        if (ownName && isOwn(m[1])) mine = true
+        else others.push(m[1])
+      }
+    }
+  }
+  return { mine, others: unique(others) }
+}
+
+// The session's dispatched agents as trees: a top-level agent and every descendant, by the
+// `parentAgentId` of each `.meta.json`. Each tree: { root, ids, mine, others, first, last }.
+function agentTrees(dir, where) {
+  if (!existsSync(dir)) return []
+  const names = readdirSync(dir)
+  const ids = agentIds(names)
+  const parent = new Map(ids.map((id) => [id, names.includes(`agent-${id}.meta.json`) ? (readMeta(join(dir, `agent-${id}.meta.json`)).parentAgentId ?? null) : null]))
+  const rootOf = (id) => {
+    const seen = new Set([id])
+    let at = id
+    while (parent.get(at) && parent.has(parent.get(at)) && !seen.has(parent.get(at))) {
+      at = parent.get(at)
+      seen.add(at)
+    }
+    return at
+  }
+  const trees = new Map()
+  for (const id of ids) {
+    const records = names.includes(`agent-${id}.jsonl`) ? readParsed(join(dir, `agent-${id}.jsonl`)) : []
+    const places = placesOf(records, where)
+    const root = rootOf(id)
+    const tree = trees.get(root) ?? { root, ids: [], mine: false, others: [], times: [] }
+    tree.ids.push(id)
+    tree.mine ||= places.mine
+    tree.others = unique([...tree.others, ...places.others])
+    tree.times.push(...timestamps(records))
+    trees.set(root, tree)
+  }
+  return [...trees.values()].map(({ times, ...t }) => {
+    const sorted = times.sort()
+    return { ...t, first: sorted[0] ?? null, last: sorted.at(-1) ?? null }
+  })
+}
+
+// A session with no record on the change's branch whose dispatched agents also worked on another
+// change: an orchestrator that ran several changes through dispatched agents. The change's share
+// is its own agent trees, every agent whole, and the orchestrator's records made while one of
+// them ran (scope `tree`). With no tree of the change, or a tree that worked on another change
+// too, the share cannot be told: `{ shared: reason }`, and the change gets no transcript figures.
+function treeSession({ id, key, source, records, trees, dir }) {
+  const foreign = trees.filter((t) => t.others.length > 0)
+  const mine = trees.filter((t) => t.mine)
+  const shared = `session ${id} is shared with other changes (${unique(foreign.flatMap((t) => t.others)).join(', ')})`
+  if (mine.length === 0) return { id, shared: `${shared}, and no agent tree of it worked on this change` }
+  const mixed = mine.filter((t) => t.others.length > 0)
+  if (mixed.length > 0) return { id, shared: `${shared}, and the agent tree of ${mixed.map((t) => t.root).join(', ')} worked on another change too` }
+  const spans = mine.filter((t) => t.first && t.last).map((t) => [t.first, t.last])
+  const own = records.filter((r) => typeof r.timestamp === 'string' && spans.some(([a, b]) => r.timestamp >= a && r.timestamp <= b))
+  const times = timestamps(own)
+  return {
+    id,
+    key,
+    source,
+    resolved: true,
+    scope: 'tree',
+    first: times[0] ?? null,
+    last: times.at(-1) ?? null,
+    times,
+    responses: responses(own.filter((r) => !r.isSidechain)),
+    sidechain: responses(own.filter((r) => r.isSidechain)),
+    commands: commandsOf(own),
+    autonomy: autonomyOf(own, records),
+    compactions: compactionsOf(own),
+    foreignRecords: 0,
+    subagents: readSubagents(dir, null, {}, new Set(mine.flatMap((t) => t.ids)))
+  }
+}
+
+function buildSession({ id, key, source, records, branch, window, projectsDir, where }) {
   const sliced = branch ? sliceByBranch(records, branch, window) : null
+  if (sliced && sliced.records.length === 0) {
+    const dir = join(projectsDir, key, id, 'subagents')
+    const trees = agentTrees(dir, { branch, bases: window.bases ?? [], ...where })
+    if (trees.some((t) => t.others.length > 0)) return treeSession({ id, key, source, records, trees, dir })
+  }
   const scope = sliced && sliced.records.length > 0 ? 'branch' : 'session'
   const own = scope === 'branch' ? sliced.records : records
   const times = timestamps(own)
@@ -358,6 +473,10 @@ export function readTranscripts({ repoPath, commonDir = null, branch = null, bas
   }
   const from = ledger.map((r) => r?.at).filter((t) => typeof t === 'string' && !Number.isNaN(Date.parse(t))).sort()[0] ?? null
   const window = { from, bases: base ? [base] : [] }
-  const sessions = [...found].map(([id, s]) => buildSession({ id, ...s, branch: onBranch, window, projectsDir }))
+  const main = commonDir && basename(commonDir) === '.git' ? dirname(commonDir) : null
+  const where = { main, own: main && dirname(repoPath) === join(main, WORKTREES_DIR) ? repoPath : null }
+  const sessions = [...found].map(([id, s]) => buildSession({ id, ...s, branch: onBranch, window, projectsDir, where }))
+  const shared = sessions.filter((s) => s.shared)
+  if (shared.length > 0) return absent(shared.map((s) => s.shared).join('; '))
   return present({ runtime: RUNTIME, projectsDir, keys, sessions, unresolved })
 }

@@ -23,7 +23,9 @@
 //            written. The mode and its scope are kept: a second start with others is refused.
 //   window   buildSidecar over the ref, fetched again, with the knowledge provider's `paths`
 //            excluded from the diff figures and the ADF debt not yet filed; the agent's input (lib/retro.mjs input) and its
-//            prompt written; the dispatch recorded and its plan returned for the orchestrator
+//            prompt written; the dispatch recorded and its plan returned for the orchestrator. A
+//            refused or degraded knowledge call fails the step with nothing written: the
+//            knowledge base's files would count in the diff figures
 //   reply    lib/retro.mjs recordRetroReply: a refused reply is retried once, the second stops
 //            the retrospective; on `retry` the next attempt's dispatch is recorded here, so the
 //            metrics count every dispatch; a valid one's computed result is kept in the state
@@ -242,6 +244,12 @@ export function windowStep(ctx) {
   return runStep(ctx, 'window', (state) => {
     const wt = worktreeOf(state)
     const knowledge = ctx.knowledgePaths(wt)
+    // An enabled provider that did not answer leaves the knowledge base's files in the diff
+    // figures: every archive edits them, so they would tie each later fix to each earlier merge.
+    if (knowledge.state === 'refused' || knowledge.state === 'degraded') {
+      const why = knowledge.error ?? knowledge.hint ?? 'no reason given'
+      refuse(`the knowledge provider's context call was ${knowledge.state}: ${why}; the git figures would count the knowledge base's files, so nothing is written. Fix the provider, then run retro.mjs window --id ${ctx.id} again`, { knowledge: { state: knowledge.state, error: why } })
+    }
     const exclude = knowledge.state === 'done' ? knowledge.paths : []
     const fetch = fetchRef(wt)
     const asOf = new Date(Math.min(Date.parse(`${ctx.date}T23:59:59.999Z`), ctx.now().getTime())).toISOString()

@@ -359,10 +359,11 @@ const overhead = (byPhase, valueOf) => {
     all
   )
 }
-// A change whose branch carries another change's sessions has no transcript figure of its own
-// (`sharedBranch`, set by buildSidecar); the timing and isolation groups also hold git figures, so
-// their transcript-derived values are dropped here rather than the whole group.
-const ownSessions = (c) => !c.sharedBranch
+// A change whose branch carries another change's sessions, or whose record counted whole a
+// session another record holds, has no transcript figure of its own (`sharedBranch`,
+// `sharedSession`, set by buildSidecar); the timing and isolation groups also hold git figures,
+// so their transcript-derived values are dropped here rather than the whole group.
+const ownSessions = (c) => !c.sharedBranch && !c.sharedSession
 const activeTotal = (c) => (ownSessions(c) ? num(c.record.timing?.activeMinutes?.total) : null)
 const sumOf = (map, field) => (map ? Object.values(map).reduce((n, e) => n + (num(e?.[field]) ?? 0), 0) : null)
 
@@ -646,7 +647,19 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
       sharedBranch = { changes: others.map((o) => o.change), reason: `branch shared with ${others.map((o) => o.change).join(', ')}` }
       for (const g of TRANSCRIPT_GROUPS) if (coverage[g] === 'record') coverage[g] = none(sharedBranch.reason)
     }
-    const c = { ...e, branch: branchOf(e), tasks, record, coverage, git, sharedBranch }
+    // A session the record counted whole (scope `session`) that another archived record also
+    // holds ran several changes: a record written before the agent-tree share (lib/transcripts.mjs)
+    // counted it in each. Its transcript figures are no data either.
+    let sharedSession = null
+    const whole = sessionsOf(e).filter((s) => s.scope === 'session').map((s) => s.id)
+    const holders = everyDir.filter((o) => o.archiveDir !== e.archiveDir && sessionsOf(o).some((s) => whole.includes(s.id)))
+    if (!sharedBranch && holders.length > 0) {
+      const sessions = whole.filter((id) => holders.some((o) => sessionsOf(o).some((s) => s.id === id)))
+      const changes = holders.map((o) => o.change)
+      sharedSession = { sessions, changes, reason: `session ${sessions.join(', ')} shared with ${changes.join(', ')}` }
+      for (const g of TRANSCRIPT_GROUPS) if (coverage[g] === 'record') coverage[g] = none(sharedSession.reason)
+    }
+    const c = { ...e, branch: branchOf(e), tasks, record, coverage, git, sharedBranch, sharedSession }
     return {
       change: e.change,
       archiveDir: e.archiveDir,
@@ -661,6 +674,7 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
       coverage,
       git,
       sharedBranch,
+      sharedSession,
       values: changeValues(c),
       cycle: cycleOf(record),
       figures: cycleFigures(record, table)
@@ -669,7 +683,7 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
 
   // The aggregates are computed from the same inputs the values came from, over the full
   // changes; the quick changes have aggregates of their own, null when the window has none.
-  const inputs = changes.map((c) => ({ change: c.change, cycle: c.cycle, record: records.get(c.archiveDir).record, coverage: c.coverage, git: c.git, tasks: c.tasks, sharedBranch: c.sharedBranch }))
+  const inputs = changes.map((c) => ({ change: c.change, cycle: c.cycle, record: records.get(c.archiveDir).record, coverage: c.coverage, git: c.git, tasks: c.tasks, sharedBranch: c.sharedBranch, sharedSession: c.sharedSession }))
   const quickInputs = inputs.filter((c) => c.cycle === 'quick')
   const aggregates = { ...aggregate(inputs.filter((c) => c.cycle === 'full')), quick: quickInputs.length > 0 ? aggregate(quickInputs) : null }
   const versions = new Map()

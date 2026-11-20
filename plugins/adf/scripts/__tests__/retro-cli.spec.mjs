@@ -439,6 +439,27 @@ test('a failure injected at a step is recorded, the steps after it wait, and a r
   assert.deepEqual(Object.keys(call(h, ['state'], deps).steps), STEPS)
 })
 
+// The knowledge base's files are left out of the git figures only when the provider names them:
+// a failed call would let them into `fixesAfter`, so window stops and writes nothing.
+test('window fails on a refused or degraded knowledge call, writes nothing, and runs again once the provider answers', () => {
+  const h = host()
+  let knowledge = { state: 'refused', paths: [], error: 'adf-memory context returned no result: exit null' }
+  const deps = { ...NONE, knowledgePaths: () => knowledge }
+  assert.equal(call(h, ['start', '--date', DATE], deps).ok, true)
+  const refused = call(h, ['window'], deps)
+  assert.deepEqual([refused.ok, refused.state, refused.next], [false, 'failed', 'window'])
+  assert.match(refused.refusal, /^the knowledge provider's context call was refused: adf-memory context returned no result: exit null; the git figures would count the knowledge base's files/)
+  assert.equal(refused.detail.knowledge.state, 'refused')
+  assert.equal(existsSync(join(h.root, '.superpowers', 'retro', ID, 'sidecar.json')), false, 'no sidecar is written')
+  assert.equal(existsSync(join(h.wt, '.superpowers', 'retro', ID, 'input.json')), false, 'no input is written')
+  assert.throws(() => call(h, ['reply', '--file', join(h.top, 'none.json')], deps), /reply waits for window/)
+  knowledge = { state: 'degraded', paths: [], hint: 'the memory index is missing' }
+  assert.match(call(h, ['window'], deps).refusal, /^the knowledge provider's context call was degraded: the memory index is missing;/)
+  knowledge = { state: 'done', paths: ['docs/kb/**'] }
+  const win = call(h, ['window'], deps)
+  assert.deepEqual([win.ok, win.state, win.detail.knowledge], [true, 'done', { state: 'done', excluded: ['docs/kb/**'] }])
+})
+
 test('a commit made by a run that failed before saving its state is adopted, not made twice', () => {
   const h = host()
   const out = [call(h, ['start', '--date', DATE]), call(h, ['window'])]

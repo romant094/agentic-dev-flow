@@ -356,6 +356,38 @@ test('two changes on one branch: a record whose every session its own ledger nam
   assert.match(four.coverage.tokens.none, /^branch shared with three$/)
 })
 
+// Records written before 0.22.0 counted a shared orchestrator session whole (scope `session`) in
+// each change it ran; a record of scope `tree` counted only its own agent tree.
+test('a session counted whole that another record also holds is no data for the change; a tree share stays', () => {
+  const root = repo()
+  const scoped = (change, sessions) => {
+    const r = onBranch(change, `feat/${change}`, sessions.map(([id]) => [id, 'ledger']))
+    r.sources.transcripts.sessions = r.sources.transcripts.sessions.map((s, i) => ({ ...s, scope: sessions[i][1] }))
+    return r
+  }
+  merge(root, 'feat/one', archived('2026-09-02-one', { record: scoped('one', [['o1', 'session']]) }), '2026-09-02T10:00:00Z')
+  merge(root, 'feat/two', archived('2026-09-04-two', { record: scoped('two', [['o1', 'session'], ['s2', 'branch']]) }), '2026-09-04T10:00:00Z')
+  merge(root, 'feat/three', archived('2026-09-05-three', { record: scoped('three', [['o1', 'tree']]) }), '2026-09-05T10:00:00Z')
+  merge(root, 'feat/solo', archived('2026-09-06-solo', { record: scoped('solo', [['s9', 'session']]) }), '2026-09-06T10:00:00Z')
+  const s = buildSidecar(root, { ref: 'develop', date: DATE, asOf: AS_OF })
+  const [one, two, three, solo] = s.changes
+  for (const [c, others] of [[one, ['two', 'three']], [two, ['one', 'three']]]) {
+    const reason = `session o1 shared with ${others.join(', ')}`
+    assert.deepEqual(c.sharedSession, { sessions: ['o1'], changes: others, reason }, c.change)
+    assert.equal(c.sharedBranch, null)
+    for (const g of ['transcripts', 'tokens', 'autonomy']) assert.deepEqual(c.coverage[g], { none: reason }, `${c.change} ${g}`)
+    assert.equal(c.values['cost.tokens'], null)
+    assert.equal(c.values['autonomy.sessions'], null)
+    assert.equal(c.values['quality.findings.review'], 1, 'a group the transcripts do not give stays')
+  }
+  for (const c of [three, solo]) {
+    assert.equal(c.sharedSession, null, c.change)
+    assert.equal(c.coverage.tokens, 'record')
+    assert.equal(c.values['autonomy.sessions'], 2)
+  }
+  assert.equal(s.aggregates['autonomy.sessions'].n, 2)
+})
+
 test('the cache-lifetime net saving: bridged rewrites read instead of written, less the one-hour premium', () => {
   const value = (cacheTtl) => changeValues({ record: { cacheTtl }, coverage: { cacheTtl: 'record' }, tasks: 1 })['cost.ttlNetSaving']
   // 1000 rewritten tokens at 1.25 - 0.1, less 400 five-minute writes at 2 - 1.25.
@@ -363,7 +395,8 @@ test('the cache-lifetime net saving: bridged rewrites read instead of written, l
   assert.equal(value({ coldResumes: 0, beyondOneHour: 1, rewrittenTokens: 0, write5m: 400, byModel: {} }), -300)
   assert.equal(value({ coldResumes: 1, beyondOneHour: 0, rewrittenTokens: 10, write5m: null, byModel: null }), null, 'a converted v1 record kept no 5-minute write total')
   assert.equal(DIRECTION['cost.ttlNetSaving'], 'higher')
-  assert.ok(readWaiting().find((i) => i.id === 'subagent-cache-ttl').metrics.includes('cost.ttlNetSaving'))
+  // Decided 2026-11-20 (#46): dispatched agents keep the five-minute lifetime; the metric stays in the window.
+  assert.ok(!readWaiting().some((i) => i.id === 'subagent-cache-ttl'), 'subagent-cache-ttl is decided, not waiting')
 })
 
 test('a window after a merged retro carries the delta against it', () => {
@@ -404,7 +437,7 @@ test('removal candidates come from every record in the ref, not only the window'
 test('the waiting items: known metric keys, the handoff threshold first, values from the aggregates', () => {
   const items = readWaiting()
   assert.equal(items[0].id, 'handoff-threshold')
-  assert.equal(items.length, 5)
+  assert.equal(items.length, 4)
   for (const item of items) {
     assert.ok(item.question && item.lessons?.file && item.lessons.row, item.id)
     for (const key of item.metrics) assert.ok(DIRECTION[key], `${item.id}: ${key}`)
