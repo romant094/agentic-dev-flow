@@ -395,7 +395,8 @@ test('the cache-lifetime net saving: bridged rewrites read instead of written, l
   assert.equal(value({ coldResumes: 0, beyondOneHour: 1, rewrittenTokens: 0, write5m: 400, byModel: {} }), -300)
   assert.equal(value({ coldResumes: 1, beyondOneHour: 0, rewrittenTokens: 10, write5m: null, byModel: null }), null, 'a converted v1 record kept no 5-minute write total')
   assert.equal(DIRECTION['cost.ttlNetSaving'], 'higher')
-  assert.ok(readWaiting().find((i) => i.id === 'subagent-cache-ttl').metrics.includes('cost.ttlNetSaving'))
+  // Decided 2026-11-20 (#46): dispatched agents keep the five-minute lifetime; the metric stays in the window.
+  assert.ok(!readWaiting().some((i) => i.id === 'subagent-cache-ttl'), 'subagent-cache-ttl is decided, not waiting')
 })
 
 test('a window after a merged retro carries the delta against it', () => {
@@ -436,7 +437,7 @@ test('removal candidates come from every record in the ref, not only the window'
 test('the waiting items: known metric keys, the handoff threshold first, values from the aggregates', () => {
   const items = readWaiting()
   assert.equal(items[0].id, 'handoff-threshold')
-  assert.equal(items.length, 5)
+  assert.equal(items.length, 4)
   for (const item of items) {
     assert.ok(item.question && item.lessons?.file && item.lessons.row, item.id)
     for (const key of item.metrics) assert.ok(DIRECTION[key], `${item.id}: ${key}`)

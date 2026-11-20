@@ -201,7 +201,7 @@ test('the input carries each change, its signals and every citable key with its 
   assert.ok(!('changes.two.signals.lateCaught' in inp.values), 'an unmeasured signal has no key')
   assert.deepEqual(inp.keys, Object.keys(inp.values))
 
-  assert.deepEqual(inp.waiting.map((w) => w.id), ['handoff-threshold', 'fix-round-2-level-up', 'lite-path', 'subagent-cache-ttl', 'recite-before-solving'])
+  assert.deepEqual(inp.waiting.map((w) => w.id), ['handoff-threshold', 'fix-round-2-level-up', 'lite-path', 'recite-before-solving'])
   assert.ok(inp.waiting.find((w) => w.id === 'lite-path').keys.includes('aggregates.cost.tokens.mean'))
   assert.deepEqual(inp.removable.rules, inp.waiting.map((w) => w.id))
   assert.deepEqual(inp.removable.checks, ['out-of-plan', 'tests'])

@@ -20,12 +20,6 @@
       "lessons": { "file": "docs/lessons/propose.md", "row": "The planned lite path for small fixes" }
     },
     {
-      "id": "subagent-cache-ttl",
-      "question": "Would a one-hour cache lifetime for dispatched agents save more in rewritten cache than its write premium costs?",
-      "metrics": ["cost.coldResumes", "cost.rewrittenTokens", "cost.ttlNetSaving", "efficiency.cacheHit"],
-      "lessons": { "file": "docs/lessons/metrics.md", "row": "Cache TTL: cold resume gap" }
-    },
-    {
       "id": "recite-before-solving",
       "question": "Does stating the task's Files, Interfaces and acceptance criteria before the first edit reduce fix rounds, review findings and fixes after merge?",
       "metrics": ["efficiency.roundsPerTask", "quality.findings.review", "quality.fixesPerChangeWeek"],
