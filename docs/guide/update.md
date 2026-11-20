@@ -76,7 +76,7 @@ A merge conflict in *Keep everything* goes to the agent. It keeps your edits and
 
 ## The notice at the session start
 
-A `SessionStart` hook runs `update.mjs notice`. It asks the remote once a day. It prints these messages, or nothing:
+A `SessionStart` hook runs `update.mjs notice`. It asks the remote once a day. When the newest tag of its last answer is the ref that the project pins, it asks again at the next session start, so a new release shows at once. It prints these messages, or nothing:
 
 - `This project pins ADF v<ref>; v<installed> is installed. Run /adf:update to install it.`
 - `ADF v<latest> is available; this project is on v<ref>. Run /adf:update.`

@@ -277,7 +277,7 @@ so it survives a plugin update and works in every worktree. The order of `extens
 call order for hooks; a role has at most one provider. `points` is written by `/adf:add` from
 the declaration's `provides`: it lets the core name an absent entry for the points it provides
 without reading its declaration. An entry with no `points` (written before they were) is named
-for no point, and the registry check still warns about it. `config` is opaque to the core and is
+for no point. `config` is opaque to the core and is
 passed to the plugin's operations. `extensions.mjs config <name or id> --config '<json>'`
 replaces an enabled entry's `config` in place, so its position, the hooks' call order, is kept;
 `config` and `remove` take a plugin's name or its id.

@@ -3,6 +3,7 @@
 - plugins/adf/scripts/lib/migrate.mjs
 - plugins/adf/scripts/lib/init.mjs
 - plugins/adf/scripts/init.mjs
+- plugins/adf/scripts/lib/installed.mjs
 -->
 
 # Switching a project to the plugins
@@ -96,6 +97,8 @@ Paths and names on this page are examples. `develop` stands for the integration 
     claude plugin install <name>@agentic-dev-flow --scope project
     ```
 
+    Run it from the main directory of the project, the directory where the repository was cloned, also when the switch branch is in a worktree. An install made in a worktree counts only in that worktree. See [Several projects](../projects/several-projects.md#where-to-install).
+
     To move to a new release, change the ref in one merge request.
 
     `claude plugin install --scope project` rewrites the settings file with its own indentation. Say so in the commit. The formatter of the project restores the style.
@@ -142,7 +145,7 @@ On your machine:
 
 1. Update your checkout of the integration branch.
 2. Start Claude Code in the project and trust it. Claude Code clones the marketplace that the project settings declare.
-3. Run `/plugin`. If it reports a plugin "enabled in project settings but isn't installed here", run `claude plugin install <name>@agentic-dev-flow --scope project` once for that plugin. Otherwise, install nothing.
+3. Run `/plugin`. If it reports a plugin "enabled in project settings but isn't installed here", run `claude plugin install <name>@agentic-dev-flow --scope project` once for that plugin, from the main directory of the project. Otherwise, install nothing.
 4. Remove any personal copy of the old flow. For example, remove old commands or agents under `~/.claude/`, or a local settings file that enables the old tracker plugin.
 
 For each of your own changes in flight:

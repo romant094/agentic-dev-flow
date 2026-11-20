@@ -4,7 +4,8 @@
 //   suiteCandidates  whole-suite commands: the CI configuration's test commands (`.gitlab-ci.yml`,
 //                    `.github/workflows/*.yml`), then the package scripts named `test`, `test:*`
 //   copyCandidates   the `.env*` files git ignores in the main checkout, which a fresh worktree
-//                    lacks; those `## Worktree copies` already names left out
+//                    lacks, also when init runs in a worktree; those the root's
+//                    `## Worktree copies` already names left out
 //   writeCopies      adds confirmed paths to the planning guide's `## Worktree copies`
 //   oldFlowMentions  the lines of the host's agent instruction files (CLAUDE.md, AGENTS.md and the
 //                    like) that name a previous flow's commands: read only, for the report
@@ -12,6 +13,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, normalize, resolve } from 'node:path'
 import { PLANNING_FILE, sectionBounds } from './guide.mjs'
+import { mainCheckout } from './installed.mjs'
 import { packageManager } from './prepare.mjs'
 import { COPIES_HEADING, readCopies } from './provision.mjs'
 import { WORKTREES_DIR } from './workspace.mjs'
@@ -101,7 +103,8 @@ export function copyCandidates(rootArg) {
   const listed = new Set(readCopies(root))
   // `--directory` collapses a wholly ignored directory into one `dir/` entry, so git never walks
   // a dependency tree; only file entries named `.env*` are kept.
-  const out = git(root, 'ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory')
+  // A fresh worktree has none of them: they are looked for in the main checkout.
+  const out = git(mainCheckout(root), 'ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory')
   return [...new Set(out.split('\0').filter((p) => p && !p.endsWith('/') && /^\.env/.test(p.split('/').at(-1))))].filter((p) => !foreign(p) && !listed.has(p)).sort()
 }
 

@@ -41,6 +41,8 @@ export function countsHere(record, roots) {
   return [roots].flat().some((root) => resolve(record.projectPath) === resolve(root))
 }
 
+// The check of the records alone, for one root. The gate no longer uses it (checkSuperpowers
+// below); it stays for the parity record, scripts/parity/origin-superpowers.mjs.
 export function isAvailable({ installedPlugins, settings, exists, root }) {
   const records = installedPlugins?.plugins?.[PLUGIN_ID]
   const here = Array.isArray(records) ? records.filter((r) => countsHere(r, root)) : []
@@ -56,28 +58,17 @@ export function isAvailable({ installedPlugins, settings, exists, root }) {
   return { ok: true, reason: null }
 }
 
-// In Codex the gate is the install lookup: enabled in config.toml and present in the cache.
+// The gate is the install lookup every plugin has (installed.mjs `selectInstall`). In Claude
+// Code: a record for the main checkout or the worktree `root` names, the main checkout's
+// settings, and the cache directory of a plugin a trusted project enables with no record. In
+// Codex: enabled in config.toml and present in the cache.
 export function checkSuperpowers(root, { runtime = detectRuntime({ scriptPath: fileURLToPath(import.meta.url) }), home = runtimeHome(runtime) } = {}) {
-  if (runtime === 'codex') {
-    try {
-      selectInstall(PLUGIN_ID, root, { runtime, home })
-      return { ok: true, reason: null }
-    } catch (error) {
-      if (!error.absent) throw error
-      const reason = error.absent.reason === 'disabled' ? `${PLUGIN_ID} is installed but disabled` : `${PLUGIN_ID} is not installed for this project`
-      return { ok: false, reason, install: installCommand(runtime, PLUGIN_ID, 'user') }
-    }
+  try {
+    selectInstall(PLUGIN_ID, root, { runtime, home, exists: existsSync })
+    return { ok: true, reason: null }
+  } catch (error) {
+    if (!error.absent) throw error
+    const reason = error.absent.reason === 'disabled' ? `${PLUGIN_ID} is installed but disabled` : `${PLUGIN_ID} is not installed for this project`
+    return { ok: false, reason, install: runtime === 'codex' ? installCommand(runtime, PLUGIN_ID, 'user') : INSTALL_COMMAND }
   }
-  const settings = mergeSettings(
-    readJson(join(home, 'settings.json')),
-    readJson(join(root, '.claude', 'settings.json')),
-    readJson(join(root, '.claude', 'settings.local.json'))
-  )
-  const result = isAvailable({
-    installedPlugins: readJson(join(home, 'plugins', 'installed_plugins.json')),
-    settings,
-    exists: existsSync,
-    root
-  })
-  return result.ok ? result : { ...result, install: INSTALL_COMMAND }
 }

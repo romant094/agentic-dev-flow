@@ -20,8 +20,7 @@ A refusal is a stop that changes nothing, or nothing that you must undo. A scrip
 
 | Message | Cause | What to do |
 |---|---|---|
-| ``superpowers@claude-plugins-official is not installed for this project; install it with `claude plugin install superpowers@claude-plugins-official` and run again, and create or modify nothing until then.`` | The Superpowers plugin is missing. | Run the command in the message, then run the phase again. In Codex, the message names `codex plugin add superpowers@claude-plugins-official`. |
-| `superpowers@claude-plugins-official is recorded but no install path exists on disk` | The install record points to a missing directory. The same ending as above follows. | Install the plugin again. |
+| ``superpowers@claude-plugins-official is not installed for this project; install it with `claude plugin install superpowers@claude-plugins-official` and run again, and create or modify nothing until then.`` | The Superpowers plugin is missing, or its install record points to a missing directory. A project install counts only for the main directory of the project and for the worktree where it was made. | Run the command in the message, then run the phase again. In Codex, the message names `codex plugin add superpowers@claude-plugins-official`. |
 | `superpowers@claude-plugins-official is installed but disabled` | The plugin is off in the settings. The same ending as above follows. | Enable the plugin in your Claude Code settings. |
 | `change name "<name>" is not kebab-case; pass the resolved change name, never a placeholder.` | The change name has capitals, spaces or other characters. | Use lowercase words joined with hyphens. |
 
@@ -37,7 +36,7 @@ A refusal is a stop that changes nothing, or nothing that you must undo. A scrip
 | Message | Cause | What to do |
 |---|---|---|
 | `this project has no ADF registry; run /adf:init first` | `.claude/adf-extensions.json` does not exist. | Run `/adf:init`. |
-| ``<id> is not installed for this project; run: claude plugin install <id> --scope project; run it from <main>`` | The plugin has no install for this project. `<main>` is the main checkout of the project. | Run the command from `<main>`, then run `/adf:add` again. |
+| ``<id> is not installed for this project; run: claude plugin install <id> --scope project; run it from <main>`` | The plugin has no install for this project. `<main>` is the main directory of the project, also when the command ran in a worktree. The registry check prints the same command and `<main>` in a warning: `<id> is in the registry but not installed; its points are skipped`. | Run the command from `<main>`, then run `/adf:add` again. The command rewrites `<main>/.claude/settings.json`: commit the change, or restore the file when only the indentation changed. |
 | `<id> is installed but disabled` | The plugin is off in the settings. | Enable the plugin, then run `/adf:add` again. |
 | `<target> is already enabled` | The plugin is already in the registry. | Give a configuration to replace the current one. Otherwise nothing is needed. |
 | `a plugin named <name> is already enabled (<entry>)` | Another entry has the same plugin name. | Remove the other entry first. |

@@ -14,7 +14,8 @@
 //   update.mjs notice [--root <dir>] [--home <dir>]
 //       the SessionStart hook: prints { "systemMessage": "..." } when the project or the user
 //       install is behind, or when the pinned release is not installed; else nothing. Asks the
-//       remote once a day (<home>/adf/update-check.json). Any error: nothing printed, exit 0
+//       remote once a day (<home>/adf/update-check.json), and again at every start while the
+//       cached tag is the ref the project pins. Any error: nothing printed, exit 0
 //   update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>]
 //       { ran: [[...claude args]], restored, installed[, ref] }: `claude plugin marketplace
 //       update`, then for each enabled package plugin `claude plugin update <id> --scope <scope>`
@@ -53,7 +54,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isMain } from './lib/main.mjs'
 import { detectRuntime, runtimeHome } from './lib/runtime.mjs'
-import { applyUpdate, checkUpdate, commitUpdate, latestTag, noticeMessage, planUpdate, pull, quietGit, remoteTags, removeClones } from './lib/update.mjs'
+import { applyUpdate, checkUpdate, commitUpdate, latestTag, noticeMessage, planUpdate, projectRef, pull, quietGit, remoteTags, removeClones } from './lib/update.mjs'
 
 export const USAGE =
   'usage: update.mjs check [--root <dir>] [--home <dir>] | update.mjs notice [--root <dir>] [--home <dir>] | update.mjs pull [--scope project|user] [--root <dir>] [--home <dir>] | update.mjs plan [--to <tag>] [--root <dir>] | update.mjs apply --to <tag> --clones <json> --base <commit> [--choices <json>] [--root <dir>] | update.mjs commit --worktree <dir> --to <tag> | update.mjs cleanup --clones <json>'
@@ -106,8 +107,9 @@ function parse(argv) {
   return { values, rest }
 }
 
-// The newest tag of a remote, asked at most once a day per URL.
-function cachedLatest(home, git, now) {
+// The newest tag of a remote, asked at most once a day per URL. A cached tag equal to `pinned`,
+// the ref the project pins, is asked again: that answer is the one that hides a new release.
+function cachedLatest(home, git, now, pinned = null) {
   const path = join(home, 'adf', 'update-check.json')
   let cache = {}
   try {
@@ -115,7 +117,7 @@ function cachedLatest(home, git, now) {
   } catch {}
   return (url) => {
     const hit = cache[url]
-    if (hit && now - hit.checkedAt < DAY && now >= hit.checkedAt) return hit.latest ?? null
+    if (hit && now - hit.checkedAt < DAY && now >= hit.checkedAt && (pinned === null || hit.latest !== pinned)) return hit.latest ?? null
     // A failed ask is cached too, as no answer, so an offline machine asks once a day.
     let latest = null
     try {
@@ -163,7 +165,8 @@ export function run(argv, { cwd = process.cwd(), git, now = Date.now(), runtime 
     }
     case 'notice': {
       try {
-        const message = noticeMessage(checkUpdate(root, { home, runtime, fetchLatest: cachedLatest(home, git, now) }), { runtime })
+        const { ref, pinned } = projectRef(root)
+        const message = noticeMessage(checkUpdate(root, { home, runtime, fetchLatest: cachedLatest(home, git, now, pinned ? ref : null) }), { runtime })
         return message ? { systemMessage: message } : null
       } catch {
         return null

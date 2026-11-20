@@ -239,7 +239,7 @@ test('a registry entry whose plugin is not installed or disabled is absent: no t
   const check = checkRegistry(root, core)
   assert.equal(check.errors.some((e) => e.includes('adf-memory@agentic-dev-flow')), false)
   assert.deepEqual(check.warnings, [
-    'adf-memory@agentic-dev-flow is in the registry but not installed; its points are skipped (run: claude plugin install adf-memory@agentic-dev-flow --scope project)',
+    `adf-memory@agentic-dev-flow is in the registry but not installed; its points are skipped (run: claude plugin install adf-memory@agentic-dev-flow --scope project; run it from ${root})`,
     'off@mk is in the registry but disabled; its points are skipped (run: claude plugin enable off@mk)'
   ])
   assert.deepEqual(check.plugins.map((p) => p.name), ['f'])

@@ -31,9 +31,19 @@ Not checked: what an install or a project trust in the other project then takes.
 
 ### Where to install
 
-The flow reads the install records of Claude Code for the main checkout of the project. A user-scope record counts everywhere. A project or local record counts when its project path is the main checkout, or the worktree where the command runs. The flow reads the enabled and disabled settings from the main checkout only, and the Superpowers gate of the cycle commands' preflight checks the main checkout only. Other callers check the root they are given.
+The main directory is the directory of the main checkout of the project, where the repository was cloned. It is not the branch `main`. Every worktree of the project belongs to it.
 
-A project install that you make in a change worktree counts only for commands that run in that worktree. Install from the main checkout, so that every worktree finds the plugin. When a plugin is not installed, the message names the command and says to run it from the main checkout. See [Troubleshooting](../troubleshooting.md).
+The flow reads the install records of Claude Code for the main directory of the project. The Superpowers gate uses the same rules as every other plugin:
+
+- A user-scope record counts everywhere.
+- A project or local record counts when its project path is the main directory, or the worktree where the command runs.
+- At the same scope, the record of the main directory wins over the record of a worktree.
+- With no record, a plugin counts when the project settings enable it and its files are in the plugin cache. This is the case of a teammate who trusts the project.
+- The flow reads the enabled and disabled settings from the main directory.
+
+A project install that you make in a worktree counts only for commands that run in that worktree. Install from the main directory, so that every worktree finds the plugin. Do this also when you switch a project in a worktree. When a plugin is not installed, the message and the registry check name the command and say to run it from the main directory.
+
+`claude plugin install --scope project` rewrites `.claude/settings.json` of the main directory. Commit that change, or restore the file with `git checkout -- .claude/settings.json` when it only changed the indentation. See [Troubleshooting](../troubleshooting.md).
 
 ### A teammate on the same machine
 

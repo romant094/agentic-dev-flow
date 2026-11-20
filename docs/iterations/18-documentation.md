@@ -181,8 +181,9 @@ Found on 2026-11-03 in `~/.claude/plugins/` on the developer's machine.
   marketplace add or update. Not checked: what an install or a project trust in the other
   project then takes. The page says so.
 - `adf` finds a plugin through the install record of the main directory, also from a worktree
-  (`plugins/adf/scripts/lib/installed.mjs`, `mainCheckout`). An install made in a worktree does
-  not count.
+  (`plugins/adf/scripts/lib/installed.mjs`, `mainCheckout`). An install made in a worktree
+  counts only for the commands that run in that worktree (corrected in iteration 23, issue #18;
+  `docs/iterations/23-init-update-install-fixes.md`).
 - A teammate who trusts the project: issue #12, fixed in iteration 16 by the `pull` path; after
   the merge request that installs or updates the flow, each teammate runs `/adf:update` once and
   restarts.
