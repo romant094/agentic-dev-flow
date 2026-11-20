@@ -102,7 +102,7 @@ test('fresh: the change goes through every phase of the port, each from what the
 
     // The worktree preparation: the recipe holds the sandbox's fake in place of the command init
     // offered, and provision ran it in the change's worktree.
-    assert.match(git('show', 'develop:openspec/planning.md'), /^- `adf-replay-prepare npm run build --workspace @host\/shared` from `packages\/shared`$/m)
+    assert.deepEqual(JSON.parse(git('show', 'develop:openspec/settings.json')).worktreePreparation, [{ command: 'adf-replay-prepare npm run build --workspace @host/shared', inputs: ['packages/shared'] }])
     const prepared = sandbox.calls('adf-replay-prepare')
     assert.ok(prepared.length >= 1 && prepared.every((c) => c.argv[0] === 'npm run build --workspace @host/shared'), JSON.stringify(prepared))
     assert.ok(prepared.some((c) => c.cwd.includes(`/.claude/worktrees/${CHANGE}`)), JSON.stringify(prepared))

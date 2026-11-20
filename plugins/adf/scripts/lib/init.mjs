@@ -1,21 +1,21 @@
-// What /adf:init infers from the host for the developer to confirm, and the one section it writes
+// What /adf:init infers from the host for the developer to confirm, and the one setting it writes
 // on that confirmation. Nothing here commits.
 //
 //   suiteCandidates  whole-suite commands: the CI configuration's test commands (`.gitlab-ci.yml`,
 //                    `.github/workflows/*.yml`), then the package scripts named `test`, `test:*`
 //   copyCandidates   the `.env*` files git ignores in the main checkout, which a fresh worktree
 //                    lacks, also when init runs in a worktree; those the root's
-//                    `## Worktree copies` already names left out
-//   writeCopies      adds confirmed paths to the planning guide's `## Worktree copies`
+//                    `worktreeCopies` already names left out
+//   writeCopies      adds confirmed paths to the settings' `worktreeCopies`
 //   oldFlowMentions  the lines of the host's agent instruction files (CLAUDE.md, AGENTS.md and the
 //                    like) that name a previous flow's commands: read only, for the report
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, join, normalize, resolve } from 'node:path'
-import { PLANNING_FILE, sectionBounds } from './guide.mjs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { isAbsolute, join, normalize, resolve } from 'node:path'
 import { mainCheckout } from './installed.mjs'
 import { packageManager } from './prepare.mjs'
-import { COPIES_HEADING, readCopies } from './provision.mjs'
+import { readCopies } from './provision.mjs'
+import { setSetting } from './settings.mjs'
 import { WORKTREES_DIR } from './workspace.mjs'
 
 const git = (cwd, ...args) => execFileSync('git', ['-c', 'core.quotePath=false', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28 })
@@ -108,32 +108,16 @@ export function copyCandidates(rootArg) {
   return [...new Set(out.split('\0').filter((p) => p && !p.endsWith('/') && /^\.env/.test(p.split('/').at(-1))))].filter((p) => !foreign(p) && !listed.has(p)).sort()
 }
 
-// Adds the paths to `## Worktree copies`, one list item each after the ones it names, keeping the
-// section's HTML comments; creates the guide or the section when absent.
+// Adds the paths to the settings' `worktreeCopies`, after the ones it names; creates the file when
+// absent.
 export function writeCopies(rootArg, paths) {
   const root = resolve(rootArg)
   const given = (paths ?? []).map((p) => String(p).trim().replace(/\/+$/, '')).filter(Boolean)
   if (given.length === 0) throw new Error('no path to write')
   const outside = given.filter((p) => !inside(p) || p.includes('`'))
   if (outside.length) throw new Error(`${outside.join(', ')} is not a path inside the project`)
-  const copies = [...new Set([...readCopies(root), ...given])]
-  const file = join(root, PLANNING_FILE)
-  const text = existsSync(file) ? readFileSync(file, 'utf8') : ''
-  const eol = text.includes('\r\n') ? '\r\n' : '\n'
-  const lines = text === '' ? [] : text.split(/\r?\n/)
-  const items = copies.map((p) => `- \`${p}\``)
-  const bounds = sectionBounds(lines, COPIES_HEADING)
-  if (bounds) {
-    const comments = (lines.slice(bounds.start, bounds.end).join('\n').match(/<!--[\s\S]*?-->/g) ?? []).flatMap((c) => c.split('\n'))
-    lines.splice(bounds.start, bounds.end - bounds.start, '', ...(comments.length ? [...comments, ''] : []), ...items, '')
-  } else {
-    while (lines.length && lines.at(-1) === '') lines.pop()
-    lines.push(...(lines.length ? [''] : []), COPIES_HEADING, '', ...items, '')
-  }
-  mkdirSync(dirname(file), { recursive: true })
-  const out = lines.join(eol)
-  writeFileSync(file, out.endsWith(eol) ? out : out + eol)
-  return { file, copies: readCopies(root) }
+  const { file, settings } = setSetting(root, 'worktreeCopies', [...new Set([...readCopies(root), ...given])])
+  return { file, copies: settings.worktreeCopies }
 }
 
 // ---------------------------------------------------------------- a previous flow

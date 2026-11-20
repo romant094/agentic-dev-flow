@@ -15,8 +15,10 @@ export const SPECS_DIR = `${ROOT}/specs`
 // artifact.
 export const CONTEXT_FILE = `${ROOT}/context.md`
 export const RULES_DIR = `${ROOT}/rules`
-// The planning guide and the default path of the review prompt.
-export const PLANNING_FILE = `${ROOT}/planning.md`
+// The project's settings (values the scripts read, lib/settings.mjs), the project's planning
+// guide (prose for the plan and verify agents), and the default path of the review prompt.
+export const SETTINGS_FILE = `${ROOT}/settings.json`
+export const GUIDE_FILE = `${ROOT}/guide.md`
 export const REVIEW_PROMPT = `${ROOT}/review-prompt.md`
 // The metadata file of a change an earlier flow created (the openspec CLI's), still in flight.
 export const ORIGIN_META_FILE = '.openspec.yaml'

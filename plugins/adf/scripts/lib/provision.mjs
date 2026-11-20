@@ -1,8 +1,8 @@
 // Every worktree the core makes is provisioned for the host's stack before anything runs in it,
 // and torn down before the core removes it. The core knows no stack: it copies the untracked
-// files the planning guide's `## Worktree copies` section names from the main checkout, then
+// files the settings' `worktreeCopies` name from the main checkout, then
 // calls the `provision` hook, whose providers do the rest (contract/README.md), then runs the
-// guide's `## Worktree preparation` recipe (lib/prepare.mjs). A removal calls the `teardown` hook
+// settings' `worktreePreparation` recipe (lib/prepare.mjs). A removal calls the `teardown` hook
 // first.
 //
 // The worktree's and the main checkout's `git status --porcelain` are compared before the hook
@@ -25,12 +25,11 @@ import { baseRef } from './plan-symbols.mjs'
 import { callHook, CORE } from './roles.mjs'
 import { prepareWorktree } from './prepare.mjs'
 import { defaultHome } from './runtime.mjs'
-import { PLANNING_FILE } from './layout.mjs'
+import { getSetting } from './settings.mjs'
 
 export const KINDS = ['change', 'group', 'base-check', 'proof']
 // The kinds a change's needs go to; a base-check or proof tree gets none.
 export const NEEDS_KINDS = ['change', 'group']
-export const COPIES_HEADING = '## Worktree copies'
 
 const defaultCore = () => ({ ...CORE, home: defaultHome() })
 
@@ -46,18 +45,9 @@ const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8',
 const isLink = (path) => attempt(() => lstatSync(path).isSymbolicLink()) === true
 const inside = (path) => typeof path === 'string' && path !== '' && !isAbsolute(path) && !normalize(path).startsWith('..')
 
-// The paths of the `## Worktree copies` section: every backticked token, as `## Packages` is
-// read; HTML comments ignored. [] when the section is absent.
-export function copiesIn(text) {
-  const m = /^##\s+Worktree copies\s*$([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(String(text ?? '').replace(/<!--[\s\S]*?-->/g, ''))
-  if (!m) return []
-  return [...new Set([...m[1].matchAll(/`([^`]+)`/g)].map((t) => t[1].trim().replace(/\/+$/, '')).filter(Boolean))]
-}
-
-export function readCopies(root) {
-  const file = join(resolve(root), PLANNING_FILE)
-  return existsSync(file) ? copiesIn(readFileSync(file, 'utf8')) : []
-}
+// The settings' `worktreeCopies` (lib/settings.mjs): the untracked files every worktree takes
+// from the main checkout.
+export const readCopies = (root) => getSetting(root, 'worktreeCopies')
 
 // The change's base as `{ ref, commit }`, read from its metadata in `root` (readChangeMeta) and resolved as
 // plan-symbols resolves it; both null when it cannot be read.

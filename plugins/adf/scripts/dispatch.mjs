@@ -100,8 +100,8 @@
 //       `debt` records in the same call, once per requirement over both passes (lib/sweep.mjs
 //       recordDispositions), listed as `debt`: each id, or why it was skipped
 //
-// An `impl`, a `fix` and an `ai-fix` prompt carry `Check commands`, the lines of the planning
-// guide's `## How to run the checks` (lib/guide.mjs checkCommands), so the agent runs the
+// An `impl`, a `fix` and an `ai-fix` prompt carry `Check commands`, the settings' `checks`
+// (lib/settings.mjs), so the agent runs the
 // project's own install, build, test and lint commands.
 //
 // prompt reads the loop state by script (lib/loop.mjs). A `fix` or `re-review` whose subject (the
@@ -170,8 +170,8 @@ import { readTaskProof, taskProof } from './lib/tdd-proof.mjs'
 import { gitIn } from './lib/workspace.mjs'
 import { c4Inputs, candidatesFile, recordVerifyReply, schemaPath } from './lib/verify-reply.mjs'
 import { skillCandidates } from './lib/verify.mjs'
-import { checkCommands, PLANNING_FILE } from './lib/guide.mjs'
-import { CHANGES_DIR } from './lib/layout.mjs'
+import { CHANGES_DIR, GUIDE_FILE, SETTINGS_FILE } from './lib/layout.mjs'
+import { getSetting } from './lib/settings.mjs'
 
 export const PLUGIN_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const PROMPTS_DIR = join(PLUGIN_ROOT, 'schema', 'prompts')
@@ -249,11 +249,11 @@ function reviewFields(inputs, plan, root) {
 
 const shown = (path) => path ?? 'absent'
 
-// The `Check commands` field of the implementer and fix prompts: the planning guide's check
-// commands (lib/guide.mjs checkCommands), or a line saying the guide gives none.
+// The `Check commands` field of the implementer and fix prompts: the settings' `checks`, or a
+// line saying the settings give none.
 function checksField(root) {
-  const commands = checkCommands(readOr(join(root, PLANNING_FILE)))
-  return commands.length ? commands : `none in the planning guide, ${PLANNING_FILE}`
+  const commands = getSetting(root, 'checks')
+  return commands.length ? commands : `none in the settings, ${SETTINGS_FILE}`
 }
 
 // spec-merge: the capability's unresolved conflicts, each text in a file the agent reads.
@@ -437,7 +437,7 @@ function promptFor(inputs, plan, values, root, planText, main, cut) {
       }
       tokens['<base>'] = sweep.base
       dispositions = sweep.secondQuestion
-      fields.push(['Base', sweep.base], ['Range', sweep.range], ['Planning guide', join(root, PLANNING_FILE)])
+      fields.push(['Base', sweep.base], ['Range', sweep.range], ['Planning guide', join(root, GUIDE_FILE)])
       // A re-sweep reads the consolidation's diff and re-reports the open findings that still stand.
       if (inputs.round !== undefined) {
         const open = sweepState(root, change).open

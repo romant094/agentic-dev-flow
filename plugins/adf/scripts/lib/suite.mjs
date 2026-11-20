@@ -1,18 +1,16 @@
 // The whole-suite run of apply and verify, done by a script so no agent reports a count it did
 // not see.
 //
-// The command lives under `## Whole-suite command` in `<root>/openspec/planning.md`, as a fenced
-// block, an inline code span or a plain line (HTML comments are ignored). `readCommand` reads
-// it; `writeCommand` writes it there, creating the file or the section when absent. Committing
-// it is the caller's job.
+// The command is the settings' `wholeSuiteCommand` (lib/settings.mjs). `readCommand` reads it;
+// `writeCommand` sets it, creating the file when absent. Committing it is the caller's job.
 //
 // `runSuite` runs that command with `<root>` as the working directory, through the platform
 // shell (`spawn(command, { shell: true })`: `/bin/sh -c` on POSIX, `cmd.exe /d /s /c` on
 // Windows). A shell is right here because the command is the project's own whole-suite command
-// line, written by the developer into the planning guide, not a string built from input.
+// line, recorded by the developer in the settings, not a string built from input.
 // Running it uncached is the command's own job (`--no-cache`, `--force` and the like belong in
-// the guide): this script cannot tell a replayed result from a fresh one by itself. When the
-// guide has a `## Fresh-run proof` section, its one line (such as a cache counter at zero) must
+// the settings): this script cannot tell a replayed result from a fresh one by itself. When the
+// settings have a `freshRunProof`, that line (such as a cache counter at zero) must
 // appear in the output, or the run fails with the reason that it may be cached.
 //
 // Stdout and stderr go together, interleaved, to `.superpowers/sdd/<change>/suite/<stamp>.txt`
@@ -23,8 +21,8 @@
 // addBaseCheck, the same command run there (its output to `<stamp>-base.txt`), then
 // removeBaseCheck, never forced; a refused removal is reported and the worktree left. A base-check
 // worktree whose provisioning refused runs nothing: the base check could not run. The base run
-// starts once the main run has ended, never beside it (#54). When the guide has a
-// `## Failed-tests command`, a command line with `{tests}` where the names go, and the main run
+// starts once the main run has ended, never beside it (#54). When the settings have a
+// `failedTestsCommand`, a command line with `{tests}` where the names go, and the main run
 // named its failing tests, the base runs that command on those names alone, each quoted for the
 // platform shell, and its result lists them in `selected`; otherwise it runs the whole command.
 // Failing test identifiers are parsed from the output (TAP `not ok`, Jest/Vitest `FAIL` and
@@ -57,18 +55,15 @@ import { fileURLToPath } from 'node:url'
 import { changeDir } from './changes.mjs'
 import { addBaseCheck, removeBaseCheck } from './groups.mjs'
 import { mainCheckout } from './installed.mjs'
-import { PLANNING_FILE, sectionBounds as guideSectionBounds, sectionLine } from './guide.mjs'
 import { prepareWorktree } from './prepare.mjs'
 import { CHECKS, countsIn, RECORD_FILE, reconcileCounts, verifyDir } from './verify.mjs'
 import { quote } from './commit.mjs'
 import { marked, runMarker } from './suite-run.mjs'
 import { gitIn } from './workspace.mjs'
-import { CHANGES_DIR, COMMIT_SCOPE } from './layout.mjs'
+import { CHANGES_DIR, COMMIT_SCOPE, SETTINGS_FILE } from './layout.mjs'
+import { getSetting, setSetting } from './settings.mjs'
 
-export { PLANNING_FILE }
-export const HEADING = '## Whole-suite command'
-export const PROOF_HEADING = '## Fresh-run proof'
-export const FAILED_HEADING = '## Failed-tests command'
+export { SETTINGS_FILE }
 export const TESTS_TOKEN = '{tests}'
 export const SECTION_ID = 'test-record'
 // `--section review`: the run after the review stage's last fix, always with the base check,
@@ -83,70 +78,37 @@ export const DEFAULT_TIMEOUT_MINUTES = 30
 // The messages of the commits `suite.mjs set --commit` and `suite.mjs run --record --commit` make.
 export const SET_MESSAGE = `docs(${COMMIT_SCOPE}): record the whole-suite command`
 export const recordMessage = (change) => `docs(${COMMIT_SCOPE}): record the whole-suite run of ${change}`
-// What a run with no command in the guide replies: how to set one.
+// What a run with no command in the settings replies: how to set one.
 export const setRemedy = (root) =>
   `find the project's whole-suite command, confirm it with the developer, record it with \`node "${join(dirname(fileURLToPath(import.meta.url)), '..', 'suite.mjs')}" set --command "<command>" --root "${root}" --commit\`, and run again`
 
 const toPosix = (p) => p.split('\\').join('/')
 const rel = (root, file) => toPosix(relative(root, file))
 
-// ---------------------------------------------------------------- the planning guide
+// ---------------------------------------------------------------- the settings
 
-// [start, end) line indexes of the section body, or null when the heading is absent.
-export const sectionBounds = (lines, heading = HEADING) => guideSectionBounds(lines, heading)
-
-export const commandIn = (text) => sectionLine(text, HEADING, 'command')
-
-// The line the whole-suite output must contain to prove the run fresh; null without the section.
-export const proofIn = (text) => sectionLine(text, PROOF_HEADING, 'line')
-
-// The command that runs only the named tests, with TESTS_TOKEN where they go; null without the
-// section, or when its line holds no token.
-export const failedCommandIn = (text) => {
-  const line = sectionLine(text, FAILED_HEADING, 'command')
+// The command that runs only the named tests, with TESTS_TOKEN where they go; null when the
+// settings have none, or when it holds no token.
+export function readFailedCommand(root) {
+  const line = getSetting(root, 'failedTestsCommand')
   return line && line.includes(TESTS_TOKEN) ? line : null
 }
 
-export function readFailedCommand(root) {
-  const file = join(resolve(root), PLANNING_FILE)
-  return existsSync(file) ? failedCommandIn(readFileSync(file, 'utf8')) : null
-}
-
-export function readProof(root) {
-  const file = join(resolve(root), PLANNING_FILE)
-  return existsSync(file) ? proofIn(readFileSync(file, 'utf8')) : null
-}
+// The line the whole-suite output must contain to prove the run fresh; null when unset.
+export const readProof = (root) => getSetting(root, 'freshRunProof')
 
 export function readCommand(root) {
-  const file = join(resolve(root), PLANNING_FILE)
-  if (!existsSync(file)) return { file, command: null, reason: `${PLANNING_FILE} does not exist` }
-  const command = commandIn(readFileSync(file, 'utf8'))
-  return { file, command, ...(command === null ? { reason: `${PLANNING_FILE} holds no command under ${HEADING}` } : {}) }
+  const file = join(resolve(root), SETTINGS_FILE)
+  const command = getSetting(root, 'wholeSuiteCommand')
+  return { file, command, ...(command === null ? { reason: existsSync(file) ? `${SETTINGS_FILE} holds no wholeSuiteCommand` : `${SETTINGS_FILE} does not exist` } : {}) }
 }
 
-// Replaces whatever the section held, keeping its HTML comments.
+// Sets wholeSuiteCommand in the settings; committing it is the caller's job.
 export function writeCommand(root, command) {
   const cmd = String(command ?? '').trim()
   if (!cmd) throw new Error('no command to write')
   if (/[\r\n]/.test(cmd)) throw new Error('the whole-suite command must be one line')
-  const file = join(resolve(root), PLANNING_FILE)
-  const text = existsSync(file) ? readFileSync(file, 'utf8') : ''
-  const eol = text.includes('\r\n') ? '\r\n' : '\n'
-  const lines = text === '' ? [] : text.split(/\r?\n/)
-  const block = ['```sh', cmd, '```']
-  const bounds = sectionBounds(lines)
-  if (bounds) {
-    const comments = (lines.slice(bounds.start, bounds.end).join('\n').match(/<!--[\s\S]*?-->/g) ?? []).flatMap((c) => c.split('\n'))
-    const body = ['', ...(comments.length ? [...comments, ''] : []), ...block, '']
-    lines.splice(bounds.start, bounds.end - bounds.start, ...body)
-  } else {
-    while (lines.length && lines.at(-1) === '') lines.pop()
-    lines.push(...(lines.length ? [''] : []), HEADING, '', ...block, '')
-  }
-  mkdirSync(dirname(file), { recursive: true })
-  const out = lines.join(eol)
-  writeFileSync(file, out.endsWith(eol) ? out : out + eol)
-  if (commandIn(readFileSync(file, 'utf8')) !== cmd) throw new Error(`wrote ${PLANNING_FILE}, but the command does not read back`)
+  const { file } = setSetting(root, 'wholeSuiteCommand', cmd)
   return { file, command: cmd }
 }
 
@@ -525,7 +487,7 @@ function measure(root, change, { command, commit, now, timeoutMinutes, withBase,
   const file = join(dir, `${stamp}.txt`)
   const ran = runOnce(command, root, file, timeoutMinutes)
   const head = { failing: failingIn(ran.text) }
-  // A run whose output lacks the guide's proof line may be a replay: it blocks, and its
+  // A run whose output lacks the settings' proof line may be a replay: it blocks, and its
   // failures are not compared with the base.
   const proof = readProof(root)
   const fresh = proof === null || ran.text.replace(ANSI, '').includes(proof)
@@ -553,7 +515,7 @@ function measure(root, change, { command, commit, now, timeoutMinutes, withBase,
     ...(ran.error ? { error: ran.error } : {}),
     cannotRun: ran.cannotRun,
     ...(ran.timedOut ? { timedOut: true, timeoutMinutes } : {}),
-    ...(proof === null ? {} : { fresh, ...(fresh ? {} : { reason: `the output lacks the fresh-run proof line \`${proof}\` of ${PLANNING_FILE}: the run may be cached` }) }),
+    ...(proof === null ? {} : { fresh, ...(fresh ? {} : { reason: `the output lacks the fresh-run proof line \`${proof}\` of ${SETTINGS_FILE}: the run may be cached` }) }),
     counts: countLines(ran.text),
     quote: ran.text.split(/\r?\n/).map((l) => l.trimEnd()).filter((l, i, all) => i < all.length - 1 || l).slice(-QUOTE_LINES),
     outputFile: rel(root, file),

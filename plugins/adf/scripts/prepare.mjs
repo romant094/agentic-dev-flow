@@ -17,7 +17,7 @@
 import { join, resolve } from 'node:path'
 import { isMain } from './lib/main.mjs'
 import { addStep, candidates, prepareWorktree, readRecipe } from './lib/prepare.mjs'
-import { PLANNING_FILE } from './lib/layout.mjs'
+import { SETTINGS_FILE } from './lib/layout.mjs'
 
 export const USAGE =
   'usage: prepare.mjs recipe [--root <dir>] | prepare.mjs candidates [--root <dir>] | prepare.mjs add --command "<cmd>" --input <path> [--input <path> ...] [--root <dir>] | prepare.mjs run [--worktree <dir>] [--root <dir>] [--force]'
@@ -61,7 +61,7 @@ export function run(argv, { cwd = process.cwd() } = {}) {
   const root = resolve(cwd, values.root ?? '.')
   switch (sub) {
     case 'recipe':
-      return { file: join(root, PLANNING_FILE), steps: readRecipe(root) }
+      return { file: join(root, SETTINGS_FILE), steps: readRecipe(root) }
     case 'candidates':
       return { candidates: candidates(root) }
     case 'add':

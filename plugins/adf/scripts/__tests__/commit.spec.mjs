@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setBranches } from '../lib/branches.mjs'
-import { commitPaths, formatCommandIn, normalizePath, Refusal } from '../lib/commit.mjs'
-import { sectionLine } from '../lib/guide.mjs'
+import { commitPaths, normalizePath, Refusal } from '../lib/commit.mjs'
+import { setSetting } from '../lib/settings.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { initRegistry } from '../lib/registry.mjs'
 import { create, gitIn } from '../lib/workspace.mjs'
@@ -196,24 +196,14 @@ test('a file staged under the given paths before the step is committed with them
   assert.equal(git(change, 'status', '--porcelain'), '')
 })
 
-// ---------------------------------------------------------------- the guide's format command
+// ---------------------------------------------------------------- the settings' format command
 
-const guide = (change, body) => {
-  mkdirSync(join(change, 'openspec'), { recursive: true })
-  writeFileSync(join(change, 'openspec', 'planning.md'), `# Planning Guide\n\n## Format command\n\n${body}\n\n## Packages\n`)
-}
+const guide = (change, command) => setSetting(change, 'formatCommand', command)
 
-test('formatCommandIn reads the one line of the section; no section or an empty one is null', () => {
-  assert.equal(formatCommandIn('## Format command\n\n`npx biome format --write {files}`\n'), 'npx biome format --write {files}')
-  assert.equal(formatCommandIn('## Format command\n\n<!-- none -->\n\n## Packages\n'), null)
-  assert.equal(formatCommandIn('# Planning Guide\n'), null)
-  assert.throws(() => sectionLine('## Format command\n\na\nb\n', '## Format command', 'command'), /holds 2 lines; it must hold one command/)
-})
-
-test('the guide\'s format command runs on the step\'s paths before the commit, and the commit holds its output (#2)', () => {
+test('the settings\' format command runs on the step\'s paths before the commit, and the commit holds its output (#2)', () => {
   const { change } = host()
   writeChange(change)
-  guide(change, "`perl -pi -e 's/^p$/formatted p/' {files}`")
+  guide(change, "perl -pi -e 's/^p$/formatted p/' {files}")
   writeFileSync(join(change, 'it\'s here.txt'), 'p\n')
   const out = commitPaths(change, { only: ['openspec/changes/add-x/proposal.md', "it's here.txt"], message: 'm' })
   assert.deepEqual(out.files.sort(), ["it's here.txt", 'openspec/changes/add-x/proposal.md'])
@@ -225,7 +215,7 @@ test('the guide\'s format command runs on the step\'s paths before the commit, a
 test('a format command that exits non-zero refuses with its output, and nothing is staged or committed', () => {
   const { change } = host()
   writeChange(change)
-  guide(change, "`echo 'cannot format {files}'; exit 3`")
+  guide(change, "echo 'cannot format {files}'; exit 3")
   const head = git(change, 'rev-parse', 'HEAD')
   assert.throws(
     () => commitPaths(change, { only: ['openspec/changes/add-x'], message: 'm' }),
@@ -235,10 +225,10 @@ test('a format command that exits non-zero refuses with its output, and nothing 
   assert.equal(git(change, 'diff', '--cached', '--name-only'), '')
 })
 
-test('a guide with no format command commits the files as written', () => {
+test('settings with no format command commit the files as written', () => {
   const { change } = host()
   writeChange(change)
-  guide(change, '<!-- none -->')
+  guide(change, null)
   commitPaths(change, { only: ['openspec/changes/add-x/proposal.md'], message: 'm' })
   assert.equal(git(change, 'show', 'HEAD:openspec/changes/add-x/proposal.md'), 'p')
 })

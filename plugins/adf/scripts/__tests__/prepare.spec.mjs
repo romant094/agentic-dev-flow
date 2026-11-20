@@ -1,5 +1,5 @@
-// lib/prepare.mjs and prepare.mjs against real git repositories: the planning guide's
-// `## Worktree preparation` recipe, its run when a step's inputs changed since the worktree's last
+// lib/prepare.mjs and prepare.mjs against real git repositories: the settings'
+// `worktreePreparation` recipe, its run when a step's inputs changed since the worktree's last
 // preparation, the per-worktree state git never sees, and the callers that run it: provisioning,
 // a covering run, the whole suite and a group merge. The candidates init offers come from the
 // package manifest and the workspace layout.
@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { addGroup, mergeGroup } from '../lib/groups.mjs'
-import { addStep, candidates, prepareWorktree, readRecipe, recipeIn, stateFile } from '../lib/prepare.mjs'
+import { addStep, candidates, prepareWorktree, readRecipe, stateFile } from '../lib/prepare.mjs'
 import { runCovering, runSuite, writeCommand } from '../lib/suite.mjs'
 import { run } from '../prepare.mjs'
 import { commitIn, git, host } from './git-host.mjs'
@@ -19,25 +19,15 @@ if (readFileSync('lib/src/mode.txt', 'utf8').trim() === 'broken') { console.erro
 appendFileSync('out/builds.txt', 'built\\n')
 `
 
-const GUIDE = [
-  '# Planning Guide',
-  '',
-  '## Worktree preparation',
-  '',
-  '<!-- - `node never.mjs` from `nowhere` -->',
-  '- `node build.mjs` from `lib/src`, `build.mjs`',
-  '',
-  '## Packages',
-  ''
-].join('\n')
+const SETTINGS = JSON.stringify({ worktreePreparation: [{ command: 'node build.mjs', inputs: ['lib/src', 'build.mjs'] }] })
 
 const PLAN = '# Plan\n\n### Task 1: one\n\n> Implements tasks.md 1.1.\n\n**Files:**\n- Modify: `lib/src/a.txt`\n'
 
 // add-x in its worktree with the recipe above committed, `out/` ignored in every worktree.
-function setup(guide = GUIDE) {
+function setup(settings = SETTINGS) {
   const { root, change } = host({ 'plan.md': PLAN })
   appendFileSync(join(root, '.git', 'info', 'exclude'), 'out/\n')
-  for (const [file, text] of Object.entries({ 'build.mjs': BUILD, 'lib/src/mode.txt': 'ok\n', 'lib/src/a.txt': 'a\n', 'other.txt': 'o\n', 'openspec/planning.md': guide })) {
+  for (const [file, text] of Object.entries({ 'build.mjs': BUILD, 'lib/src/mode.txt': 'ok\n', 'lib/src/a.txt': 'a\n', 'other.txt': 'o\n', 'openspec/settings.json': settings })) {
     mkdirSync(join(change, file, '..'), { recursive: true })
     writeFileSync(join(change, file), text)
   }
@@ -48,11 +38,11 @@ function setup(guide = GUIDE) {
 
 const builds = (dir) => (existsSync(join(dir, 'out/builds.txt')) ? readFileSync(join(dir, 'out/builds.txt'), 'utf8').split('\n').filter(Boolean).length : 0)
 
-test('the recipe reads one step per list item: the command, then its input paths; comments left out', () => {
-  assert.deepEqual(recipeIn(GUIDE), [{ command: 'node build.mjs', inputs: ['lib/src', 'build.mjs'] }])
-  assert.deepEqual(recipeIn('# Guide\n\n## Packages\n'), [])
-  assert.throws(() => recipeIn('## Worktree preparation\n\n- `npm run build`\n'), /names no input path/)
-  assert.throws(() => recipeIn('## Worktree preparation\n\n- `npm run build` from `../x`\n'), /not a path inside the project/)
+test('the recipe is the settings\' worktreePreparation; a step with no input or one outside the project is refused', () => {
+  const { change } = setup()
+  assert.deepEqual(readRecipe(change), [{ command: 'node build.mjs', inputs: ['lib/src', 'build.mjs'] }])
+  assert.throws(() => addStep(change, { command: 'npm run build', inputs: [] }), /at least one input path/)
+  assert.throws(() => addStep(change, { command: 'npm run build', inputs: ['../x'] }), /not a path inside the project/)
 })
 
 test('a step runs when the worktree was never prepared, or its inputs changed by a commit or uncommitted; not otherwise', () => {
@@ -129,7 +119,7 @@ test('candidates are the build scripts of workspace packages another workspace d
 })
 
 test('the CLI adds a step, reads the recipe, runs it and offers candidates', () => {
-  const { change } = setup('# Planning Guide\n\n## Packages\n')
+  const { change } = setup('{}')
   assert.deepEqual(run(['recipe', '--root', change]).steps, [])
   const added = run(['add', '--command', 'node build.mjs', '--input', 'lib/src', '--input', 'build.mjs', '--root', change])
   assert.deepEqual(added.steps, [{ command: 'node build.mjs', inputs: ['lib/src', 'build.mjs'] }])

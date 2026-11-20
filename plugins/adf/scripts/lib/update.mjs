@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { requireBranches } from './branches.mjs'
-import { classify, hostFiles, keepFromUpdate, replaceFromUpdate } from './host-merge.mjs'
+import { classify, hostFiles, mergeKeep } from './host-merge.mjs'
 import { indentOf, MARKETPLACE, SETTINGS_PATH } from './host-settings.mjs'
 import { codexEnabledIds, codexMarketplace, mainCheckout, selectInstall } from './installed.mjs'
 import { migrateConfig } from './migrate.mjs'
@@ -376,7 +376,7 @@ function integrationState(root) {
 function classified(state, clones) {
   return hostFiles(clones.old, clones.new, state.registry).map((file) => {
     const ours = state.show(file.path)
-    return { ...file, ours, class: classify({ ...file, ours, path: file.path }) }
+    return { ...file, ours, class: classify({ ...file, ours }) }
   })
 }
 
@@ -521,13 +521,13 @@ export async function applyUpdate(root, { to, clones, base, choices = {} }) {
   const conflicts = []
   for (const file of files) {
     if (file.class === 'new') writes.set(file.path, file.theirs)
-    if (file.class === 'replace') writes.set(file.path, replaceFromUpdate(file.path, file.ours, file.theirs))
+    if (file.class === 'replace') writes.set(file.path, file.theirs)
     if (file.class !== 'edited') continue
     const choice = choices[file.path]
     if (choice === 'manual') manual.push(file.path)
-    else if (choice === 'replace') writes.set(file.path, replaceFromUpdate(file.path, file.ours, file.theirs))
+    else if (choice === 'replace') writes.set(file.path, file.theirs)
     else {
-      const merged = keepFromUpdate(file.path, file.base, file.ours, file.theirs)
+      const merged = mergeKeep(file.base, file.ours, file.theirs)
       if (merged.conflicts) conflicts.push(file.path)
       writes.set(file.path, merged.text)
     }

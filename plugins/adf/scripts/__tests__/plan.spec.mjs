@@ -14,7 +14,6 @@ import {
   frozenGroups,
   graphFindings,
   lintPlanText,
-  packagesFromGuide,
   parseGraph,
   parseNeeds,
   parsePlan,
@@ -97,18 +96,14 @@ test('every field, the level enum, a commit step, RED with GREEN, no REFACTOR', 
   assert.deepEqual(kinds(errors(lintPlanText({ planText: `${t1}`, tasksText: '## 1. A\n- [ ] 1.1 a\n' }).findings)), ['graph-missing', 'red-green'])
 })
 
-test('a task spanning two packages is a warning, from the guide only', () => {
+test('a task spanning two packages is a warning, from the settings only', () => {
   const files = ['- Modify: `apps/server/a.ts`', '- Modify: `apps/client/b.ts`']
   const text = plan([task(1, '1.1', { files }), task(2, '1.2'), task(3, '2.1')], GRAPH.replace('`src/t1.ts`', '`apps/server/a.ts`, `apps/client/b.ts`'))
-  const guide = '# Guide\n\n## Packages\n\n- `apps/server` first\n- `apps/client/` then\n\n## Other\n\n`not/a/package`\n'
-  assert.deepEqual(packagesFromGuide(guide), ['apps/server', 'apps/client'])
-  const withGuide = lintPlanText({ planText: text, tasksText: TASKS, guideText: guide }).findings
-  assert.deepEqual(withGuide.filter((f) => f.kind === 'cross-package').map((f) => [f.severity, f.task, f.packages]), [['warning', 1, ['apps/server', 'apps/client']]])
-  // Without a package map there is no package boundary: no guide, a guide without the section,
-  // or the template's section with only its comment.
-  const template = '## Packages\n\n<!-- The project\'s packages or top-level source directories. -->\n\n## Other\n'
-  for (const guideText of [null, '# Guide\n\n## Where to look\n\n`apps/server`\n', template])
-    assert.deepEqual(lintPlanText({ planText: text, tasksText: TASKS, guideText }).findings.filter((f) => f.kind === 'cross-package'), [])
+  const withPackages = lintPlanText({ planText: text, tasksText: TASKS, packages: ['apps/server', 'apps/client/'] }).findings
+  assert.deepEqual(withPackages.filter((f) => f.kind === 'cross-package').map((f) => [f.severity, f.task, f.packages]), [['warning', 1, ['apps/server', 'apps/client']]])
+  // Without a package list there is no package boundary.
+  for (const packages of [undefined, []])
+    assert.deepEqual(lintPlanText({ planText: text, tasksText: TASKS, packages }).findings.filter((f) => f.kind === 'cross-package'), [])
   // The origin's spans by top-level directory ("spans apps, tests", "spans packages, apps") are silent too.
   const origin = plan([task(1, '1.1', { files: ['- Modify: `apps/server/src/a.ts`', '- Test: `tests/e2e/a.spec.ts`', '- Modify: `packages/shared/src/b.ts`'] }), task(2, '1.2'), task(3, '2.1')])
   assert.deepEqual(lintPlanText({ planText: origin, tasksText: TASKS }).findings.filter((f) => f.kind === 'cross-package'), [])

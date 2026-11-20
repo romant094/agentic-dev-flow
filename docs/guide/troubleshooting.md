@@ -28,7 +28,7 @@ A refusal is a stop that changes nothing, or nothing that you must undo. A scrip
 
 | Message | Cause | What to do |
 |---|---|---|
-| `<paths> is not a path inside the project` | A path for `## Worktree copies` is absolute, climbs out with `..`, or holds a backtick. | Give a path relative to the project. |
+| `<paths> is not a path inside the project` | A path for `worktreeCopies` is absolute, climbs out with `..`, or holds a backtick. | Give a path relative to the project. |
 | `.claude/adf-extensions.json sets no branches; run /adf:init` | The registry has no `branches` key. Other commands print this when they need the branch policy. | Run `/adf:init`, and answer the question about the integration branch. |
 
 ## `/adf:add` and `/adf:remove`

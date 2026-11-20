@@ -18,6 +18,7 @@ import { readLedger as readMetricsLedger, readReplies } from '../lib/metrics-rec
 import { ROLES as REPLY_ROLES } from '../lib/reply.mjs'
 import { superpowersHome } from './git-host.mjs'
 import { RUNTIMES } from '../lib/runtime.mjs'
+import { setSetting } from '../lib/settings.mjs'
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'dispatch.mjs')
 const CHANGE = 'add-x'
@@ -254,14 +255,13 @@ test('an implementer prompt carries every fixed field and clause, with paths abs
 })
 
 // #51: the implementer and the fixers run the project's own commands, never a guessed one.
-test('the implementer and fix prompts carry the planning guide\'s check commands', () => {
+test('the implementer and fix prompts carry the settings\' check commands', () => {
   const root = host()
   const q = join(root, 'q.txt')
   writeFileSync(q, 'Do it.')
   const field = (prompt) => /- Check commands:.*(\n  - .*)*/.exec(prompt)?.[0]
-  assert.equal(field(call(root, 'prompt', '--role', 'impl', '--task', '1', '--question-file', q).prompt), '- Check commands: none in the planning guide, openspec/planning.md')
-  mkdirSync(join(root, 'openspec'), { recursive: true })
-  writeFileSync(join(root, 'openspec', 'planning.md'), '# Planning\n\n## How to run the checks\n\n<!-- The commands. -->\n\n- Install: `npm ci`\n- Test one file: `npx vitest run <file>`\n\n```sh\nnpm run lint\n```\n\n## Whole-suite command\n\n`npm test`\n')
+  assert.equal(field(call(root, 'prompt', '--role', 'impl', '--task', '1', '--question-file', q).prompt), '- Check commands: none in the settings, openspec/settings.json')
+  setSetting(root, 'checks', ['Install: `npm ci`', 'Test one file: `npx vitest run <file>`', 'npm run lint'])
   const expected = '- Check commands:\n  - Install: `npm ci`\n  - Test one file: `npx vitest run <file>`\n  - npm run lint'
   for (const role of ['impl', 'fix']) assert.equal(field(call(root, 'prompt', '--role', role, '--task', '1', '--round', '1', '--question-file', q).prompt), expected, role)
   assert.equal(field(call(root, 'prompt', '--role', 'review', '--task', '1', '--question-file', q).prompt), undefined)
@@ -974,7 +974,7 @@ test('the fixer prompt reads its finding from the round findings file, only for 
   assert.ok(prompt.includes(`valid under \`${join(PLUGIN_ROOT, 'schema', 'review-fix.schema.json')}\``))
   assert.ok(prompt.includes(`Write it to\n\`${out.replyFile}\``) || prompt.includes(`Write it to \`${out.replyFile}\``))
   assert.match(prompt, /`failureMode` states the failure/)
-  assert.ok(prompt.includes('- Check commands: none in the planning guide, openspec/planning.md'), prompt)
+  assert.ok(prompt.includes('- Check commands: none in the settings, openspec/settings.json'), prompt)
   assert.match(prompt, /with the commands the `Check commands` field\s+quotes/)
   assert.match(prompt, /`git -C /)
   assert.doesNotMatch(prompt, /reply\.mjs|\{\{|\$\{CLAUDE_PLUGIN_ROOT\}|<worktree>|<!--|Rejected false-positive argument/)

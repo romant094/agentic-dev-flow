@@ -20,7 +20,7 @@ const PLUGINS = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..
 
 const PLAN = ['# Plan', '', '### Task 1: one', '', '> Implements tasks.md 1.1.', '', '**Files:**', '- Modify: `packages/shared/index.js`', ''].join('\n')
 
-const GUIDE = ['# Planning Guide', '', '## Worktree copies', '', '- `.env`', ''].join('\n')
+const GUIDE = JSON.stringify({ worktreeCopies: ['.env'] })
 
 const INSTALL_RULE = "Never run npm install, ci, add, update or uninstall in a worktree: its node_modules links into the main checkout's, so the command rewrites the main checkout's dependencies. A dependency update is its own change."
 
@@ -68,12 +68,12 @@ function setup() {
   writeFileSync(join(root, '.env'), 'DATABASE_URL=postgres://u:secret@127.0.0.1:1/app\n')
 
   mkdirSync(join(change, 'openspec'), { recursive: true })
-  writeFileSync(join(change, 'openspec', 'planning.md'), GUIDE)
+  writeFileSync(join(change, 'openspec', 'settings.json'), GUIDE)
   const config = { 'adf-npm-workspaces': {}, 'adf-postgres': { prefix: 't', url: { file: '.env', key: 'DATABASE_URL' }, exec: 'local' }, 'adf-prisma': {} }
   const points = { 'adf-npm-workspaces': ['provision'], 'adf-postgres': ['provision', 'teardown'], 'adf-prisma': ['provision', 'verify-check'] }
   const extensions = ORDER.map((name) => ({ path: join(PLUGINS, name), points: points[name], config: config[name] }))
   writeRegistry(change, { ...readRegistry(change), extensions })
-  git(change, 'add', 'openspec/planning.md', '.claude/adf-extensions.json')
+  git(change, 'add', 'openspec/settings.json', '.claude/adf-extensions.json')
   git(change, 'commit', '-q', '-m', 'guide and stack plugins')
   return { root, change }
 }

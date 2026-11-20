@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { createReviewPrompt } from '../lib/host-files.mjs'
+import { INITIAL } from '../lib/settings.mjs'
 import { setDebtRoot } from '../lib/registry.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -41,7 +42,11 @@ test('init, add, check, remove on a fresh host', () => {
   assert.equal(init.created, true)
   assert.equal(init.contract, '1.11')
   assert.deepEqual(init.settings.added, ['enabledPlugins.adf@agentic-dev-flow'])
-  assert.deepEqual(init.planningGuide, { path: 'openspec/planning.md', created: true })
+  assert.deepEqual(init.flowSettings, { path: 'openspec/settings.json', created: true })
+  assert.deepEqual(init.guide, { path: 'openspec/guide.md', created: true })
+  assert.deepEqual(JSON.parse(readFileSync(join(root, 'openspec', 'settings.json'), 'utf8')), INITIAL)
+  assert.match(init.report, /Project settings: created at openspec\/settings\.json/)
+  assert.match(init.report, /Planning guide: created at openspec\/guide\.md; the team fills it in/)
   assert.deepEqual(init.reviewPrompt, { path: 'openspec/review-prompt.md', created: true, registered: true })
   assert.equal(readFileSync(join(root, 'openspec', 'review-prompt.md'), 'utf8'), readFileSync(REVIEW_TEMPLATE, 'utf8'))
   assert.match(init.report, /Review prompt: created at openspec\/review-prompt\.md; the team tunes its criteria; review\.prompt set in the registry/)
@@ -59,7 +64,8 @@ test('init, add, check, remove on a fresh host', () => {
   const again = adf(root, 'init').out
   assert.equal(again.created, false)
   assert.deepEqual(again.settings.added, [])
-  assert.equal(again.planningGuide.created, false)
+  assert.equal(again.flowSettings.created, false)
+  assert.equal(again.guide.created, false)
   assert.deepEqual(again.reviewPrompt, { path: 'openspec/review-prompt.md', created: false, registered: false })
   assert.deepEqual(again.branches.protected, ['develop', 'main'])
 

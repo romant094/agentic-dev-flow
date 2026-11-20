@@ -381,14 +381,14 @@ test('out-of-plan exempts an approved skill edit only for its files under .claud
   assert.throws(() => runChecks(root, { change: CHANGE, skillEdits: ['0000000'] }), /--skill-edit 0000000 is not a commit/)
 })
 
-test('out-of-plan exempts the planning guide in the commit suite.mjs set makes, and only there', () => {
+test('out-of-plan exempts the settings in the commit suite.mjs set makes, and only there', () => {
   const { root } = host()
-  commit(root, { 'openspec/planning.md': '## Whole-suite command\n\n```sh\nnpm test\n```\n' }, 'docs(openspec): record the whole-suite command')
+  commit(root, { 'openspec/settings.json': '{ "wholeSuiteCommand": "npm test" }\n' }, 'docs(openspec): record the whole-suite command')
   assert.equal(runIn(root)['out-of-plan'].verdict, 'pass')
-  commit(root, { 'openspec/planning.md': '## Whole-suite command\n\n```sh\nnpm test -- --all\n```\n', 'docs/notes.md': 'n\n' }, 'docs(openspec): record the whole-suite command')
+  commit(root, { 'openspec/settings.json': '{ "wholeSuiteCommand": "npm test -- --all" }\n', 'docs/notes.md': 'n\n' }, 'docs(openspec): record the whole-suite command')
   assert.equal(runIn(root)['out-of-plan'].summary, '1 file(s) outside every task: docs/notes.md')
-  commit(root, { 'openspec/planning.md': '# edited by hand\n' }, 'docs: edit the guide')
-  assert.equal(runIn(root)['out-of-plan'].summary, '2 file(s) outside every task: openspec/planning.md, docs/notes.md')
+  commit(root, { 'openspec/settings.json': '{}\n' }, 'docs: edit the settings')
+  assert.equal(runIn(root)['out-of-plan'].summary, '2 file(s) outside every task: openspec/settings.json, docs/notes.md')
 })
 
 test('out-of-plan warns naming an unparsed Files bullet', () => {
@@ -740,7 +740,7 @@ test('skill-edit --diff-file applies the c8 diff with git apply, and refuses one
 })
 
 test('run --suite re-runs a missing or stale record in the same call, and drops the re-run once the record is current', () => {
-  const { root } = host({ record: false, outsidePlan: ['openspec/planning.md'] })
+  const { root } = host({ record: false, outsidePlan: ['openspec/settings.json'] })
   writeCommand(root, 'node -e "console.log(\'# tests 1\'); console.log(\'# pass 1\')"')
   git(root, 'add', '.')
   git(root, 'commit', '-q', '-m', 'planning')

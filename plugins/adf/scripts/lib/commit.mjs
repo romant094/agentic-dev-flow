@@ -13,13 +13,14 @@
 // and the files reported are read from the commit, so what a hook rewrote or added is there; a
 // hook that refuses stops the commit with its output.
 //
-// Before the paths are staged, the planning guide's `## Format command` runs on them, when the
-// guide has one (`formatPaths`), so the commit holds the host's style with or without a hook.
+// Before the paths are staged, the settings' `formatCommand` runs on them, when the settings
+// have one (`formatPaths`), so the commit holds the host's style with or without a hook.
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, realpathSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { isProtected, readBranches } from './branches.mjs'
-import { PLANNING_FILE, sectionLine } from './guide.mjs'
+import { SETTINGS_FILE } from './layout.mjs'
+import { getSetting } from './settings.mjs'
 import { gitIn } from './workspace.mjs'
 
 export class Refusal extends Error {}
@@ -73,28 +74,24 @@ export function checkCommitPlace(root, { git = gitIn(root) } = {}) {
 
 // ---------------------------------------------------------------- the guide's format command
 
-export const FORMAT_HEADING = '## Format command'
 export const FILES = '{files}'
-
-export const formatCommandIn = (text) => sectionLine(text, FORMAT_HEADING, 'command')
 
 // A path as one shell word: `/bin/sh -c` on POSIX, `cmd.exe` on Windows.
 export const quote = (path) => (process.platform === 'win32' ? `"${path}"` : `'${path.replaceAll("'", "'\\''")}'`)
 
-// Runs the guide's format command in `root` on the paths that exist, `{files}` replaced by them,
-// through the platform shell: the command is the developer's own line in the guide, not a string
-// built from input. No section, or no path left, runs nothing. A command that exits non-zero
+// Runs the settings' format command in `root` on the paths that exist, `{files}` replaced by them,
+// through the platform shell: the command is the developer's own line in the settings, not a string
+// built from input. No command, or no path left, runs nothing. A command that exits non-zero
 // refuses with its output. Returns the command run, or null.
 export function formatPaths(root, paths) {
-  const file = join(resolve(root), PLANNING_FILE)
-  const template = existsSync(file) ? formatCommandIn(readFileSync(file, 'utf8')) : null
+  const template = getSetting(root, 'formatCommand')
   const present = paths.filter((p) => existsSync(join(resolve(root), p)))
   if (template === null || present.length === 0) return null
   const command = template.replaceAll(FILES, present.map(quote).join(' '))
   const run = spawnSync(command, { cwd: root, shell: true, encoding: 'utf8', windowsHide: true })
   if (run.error || run.status !== 0) {
     const output = `${run.stdout ?? ''}${run.stderr ?? ''}`.trim() || String(run.error?.message ?? '')
-    refuse(`the format command of ${PLANNING_FILE} (${command}) exited ${run.status ?? 'abnormally'}${output ? `: ${output}` : ''}; fix it or the files and run again`)
+    refuse(`the format command of ${SETTINGS_FILE} (${command}) exited ${run.status ?? 'abnormally'}${output ? `: ${output}` : ''}; fix it or the files and run again`)
   }
   return command
 }

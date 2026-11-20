@@ -216,19 +216,11 @@ export function planInputs(root, change) {
   return { files: plannedPaths(text).paths, needs: parseNeeds(text).needs }
 }
 
-// The packages a planning guide lists under `## Packages`: every backticked directory-like token.
-export function packagesFromGuide(guideText) {
-  if (!guideText) return []
-  const m = /^##\s+Packages\s*$([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(stripComments(guideText))
-  if (!m) return []
-  return [...new Set([...m[1].matchAll(/`([^`]+)`/g)].map((t) => t[1].replace(/\/\*\*$|\/\*$|\/$/, '')).filter((t) => /^[\w.@-][\w./@-]*$/.test(t)))]
-}
-
 // The package a path is in: the longest listed package it is under. With no list there is no
 // package boundary, so a path is in none: top-level directories are not packages (they joined
 // `apps/server` and `apps/client` and split `apps` from `tests`).
 export function packageOf(path, packages) {
-  return packages.filter((p) => path === p || path.startsWith(`${p}/`)).sort((a, b) => b.length - a.length)[0] ?? null
+  return packages.map((p) => p.replace(/\/\*{1,2}$|\/+$/, '')).filter((p) => path === p || path.startsWith(`${p}/`)).sort((a, b) => b.length - a.length)[0] ?? null
 }
 
 // ---------------------------------------------------------------- risks
@@ -384,7 +376,7 @@ export async function sweepDeletes(tasks, { grep, read, exclude = () => false })
 // the core judges no need word, so a word is reported only when nothing would provide it.
 // `frozen` names the groups an apply round froze (graphFindings).
 // Findings: { severity, kind, task?, file, line, message }.
-export function lintPlanText({ planText, tasksText, designText = null, guideText = null, planFile = 'plan.md', tasksFile = 'tasks.md', designFile = 'design.md', provisioned = false, frozen = [] }) {
+export function lintPlanText({ planText, tasksText, designText = null, packages = [], planFile = 'plan.md', tasksFile = 'tasks.md', designFile = 'design.md', provisioned = false, frozen = [] }) {
   const { tasks, lines } = parsePlan(planText)
   const findings = []
   const at = (file, line) => ({ file, line })
@@ -422,7 +414,6 @@ export function lintPlanText({ planText, tasksText, designText = null, guideText
     if (t.red !== t.green) say('error', 'red-green', here, `Task ${t.number} has ${t.red ? 'RED without GREEN' : 'GREEN without RED'}`, x)
     if (t.refactor) say('error', 'refactor-step', at(planFile, t.refactor), `Task ${t.number} has a REFACTOR step; no task gets one`, x)
 
-    const packages = packagesFromGuide(guideText)
     const spanned = [...new Set(t.files.flatMap((f) => [f.path, f.to].filter(Boolean)).map((p) => packageOf(p, packages)).filter(Boolean))]
     if (spanned.length >= 2)
       say('warning', 'cross-package', at(planFile, t.fields.files ?? t.line), `Task ${t.number} spans ${spanned.join(', ')}; split it if it also changes a failure or rollback path`, { ...x, packages: spanned })

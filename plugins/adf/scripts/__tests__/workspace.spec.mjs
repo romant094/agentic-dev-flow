@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { detectIntegration, readBranches, setBranches } from '../lib/branches.mjs'
-import { createPlanningGuide, ignoreLocalDirs } from '../lib/host-files.mjs'
+import { createGuide, createSettings, ignoreLocalDirs } from '../lib/host-files.mjs'
 import { initRegistry } from '../lib/registry.mjs'
 import { branchType, create, gitIn, remove, suggest } from '../lib/workspace.mjs'
 
@@ -199,11 +199,13 @@ test('create refuses without a branch policy', () => {
   assert.throws(() => suggest(base, 'a'), /sets no branches/)
 })
 
-test('ignoreLocalDirs and createPlanningGuide add only what is missing', () => {
+test('ignoreLocalDirs, createGuide and createSettings add only what is missing', () => {
   const root = host({ remote: false })
   assert.deepEqual(ignoreLocalDirs(root), { added: [] })
-  assert.equal(createPlanningGuide(root).created, true)
-  assert.equal(createPlanningGuide(root).created, false)
+  assert.equal(createGuide(root).created, true)
+  assert.equal(createSettings(root).created, true)
+  assert.equal(createSettings(root).created, false)
+  assert.equal(createGuide(root).created, false)
 })
 
 // ---------------------------------------------------------------- remove

@@ -111,8 +111,8 @@ test('plan lists the changed plugins and their log', () => {
     { id: 'adf-gone@agentic-dev-flow', from: '0.1.0', to: null, changed: true }
   ])
   assert.deepEqual(plan.log, { adf: ['fix(adf): new host templates'], 'adf-demo': ['feat(adf-demo): rename the old key'] })
+  // The planning guide is no host file: its template changed, and nothing lists it (#23).
   assert.deepEqual(plan.hostFiles, [
-    { path: 'openspec/planning.md', class: 'replace' },
     { path: 'openspec/review-prompt.md', class: 'edited' },
     { path: '.demo/mr.md', class: 'new' }
   ])
@@ -140,7 +140,7 @@ test('apply writes the ref, the migrated config and the versions, and commits on
   assert.deepEqual(out.dropped, ['adf-gone@agentic-dev-flow'])
   assert.deepEqual(out.ran, { 'adf-demo@agentic-dev-flow': ['0.2.0'] })
   assert.deepEqual([out.manual, out.conflicts], [[], []])
-  assert.deepEqual(out.written.sort(), ['.claude/adf-extensions.json', '.claude/settings.json', '.demo/mr.md', 'openspec/planning.md', 'openspec/review-prompt.md'])
+  assert.deepEqual(out.written.sort(), ['.claude/adf-extensions.json', '.claude/settings.json', '.demo/mr.md', 'openspec/review-prompt.md'])
   const wt = out.worktree
   const settings = readFileSync(join(wt, '.claude/settings.json'), 'utf8')
   assert.match(settings, /\n {4}"enabledPlugins"/)
@@ -150,7 +150,7 @@ test('apply writes the ref, the migrated config and the versions, and commits on
   assert.deepEqual(registry.extensions[1], { plugin: 'adf-gone@agentic-dev-flow', version: '0.1.0' })
   assert.deepEqual(registry.extensions[2], { path: 'local/plugin' })
   assert.equal(registry.contract, '1.9')
-  assert.equal(readFileSync(join(wt, 'openspec/planning.md'), 'utf8'), PLANNING_V2.replace('TODO', 'npm test'))
+  assert.equal(readFileSync(join(wt, 'openspec/planning.md'), 'utf8'), PLANNING_FILLED)
   assert.equal(readFileSync(join(wt, 'openspec/review-prompt.md'), 'utf8'), 'R1 new\nR2\nR3\nR4\nR5 mine\n')
   assert.equal(readFileSync(join(wt, '.demo/mr.md'), 'utf8'), 'template\n')
   assert.equal(git(wt, 'log', '-1', '--format=%s').trim(), 'chore(adf): update to v0.2.0')

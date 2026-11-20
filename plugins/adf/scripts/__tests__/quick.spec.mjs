@@ -227,16 +227,16 @@ test('the CLI refuses a usage error', () => {
 // ---------------------------------------------------------------- tests: the affected tests
 
 const git = (root, ...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
-const PLANNING = (body) => `# Guide\n\n## Affected tests command\n\n${body}\n\n## Other\n\nx\n`
+const PLANNING = (command) => `${JSON.stringify({ affectedTestsCommand: command })}\n`
 
-function worktree(section = '`runner {files}`') {
+function worktree(section = 'runner {files}') {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'adf-quick-tests-')))
   git(root, 'init', '-q', '-b', 'develop')
   git(root, 'config', 'user.email', 't@t')
   git(root, 'config', 'user.name', 't')
   mkdirSync(join(root, 'openspec', 'changes', 'fix-it'), { recursive: true })
   writeFileSync(join(root, 'openspec', 'changes', 'fix-it', '.adf.json'), JSON.stringify({ base: 'develop' }))
-  writeFileSync(join(root, 'openspec', 'planning.md'), PLANNING(section))
+  writeFileSync(join(root, 'openspec', 'settings.json'), PLANNING(section))
   writeFileSync(join(root, 'base.txt'), 'base\n')
   git(root, 'add', '.')
   git(root, 'commit', '-q', '-m', 'base')
@@ -268,10 +268,10 @@ test('tests replaces {files} with the changed paths', () => {
   assert.equal(calls[0].command, `runner 'a.txt' 'base.txt' 'it'\\''s.txt'`)
 })
 
-test('the change directory, the planning guide and the state directory are not test input', () => {
+test('the change directory, the settings and the state directory are not test input', () => {
   const root = worktree()
   writeFileSync(join(root, 'openspec', 'changes', 'fix-it', 'quick.md'), '# Quick\n')
-  writeFileSync(join(root, 'openspec', 'planning.md'), PLANNING('`runner {files}` '))
+  writeFileSync(join(root, 'openspec', 'settings.json'), JSON.stringify({ affectedTestsCommand: 'runner {files}' }, null, 2))
   mkdirSync(join(root, '.superpowers', 'sdd', 'fix-it'), { recursive: true })
   writeFileSync(join(root, '.superpowers', 'sdd', 'fix-it', 'note.json'), '{}\n')
   git(root, 'add', 'openspec/changes/fix-it/quick.md')
@@ -281,8 +281,8 @@ test('the change directory, the planning guide and the state directory are not t
   assert.equal(calls[0].command, `runner 'a.txt' 'base.txt' 'it'\\''s.txt'`)
 })
 
-test('an empty section waits and runs nothing', () => {
-  const root = worktree('')
+test('no command waits and runs nothing', () => {
+  const root = worktree(null)
   const { calls, runner } = recorder()
   const out = testsOf(root, runner)
   assert.equal(out.ok, true)
@@ -325,7 +325,7 @@ test('no changed files runs nothing', () => {
   assert.equal(existsSync(join(root, '.superpowers', 'sdd', 'fix-it', 'quick', 'tests.json')), false)
 })
 
-test('a section of several lines is a refusal', () => {
+test('a command of several lines is a refusal', () => {
   const root = worktree('one\ntwo')
-  assert.throws(() => testsOf(root, recorder().runner), (e) => e instanceof Refusal && /must hold one command/.test(e.message))
+  assert.throws(() => testsOf(root, recorder().runner), (e) => e instanceof Refusal && /affectedTestsCommand: must be one line/.test(e.message))
 })

@@ -174,7 +174,7 @@ test('test runs from the suite records: runs, failed, uncounted, and a file that
 
 test('review state: verdict from the assembled record, rounds, dispositions; ai-review from findings.json; after the move too', () => {
   const { change } = host()
-  commitIn(change, 'openspec/planning.md', '# Planning\n\n## Whole-suite command\n\ntrue\n')
+  commitIn(change, 'openspec/settings.json', JSON.stringify({ wholeSuiteCommand: 'true' }))
   commitIn(change, 'src/a.ts', 'line1\nline2\nline3\n')
   const prompt = join(realpathSync(mkdtempSync(join(tmpdir(), 'adf-mr-prompt-'))), 'prompt.md')
   writeFileSync(prompt, 'Look for bugs.\n')

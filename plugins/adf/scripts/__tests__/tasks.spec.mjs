@@ -180,10 +180,10 @@ test('tick --commit commits through the index: a pre-commit hook that formats an
   assert.equal(git(root, 'status', '--porcelain'), '')
 })
 
-test('tick --commit runs the guide\'s format command on the tick\'s paths first (#2)', () => {
+test('tick --commit runs the settings\' format command on the tick\'s paths first (#2)', () => {
   const root = repo()
-  writeFileSync(join(root, 'openspec', 'planning.md'), "## Format command\n\n`perl -pi -e 's/^- \\[x\\]/- [X]/' {files}`\n")
-  git(root, 'add', 'openspec/planning.md')
+  writeFileSync(join(root, 'openspec', 'settings.json'), JSON.stringify({ formatCommand: "perl -pi -e 's/^- \\[x\\]/- [X]/' {files}" }))
+  git(root, 'add', 'openspec/settings.json')
   git(root, 'commit', '-q', '-m', 'guide')
   const out = run(['tick', '1.1', '--change', 'c', '--root', root, '--commit'])
   assert.equal(out.code, 0)

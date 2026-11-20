@@ -128,14 +128,13 @@ test('the copy scan collapses an ignored directory: none of its files is listed,
   assert.ok(!listed.some((p) => p.startsWith('node_modules/p')))
 })
 
-test('the copies are written into their section, kept on a second write, the template comment kept', () => {
-  const root = repo({ 'openspec/planning.md': '# Guide\n\n## Worktree copies\n\n<!-- the paths -->\n\n## Worktree preparation\n\n- `npm run build` from `lib`\n' })
+test('the copies are added to the settings, each once, the other keys kept', () => {
+  const root = repo({ 'openspec/settings.json': JSON.stringify({ worktreePreparation: [{ command: 'npm run build', inputs: ['lib'] }] }) })
   writeCopies(root, ['.env'])
   const again = writeCopies(root, ['apps/server/.env', '.env'])
   assert.deepEqual(again.copies, ['.env', 'apps/server/.env'])
   assert.deepEqual(readCopies(root), ['.env', 'apps/server/.env'])
-  const text = readFileSync(join(root, 'openspec/planning.md'), 'utf8')
-  assert.match(text, /## Worktree copies\n\n<!-- the paths -->\n\n- `\.env`\n- `apps\/server\/\.env`\n\n## Worktree preparation/)
+  assert.deepEqual(JSON.parse(readFileSync(join(root, 'openspec/settings.json'), 'utf8')), { worktreeCopies: ['.env', 'apps/server/.env'], worktreePreparation: [{ command: 'npm run build', inputs: ['lib'] }] })
   assert.throws(() => writeCopies(root, ['../outside']), /not a path inside the project/)
   const bare = repo()
   writeCopies(bare, ['.env'])

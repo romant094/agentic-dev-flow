@@ -262,12 +262,16 @@ test('instructions deliver the project guides the artifact names, or null text w
   const root = host()
   newChange(root, 'add-thing', schema)
   assert.deepEqual(artifactInstructions(root, 'add-thing', 'plan', schema).guides, [
-    { path: 'openspec/planning.md', text: null }
+    { path: 'openspec/guide.md', text: null },
+    { path: 'openspec/settings.json', text: null }
   ])
-  write(root, 'openspec/planning.md', '# Planning Guide\n\nRun the bench.\n')
-  assert.deepEqual(artifactInstructions(root, 'add-thing', 'plan', schema).guides, [
-    { path: 'openspec/planning.md', text: '# Planning Guide\n\nRun the bench.' }
-  ])
+  write(root, 'openspec/guide.md', '# Planning Guide\n\nRun the bench.\n')
+  write(root, 'openspec/settings.json', JSON.stringify({ packages: ['apps/server'] }))
+  const [guide, settings] = artifactInstructions(root, 'add-thing', 'plan', schema).guides
+  assert.deepEqual(guide, { path: 'openspec/guide.md', text: '# Planning Guide\n\nRun the bench.' })
+  assert.equal(settings.path, 'openspec/settings.json')
+  assert.match(settings.text, /^# Project settings/)
+  assert.match(settings.text, /- `packages`: \["apps\/server"\]\./)
   assert.deepEqual(artifactInstructions(root, 'add-thing', 'tasks', schema).guides, [])
 })
 
@@ -278,13 +282,15 @@ test('verify is ready once the plan exists, and its instructions carry the proce
   assert.deepEqual(changeStatus(root, 'c', schema).artifacts.find((a) => a.id === 'verify').missingDeps, ['plan'])
   write(root, 'openspec/changes/c/plan.md')
   assert.equal(statuses(changeStatus(root, 'c', schema)).verify, 'ready')
-  write(root, 'openspec/planning.md', '# Planning Guide\n\n## Whole-suite command\n\nnpm test\n')
+  write(root, 'openspec/guide.md', '# Planning Guide\n\nRun the bench.\n')
+  write(root, 'openspec/settings.json', JSON.stringify({ wholeSuiteCommand: 'npm test' }))
   const result = artifactInstructions(root, 'c', 'verify', schema)
   assert.equal(result.outputPath, 'verify.md')
   assert.match(result.instruction, /verify\.mjs" run --change/)
   assert.match(result.instruction, /verify\.mjs" verdict --change/)
   assert.match(result.template, /^Verdict: /m)
-  assert.deepEqual(result.guides, [{ path: 'openspec/planning.md', text: '# Planning Guide\n\n## Whole-suite command\n\nnpm test' }])
+  assert.deepEqual(result.guides.map((g) => g.path), ['openspec/guide.md', 'openspec/settings.json'])
+  assert.match(result.guides[1].text, /- `wholeSuiteCommand`: "npm test"\./)
   assert.deepEqual(result.dependencies.map((d) => [d.id, d.done]), [['plan', true]])
   assert.deepEqual(result.unlocks, ['review'])
   write(root, 'openspec/changes/c/verify.md')

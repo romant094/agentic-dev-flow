@@ -39,7 +39,7 @@ function setup({ files = { 'src/a.ts': 'line1\nline2\nline3\n' }, command = 'tru
     writeRegistry(change, { ...readRegistry(change), review: settings })
     git(change, 'add', '.claude')
   }
-  commitAll(change, { 'openspec/planning.md': `# Planning\n\n## Whole-suite command\n\n${command}\n`, ...files })
+  commitAll(change, { 'openspec/settings.json': JSON.stringify({ wholeSuiteCommand: command }), ...files })
   return change
 }
 
@@ -583,7 +583,7 @@ const QUICK_MD = '## Goal\n\nFix a.\n\n## Scope\n\nsrc/a.ts.\n\n## Plan\n\n1. Fi
 // A quick change: its metadata names the quick schema, its plan is quick.md's.
 function setupQuick() {
   const { change } = host({ '.adf.json': '{"base":"develop","schema":"quick"}\n', 'quick.md': QUICK_MD })
-  commitAll(change, { 'openspec/planning.md': '# Planning\n\n## Whole-suite command\n\ntrue\n', 'src/a.ts': 'line1\nline2\nline3\n' })
+  commitAll(change, { 'openspec/settings.json': JSON.stringify({ wholeSuiteCommand: 'true' }), 'src/a.ts': 'line1\nline2\nline3\n' })
   return change
 }
 

@@ -77,7 +77,8 @@ import { readDebtRoot } from './lib/registry.mjs'
 import { loadSchema, schemaOf } from './lib/schema.mjs'
 import { defaultHome } from './lib/runtime.mjs'
 import { gitIn } from './lib/workspace.mjs'
-import { CHANGES_DIR, COMMIT_SCOPE, PLANNING_FILE } from './lib/layout.mjs'
+import { CHANGES_DIR, COMMIT_SCOPE } from './lib/layout.mjs'
+import { getSetting } from './lib/settings.mjs'
 
 const USAGE = 'usage: plan.mjs lint|graph|schedule|unplanned|added|reopen [--change <name>] [--root <dir>] (see the header for each command; without --change, the one active change under the root)'
 
@@ -163,7 +164,7 @@ async function lint(o) {
     planText,
     tasksText,
     designText: read(join(dir, 'design.md')),
-    guideText: read(join(o.root, PLANNING_FILE)),
+    packages: getSetting(o.root, 'packages'),
     planFile: rel(o.change, 'plan.md'),
     tasksFile: rel(o.change, tracks),
     designFile: rel(o.change, 'design.md'),

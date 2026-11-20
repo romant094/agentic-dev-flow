@@ -54,7 +54,7 @@ The command refuses an update that changes the major version of the extension co
 
 ### The host files
 
-The host files are `openspec/planning.md`, the review prompt, and the `hostFiles` of each enabled plugin of the package. See [Host files](concepts/host-files.md). The plan sorts each file into a class:
+The host files are the review prompt and the `hostFiles` of each enabled plugin of the package. See [Host files](concepts/host-files.md). The plan sorts each file into a class:
 
 | Class | What happens |
 |---|---|
@@ -68,7 +68,7 @@ For an `edited` file, the command shows the old template, your file and the new 
 - **Replace from the update.** The file becomes the new template.
 - **Manual.** The command leaves the file for you.
 
-These sections of `openspec/planning.md` hold values that the flow writes: the whole-suite command, the worktree copies, the worktree preparation, the format command and the affected tests command. Every choice keeps them.
+The settings, `openspec/settings.json`, and the planning guide, `openspec/guide.md`, are no host files. The settings hold only the project's values, and the instructions for each key are in the plugin (`plugins/adf/schema/settings.schema.json`). An update has nothing of them to merge.
 
 The pages under `.claude/memory/` are the project's own content. *Replace from the update* empties them. The command warns you before it asks.
 

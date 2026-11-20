@@ -10,7 +10,7 @@ import { findChangeDir } from './ingest.mjs'
 
 export const SCHEMA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema')
 const ID = /^[a-z][a-z0-9-]*$/
-const GUIDE = /^[a-z0-9][a-z0-9-]*\.md$/
+const GUIDE = /^[a-z0-9][a-z0-9-]*\.(md|json)$/
 
 // The checks an artifact may declare in `gates`, run by `changes.mjs done` and by every later
 // `next` (lib/propose.mjs runs them). A gate names a script's check, so the schema states which
@@ -114,7 +114,7 @@ export function validateSchema(schema, dir) {
       }
     }
     if (artifact.guides !== undefined && !(Array.isArray(artifact.guides) && artifact.guides.every((g) => GUIDE.test(g)))) {
-      errors.push(`artifact "${id}": guides must list file names such as planning.md`)
+      errors.push(`artifact "${id}": guides must list file names such as guide.md`)
     }
     if (artifact.skippable !== undefined && typeof artifact.skippable !== 'boolean') errors.push(`artifact "${id}": skippable must be a boolean`)
     if (artifact.gates !== undefined) {
@@ -141,7 +141,7 @@ export function validateSchema(schema, dir) {
       if (!ids.has(required)) errors.push(`apply requires unknown artifact "${required}"`)
     }
     if (apply.guides !== undefined && !(Array.isArray(apply.guides) && apply.guides.every((g) => GUIDE.test(g)))) {
-      errors.push('apply: guides must list file names such as planning.md')
+      errors.push('apply: guides must list file names such as guide.md')
     }
     if (apply.instruction !== undefined && !existsSync(join(dir, 'instructions', apply.instruction))) {
       errors.push(`apply: instruction instructions/${apply.instruction} does not exist`)

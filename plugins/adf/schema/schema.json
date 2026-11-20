@@ -53,7 +53,7 @@
       "description": "Step-by-step execution plan from Superpowers writing-plans",
       "template": "plan.md",
       "instruction": "plan.md",
-      "guides": ["planning.md"],
+      "guides": ["guide.md", "settings.json"],
       "gates": ["plan-symbols", "plan-lint"],
       "requires": ["tasks"]
     },
@@ -63,7 +63,7 @@
       "description": "Verification report: was the change actually built",
       "template": "verify.md",
       "instruction": "verify.md",
-      "guides": ["planning.md"],
+      "guides": ["guide.md", "settings.json"],
       "requires": ["plan"]
     },
     {
@@ -85,6 +85,6 @@
     "requires": ["plan"],
     "tracks": "tasks.md",
     "instruction": "apply.md",
-    "guides": ["planning.md"]
+    "guides": ["guide.md", "settings.json"]
   }
 }

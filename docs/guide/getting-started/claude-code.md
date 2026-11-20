@@ -86,7 +86,8 @@ Restart Claude Code in the project. The skills load at the restart.
 |---|---|
 | `.claude/adf-extensions.json` | the registry: the branch policy and the enabled plugins |
 | `.claude/settings.json` | the `adf` plugin and the marketplace, only the keys that are missing |
-| `openspec/planning.md` | the planning guide, with the answers above |
+| `openspec/settings.json` | the settings, with the answers above |
+| `openspec/guide.md` | the planning guide, for the team to fill in |
 | `openspec/review-prompt.md` | the prompt of the code review |
 | `.gitignore` | lines for the local state of the flow |
 | the debt tree's root index | created when the tree does not exist |

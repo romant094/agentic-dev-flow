@@ -27,11 +27,10 @@ import { c4Lines, c8Lines, fence as fenceText } from './reply-render.mjs'
 import { callHook, CORE, hookProviders, knowledgePaths } from './roles.mjs'
 import { scopeNaming } from './scope.mjs'
 import { checkSpecsBase, extractRequirementsSection, MESSAGES, parseDeltaSpec, validateProject } from './specs.mjs'
-import { PLANNING_FILE } from './guide.mjs'
 import { countsOf, readTestRecord, SET_MESSAGE } from './suite.mjs'
 import { defaultHome } from './runtime.mjs'
 import { gitIn } from './workspace.mjs'
-import { CHANGES_DIR, COMMIT_SCOPE, SPECS_DIR } from './layout.mjs'
+import { CHANGES_DIR, COMMIT_SCOPE, SETTINGS_FILE, SPECS_DIR } from './layout.mjs'
 
 export const CHECKS = {
   validation: 'Structural validation',
@@ -448,11 +447,11 @@ function checkOutOfPlan(root, change, git, base, skillEdits, knowledge) {
   const findings = []
   for (const { sha, subject, files } of commitsIn(git, `${base.ref}..HEAD`)) {
     const skillEdit = exempt.includes(sha)
-    // The flow's own write of the planning guide: `suite.mjs set --commit` during apply.
+    // The flow's own write of the settings: `suite.mjs set --commit` during apply.
     const guideSet = subject === SET_MESSAGE
     for (const file of files) {
       if (file.startsWith(prefix)) continue
-      if (guideSet && file === PLANNING_FILE) continue
+      if (guideSet && file === SETTINGS_FILE) continue
       if (skillEdit && file.startsWith('.claude/skills/')) continue
       if (allowed.some((re) => re.test(file))) continue
       if (known.some((re) => re.test(file))) continue
