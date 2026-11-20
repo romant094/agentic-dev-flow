@@ -49,13 +49,26 @@ the module that the issue names. No fix changes the contract: the tracker's `sta
   `scope.mjs select`; the quick skill's step 4 says to take a mirror together with its tracker
   item. An automatic take in `select` would change the full propose path too, and at `filter`
   nothing is taken yet, so the script cannot know that the tracker item will be taken.
-- **#41, all three options.** `suggest` takes `--type <type>`, refused unless it is one of
-  `COMMIT_TYPES`. A given type wins over the name prefix. The quick skill always passes `--type
-  fix`: a quick task restores specified behaviour, and the developer confirms the branch name
-  in the same question. Propose's skill, when `branch` is null, asks for the type and runs
-  `suggest` again with `--type`. `workspace.mjs` refuses every flag it did not read, for every
-  command. The schema of the change cannot set the type: `suggest` runs before `propose.mjs
-  create --schema quick` makes the change.
+- **#41, the type from what is known, never a silent default (reworked after the developer's
+  review, 2026-11-20).** The first fix made the quick skill always pass `--type fix`. The
+  developer rejected it, because a quick task can be a small patch and not only a bug fix.
+  `suggest` takes the type from the first of these, and `typeFrom` names which one:
+  1. the developer's `--type`, refused unless it is one of `COMMIT_TYPES`;
+  2. the change name's prefix (the `TYPES` map);
+  3. the tracker: `fix` when every taken or partial tracker item is of kind `bug`
+     (`trackerType` in `lib/scope.mjs`). Another kind, a mix of kinds, or no tracker item taken
+     gives no type. The contract's kind, not the Jira issue type name, is read, so every tracker
+     plugin gets the same rule.
+
+  With none of the three, `branch` stays null. `suggestedType` then carries the quick estimate's
+  suggestion, and the skill asks the developer, showing that suggestion. The estimate reply gets
+  an optional `type`, from `COMMIT_TYPES`. This is a one-line schema change, plus one prompt
+  step. `estimatedType` reads it for the taken and partial items, and gives a type only when they
+  agree on one. **The estimate only suggests: it never names the branch.** It is an agent's
+  judgement, and the developer said that there is never a silent default. The tracker rule also
+  applies to propose, since `suggest` is shared. A propose change usually has a prefix, which
+  wins. `workspace.mjs` still refuses every flag that it does not read. Propose's skill, when
+  `branch` is null, asks for the type and runs `suggest` again with `--type`.
 - **#42, the workflow decides (reworked after the developer's review, 2026-11-20).** The first
   fix took every issue that was not the developer's before its transition. The developer
   rejected it: some Jira setups let anyone move the status, and the take then changes the issue
@@ -102,7 +115,7 @@ the module that the issue names. No fix changes the contract: the tracker's `sta
 |---|---|---|
 | 1 | #39: the string correction has no `what`; the renderer and the scope note print a correction once | `comment.spec.mjs`, `quick.spec.mjs`, `scope.spec.mjs` |
 | 2 | #40: `filter` keeps and flags a debt entry whose Tracker key is named; the quick skill and its guide page | `quick.spec.mjs` |
-| 3 | #41: `suggest --type`, the refused unknown flag, the quick and propose skills, the worktrees page | `workspace.spec.mjs` |
+| 3 | #41: `suggest --type`, the type from the name, then the tracker, the estimate's suggested type, the refused unknown flag, the quick and propose skills, the worktrees and quick pages | `workspace.spec.mjs`, `scope.spec.mjs`, `quick.spec.mjs` |
 | 4 | #42: the hand-off asks Jira which transitions it offers, at plan time and again before each transition at apply; it takes the issue first only when that unlocks the transition; the preview; the adf-jira page | `tracker.spec.mjs`, `tracker-plugins.spec.mjs` |
 | 5 | `npm test` after every step | the counts in `## Result` |
 
@@ -119,12 +132,17 @@ the module that the issue names. No fix changes the contract: the tracker's `sta
   <KEY>`. A large mirror also gets the too-large flag. The quick skill's step 4 takes a flagged
   mirror together with its key; the quick page says so. Test: `quick.spec.mjs` (filter keeps the
   mirror and flags it, once on a rerun).
-- **#41.** `suggest` takes `type`, refused unless it is one of `COMMIT_TYPES`, and it wins over
-  the name prefix: `suggest --change proj-1 --key PROJ-1 --type fix` gives `fix/PROJ-1/proj-1`.
-  `workspace.mjs` reads `--type` and refuses every flag that no command reads. The quick skill
-  passes `--type fix`; the propose skill asks for the type and passes it when `branch` is null.
-  The worktrees page says so. Tests: `workspace.spec.mjs` (the lib call, and the CLI with
-  `--type` and with an unknown flag).
+- **#41.** `suggest` takes the type from `--type`, then from the name prefix, then from the
+  tracker (`fix` when every taken tracker item is a bug), and reports `typeFrom`. For a
+  key-only quick change whose taken issue is a bug, `suggest --change proj-1` gives
+  `fix/PROJ-1/proj-1`. With no type, `branch` is null. `suggestedType` then carries the quick
+  estimate's optional `type`, when the taken items agree on one. The quick skill no longer
+  passes a type: it asks the developer when `branch` is null, and shows the suggestion.
+  `workspace.mjs` refuses every flag that no command reads. Tests:
+  - `workspace.spec.mjs`: the order given, then name, then tracker; the suggestion only when no
+    type is known; the command line reading the scope and the estimate; `--type`; an unknown flag.
+  - `scope.spec.mjs`: `trackerType`.
+  - `quick.spec.mjs`: the estimate's `type` checked against the schema, and `estimatedType`.
 - **#42.** `adf-jira` `handoff` reads `transitions?expand=transitions.fields` for each issue
   that moves to the tester. When Jira offers the first transition, the rows are as before:
   transition, comment, tester. When Jira does not offer it and the issue is not the developer's,
@@ -145,7 +163,9 @@ the module that the issue names. No fix changes the contract: the tracker's `sta
   back to the rows they had before the first fix.
 
 Checks: `npm test` before the first change, 1834 tests, 1829 passed, 0 failed, 5 skipped; after
-each fix commit green; after the last, 1841 tests, 1836 passed, 0 failed, 5 skipped.
+each fix commit green; after the first four fixes, 1841 tests, 1836 passed, 0 failed, 5
+skipped; after the #42 rework, 1845 tests, 1840 passed; after the #41 rework, 1849 tests, 1844
+passed, 0 failed, 5 skipped.
 `check-guide.mjs` passed inside each run.
 
 Nothing is left open.

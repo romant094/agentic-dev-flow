@@ -19,6 +19,9 @@ For each candidate, in this order:
    `corrected` verdict lists each correction in `corrections`. A debt entry has no verdict.
 5. Set `fit` to `quick` when the fix is small, local and changes no behaviour. Otherwise set it
    to `propose`. Say why in `reason`, in one sentence.
+6. Optionally, suggest the Conventional Commits type of the fix in `type`: `fix` for a defect,
+   `perf`, `refactor`, `chore` or another type for a small patch that is not one. Leave it out
+   when you cannot tell. It is a suggestion: the developer confirms the type.
 
 Answer for every candidate once, and for no other key. A tracker issue with `fit` `quick` needs
 a `verdict`.

@@ -50,13 +50,13 @@ The command filters the candidates before it makes a branch. It excludes these:
 
 It never excludes a key that you named. It flags that item as too large, and you decide. A debt entry whose `Tracker` key you named mirrors that issue. The filter never excludes it either. It flags the entry to be taken with the issue, so that the end of the change resolves it. When no candidate is left, it offers `/adf:propose` and stops.
 
-Then one read-only agent, `quick-estimate`, estimates every candidate. For each one it names the files of the fix and says whether the fix changes behaviour. It gives a `fit`: `quick` or `propose`. For a tracker issue it also gives a verdict: `current`, `corrected` or `obsolete`. A `corrected` verdict lists each correction as one text. The start comment names each one once. A script checks the reply. The agent gets one retry. After a second refusal, the candidates go to `/adf:propose`.
+Then one read-only agent, `quick-estimate`, estimates every candidate. For each one it names the files of the fix and says whether the fix changes behaviour. It gives a `fit`: `quick` or `propose`. For a tracker issue it also gives a verdict: `current`, `corrected` or `obsolete`. A `corrected` verdict lists each correction as one text. The start comment names each one once. It may also suggest the commit type of the fix. A script checks the reply. The agent gets one retry. After a second refusal, the candidates go to `/adf:propose`.
 
 The command shows each item with its `fit`, its reason and its files. You select the items to take. An item with `fit` `propose` goes to `/adf:propose`. This command never takes it. A behaviour change is always a `propose`, whatever the agent marked.
 
 ## The branch, the worktree and the Draft
 
-The command asks one question for the base and the branch name. It then makes the branch and the worktree, as [/adf:propose](propose.md) does. When the scope holds a tracker item, it starts the issue after your yes.
+The command asks one question for the base and the branch name. A quick task can be a fix or another small patch, so the command does not choose a type by itself. The type comes from the prefix of the change name, or it is `fix` when every tracker issue that the task takes is a bug. With neither, the command asks you for the type. It shows the type that the estimate suggests, when there is one. See [Worktrees](../concepts/worktrees.md). It then makes the branch and the worktree, as [/adf:propose](propose.md) does. When the scope holds a tracker item, it starts the issue after your yes.
 
 The command writes `quick.md` and commits the change directory. It then opens a Draft merge request through the forge plugin. Without a forge plugin, it opens none.
 

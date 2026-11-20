@@ -21,7 +21,7 @@ import { PLANNING_FILE, sectionLine } from './guide.mjs'
 import { mainCheckout } from './installed.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { baseRef } from './plan-symbols.mjs'
-import { answer, readScope, Refusal, renderSkeleton, select, writeScope } from './scope.mjs'
+import { answer, readScope, Refusal, renderSkeleton, scopeKeys, select, writeScope } from './scope.mjs'
 
 export { Refusal }
 
@@ -185,6 +185,21 @@ export function estimateCheck(root, change, { file }) {
   mkdirSync(quickDir(main, change), { recursive: true })
   writeFileSync(join(quickDir(main, change), 'estimate.json'), `${JSON.stringify({ items }, null, 2)}\n`)
   return { ok: true, valid: true, change, step: 'estimate-check', items, next: items.some((r) => r.fit === 'quick') ? 'show the estimate to the developer; take the quick items with scope.mjs select' : 'no candidate fits a quick task; take them to /adf:propose' }
+}
+
+// The commit type the estimate suggests for the change: the one `type` its taken or partial
+// items carry, or null with none, with two that differ, or before the estimate. Only a
+// suggestion: the developer confirms it.
+export function estimatedType(main, change) {
+  let items
+  try {
+    items = JSON.parse(readFileSync(join(quickDir(main, change), 'estimate.json'), 'utf8')).items ?? []
+  } catch {
+    return null
+  }
+  const taken = new Set(scopeKeys(readScope(main, change)))
+  const types = new Set(items.filter((r) => taken.has(r.key) && r.type).map((r) => r.type))
+  return types.size === 1 ? [...types][0] : null
 }
 
 // ---------------------------------------------------------------- the affected tests

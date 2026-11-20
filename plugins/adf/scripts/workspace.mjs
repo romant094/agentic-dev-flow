@@ -8,9 +8,10 @@
 //       branch is <type>/<KEY>/<change>; without one, the scope's key of the lowest rank
 //       (scope.mjs select's `branch`) names it, its branch token as `key`; a tie leaves the
 //       branch keyless and lists the tied items' tokens in `keyChoices`. The worktree path stays
-//       per change name. --type, a Conventional Commits type, names the branch's type in place of
-//       the change name's prefix (add-, fix-, restructure-, refactor-); with neither, `branch` is
-//       null
+//       per change name. The type is the first of: --type (a Conventional Commits type), the
+//       change name's prefix (add-, fix-, restructure-, refactor-), fix when every taken tracker
+//       item is a bug; `typeFrom` names it (given, name, tracker). With none, `branch` is null and
+//       `suggestedType` holds the quick estimate's suggestion when it has one
 //   workspace.mjs create --change <name> --branch <branch> --base integration|current
 //       make the branch and its worktree; prints the worktree root and the base branch
 //   workspace.mjs provision --change <name> [--worktree <path>] [--kind change|group|base-check|proof]
@@ -65,7 +66,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { create, remove, suggest } from './lib/workspace.mjs'
 import { mainCheckout } from './lib/installed.mjs'
-import { branchKey, readScope } from './lib/scope.mjs'
+import { branchKey, readScope, trackerType } from './lib/scope.mjs'
+import { estimatedType } from './lib/quick.mjs'
 import { addBaseCheck, addGroup, finishGroup, listGroups, mergeGroup, removeBaseCheck, removeGroup } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
 import { NEED_WORD, planInputs } from './lib/plan.mjs'
@@ -98,6 +100,12 @@ function scopeKey(root, change, key) {
     return { keyChoices: found.tie.map((k) => scope.items.find((i) => i.key === k).branchToken) }
   }
   return { key: found.token }
+}
+
+// The type the scope's tracker items give, and the quick estimate's suggestion.
+function typeHints(root, change) {
+  const main = mainCheckout(root)
+  return { scopeType: trackerType(readScope(main, change)), suggestedType: estimatedType(main, change) }
 }
 
 function option(args, name) {
@@ -147,7 +155,7 @@ export function run(argv) {
   const core = { coreContract: c.version, points: c.points, home: home ?? defaultHome() }
   switch (command) {
     case 'suggest':
-      return suggest(root, change, { ...scopeKey(root, change, key), ...(type === undefined ? {} : { type }) })
+      return suggest(root, change, { ...scopeKey(root, change, key), ...typeHints(root, change), ...(type === undefined ? {} : { type }) })
     case 'create':
       return create(root, { change, branch, base })
     case 'provision':

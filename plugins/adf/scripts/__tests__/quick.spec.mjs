@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { largeItems, Refusal } from '../lib/quick.mjs'
+import { estimatedType, largeItems, Refusal } from '../lib/quick.mjs'
 import { readScope, writeScope } from '../lib/scope.mjs'
 import { run } from '../quick.mjs'
 import { run as scopeRun } from '../scope.mjs'
@@ -190,6 +190,20 @@ test('estimate-check records the verdicts that scope.mjs start requires', () => 
   assert.deepEqual(item.check.corrections, [{ what: '', was: '', now: 'the pool closes on reconnect' }])
   // start now passes the verdict check; it stops at the missing worktree, which a later step makes.
   assert.throws(start, /start runs after the branch and the worktree exist/)
+})
+
+test('estimate-check takes a suggested commit type, refuses another word, and estimatedType reads it for the taken items', () => {
+  const root = prepared()
+  const bad = quick(root, 'estimate-check', '--change', 'fix-it', '--file', reply(root, { items: [est('P-3', { verdict: 'current', type: 'bugfix' }), est('d-3')] }))
+  assert.equal(bad.ok, false)
+  assert.equal(estimatedType(root, 'fix-it'), null, 'no estimate yet')
+  const body = { items: [est('P-3', { verdict: 'current', type: 'fix' }), est('d-3', { type: 'perf' })] }
+  assert.equal(quick(root, 'estimate-check', '--change', 'fix-it', '--file', reply(root, body)).ok, true)
+  assert.equal(estimatedType(root, 'fix-it'), null, 'nothing taken yet')
+  scopeRun(['select', '--change', 'fix-it', '--take', 'P-3', '--exclude', 'd-3: later', '--root', root])
+  assert.equal(estimatedType(root, 'fix-it'), 'fix')
+  scopeRun(['select', '--change', 'fix-it', '--take', 'd-3', '--root', root])
+  assert.equal(estimatedType(root, 'fix-it'), null, 'the taken items disagree: no suggestion')
 })
 
 test('estimate-check excludes an obsolete tracker item with the estimate\'s reason', () => {
