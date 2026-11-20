@@ -1,11 +1,14 @@
-// lib/settings.mjs: the project's settings file, checked against schema/settings.schema.json.
+// lib/settings.mjs and settings.mjs: the project's settings file, checked against
+// schema/settings.schema.json.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { unknownKeywords } from '../lib/json-schema.mjs'
-import { DEFAULTS, getSetting, INITIAL, KEYS, readSettings, renderSettings, setSetting, SETTINGS_FILE, settingsErrors, settingsSchema, writeSettings } from '../lib/settings.mjs'
+import { DEFAULTS, getSetting, INITIAL, isSetMessage, KEYS, readSettings, renderSettings, setMessage, setSetting, SETTINGS_FILE, settingsErrors, settingsSchema, writeSettings } from '../lib/settings.mjs'
+import { run as cli, UsageError } from '../settings.mjs'
+import { git, host } from './git-host.mjs'
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'adf-settings-'))
 const put = (root, text) => {
@@ -74,4 +77,41 @@ test('renderSettings shows each key, its value and what it means', () => {
   assert.match(text, /- `wholeSuiteCommand`: "npm test"\. The one command/)
   assert.match(text, /- `testFirstShares`: not set\./)
   assert.match(text, /- `checks`: none\./)
+})
+
+// ---------------------------------------------------------------- settings.mjs, the CLI
+
+test('settings.mjs set records one value from JSON, get shows it with its instructions, show renders all', () => {
+  const root = tmp()
+  assert.deepEqual(cli(['set', '--key', 'affectedTestsCommand', '--value', '"npx vitest related --run {files}"', '--root', root]), { file: join(root, SETTINGS_FILE), key: 'affectedTestsCommand', value: 'npx vitest related --run {files}' })
+  cli(['set', '--key', 'worktreeCopies', '--value', '[".env"]', '--root', root])
+  const got = cli(['get', '--key', 'worktreeCopies', '--root', root])
+  assert.deepEqual(got.value, ['.env'])
+  assert.match(got.description, /^The untracked files every worktree/)
+  const shown = cli(['show', '--root', root])
+  assert.equal(shown.settings.affectedTestsCommand, 'npx vitest related --run {files}')
+  assert.match(shown.text, /- `worktreeCopies`: \[".env"\]\./)
+  assert.equal(cli(['set', '--key', 'formatCommand', '--value', 'null', '--root', root]).value, null)
+})
+
+test('settings.mjs refuses an unknown key, a value that is not JSON or fails the schema, and writes nothing', () => {
+  const root = tmp()
+  assert.throws(() => cli(['set', '--key', 'nope', '--value', '1', '--root', root]), (e) => e instanceof UsageError && /unknown key "nope"/.test(e.message))
+  assert.throws(() => cli(['set', '--key', 'checks', '--value', 'npm test', '--root', root]), (e) => e instanceof UsageError && /--value must be JSON/.test(e.message))
+  assert.throws(() => cli(['set', '--key', 'checks', '--value', '"npm test"', '--root', root]), /\$\.checks: expected array/)
+  assert.throws(() => cli(['get', '--root', root]), /--key is required/)
+  assert.throws(() => cli(['show', '--key', 'checks', '--root', root]), /--key does not belong to show/)
+  assert.equal(existsSync(join(root, SETTINGS_FILE)), false)
+})
+
+test('settings.mjs set --commit commits the settings alone with its fixed message', () => {
+  const { change } = host()
+  writeFileSync(join(change, 'stray.txt'), 'not mine\n')
+  const out = cli(['set', '--key', 'wholeSuiteCommand', '--value', '"npm test"', '--root', change, '--commit'])
+  assert.equal(out.commit, git(change, 'rev-parse', 'HEAD'))
+  assert.equal(git(change, 'log', '-1', '--format=%s'), setMessage('wholeSuiteCommand'))
+  assert.equal(isSetMessage(setMessage('wholeSuiteCommand')), true)
+  assert.equal(isSetMessage('docs(openspec): record x'), false)
+  assert.equal(git(change, 'show', '--name-only', '--format=', 'HEAD'), SETTINGS_FILE)
+  assert.equal(git(change, 'status', '--porcelain', '--', 'stray.txt'), '?? stray.txt')
 })

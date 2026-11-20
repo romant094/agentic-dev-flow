@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// CLI over lib/prepare.mjs, the worktree preparation recipe of `openspec/planning.md`. Prints one
+// CLI over lib/prepare.mjs, the worktree preparation recipe, the settings' `worktreePreparation`
+// (lib/settings.mjs). Prints one
 // JSON object on stdout; exit 1 on a refusal or a failed step, 2 on a usage error.
 //
 //   prepare.mjs recipe [--root <dir>]
@@ -8,8 +9,8 @@
 //       the steps /adf:init offers the developer, from the package manifest and the workspace
 //       layout: { candidates: [{ command, inputs, why }] }; nothing is written
 //   prepare.mjs add --command "<cmd>" --input <path> [--input <path> ...] [--root <dir>]
-//       write one confirmed step under `## Worktree preparation`, replacing the step of the
-//       same command, creating the file or the section when absent: { file, steps }
+//       record one confirmed step, replacing the step of the same command, creating the
+//       settings file when absent: { file, steps }
 //   prepare.mjs run [--worktree <dir>] [--root <dir>] [--force]
 //       run in <worktree> (default <root>) each step whose inputs changed since its last run
 //       there, the recipe read from <root>; --force runs every step:

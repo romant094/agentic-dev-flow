@@ -246,14 +246,16 @@ export const CORE_COMMIT_SCRIPTS = {
     return null
   },
   // suite.mjs run --change <name> --record --commit: the test record; suite.mjs set --commit:
-  // the planning guide.
+  // the flow's settings.
   'suite.mjs': (args) => {
     if (!args.includes('--commit')) return null
     const change = optionValues(args, '--change')[0]
     if (args[0] === 'run' && args.includes('--record') && change) return [`openspec/changes/${change}/.apply-test-record.md`]
-    if (args[0] === 'set') return ['openspec/planning.md']
+    if (args[0] === 'set') return ['openspec/settings.json']
     return null
   },
+  // settings.mjs set --key <k> --value <json> --commit: the flow's settings.
+  'settings.mjs': (args) => (args[0] === 'set' && args.includes('--commit') ? ['openspec/settings.json'] : null),
   // dup.mjs mark --file <path> --commit: the marked file.
   'dup.mjs': (args) => (args[0] === 'mark' && args.includes('--commit') ? optionValues(args, '--file') : null),
   // review.mjs assemble --change <name> --commit: the record; review.mjs mark --file <path>

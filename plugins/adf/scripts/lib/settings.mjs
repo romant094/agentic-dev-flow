@@ -17,9 +17,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, normalize, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readSchema, validateJson } from './json-schema.mjs'
-import { SETTINGS_FILE } from './layout.mjs'
+import { COMMIT_SCOPE, SETTINGS_FILE } from './layout.mjs'
 
 export { SETTINGS_FILE }
+// The message of the commit `settings.mjs set --commit` makes, and whether a subject is one.
+export const setMessage = (key) => `docs(${COMMIT_SCOPE}): record ${key} in the settings`
+export const isSetMessage = (subject) => new RegExp(`^docs\\(${COMMIT_SCOPE}\\): record \\w+ in the settings$`).test(subject)
 export const SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema', 'settings.schema.json')
 
 export const DEFAULTS = Object.freeze({

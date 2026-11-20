@@ -78,7 +78,7 @@ The `quick-plan` gate refuses a plan of more than three steps and a step with no
 After the code, the command runs the affected tests. It reads one command from the key `affectedTestsCommand` of `openspec/settings.json`. It runs the command in the worktree on the files that the change changed. It leaves out the change directory, `openspec/settings.json` and the files under `.superpowers/`. `{files}` in the command stands for those paths. An example command for vitest is `npx vitest related --run --passWithNoTests {files}`. The run goes into a record, `quick/tests.json`, under the change's state directory.
 
 - With no changed file, no test runs.
-- With an empty section, the command waits. The session reads your test runner and proposes one command. On your yes, it writes the command into the section and commits that file alone. On a no, no affected tests run.
+- With no command, the command waits. The session reads your test runner and proposes one command. On your yes, `settings.mjs set` records the command and commits the settings alone. On a no, no affected tests run.
 - After a failure, the session fixes the code and runs the tests again.
 
 For the other settings, see [Host files](../concepts/host-files.md).

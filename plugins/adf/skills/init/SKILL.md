@@ -67,7 +67,7 @@ missing and changes nothing that exists.
 
    If `root` is not null, change nothing: the `report` of step 1 already holds the debt check.
 
-5. Read the worktree preparation recipe of the planning guide:
+5. Read the worktree preparation recipe, the settings' `worktreePreparation`:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/prepare.mjs" recipe
@@ -92,8 +92,8 @@ missing and changes nothing that exists.
 
    If `steps` is not empty, change nothing.
 
-6. Read what the planning guide holds for the whole-suite command and the worktree copies, and
-   what init infers for them:
+6. Read what the settings hold for the whole-suite command and the worktree copies, and what
+   init infers for them:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/init.mjs" suggest
@@ -122,24 +122,43 @@ missing and changes nothing that exists.
    If `trustHooks` is true, tell the developer: "Open /hooks once and trust the ADF hooks; Codex
    does not run a hook it has not trusted." Show it again in step 11.
 
-7. Read the `## Format command` section of `openspec/planning.md`. If it holds no command, read
-   the project's format scripts (the `package.json` scripts, the `Makefile`, the git hook
+7. Read the format command and its instructions:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/settings.mjs" get --key formatCommand
+   ```
+
+   If `value` is null, read the project's format scripts (the `package.json` scripts, the `Makefile`, the git hook
    configuration such as `lefthook.yml` or `.husky/`) and propose one command that formats the
    files it is given, with `{files}` where the paths go, for example
    `npx biome format --write {files}`. Every commit the flow makes runs it on its paths first.
-   When the developer confirms a command, write it into the section as one line in backticks,
-   adding the section before `## Checks that need the developer` when the guide lacks it;
-   when the developer declines, or the project has no formatter, leave the section as it is.
-   If the section holds a command, change nothing.
+   When the developer confirms a command, record it, the command as a JSON string:
 
-8. Read the `## Affected tests command` section of `openspec/planning.md`. If it holds no
-   command, read the project's test runner (the `package.json` scripts, the `Makefile`, the CI
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/settings.mjs" set --key formatCommand --value '"<command>"'
+   ```
+
+   When the developer declines, or the project has no formatter, record nothing. If `value` is
+   not null, change nothing.
+
+8. Read the affected tests command and its instructions:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/settings.mjs" get --key affectedTestsCommand
+   ```
+
+   If `value` is null, read the project's test runner (the `package.json` scripts, the `Makefile`, the CI
    configuration) and propose one command that runs only the tests of the files it is given, with
    `{files}` where the paths go, for example `npx vitest related --run {files}`. A quick task
-   runs it on the files it changed. When the developer confirms a command, write it into the
-   section as one line in backticks, adding the section before `## Fresh-run proof` when the
-   guide lacks it; when the developer declines, or the runner cannot select tests by file, leave
-   the section as it is. If the section holds a command, change nothing.
+   runs it on the files it changed. When the developer confirms a command, record it:
+
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/settings.mjs" set --key affectedTestsCommand --value '"<command>"'
+   ```
+
+   When the developer declines, or the runner cannot select tests by file, record nothing. If
+   `value` is not null, change nothing. Never edit the settings file by hand: every value goes
+   through a script, which checks it against the schema.
 
 9. Find the lines of the project's agent instruction files (`CLAUDE.md`, `AGENTS.md` and the
    like) that name a previous flow's commands, such as `/opsx:propose` or `openspec/schemas`:
@@ -187,13 +206,14 @@ missing and changes nothing that exists.
    run `/adf-jira:setup`. When Superpowers is not available, continue: setup does not need
    Superpowers, but every command that changes a change does.
 
-Do not commit: the developer commits the registry, the settings, `.gitignore`, the planning
-guide with its whole-suite command, worktree copies, worktree preparation and format command,
+Do not commit: the developer commits the registry, `.claude/settings.json`, `.gitignore`, the
+flow's settings `openspec/settings.json` with its whole-suite command, worktree copies, worktree
+preparation, format command and affected tests command, the planning guide `openspec/guide.md`,
 the review prompt, the window seed and the debt tree's root index.
 
 End with this note to the developer: commit the setup and merge it into the integration branch
 before the first `/adf:propose`. A change's worktree forks from the integration branch and its
-provisioning reads the registry and the planning guide from that worktree's own copy, so a
-change opened before the setup merges never sees it, and a later change to the registry or the
-guide on the integration branch reaches a change already open only when that branch is merged
+provisioning reads the registry and the settings from that worktree's own copy, so a change
+opened before the setup merges never sees it, and a later change to the registry or the
+settings on the integration branch reaches a change already open only when that branch is merged
 into it.

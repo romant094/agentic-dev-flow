@@ -427,22 +427,25 @@ test('update.mjs commit checks the files its record lists, under the --worktree 
   assert.equal(hook(`node /p/scripts/update.mjs apply --to v0.2.0 --root ${r.root}`, '/').code, 0)
 })
 
-test('suite.mjs, dup.mjs and plan.mjs check what they commit only with --commit', (t) => {
+test('suite.mjs, settings.mjs, dup.mjs and plan.mjs check what they commit only with --commit', (t) => {
   const r = repo()
   t.after(() => rmSync(r.root, { recursive: true, force: true }))
-  // planning.md is out of the default scope and plan.md is in the default exclusion.
+  // settings.json is out of the default scope and plan.md is in the default exclusion.
   r.write('vendor/ec/adf-extension.json', JSON.stringify({ name: 'adf-english-check', contract: '1.1', provides: {} }))
   r.write('.claude/adf-extensions.json', JSON.stringify({ contract: '1.1', extensions: [{ path: 'vendor/ec', config: { include: ['openspec/**'], exclude: [] } }] }))
   r.write('openspec/changes/x/.apply-test-record.md', `${RU}\n`)
-  r.write('openspec/planning.md', `${RU}\n`)
+  r.write('openspec/settings.json', `${RU}\n`)
   r.write('openspec/changes/x/plan.md', `${RU}\n`)
   r.write('openspec/changes/x/notes.md', `${RU}\n`)
   const run = `node /p/scripts/suite.mjs run --change x --record --root ${r.root}`
   assert.match(hook(`${run} --commit`, '/').stderr, /openspec\/changes\/x\/\.apply-test-record\.md:1: /)
   assert.equal(hook(run, '/').code, 0)
   const set = `node /p/scripts/suite.mjs set --command 'npm test' --root ${r.root}`
-  assert.match(hook(`${set} --commit`, '/').stderr, /openspec\/planning\.md:1: /)
+  assert.match(hook(`${set} --commit`, '/').stderr, /openspec\/settings\.json:1: /)
   assert.equal(hook(set, '/').code, 0)
+  const record = `node /p/scripts/settings.mjs set --key formatCommand --value null --root ${r.root}`
+  assert.match(hook(`${record} --commit`, '/').stderr, /openspec\/settings\.json:1: /)
+  assert.equal(hook(record, '/').code, 0)
   const mark = `node /p/scripts/dup.mjs mark --change x --file openspec/changes/x/notes.md --existing a --why b --reason c --root ${r.root}`
   assert.match(hook(`${mark} --commit`, '/').stderr, /openspec\/changes\/x\/notes\.md:1: /)
   assert.equal(hook(mark, '/').code, 0)

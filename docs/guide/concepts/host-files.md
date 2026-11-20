@@ -6,6 +6,7 @@
 - plugins/adf/host/guide.md
 - plugins/adf/schema/settings.schema.json
 - plugins/adf/scripts/lib/settings.mjs
+- plugins/adf/scripts/settings.mjs
 - plugins/adf/contract/README.md
 - plugins/adf-gitlab/adf-extension.json
 - plugins/adf-memory/adf-extension.json
@@ -74,6 +75,16 @@ In a project that archived changes before the flow, `/adf:init` writes a window 
 | `formatCommand` | command or null | The command that formats files, with `{files}`. It runs before each commit of the flow. |
 
 The plan and verify agents read the settings with the planning guide.
+
+Nobody edits the file by hand. `settings.mjs` reads and records each value, and checks it first:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/settings.mjs" show
+node "${CLAUDE_PLUGIN_ROOT}/scripts/settings.mjs" get --key formatCommand
+node "${CLAUDE_PLUGIN_ROOT}/scripts/settings.mjs" set --key formatCommand --value '"npx biome format --write {files}"' [--commit]
+```
+
+`get` also gives the instructions of the key from the schema. `set` takes the value as JSON. With `--commit`, it commits the settings alone.
 
 ## What `/adf:update` does with them
 

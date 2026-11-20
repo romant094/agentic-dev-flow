@@ -84,6 +84,7 @@ Some core scripts run `git commit` themselves, out of the command line's sight. 
 | `verify.mjs skill-edit ...` | always | `.claude/skills/`, in scope only when the registry includes it; with `--diff-file`, also the lines the diff adds, which are not in the files yet |
 | `suite.mjs run --change <name> --record --commit` | with `--commit` | `openspec/changes/<name>/.apply-test-record.md` |
 | `suite.mjs set --command <c> --commit` | with `--commit` | `openspec/settings.json` |
+| `settings.mjs set --key <k> --value <json> --commit` | with `--commit` | `openspec/settings.json` |
 | `dup.mjs mark --file <path> ... --commit` | with `--commit` | the `--file` path |
 | `review.mjs assemble --change <name> --commit` | with `--commit` | `openspec/changes/<name>/review.md` |
 | `review.mjs mark --file <path> ... --commit` | with `--commit` | the `--file` path |

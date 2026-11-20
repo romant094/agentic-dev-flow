@@ -214,9 +214,13 @@ The branch and `quick.md` stay for the developer to keep or remove.
    - `skipped`: say that the branch changed no file, so no test ran, and go on.
    - `waiting`: read the project's test runner: the `package.json` scripts, the `Makefile`, the
      CI configuration. Propose one command, with `{files}` where the paths go. On the
-     developer's yes, write it as one line in backticks under `## Affected tests command` of
-     `<root>/openspec/planning.md`. Commit that file alone with `commit.mjs`, with the message
-     `chore(flow): the affected tests command`. Then run `quick.mjs tests` again. On a no,
+     developer's yes, record and commit it with a script, never by hand:
+
+     ```bash
+     node "${CLAUDE_PLUGIN_ROOT}/scripts/settings.mjs" set --key affectedTestsCommand --value '"<command>"' --root <root> --commit
+     ```
+
+     Then run `quick.mjs tests` again. On a no,
      report that no affected tests ran.
    - A failure: fix the code, commit the fix, and run the tests again.
 

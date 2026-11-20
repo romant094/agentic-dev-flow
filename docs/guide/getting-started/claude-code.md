@@ -69,7 +69,7 @@ Restart Claude Code in the project. The skills load at the restart.
 
 `/adf:init` is safe to run again. It creates only what is missing.
 
-`/adf:init` asks about these values. It asks only when the project has no value yet:
+`/adf:init` asks about these values. It asks only when the project has no value yet. A script records each value in the settings; nobody edits the file by hand:
 
 - the integration branch, and any other branch that nobody commits to directly;
 - the directory of the technical debt tree (it offers `docs/tech-debt`);
