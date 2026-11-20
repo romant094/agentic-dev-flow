@@ -38,7 +38,8 @@ is the retrospective's id, `id` in every result. A re-run resumes at
    <main>`. On `ok: false`, show `refusal` and stop. Keep `id` and `detail.worktree`.
 
 2. **Window.** `retro.mjs window --id <id> --root <wt>`. Show the changes covered, their
-   record coverage and the ADF debt not yet filed, `detail.adfDebt`. On `ok: false`, show
+   record coverage and the ADF debt not yet filed, `detail.adfDebt`. When `detail.metrics` is
+   present, metrics are off in the registry: show it as it is. On `ok: false`, show
    `refusal` and stop: a knowledge provider that did not answer is fixed first.
 
 3. **Dispatch** the `retro <id>` agent with the prompt `detail.dispatch.promptFile`, as the

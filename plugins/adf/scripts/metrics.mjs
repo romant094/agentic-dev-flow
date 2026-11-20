@@ -22,19 +22,26 @@
 //       and add a price entry only when the prices changed. A failed fetch keeps the last entry
 //       (`stale`); with no entry at all it is refused (`none`).
 //       { ok, url, state, path?, from?, last?, reason? }
+//   metrics.mjs switch [--set true|false]
+//       the registry's metrics switch, metrics.enabled: on unless the registry sets it false;
+//       `recorded` is whether the registry holds the key, and /adf:init asks when it does not.
+//       --set records it. Off, archive's metrics and commit-metrics steps write no record and
+//       fetch no price page. { ok, enabled, recorded }
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { changeDirOf } from './lib/changes.mjs'
 import { isMain } from './lib/main.mjs'
 import { buildRecord, candidates, cost, RECORD_FILE, renderRecord } from './lib/metrics.mjs'
 import { pricesUrl, readTable, updateTable } from './lib/prices.mjs'
+import { metricsSwitch, setMetricsSwitch } from './lib/registry.mjs'
 
 export const USAGE = `usage:
   metrics.mjs extract --change <name> [--out <file>] [--projects <dir>] [--root <dir>]
   metrics.mjs render --file <record>
   metrics.mjs candidates [--root <dir>]
   metrics.mjs cost --file <record> [--root <dir>]
-  metrics.mjs prices fetch [--url <url>] [--root <dir>]`
+  metrics.mjs prices fetch [--url <url>] [--root <dir>]
+  metrics.mjs switch [--set true|false] [--root <dir>]`
 
 export class UsageError extends Error {}
 
@@ -44,7 +51,8 @@ const TAKES = {
   render: { required: ['file'], optional: [] },
   candidates: { required: [], optional: [] },
   cost: { required: ['file'], optional: [] },
-  'prices fetch': { required: [], optional: ['url'] }
+  'prices fetch': { required: [], optional: ['url'] },
+  switch: { required: [], optional: ['set'] }
 }
 
 function parse(argv) {
@@ -92,8 +100,18 @@ export async function run(argv, { cwd = process.cwd(), fetch, now, projectsDir, 
   if (stray.length > 0) throw new UsageError(`--${stray.join(', --')} does not belong to ${command}`)
   const missing = required.filter((k) => values[k] === undefined)
   if (missing.length > 0) throw new UsageError(`${command} needs --${missing.join(', --')}`)
+  if (values.set !== undefined && !['true', 'false'].includes(values.set)) throw new UsageError(`--set is true or false, not "${values.set}"`)
   const root = resolve(cwd, values.root ?? '.')
   switch (command) {
+    case 'switch':
+      if (values.set !== undefined) {
+        try {
+          setMetricsSwitch(root, values.set === 'true')
+        } catch (error) {
+          return { ok: false, error: error.message }
+        }
+      }
+      return { ok: true, ...metricsSwitch(root) }
     case 'extract': {
       const dir = values.out ? null : changeDirOf(root, values.change)
       if (!values.out && !dir) return { ok: false, error: `no change "${values.change}" in openspec/changes or its archive; pass --out` }

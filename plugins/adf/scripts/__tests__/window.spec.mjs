@@ -12,8 +12,8 @@ import { dirname, join } from 'node:path'
 import { setBranches } from '../lib/branches.mjs'
 import { fromV1, validateRecord } from '../lib/metrics.mjs'
 import { addAdfRecord, markFiled } from '../lib/debt.mjs'
-import { initRegistry, setDebtRoot } from '../lib/registry.mjs'
-import { aggregate, buildSidecar, changeValues, delta, DIRECTION, fetchRef, integrationRef, METRICS, previousRetro, readWaiting, selectWindow, sinceLastRetro, unfiledAdfDebt, waitingItems } from '../lib/window.mjs'
+import { initRegistry, setDebtRoot, setMetricsSwitch } from '../lib/registry.mjs'
+import { aggregate, buildSidecar, changeValues, metricsOffReport, delta, DIRECTION, fetchRef, integrationRef, METRICS, previousRetro, readWaiting, selectWindow, sinceLastRetro, unfiledAdfDebt, waitingItems } from '../lib/window.mjs'
 
 const ARCHIVE = 'openspec/changes/archive'
 const DATE = '2026-10-19'
@@ -174,6 +174,25 @@ test('a change with no record is listed with coverage none and contributes no ze
   assert.equal(s.aggregates['quality.reviewRounds'].mean, 3, 'the missing record is excluded, not averaged in as 0')
   assert.equal(s.aggregates['quality.reviewRounds'].perTask, 1.5)
   assert.equal(s.aggregates['quality.reviewRounds'].perKloc, 3000)
+})
+
+test('metrics off in the registry: the sidecar says so, and a change with no record names the switch as the reason', () => {
+  const root = repo()
+  merge(root, 'feat/a', { ...archived('2026-09-02-a', { record: v2('a', { rounds: 3 }) }), 'src/x.txt': 'x\n' }, '2026-09-02T10:00:00Z')
+  merge(root, 'feat/b', { ...archived('2026-09-03-b'), 'src/y.txt': 'y\n' }, '2026-09-03T10:00:00Z')
+  assert.equal(buildSidecar(root, { ref: 'develop', date: DATE, asOf: AS_OF }).coverage.metrics, undefined, 'on: the sidecar is as before')
+  setMetricsSwitch(root, false)
+  const s = buildSidecar(root, { ref: 'develop', date: DATE, asOf: AS_OF })
+  assert.deepEqual(s.coverage, { records: 1, changes: 2, metrics: 'off' })
+  assert.equal(s.changes.find((c) => c.change === 'b').record.none, 'no metrics.json at develop:openspec/changes/archive/2026-09-03-b/metrics.json; metrics are off in the registry (metrics.enabled false)')
+  assert.equal(s.changes.find((c) => c.change === 'a').record, 'record', 'a record written while metrics were on stays')
+})
+
+test('metricsOffReport: no report while on; with metrics off, the window has no records, or only those written before', () => {
+  assert.equal(metricsOffReport({ records: 0, changes: 2 }), null)
+  assert.equal(metricsOffReport({ records: 0, changes: 2, metrics: 'off' }), 'Metrics are off in the registry (metrics.enabled false): the window has no records; the retrospective reasons over the git figures only.')
+  assert.equal(metricsOffReport({ records: 1, changes: 3, metrics: 'off' }), 'Metrics are off in the registry (metrics.enabled false): the window has no new records; 1 of 3 changes has a record written before metrics were turned off.')
+  assert.equal(metricsOffReport({ records: 2, changes: 3, metrics: 'off' }), 'Metrics are off in the registry (metrics.enabled false): the window has no new records; 2 of 3 changes have a record written before metrics were turned off.')
 })
 
 test('a quick change stays out of the full aggregates and has aggregates of its own', () => {

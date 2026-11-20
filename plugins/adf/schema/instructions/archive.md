@@ -259,11 +259,15 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
    `metrics.pricesUrl`. A failed price fetch is recorded as `stale` or `none` and does not fail
    the step; with no transcripts the step is `degraded`, the record written with the gap named.
    Neither stops archive. A record that fails its schema fails the step and writes nothing.
+   With the registry's metrics switch off (`metrics.enabled` false) the step is `skipped`: no
+   record written, no price page fetched, and `detail.report` says so.
 
 10. **`commit-metrics`.** `archive.mjs commit-metrics`: one commit, `chore(metrics): record
     <change>`, of only the paths `metrics` wrote and the ledger, which the step copies into the
     archived change again first, so the archive holds every record written since `move`.
-    Nothing to commit is no commit.
+    Nothing to commit is no commit. After a skipped `metrics`, the commit is `chore(archive):
+    copy the ledger of <change>` with the ledger copy alone; when the copy is current the step
+    is `skipped`.
 
 11. **`mr`: the merge request.** Ask the forge first:
 
@@ -347,5 +351,5 @@ step's rule below says how to settle it here. Never edit `state.json` by hand.
     - **Hurt signals** in this change's record: a stopped dispatch, the review stage stopped,
       the review round cap reached, a context compaction. With any of them the report suggests
       `/adf:retro --change <change>`; the retrospective is the developer's to run. With no record,
-      because `metrics` failed or its file cannot be read, the report says the signals were not
-      read.
+      because `metrics` failed, was skipped with metrics off, or its file cannot be read, the
+      report says the signals were not read.

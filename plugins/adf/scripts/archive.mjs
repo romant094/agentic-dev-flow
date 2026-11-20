@@ -45,11 +45,13 @@
 //       copy of attempts.jsonl, and the price table updated from the registry's
 //       metrics.pricesUrl; a failed price fetch is detail.prices.state `stale` or `none`, not a
 //       failure; no transcripts: degraded, the record written and detail.gap naming why; a record
-//       that fails its schema: failed, nothing written
+//       that fails its schema: failed, nothing written; the registry's metrics switch off
+//       (metrics.enabled false): skipped, nothing written, no price page fetched
 //   archive.mjs commit-metrics --change <name>
 //       `chore(metrics): record <name>`: only the paths metrics wrote and the ledger, copied into the
 //       archived change again first; nothing to commit is no
-//       commit
+//       commit. After a skipped metrics: `chore(archive): copy the ledger of <name>` with the
+//       ledger copy alone, or skipped when the copy is current
 //   archive.mjs mr --change <name> [--body <file> --summary "<scope>: <description>" | --title <t>]
 //       the forge role's finalize; no forge: skipped (no --body needed); a forge and no --body:
 //       held, pending, nothing recorded, with bodyFile and waiting; degraded: the role's
@@ -83,7 +85,7 @@
 //                                         removal candidates; the record's hurt signals (a stopped
 //                                         dispatch, the review round cap, a compaction) with a
 //                                         suggested /adf:retro --change; no record when metrics
-//                                         failed
+//                                         failed or is off
 import { parseArgs } from 'node:util'
 import {
   archiveContext,
