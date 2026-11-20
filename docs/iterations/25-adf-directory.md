@@ -122,3 +122,95 @@ record a script writes and checks, never free text a script parses.
 | 9 | `adf-english-check` defaults and its first `migrations` script; the `adf-postgres` message | plugin tests; `migrateConfig` on an old config |
 | 10 | Instruction text, templates, contract, guide pages | `grep -rn openspec plugins` leaves only the legacy and migration code and tests; `check-guide.mjs` |
 | 11 | `/adf:update` on a copy of the origin project: 78 specs and 90 archived changes, after the freeze | the run's notes in `## Result` (also part of the live check, iteration 27) |
+
+## Result
+
+Steps 1 to 10 were implemented by an agent on 2026-11-20, one commit each, with the developer
+not available; the calls it made are listed below. Behaviour changes were written test first.
+
+- **Step 1** (`c709ea9`). `lib/layout.mjs` holds the root, the derived paths (changes, archive,
+  specs, context, rules, the review prompt), `LEGACY_ROOT`, `ORIGIN_META_FILE` and the commit
+  scope. Every join, literal and pathspec of the scripts uses it; the duplicate constants of
+  `changes.mjs`, `specs.mjs`, `guide.mjs`, `host-files.mjs`, `prepare.mjs` and `provision.mjs`
+  are gone. `layout.spec.mjs` checks the derivation.
+- **Step 2** (`ab80739`). `FLOW_ROOTS`, `flowRelative` and `isFlowPath`. The window's
+  `archivedEntries` finds an archived change by its directory name under either root, so the
+  move adds no change, and reads each one where the ref holds it now; `EXCLUDED`, the metrics
+  capability filter, `proposedAtOf` and the main spec at an old base read both roots. The test
+  on a real repository with a rename commit landed with step 5, since a test of two roots needs
+  the root to differ from the legacy one.
+- **Step 3** (`8b08ef2`). `schema/settings.schema.json` (one key per value section, the
+  template's instructions in each `description`), `lib/settings.mjs` (read, validate, get, set,
+  render). Every section parser and `lib/guide.mjs` are gone. The prose template is
+  `host/guide.md`; init writes `settings.json` (every key, `testFirstShares: []`) and
+  `guide.md`. The plan, verify and apply agents get the guide and the rendered settings
+  (`schema.json` `guides`).
+- **Step 4** (`9577af9`). `settings.mjs show | get | set --value <json> [--commit]`. The init and
+  quick skills record the format and affected tests commands through it; no skill edits a file
+  by hand.
+- **Step 5** (`b4202e5`). The root is `adf`, the commit scope `adf`. `hostFiles` lists only the
+  plugins' `hostFiles`: the planning guide (in step 3) and the review prompt (here) are no host
+  files, so `MANAGED` is gone (#23). The window test on a repository whose archives moved from
+  `openspec/` to `adf/`. The parity replay moves the origin's `openspec/` at the host setup and
+  compares the trees with the origin's names.
+- **Step 6** (`8f939d7`). `lib/flow-migrate.mjs`: `convertGuide`, `reviewPromptPath`,
+  `legacyMentions`; the only module that reads the old sections. The shipped template (`b03ff31`)
+  and a filled guide in the origin's shape convert with no value lost and validate.
+- **Step 7** (`25acc5c`). `plan` reports `migration` (`migrationAt`); `apply` makes the move in
+  the update worktree, converts the guide, moves `review.prompt`, stages `adf/` with `-A`, and
+  reports `notes` and `mentions`; `commit` stages the same way. End-to-end tests on a fixture host
+  with an archive, specs, the guide, the review prompt and a `CLAUDE.md` that names `openspec/`.
+- **Step 8** (`a1e00f0`). The freeze: `apply` refuses the move while `migration.inFlight` names
+  a change (a directory of `openspec/changes/` or a worktree), naming each, before it writes
+  anything. The update skill and `docs/guide/update.md` describe it.
+- **Step 9** (`9a4e476`). `adf-english-check` keeps its own `FLOW_ROOT`; its defaults and the
+  core scripts' paths name `adf/`; its first config migration `0.8.2` rewrites `openspec/` globs
+  (`migrations.spec.mjs`, through the core's `migrateConfig`). `adf-postgres` names
+  `worktreeCopies` in `adf/settings.json`.
+- **Step 10** (`d16e3b9`). Instructions, prompts, templates, skills, contract, guide pages and
+  the README.
+
+Calls made by the agent:
+
+- The planning guide left `hostFiles` in step 3, with its template; the design placed it in
+  step 5. The review prompt left in step 5.
+- `INITIAL` settings (what init writes) set `testFirstShares: []`, as the template's empty
+  section did; the converter gives `null` when the old guide had no such section.
+- The converter keeps a value the schema refuses (two lines, a path outside the project, a step
+  with no input) in `guide.md` under `<heading> (not converted)`, with a note in `apply`'s
+  `migration.notes`; the `failedTestsCommand` keeps its line even without `{tests}`.
+- `reviewPromptPath` moves any `review.prompt` under `openspec/`, not only the default: the file
+  moves with `git mv` either way.
+- `legacyMentions` reads the update worktree's files (`git grep` over tracked files), so the
+  rewritten registry is not reported.
+- The review filter leaves `adf/settings.json` out (`DEFAULT_EXCLUDE`), as it did the old
+  guide by `**/*.md`; verify's out-of-plan check exempts a `settings.mjs set --commit` commit
+  as it does `suite.mjs set --commit`.
+- The spec-merge parity fixture compares error messages with the port's directory named
+  `openspec/changes/`, the one text difference from the OpenSpec CLI.
+- The `adf-english-check` migration is numbered `0.8.2`, so it runs for any release of the plugin
+  past 0.8.1; the release that bumps the plugin must give it at least 0.8.2.
+- The mid-flight parity replay moves the origin's in-flight change to `adf/changes/` on its
+  branch, as an injected step: the freeze makes this a test-harness scenario only.
+- The switching guide tells a project on the old OpenSpec flow to `git mv openspec adf` before
+  `/adf:init`; the developer should review that page.
+
+Open:
+
+- The first update into this release runs `plan` from the installed (older) release, which has
+  no `migration` field: the developer sees the move only in `apply`'s result. `apply` runs the new
+  release's code, so the freeze is enforced either way.
+- Step 11 (a run of `/adf:update` on a copy of the origin project, 78 specs and 90 archived
+  changes, after the freeze) is left for the developer, with the live check of iteration 27.
+
+Residue of `grep -rn openspec plugins --exclude-dir=__tests__`: `LEGACY_ROOT` and
+`ORIGIN_META_FILE` in `lib/layout.mjs` (the legacy root, and the metadata file of a change the
+earlier flow created); `lib/flow-migrate.mjs`, `lib/update.mjs` and the update skill (the
+migration); `lib/init.mjs` and the init skill (the scan for a previous flow's commands); the
+`adf-english-check` legacy root and its migration; and the comments and the archive instruction
+that name the OpenSpec CLI the spec engine was ported from.
+
+Checks: `npm test` green at every commit; at the last one 1896 tests, 1891 passed, 0 failed,
+5 skipped (1882, 1877 and 5 at the start); `check-lessons.mjs`, `check-release.mjs` and
+`check-guide.mjs` with no error. `scripts/guide-review.mjs` belongs to the release step and was
+not run.
