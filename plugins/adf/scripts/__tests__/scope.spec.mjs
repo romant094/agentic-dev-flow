@@ -67,10 +67,10 @@ function host({ tracker = true, config = {}, debt = true, contract = '1.7', oper
   git(root, 'init', '-q', '-b', 'develop')
   git(root, 'config', 'user.email', 't@example.com')
   git(root, 'config', 'user.name', 'T')
-  mkdirSync(join(root, 'openspec', 'specs', 'session-pool'), { recursive: true })
-  writeFileSync(join(root, 'openspec', 'specs', 'session-pool', 'spec.md'), '# session-pool\n')
-  mkdirSync(join(root, 'openspec', 'specs', 'thing-store'), { recursive: true })
-  writeFileSync(join(root, 'openspec', 'specs', 'thing-store', 'spec.md'), '# thing-store\n')
+  mkdirSync(join(root, 'adf', 'specs', 'session-pool'), { recursive: true })
+  writeFileSync(join(root, 'adf', 'specs', 'session-pool', 'spec.md'), '# session-pool\n')
+  mkdirSync(join(root, 'adf', 'specs', 'thing-store'), { recursive: true })
+  writeFileSync(join(root, 'adf', 'specs', 'thing-store', 'spec.md'), '# thing-store\n')
   initRegistry(root, CORE.coreContract)
   setBranches(root, { integration: 'develop', protected: ['main'] })
   if (debt) {
@@ -174,8 +174,8 @@ test('with neither keys nor a phrase the change name searches the debt store', (
 test('gather returns resolved debt as precedents, never as items; check-input gives each item its own, and render lists them', () => {
   const root = host({ tracker: false })
   const tree = join(root, 'docs', 'debt')
-  const fixIndex = 'openspec/changes/archive/2026-10-01-fix-index'
-  const fixPool = 'openspec/changes/archive/2026-10-02-fix-old-pool'
+  const fixIndex = 'adf/changes/archive/2026-10-01-fix-index'
+  const fixPool = 'adf/changes/archive/2026-10-02-fix-old-pool'
   addEntry(tree, { block: 'snmp', title: 'Session pool reconnect leaks sockets', anchors: ['pool.ts:5'], class: 'defect', source: 'review' })
   resolveEntry(tree, { id: 'snmp-02', by: fixIndex, date: '2026-10-01' })
   resolveEntry(tree, { id: 'snmp-04', by: fixPool, date: '2026-10-02' })
@@ -191,7 +191,7 @@ test('gather returns resolved debt as precedents, never as items; check-input gi
     { key: 'snmp-04', title: 'Session pool reconnect leaks sockets', resolvedBy: fixPool, date: '2026-10-02' }
   ])
   assert.deepEqual(readScope(root, 'fix-pool').precedents.map((p) => [p.key, p.matched]), [['snmp-02', 'precedent'], ['snmp-04', 'text']])
-  assert.match(out.report, /Debt: snmp-01 \(phrase\), snmp-03 \(phrase\), snmp-05 \(phrase\)\.\nPrecedent: snmp-02, Trailing index parsed twice, resolved by `openspec\/changes\/archive\/2026-10-01-fix-index` on 2026-10-01\.\nPrecedent: snmp-04,/)
+  assert.match(out.report, /Debt: snmp-01 \(phrase\), snmp-03 \(phrase\), snmp-05 \(phrase\)\.\nPrecedent: snmp-02, Trailing index parsed twice, resolved by `adf\/changes\/archive\/2026-10-01-fix-index` on 2026-10-01\.\nPrecedent: snmp-04,/)
 
   scope(root, 'select', '--change', 'fix-pool', '--take', 'snmp-01,snmp-05', '--rest', 'its own change')
   const input = scope(root, 'check-input', '--change', 'fix-pool')
@@ -203,7 +203,7 @@ test('gather returns resolved debt as precedents, never as items; check-input gi
   assert.match(readFileSync(input.dispatches[0].promptFile, 'utf8'), /read the design and the tasks of each precedent/)
 
   const section = renderSection(readScope(root, 'fix-pool'))
-  assert.match(section, /\| snmp-05 \| debt \| Pool reconnect drops the session \| taken \|.*\n\nPrecedent: snmp-02, Trailing index parsed twice, resolved by `openspec\/changes\/archive\/2026-10-01-fix-index` on 2026-10-01\.\nPrecedent: snmp-04, Session pool reconnect leaks sockets, resolved by `openspec\/changes\/archive\/2026-10-02-fix-old-pool` on 2026-10-02\.$/)
+  assert.match(section, /\| snmp-05 \| debt \| Pool reconnect drops the session \| taken \|.*\n\nPrecedent: snmp-02, Trailing index parsed twice, resolved by `adf\/changes\/archive\/2026-10-01-fix-index` on 2026-10-01\.\nPrecedent: snmp-04, Session pool reconnect leaks sockets, resolved by `adf\/changes\/archive\/2026-10-02-fix-old-pool` on 2026-10-02\.$/)
 })
 
 test('render names a correction once when it has no subject of its own, or one equal to the correction', () => {
@@ -223,8 +223,8 @@ test('trackerType is fix when every taken or partial tracker item is a bug, and 
 
 test('keys gather the tracker items, the debt holding a key, and a change in flight holding one; a flag is shown once', () => {
   const root = host()
-  mkdirSync(join(root, 'openspec', 'changes', 'other-change'), { recursive: true })
-  writeFileSync(join(root, 'openspec', 'changes', 'other-change', 'scope.json'), JSON.stringify({ items: [{ key: 'PROJ-2', state: 'taken' }, { key: 'PROJ-9', state: 'taken' }] }))
+  mkdirSync(join(root, 'adf', 'changes', 'other-change'), { recursive: true })
+  writeFileSync(join(root, 'adf', 'changes', 'other-change', 'scope.json'), JSON.stringify({ items: [{ key: 'PROJ-2', state: 'taken' }, { key: 'PROJ-9', state: 'taken' }] }))
   const out = scope(root, 'gather', '--change', 'fix-pool', '--keys', 'PROJ-1')
   assert.deepEqual(calls(root).map((c) => c.op), ['check', 'gather'])
   assert.deepEqual(calls(root)[1].input.keys, ['PROJ-1'])
@@ -472,7 +472,7 @@ test('propose: create copies the scope, start holds then applies after the workt
   assert.throws(() => scope(root, 'start', '--change', 'fix-pool'), /start runs after the branch and the worktree exist/)
 
   const made = createChange(root, { change: 'fix-pool', branch: 'fix/PROJ-1/fix-pool', base: 'integration' }, schema, { env: {} })
-  assert.equal(made.scope, 'openspec/changes/fix-pool/scope.json')
+  assert.equal(made.scope, 'adf/changes/fix-pool/scope.json')
   assert.deepEqual(JSON.parse(readFileSync(changeScopeFile(made.root, 'fix-pool'), 'utf8')), readScope(root, 'fix-pool'))
 
   const pending = scope(root, 'start', '--change', 'fix-pool')
@@ -485,7 +485,7 @@ test('propose: create copies the scope, start holds then applies after the workt
   assert.deepEqual([started.ok, started.state, started.applied, started.report], [true, 'done', ['PROJ-1', 'PROJ-2'], 'Tracker start: applied PROJ-1, PROJ-2; skipped none; failed none'])
   assert.equal(JSON.parse(readFileSync(changeScopeFile(made.root, 'fix-pool'), 'utf8')).start.state, 'done', 'the change copy follows the state')
 
-  const dir = join(made.root, 'openspec', 'changes', 'fix-pool')
+  const dir = join(made.root, 'adf', 'changes', 'fix-pool')
   writeFileSync(join(dir, 'brainstorm.md'), '# Brainstorm\n\nThe pool closes the old socket first.\n')
   writeFileSync(join(dir, 'proposal.md'), '## Why\n\nThe pool leaks.\n\n## What Changes\n\n- Close the socket.\n')
   assert.match(scopeSourcesGate(made.root, 'fix-pool').error, /section is missing; run scope\.mjs render/)

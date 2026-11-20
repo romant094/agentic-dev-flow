@@ -24,9 +24,9 @@ The host is the project that uses the flow. This page lists the files that the f
 |---|---|---|
 | `.claude/adf-extensions.json` | The registry. Its keys are in [the registry page](registry.md) and in `plugins/adf/contract/README.md`. | Yes |
 | `.claude/settings.json` | The key `enabledPlugins` with `adf@agentic-dev-flow`, and the marketplace in `extraKnownMarketplaces`. `/adf:init` adds a missing key only. An explicit `false` stays. | Yes |
-| `openspec/settings.json` | The settings: the values that the scripts of the flow read, one key for each value. A script writes each value. See [The settings](#the-settings). | Yes |
-| `openspec/guide.md` | The planning guide: prose for the plan and verify agents, `Where to look` and `Checks that need the developer`. The team fills it in. | Yes |
-| `openspec/review-prompt.md` | The criteria of the code review. The registry key `review.prompt` can name another path. | Yes |
+| `adf/settings.json` | The settings: the values that the scripts of the flow read, one key for each value. A script writes each value. See [The settings](#the-settings). | Yes |
+| `adf/guide.md` | The planning guide: prose for the plan and verify agents, `Where to look` and `Checks that need the developer`. The team fills it in. | Yes |
+| `adf/review-prompt.md` | The criteria of the code review. The registry key `review.prompt` can name another path. `/adf:init` writes it once; then it is the project's file. | Yes |
 | `.gitignore` | The lines of the local state, below. | Yes |
 
 `/adf:init` skips the marketplace entry when this machine added the marketplace from a local directory. A local path is valid on one machine only.
@@ -59,7 +59,7 @@ In a project that archived changes before the flow, `/adf:init` writes a window 
 
 ## The settings
 
-`openspec/settings.json` holds one key for each value. The schema `plugins/adf/schema/settings.schema.json` gives the type of each key and its instructions. A script checks the file against the schema before it reads a value. A key that the file does not hold takes its default.
+`adf/settings.json` holds one key for each value. The schema `plugins/adf/schema/settings.schema.json` gives the type of each key and its instructions. A script checks the file against the schema before it reads a value. A key that the file does not hold takes its default.
 
 | Key | Type | Holds |
 |---|---|---|
@@ -88,4 +88,4 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/settings.mjs" set --key formatCommand --valu
 
 ## What `/adf:update` does with them
 
-`/adf:update` compares the host files with the templates of the old and the new release. See [/adf:update](../update.md).
+`/adf:update` compares the `hostFiles` of the plugins with the templates of the old and the new release. It never changes the settings, the planning guide or the review prompt. See [/adf:update](../update.md).

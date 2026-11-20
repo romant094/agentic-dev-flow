@@ -111,7 +111,7 @@ test('settings.mjs set --commit commits the settings alone with its fixed messag
   assert.equal(out.commit, git(change, 'rev-parse', 'HEAD'))
   assert.equal(git(change, 'log', '-1', '--format=%s'), setMessage('wholeSuiteCommand'))
   assert.equal(isSetMessage(setMessage('wholeSuiteCommand')), true)
-  assert.equal(isSetMessage('docs(openspec): record x'), false)
+  assert.equal(isSetMessage('docs(adf): record x'), false)
   assert.equal(git(change, 'show', '--name-only', '--format=', 'HEAD'), SETTINGS_FILE)
   assert.equal(git(change, 'status', '--porcelain', '--', 'stray.txt'), '?? stray.txt')
 })

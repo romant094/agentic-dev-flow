@@ -17,7 +17,7 @@ const active = (cwd, options = {}) => resolveActive(cwd, { schema, env: {}, ...o
 // add-x in its worktree, beside old-y, a change the worktree's branch also holds.
 function twoInFlight() {
   const made = host()
-  commitIn(made.change, 'openspec/changes/old-y/tasks.md', '- [ ] 1.1 old\n')
+  commitIn(made.change, 'adf/changes/old-y/tasks.md', '- [ ] 1.1 old\n')
   return made
 }
 
@@ -73,7 +73,7 @@ test('one change in flight is used without asking; an unknown name is refused wi
 test('archive hands the pointer to the main checkout, where land finds the archived change until it is landed', () => {
   const { root, change } = host()
   setPointer(change, 'add-x', { env: {} })
-  commitIn(root, 'openspec/changes/archive/2026-10-19-add-x/tasks.md', '- [x] 1.1 a\n')
+  commitIn(root, 'adf/changes/archive/2026-10-19-add-x/tasks.md', '- [x] 1.1 a\n')
   assert.deepEqual(handOver(change, root, 'add-x'), { handed: true, key: 'feat/add-x' })
   assert.equal(readPointers(root)['feat/add-x'].change, 'add-x')
   const out = active(root, { archived: true })

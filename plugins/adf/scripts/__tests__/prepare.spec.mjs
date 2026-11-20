@@ -27,7 +27,7 @@ const PLAN = '# Plan\n\n### Task 1: one\n\n> Implements tasks.md 1.1.\n\n**Files
 function setup(settings = SETTINGS) {
   const { root, change } = host({ 'plan.md': PLAN })
   appendFileSync(join(root, '.git', 'info', 'exclude'), 'out/\n')
-  for (const [file, text] of Object.entries({ 'build.mjs': BUILD, 'lib/src/mode.txt': 'ok\n', 'lib/src/a.txt': 'a\n', 'other.txt': 'o\n', 'openspec/settings.json': settings })) {
+  for (const [file, text] of Object.entries({ 'build.mjs': BUILD, 'lib/src/mode.txt': 'ok\n', 'lib/src/a.txt': 'a\n', 'other.txt': 'o\n', 'adf/settings.json': settings })) {
     mkdirSync(join(change, file, '..'), { recursive: true })
     writeFileSync(join(change, file), text)
   }

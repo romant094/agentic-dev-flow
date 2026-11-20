@@ -63,10 +63,9 @@ Never merge it: the developer merges it.
    - the dropped plugins, those with `to: null`: the new release no longer ships them, and their
      registry entries stay as they are;
    - the host files by `class`: `replace` and `new` take the new template, `edited` needs the
-     developer's choice, `same`, `kept` and `absent` stay as they are. In
-     `openspec/planning.md` the sections the flow's scripts write (whole-suite command, worktree
-     copies, worktree preparation, format command) are values: they never count as edits, and
-     every choice keeps them;
+     developer's choice, `same`, `kept` and `absent` stay as they are. Only the plugins'
+     `hostFiles` are host files: the settings, the planning guide and the review prompt are the
+     project's own, and the update never changes them;
    - when `contract.compatible` is false: the update is refused for `contract.reason`. Say so,
      remove the clones (step 10) and stop;
    - each change of `inFlight`, with a warning: it continues on the new release, and a conflict
@@ -77,13 +76,11 @@ Never merge it: the developer merges it.
 5. For each host file with class `edited`, show its three versions: the old release's template
    (`<clones.old>/<template path>`), the project's file at `baseCommit` (`git show
    <baseCommit>:<path>`, not the main directory's copy), and the new release's template
-   (`<clones.new>/<template path>`). The core's templates are `plugins/adf/host/planning.md` for
-   `openspec/planning.md` and `plugins/adf/host/review-prompt.md` for the review prompt; a
-   plugin's are the `hostFiles` of `plugins/<name>/adf-extension.json`. Ask "How to merge?":
+   (`<clones.new>/<template path>`). A plugin's templates are the `hostFiles` of
+   `plugins/<name>/adf-extension.json`. Ask "How to merge?":
    - **automatic**, then a second question: *Keep everything* (choice `keep`: the template's
      changes are carried into the project's file, the project's edits stay) or *Replace from the
-     update* (choice `replace`: the file becomes the new template; the sections of
-     `openspec/planning.md` the flow's scripts write are kept);
+     update* (choice `replace`: the file becomes the new template);
    - **manual** (choice `manual`): the file is left as it is, for the developer.
 
    For a file under `.claude/memory/` (the knowledge plugin's seed pages, which the project

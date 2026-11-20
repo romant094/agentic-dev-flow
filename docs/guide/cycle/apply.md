@@ -45,7 +45,7 @@ It stops and reports in these cases:
 
 1. Provision the worktree with the hooks of the project's plugins.
 2. Show the progress: the tasks complete, the tasks remaining, and the test-first tasks.
-3. Dispatch an implementer and reviewers for each task, into the worktree of its task group. The main session never implements a task. Each implementer and fixer prompt quotes the commands of the key `checks` in `openspec/settings.json`, so the agent runs the project's own commands.
+3. Dispatch an implementer and reviewers for each task, into the worktree of its task group. The main session never implements a task. Each implementer and fixer prompt quotes the commands of the key `checks` in `adf/settings.json`, so the agent runs the project's own commands.
 4. Tick each task when its review loop is clean. A task with no code whose check only you can run, such as a bench pass, is ticked on the file that records your result.
 5. Merge each group when every task of it is complete. A scoped review checks the merge.
 6. Run the final review, the reuse sweep and the whole suite.
@@ -59,16 +59,16 @@ The tree guard checks after each round of dispatches that no other checkout move
 | Where | What |
 |---|---|
 | the change worktree | The code of the tasks, committed by the implementers. |
-| `openspec/changes/<name>/tasks.md` | One tick per task, committed as `chore(openspec): tick <item> of <name>`. |
-| `openspec/changes/<name>/plan.md` | An "Added during apply" line for each file that no task names. |
-| `openspec/changes/<name>/.apply-test-record.md` | The whole-suite record, committed as `docs(openspec): record the whole-suite run of <name>`. This is the last commit. |
+| `adf/changes/<name>/tasks.md` | One tick per task, committed as `chore(adf): tick <item> of <name>`. |
+| `adf/changes/<name>/plan.md` | An "Added during apply" line for each file that no task names. |
+| `adf/changes/<name>/.apply-test-record.md` | The whole-suite record, committed as `docs(adf): record the whole-suite run of <name>`. This is the last commit. |
 | `.superpowers/sdd/<name>/ledger.jsonl` | The judgements of the run: deviations, debt, rulings and handoffs. |
 
 The command pushes the change branch through the forge plugin after each group merge and after the suite record. With no forge plugin, nothing is pushed. This is not an error.
 
-When the project has no `wholeSuiteCommand` in `openspec/settings.json`, the command finds one with you and records it.
+When the project has no `wholeSuiteCommand` in `adf/settings.json`, the command finds one with you and records it.
 
-When the whole suite fails, the command runs it again on the base branch after the main run, to find the failures that are not new. When `openspec/settings.json` has a `failedTestsCommand` with `{tests}`, the command runs only the failed tests on the base.
+When the whole suite fails, the command runs it again on the base branch after the main run, to find the failures that are not new. When `adf/settings.json` has a `failedTestsCommand` with `{tests}`, the command runs only the failed tests on the base.
 
 The command waits for the whole suite in the foreground, for up to 10 minutes. A longer suite runs in the background, and the command waits for it with `suite.mjs wait`, which returns the result as soon as the run ends. Each run writes a marker, `.superpowers/sdd/<name>/suite/run.json`, and the report refuses until the marker of the recorded run says done. The command never schedules a wakeup, so a headless session ends when its work ends.
 

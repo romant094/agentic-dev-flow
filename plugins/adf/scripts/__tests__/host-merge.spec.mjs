@@ -47,7 +47,7 @@ test('mergeKeep treats a null base as empty', () => {
   assert.equal(mergeKeep(null, 'x\n', 'x\n').conflicts, false)
 })
 
-test('hostFiles reads the review prompt and each plugin declaration from both clones, and no planning guide', () => {
+test('hostFiles reads each plugin declaration from both clones, and no core file', () => {
   const root = mkdtempSync(join(tmpdir(), 'adf-hf-'))
   const [oldClone, newClone] = [join(root, 'old'), join(root, 'new')]
   put(oldClone, 'plugins/adf/host/planning.md', 'p1\n')
@@ -63,10 +63,9 @@ test('hostFiles reads the review prompt and each plugin declaration from both cl
     extensions: [{ plugin: 'adf-gitlab@agentic-dev-flow' }, { plugin: 'other@elsewhere' }, { path: 'local' }],
   }
   assert.deepEqual(hostFiles(oldClone, newClone, registry), [
-    { path: 'docs/review.md', base: null, theirs: 'r2\n' },
     { path: '.gitlab/mr.md', base: 'm1\n', theirs: 'm2\n' },
   ])
-  assert.equal(hostFiles(oldClone, newClone, {})[0].path, 'openspec/review-prompt.md')
+  assert.deepEqual(hostFiles(oldClone, newClone, {}), [])
 })
 
 test('mergeKeep throws on a git error instead of reporting conflicts', () => {

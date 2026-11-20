@@ -124,8 +124,8 @@ function doneTask(testText, shares) {
   git(change, 'commit', '-q', '-m', 'feat: f is 2')
   const sha = git(change, 'rev-parse', 'HEAD')
   if (shares !== undefined) {
-    mkdirSync(join(change, 'openspec'), { recursive: true })
-    writeFileSync(join(change, 'openspec', 'settings.json'), JSON.stringify({ testFirstShares: shares, wholeSuiteCommand: 'npm test' }))
+    mkdirSync(join(change, 'adf'), { recursive: true })
+    writeFileSync(join(change, 'adf', 'settings.json'), JSON.stringify({ testFirstShares: shares, wholeSuiteCommand: 'npm test' }))
   }
   const result = { status: 'DONE', commits: [{ sha, subject: 'feat: f is 2', files: ['src/f.mjs', 'test/f.test.mjs'] }], range: { base: parent, head: sha }, tests: { result: 'pass', runs: [{ command: 'node test/f.test.mjs' }] } }
   recordReply(change, 'add-x', { name: 'T1 impl', file: 'impl.json', result })
@@ -159,7 +159,7 @@ test('a proof kept under other shares runs again; the same shares in another ord
   const { root, change } = doneTask(TEST, ['node_modules', '.venv'])
   const proof = () => taskProof(change, 'add-x', 1, { planText: PLAN, main: root, prove: (worktree, { commit }) => ({ proof: true, commit }) })
   assert.equal(proof().cached, false)
-  const settings = join(change, 'openspec', 'settings.json')
+  const settings = join(change, 'adf', 'settings.json')
   writeFileSync(settings, JSON.stringify({ testFirstShares: ['.venv', 'node_modules'] }))
   assert.equal(proof().cached, true)
   writeFileSync(settings, JSON.stringify({ testFirstShares: ['node_modules'] }))
@@ -181,7 +181,7 @@ test('a test that passes without the code adds the critical tests finding to the
 test('without testFirstShares the reviewer runs the proof, and the prompt says why', () => {
   const { change, prompt, review } = doneTask(TEST)
   const text = prompt()
-  assert.match(text, /- Test-first proof: not run by the flow: openspec\/settings\.json sets no testFirstShares/)
+  assert.match(text, /- Test-first proof: not run by the flow: adf\/settings\.json sets no testFirstShares/)
   assert.match(text, /the review proves the new test can fail/)
   assert.equal(existsSync(join(change, '.superpowers/sdd/add-x/tdd/T1.json')), false)
   assert.equal(review().tddProof, undefined)

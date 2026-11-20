@@ -92,9 +92,9 @@ function host() {
   const init = commit(root, {
     'runner.cjs': RUNNER,
     'src/a.mjs': 'export const a = 1\n',
-    [`openspec/changes/${CHANGE}/.adf.json`]: `${JSON.stringify({ schema: 'adf', base: 'develop' })}\n`,
-    [`openspec/changes/${CHANGE}/plan.md`]: PLAN,
-    [`openspec/changes/${CHANGE}/tasks.md`]: '- [ ] 1.1 parser\n- [ ] 1.2 printer\n'
+    [`adf/changes/${CHANGE}/.adf.json`]: `${JSON.stringify({ schema: 'adf', base: 'develop' })}\n`,
+    [`adf/changes/${CHANGE}/plan.md`]: PLAN,
+    [`adf/changes/${CHANGE}/tasks.md`]: '- [ ] 1.1 parser\n- [ ] 1.2 printer\n'
   }, 'init')
   git(root, 'checkout', '-q', '-b', `feat/${CHANGE}`)
   return { root, init }
@@ -131,7 +131,7 @@ test('a done impl is DONE: commits read from git oldest first, the review range,
   const { root } = host()
   const first = commit(root, { 'test/a.spec.mjs': 'test\n' }, 'test: the parser fails')
   const red = covering(root, 'T1 impl', 'fail', '2026-10-19T10:00:00.000Z')
-  const second = commit(root, { 'src/a.mjs': 'export const a = 2\n', [`openspec/changes/${CHANGE}/tasks.md`]: '- [x] 1.1 parser\n' }, 'feat: the parser')
+  const second = commit(root, { 'src/a.mjs': 'export const a = 2\n', [`adf/changes/${CHANGE}/tasks.md`]: '- [x] 1.1 parser\n' }, 'feat: the parser')
   const green = covering(root, 'T1 impl', 'pass', '2026-10-19T10:05:00.000Z')
   // The agent lists them in any order; the red run before the green is TDD's, not a failure.
   const out = check(root, 'T1 impl', implReply({ commits: [second.slice(0, 7), first], testRuns: [green, red] }))
@@ -140,7 +140,7 @@ test('a done impl is DONE: commits read from git oldest first, the review range,
   assert.deepEqual([r.status, r.next, r.outOfScope, r.concerns], ['DONE', 'review', [], []])
   assert.deepEqual(r.commits, [
     { sha: first, subject: 'test: the parser fails', files: ['test/a.spec.mjs'] },
-    { sha: second, subject: 'feat: the parser', files: [`openspec/changes/${CHANGE}/tasks.md`, 'src/a.mjs'] }
+    { sha: second, subject: 'feat: the parser', files: [`adf/changes/${CHANGE}/tasks.md`, 'src/a.mjs'] }
   ])
   assert.deepEqual(r.range, { base: git(root, 'rev-parse', `${first}^`), head: second })
   assert.deepEqual(r.tests, {
@@ -300,7 +300,7 @@ test('the sweep needs a disposition for each removed or renamed requirement exac
   assert.deepEqual(check(root, 'sweep', sweepReply({ dispositions: [disposition('Old export')] })).errors, ['$.dispositions: the change lists no REMOVED or RENAMED requirement, so the reply gives no disposition'])
   assert.deepEqual(check(root, 'sweep', sweepReply()).result, { verdict: 'CLEAN', findings: [], dropped: [] })
 
-  commit(root, { [`openspec/changes/${CHANGE}/specs/cap/spec.md`]: '## REMOVED Requirements\n\n### Requirement: Old export\n\n**Code Disposition:** deleted.\n\n### Requirement: Old import\n' })
+  commit(root, { [`adf/changes/${CHANGE}/specs/cap/spec.md`]: '## REMOVED Requirements\n\n### Requirement: Old export\n\n**Code Disposition:** deleted.\n\n### Requirement: Old import\n' })
   assert.deepEqual(check(root, 'sweep', sweepReply()).errors, ['$.dispositions: required, one for each REMOVED or RENAMED requirement: Old export, Old import'])
   assert.deepEqual(check(root, 'sweep', sweepReply({ dispositions: [disposition('Old export'), disposition('Other'), disposition('Old export')] })).errors, [
     '$.dispositions[1].requirement: Other is no REMOVED or RENAMED requirement of the change',

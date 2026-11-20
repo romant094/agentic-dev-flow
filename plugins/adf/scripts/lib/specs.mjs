@@ -570,13 +570,13 @@ function listDirs(dir, keep) {
   }
 }
 
-// Active changes: directories under openspec/changes, archive excluded, holding proposal.md.
+// Active changes: directories under adf/changes, archive excluded, holding proposal.md.
 export function listChangeIds(root) {
   const dir = join(root, CHANGES_DIR)
   return listDirs(dir, (name) => name !== 'archive' && existsSync(join(dir, name, 'proposal.md')))
 }
 
-// Capabilities: directories under openspec/specs holding spec.md.
+// Capabilities: directories under adf/specs holding spec.md.
 export function listSpecIds(root) {
   const dir = join(root, SPECS_DIR)
   return listDirs(dir, (name) => existsSync(join(dir, name, 'spec.md')))
@@ -1052,7 +1052,7 @@ const deltaCapabilities = (root, change) => {
 // A branch rebased or squashed before it merges moves `git merge-base` to the new base tip,
 // where the main spec already holds the other change's edit, and the three-way check then sees
 // no conflict (42 of the origin's 47 merges). So propose snapshots, in
-// openspec/changes/<change>/specs-base.json, the main-spec block of every requirement a delta
+// adf/changes/<change>/specs-base.json, the main-spec block of every requirement a delta
 // modifies, removes or renames, with the hash of the delta block it was taken for:
 //   { "capabilities": { "<capability>": { "<requirement>": { "operation", "delta", "base" } } } }
 // `delta` is the sha256 of the operation and the delta's text for the requirement, compared as

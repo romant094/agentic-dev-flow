@@ -26,7 +26,7 @@ test('a foreign ledger on the shared path is reported', () => {
   const { ok, foreign } = checkSddWorkspace({
     changeName: 'my-change',
     ...io(
-      { '.superpowers/sdd/plan/progress.md': '# SDD ledger — plan: openspec/changes/other-change/plan.md\n' },
+      { '.superpowers/sdd/plan/progress.md': '# SDD ledger — plan: adf/changes/other-change/plan.md\n' },
       { '.superpowers/sdd': ['plan'] }
     )
   })
@@ -53,7 +53,7 @@ test('a workspace not on the legacy path is never inspected', () => {
   const { ok } = checkSddWorkspace({
     changeName: 'my-change',
     ...io(
-      { '.superpowers/sdd/my-change/progress.md': '# SDD ledger — plan: openspec/changes/my-change/plan.md\n' },
+      { '.superpowers/sdd/my-change/progress.md': '# SDD ledger — plan: adf/changes/my-change/plan.md\n' },
       { '.superpowers/sdd': ['my-change'] }
     )
   })
@@ -62,7 +62,7 @@ test('a workspace not on the legacy path is never inspected', () => {
   const other = checkSddWorkspace({
     changeName: 'my-change',
     ...io(
-      { '.superpowers/sdd/other/progress.md': '# SDD ledger — plan: openspec/changes/other/plan.md\n' },
+      { '.superpowers/sdd/other/progress.md': '# SDD ledger — plan: adf/changes/other/plan.md\n' },
       { '.superpowers/sdd': ['other'] }
     )
   })
@@ -73,7 +73,7 @@ test('the shared path holding this change own ledger is clean', () => {
   const { ok } = checkSddWorkspace({
     changeName: 'my-change',
     ...io(
-      { '.superpowers/sdd/plan/progress.md': '# SDD ledger — plan: openspec/changes/my-change/plan.md\n' },
+      { '.superpowers/sdd/plan/progress.md': '# SDD ledger — plan: adf/changes/my-change/plan.md\n' },
       { '.superpowers/sdd': ['plan'] }
     )
   })
@@ -133,15 +133,15 @@ test('a missing ledger still reads as no ledger', () => {
 
 
 test('the plan is read from the ledger header, with an em dash or a hyphen', () => {
-  assert.equal(planOf('# SDD ledger — plan: openspec/changes/a/plan.md\n'), 'openspec/changes/a/plan.md')
-  assert.equal(planOf('# SDD ledger - plan: openspec/changes/a/plan.md\n'), 'openspec/changes/a/plan.md')
+  assert.equal(planOf('# SDD ledger — plan: adf/changes/a/plan.md\n'), 'adf/changes/a/plan.md')
+  assert.equal(planOf('# SDD ledger - plan: adf/changes/a/plan.md\n'), 'adf/changes/a/plan.md')
   assert.equal(planOf('# Progress\n'), null)
 })
 
 test('the stop message names the foreign plan, or says the first line names none', () => {
-  const foreign = { path: '.superpowers/sdd/plan', plan: 'openspec/changes/other/plan.md' }
+  const foreign = { path: '.superpowers/sdd/plan', plan: 'adf/changes/other/plan.md' }
   const lines = stopMessage('mine', foreign)
-  assert.equal(lines[0], 'STOP: .superpowers/sdd/plan holds a ledger belonging to openspec/changes/other/plan.md.')
+  assert.equal(lines[0], 'STOP: .superpowers/sdd/plan holds a ledger belonging to adf/changes/other/plan.md.')
   assert.equal(lines[2], 'Move it aside, then use .superpowers/sdd/mine/ for this change,')
   assert.match(stopMessage('mine', { ...foreign, plan: null })[0], /first line does not name\.$/)
   assert.ok(!lines.join(' ').includes('/opsx:'))
@@ -157,10 +157,10 @@ const host = (ledger) => {
 }
 
 test('run resolves the workspace under --root, or under cwd without it', () => {
-  const root = host('# SDD ledger — plan: openspec/changes/other/plan.md\n')
+  const root = host('# SDD ledger — plan: adf/changes/other/plan.md\n')
   const out = run(['--change', 'mine', '--root', root])
   assert.equal(out.ok, false)
-  assert.deepEqual(out.foreign, { path: '.superpowers/sdd/plan', plan: 'openspec/changes/other/plan.md' })
+  assert.deepEqual(out.foreign, { path: '.superpowers/sdd/plan', plan: 'adf/changes/other/plan.md' })
   assert.equal(out.error, stopMessage('mine', out.foreign).join(' '))
   assert.deepEqual(run(['--change', 'other'], { cwd: root }), { ok: true, change: 'other', foreign: null })
   assert.deepEqual(run(['--change', 'mine', '--root', host()]), { ok: true, change: 'mine', foreign: null })
@@ -185,13 +185,13 @@ const cli = (...args) => {
 }
 
 test('the CLI prints one JSON object and exits 0 clean, 1 on a foreign ledger, 2 without a change', () => {
-  const root = host('# SDD ledger — plan: openspec/changes/other/plan.md\n')
+  const root = host('# SDD ledger — plan: adf/changes/other/plan.md\n')
   const clean = cli('--change', 'other', '--root', root)
   assert.equal(clean.status, 0)
   assert.equal(clean.out.ok, true)
   const stop = cli('--change', 'mine', '--root', root)
   assert.equal(stop.status, 1)
-  assert.match(stop.out.error, /^STOP: \.superpowers\/sdd\/plan holds a ledger belonging to openspec\/changes\/other\/plan\.md\./)
+  assert.match(stop.out.error, /^STOP: \.superpowers\/sdd\/plan holds a ledger belonging to adf\/changes\/other\/plan\.md\./)
   const usage = cli('--root', root)
   assert.equal(usage.status, 2)
   assert.equal(usage.out.ok, false)

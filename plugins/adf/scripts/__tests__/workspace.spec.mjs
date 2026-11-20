@@ -216,8 +216,8 @@ const WORKSPACE = join(dirname(fileURLToPath(import.meta.url)), '..', 'workspace
 function withChange() {
   const root = host({ remote: false })
   const made = create(root, { change: 'add-x', branch: 'feat/add-x', base: 'integration' })
-  mkdirSync(join(made.root, 'openspec', 'changes', 'add-x'), { recursive: true })
-  writeFileSync(join(made.root, 'openspec', 'changes', 'add-x', 'proposal.md'), '# add-x\n')
+  mkdirSync(join(made.root, 'adf', 'changes', 'add-x'), { recursive: true })
+  writeFileSync(join(made.root, 'adf', 'changes', 'add-x', 'proposal.md'), '# add-x\n')
   quiet(made.root, 'add', '.')
   quiet(made.root, 'commit', '-q', '-m', 'propose')
   return { root, worktree: made.root }
@@ -237,8 +237,8 @@ test('remove finds a worktree outside the default path by the change it holds, a
   const root = host({ remote: false })
   const elsewhere = join(dirname(root), 'elsewhere')
   quiet(root, 'worktree', 'add', '-q', '-b', 'feat/add-y', elsewhere)
-  mkdirSync(join(elsewhere, 'openspec', 'changes', 'archive', '2026-10-19-add-y'), { recursive: true })
-  writeFileSync(join(elsewhere, 'openspec', 'changes', 'archive', '2026-10-19-add-y', 'proposal.md'), '# add-y\n')
+  mkdirSync(join(elsewhere, 'adf', 'changes', 'archive', '2026-10-19-add-y'), { recursive: true })
+  writeFileSync(join(elsewhere, 'adf', 'changes', 'archive', '2026-10-19-add-y', 'proposal.md'), '# add-y\n')
   quiet(elsewhere, 'add', '.')
   quiet(elsewhere, 'commit', '-q', '-m', 'archive add-y')
   assert.equal(remove(root, { change: 'add-y' }).state, 'removed')
@@ -255,7 +255,7 @@ test('remove refuses a dirty worktree with its status lines and never forces', (
 
 test('remove reports a change made in place, refuses to run inside a worktree, and reports a vanished directory as absent', () => {
   const root = host({ remote: false })
-  mkdirSync(join(root, 'openspec', 'changes', 'archive', '2026-10-19-add-z'), { recursive: true })
+  mkdirSync(join(root, 'adf', 'changes', 'archive', '2026-10-19-add-z'), { recursive: true })
   assert.deepEqual(remove(root, { change: 'add-z' }), { ok: true, state: 'in-place', change: 'add-z' })
   const { root: main, worktree } = withChange()
   assert.throws(() => remove(worktree, { change: 'add-x' }), /not the main checkout/)
@@ -282,7 +282,7 @@ test('remove refuses while the worktree holds the ledger and the archived change
   mkdirSync(join(worktree, '.superpowers', 'sdd', 'add-x'), { recursive: true })
   writeFileSync(join(worktree, '.superpowers', 'sdd', 'add-x', 'ledger.jsonl'), '{}\n')
   assert.throws(() => remove(root, { change: 'add-x' }), /holds the ledger of add-x and the archived change has no copy of it/)
-  const archived = join(worktree, 'openspec', 'changes', 'archive', '2026-10-19-add-x')
+  const archived = join(worktree, 'adf', 'changes', 'archive', '2026-10-19-add-x')
   mkdirSync(archived, { recursive: true })
   writeFileSync(join(archived, 'proposal.md'), '# add-x\n')
   quiet(worktree, 'add', '.')

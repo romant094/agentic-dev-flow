@@ -15,7 +15,7 @@
 //     counts as rewritten. Files under the knowledge paths are not looked for: a link to a
 //     deleted page is the knowledge role's own `check`;
 //   - or names a capability whose requirement the change's delta touches (ADDED, MODIFIED,
-//     REMOVED or RENAMED): its path `openspec/specs/<capability>`, a link into that directory,
+//     REMOVED or RENAMED): its path `adf/specs/<capability>`, a link into that directory,
 //     or its name in a code span; or names one of those requirements by its full name.
 //
 // The rules of a reply the schema cannot state, in checkIngestReply:
@@ -62,8 +62,8 @@ const matcher = (globs) => {
 
 // ---------------------------------------------------------------- the change
 
-// The change's directory: active under openspec/changes/, or archived as
-// openspec/changes/archive/<date>-<name> (the latest such date).
+// The change's directory: active under adf/changes/, or archived as
+// adf/changes/archive/<date>-<name> (the latest such date).
 export function findChangeDir(root, change) {
   const active = join(root, CHANGES_DIR, change)
   if (existsSync(active)) return active

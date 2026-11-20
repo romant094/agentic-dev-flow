@@ -11,7 +11,7 @@
 //                              its modification time) with `<session>/subagents/` beside it
 //   changes/<name>/sdd/...     the change's `.superpowers/sdd/<name>/` files (ledger, run.json,
 //                              reply and record files)
-//   changes/<name>/openspec/...  the change's `openspec/changes/<name>/` (or its archived copy)
+//   changes/<name>/adf/...  the change's `adf/changes/<name>/` (or its archived copy)
 //   registry.json              `.claude/adf-extensions.json`, when present
 //   versions.json              { runtime, runtimeVersion, node, git, plugins: { id: version },
 //                              window: { from, to }, skipped }; a value that cannot be read is

@@ -327,11 +327,11 @@ test('unplanned files get the owner whose files the touching commits changed mos
   const text = plan()
   const commits = [
     { sha: 'c1', files: ['src/t1.ts', 'src/helper.ts'] },
-    { sha: 'c2', files: ['src/t2.ts', 'src/helper.ts', 'openspec/changes/c/plan.md'] },
+    { sha: 'c2', files: ['src/t2.ts', 'src/helper.ts', 'adf/changes/c/plan.md'] },
     { sha: 'c3', files: ['src/t2.ts', 'src/helper.ts'] },
     { sha: 'c4', files: ['docs/lonely.md'] }
   ]
-  const out = unplannedFiles(text, commits, { exempt: (f) => f.startsWith('openspec/changes/c/'), status: { 'docs/lonely.md': 'Create' } })
+  const out = unplannedFiles(text, commits, { exempt: (f) => f.startsWith('adf/changes/c/'), status: { 'docs/lonely.md': 'Create' } })
   assert.deepEqual(out.map((f) => [f.file, f.owner, f.verb, f.commits]), [
     ['src/helper.ts', 2, 'Modify', ['c1', 'c2', 'c3']],
     ['docs/lonely.md', null, 'Create', ['c4']]
@@ -368,7 +368,7 @@ function repo(planText = plan(), tasksText = TASKS) {
   git(root, 'add', '.')
   git(root, 'commit', '-q', '-m', 'init')
   git(root, 'checkout', '-q', '-b', 'feat/c')
-  const dir = join(root, 'openspec', 'changes', 'c')
+  const dir = join(root, 'adf', 'changes', 'c')
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, '.adf.json'), '{"base":"develop"}\n')
   writeFileSync(join(dir, 'plan.md'), planText)
@@ -404,7 +404,7 @@ test('plan.mjs lint: exit 0 for a clean plan, exit 1 with file:line findings, ex
   const del = repo(plan([task(1, '1.1', { files: ['- Delete: `src/old.ts`'] }), task(2, '1.2'), task(3, '2.1')]))
   const bad = await run(['lint', '--change', 'c', '--root', del.root])
   assert.equal(bad.code, 1)
-  assert.deepEqual(bad.result.findings.map((f) => [f.kind, f.file, f.task]), [['delete-reference', 'openspec/changes/c/plan.md', 1]])
+  assert.deepEqual(bad.result.findings.map((f) => [f.kind, f.file, f.task]), [['delete-reference', 'adf/changes/c/plan.md', 1]])
   assert.equal(bad.result.findings[0].message.includes('src/caller.ts'), true)
   // Without --change the one active change under the root is used (X3); an unknown option is a usage error.
   assert.equal((await run(['lint', '--root', root])).result.ok, true)
@@ -496,8 +496,8 @@ test('plan.mjs added --commit commits plan.md alone with the fixed message; noth
   const out = await run(args)
   assert.equal(out.code, 0, out.result.error)
   assert.equal(out.result.commit, gitOut(change, 'rev-parse', 'HEAD'))
-  assert.equal(gitOut(change, 'log', '-1', '--format=%s'), 'docs(openspec): record work added during apply to add-x')
-  assert.equal(gitOut(change, 'show', '--name-only', '--format=', 'HEAD'), 'openspec/changes/add-x/plan.md')
+  assert.equal(gitOut(change, 'log', '-1', '--format=%s'), 'docs(adf): record work added during apply to add-x')
+  assert.equal(gitOut(change, 'show', '--name-only', '--format=', 'HEAD'), 'adf/changes/add-x/plan.md')
   assert.match(readFileSync(join(dir, 'plan.md'), 'utf8'), /Added during apply, 2026-10-15/)
   assert.equal((await run(args)).result.commit, null)
 })
@@ -575,12 +575,12 @@ test('plan.mjs reopen: refused without a committed FAIL; then writes both files,
   const reopen = (title = 'fix the tree check', file = body) => run(['reopen', '--change', 'add-x', '--root', change, '--title', title, '--task-file', file])
   const clean = () => gitOut(change, 'status', '--porcelain')
   assert.match((await reopen()).result.error, /verify\.md does not exist; nothing written/)
-  commitIn(change, 'openspec/changes/add-x/verify.md', '# Verification Report\n\nVerdict: PASS WITH WARNINGS\n')
+  commitIn(change, 'adf/changes/add-x/verify.md', '# Verification Report\n\nVerdict: PASS WITH WARNINGS\n')
   const warned = await reopen()
   assert.deepEqual([warned.code, clean()], [1, ''])
   assert.match(warned.result.error, /says Verdict: PASS WITH WARNINGS/)
   const FAIL = '# Verification Report\n\n## Next step\n\nFix what each failing check names, then run verify again:\n\n- `tree`: no code\n- `ext:db:schema`: drift\n\nVerdict: FAIL\n'
-  const verify = commitIn(change, 'openspec/changes/add-x/verify.md', FAIL)
+  const verify = commitIn(change, 'adf/changes/add-x/verify.md', FAIL)
   const base = gitOut(change, 'rev-parse', 'HEAD')
   const out = await reopen()
   assert.equal(out.code, 0, out.result.error)
@@ -588,8 +588,8 @@ test('plan.mjs reopen: refused without a committed FAIL; then writes both files,
     [out.result.round, out.result.opened, out.result.task, out.result.item, out.result.group, out.result.frozen, out.result.checks, out.result.base],
     [1, true, 4, '3.1', 'C', ['A', 'B'], ['tree', 'ext:db:schema'], base]
   )
-  assert.equal(gitOut(change, 'log', '-1', '--format=%s'), 'docs(openspec): open apply round 1 of add-x')
-  assert.equal(gitOut(change, 'show', '--name-only', '--format=', 'HEAD'), 'openspec/changes/add-x/plan.md\nopenspec/changes/add-x/tasks.md')
+  assert.equal(gitOut(change, 'log', '-1', '--format=%s'), 'docs(adf): open apply round 1 of add-x')
+  assert.equal(gitOut(change, 'show', '--name-only', '--format=', 'HEAD'), 'adf/changes/add-x/plan.md\nadf/changes/add-x/tasks.md')
   assert.match(readFileSync(join(dir, 'tasks.md'), 'utf8'), /## 3\. Apply round 1\n\n- \[ \] 3\.1 fix the tree check\n$/)
   const record = readRecords(change, 'add-x').at(-1)
   assert.deepEqual(

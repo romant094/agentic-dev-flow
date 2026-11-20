@@ -67,13 +67,13 @@ function setup() {
   symlinkSync('../../packages/shared', join(nm, '@s', 'shared'))
   writeFileSync(join(root, '.env'), 'DATABASE_URL=postgres://u:secret@127.0.0.1:1/app\n')
 
-  mkdirSync(join(change, 'openspec'), { recursive: true })
-  writeFileSync(join(change, 'openspec', 'settings.json'), GUIDE)
+  mkdirSync(join(change, 'adf'), { recursive: true })
+  writeFileSync(join(change, 'adf', 'settings.json'), GUIDE)
   const config = { 'adf-npm-workspaces': {}, 'adf-postgres': { prefix: 't', url: { file: '.env', key: 'DATABASE_URL' }, exec: 'local' }, 'adf-prisma': {} }
   const points = { 'adf-npm-workspaces': ['provision'], 'adf-postgres': ['provision', 'teardown'], 'adf-prisma': ['provision', 'verify-check'] }
   const extensions = ORDER.map((name) => ({ path: join(PLUGINS, name), points: points[name], config: config[name] }))
   writeRegistry(change, { ...readRegistry(change), extensions })
-  git(change, 'add', 'openspec/settings.json', '.claude/adf-extensions.json')
+  git(change, 'add', 'adf/settings.json', '.claude/adf-extensions.json')
   git(change, 'commit', '-q', '-m', 'guide and stack plugins')
   return { root, change }
 }

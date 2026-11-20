@@ -65,7 +65,7 @@ const PLAN = plan(
 
 function host(planText = PLAN) {
   const root = mkdtempSync(join(tmpdir(), 'adf-dispatch-'))
-  const dir = join(root, 'openspec', 'changes', CHANGE)
+  const dir = join(root, 'adf', 'changes', CHANGE)
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'plan.md'), planText)
   writeFileSync(join(dir, '.adf.json'), JSON.stringify({ base: 'develop' }))
@@ -260,7 +260,7 @@ test('the implementer and fix prompts carry the settings\' check commands', () =
   const q = join(root, 'q.txt')
   writeFileSync(q, 'Do it.')
   const field = (prompt) => /- Check commands:.*(\n  - .*)*/.exec(prompt)?.[0]
-  assert.equal(field(call(root, 'prompt', '--role', 'impl', '--task', '1', '--question-file', q).prompt), '- Check commands: none in the settings, openspec/settings.json')
+  assert.equal(field(call(root, 'prompt', '--role', 'impl', '--task', '1', '--question-file', q).prompt), '- Check commands: none in the settings, adf/settings.json')
   setSetting(root, 'checks', ['Install: `npm ci`', 'Test one file: `npx vitest run <file>`', 'npm run lint'])
   const expected = '- Check commands:\n  - Install: `npm ci`\n  - Test one file: `npx vitest run <file>`\n  - npm run lint'
   for (const role of ['impl', 'fix']) assert.equal(field(call(root, 'prompt', '--role', role, '--task', '1', '--round', '1', '--question-file', q).prompt), expected, role)
@@ -340,7 +340,7 @@ test('the sweep prompt names the base, the range and the fixed question; a merge
   assert.equal(call(root, 'prompt', '--role', 'sweep', '--pass', '2').prompt.replace(/sweep([ -])p2/g, 'sweep$1p1'), sweep, 'the two passes differ only in the name and the reply file')
   assert.match(sweep, /whose behaviour the tree already has/)
   assert.doesNotMatch(sweep, /A second question/)
-  const specs = join(root, 'openspec', 'changes', CHANGE, 'specs', 'cap')
+  const specs = join(root, 'adf', 'changes', CHANGE, 'specs', 'cap')
   mkdirSync(specs, { recursive: true })
   writeFileSync(join(specs, 'spec.md'), '## REMOVED Requirements\n\n### Requirement: Old thing\n\n**Reason**: gone\n')
   const second = call(root, 'prompt', '--role', 'sweep', '--pass', '1').prompt
@@ -974,7 +974,7 @@ test('the fixer prompt reads its finding from the round findings file, only for 
   assert.ok(prompt.includes(`valid under \`${join(PLUGIN_ROOT, 'schema', 'review-fix.schema.json')}\``))
   assert.ok(prompt.includes(`Write it to\n\`${out.replyFile}\``) || prompt.includes(`Write it to \`${out.replyFile}\``))
   assert.match(prompt, /`failureMode` states the failure/)
-  assert.ok(prompt.includes('- Check commands: none in the settings, openspec/settings.json'), prompt)
+  assert.ok(prompt.includes('- Check commands: none in the settings, adf/settings.json'), prompt)
   assert.match(prompt, /with the commands the `Check commands` field\s+quotes/)
   assert.match(prompt, /`git -C /)
   assert.doesNotMatch(prompt, /reply\.mjs|\{\{|\$\{CLAUDE_PLUGIN_ROOT\}|<worktree>|<!--|Rejected false-positive argument/)
@@ -1022,7 +1022,7 @@ test('the spec-merge prompt names the three texts of each conflict by path, the 
   const req = (name, body) => `### Requirement: ${name}\n${body}\n\n#### Scenario: Works\n- **WHEN** x\n- **THEN** y\n`
   const main = `# widgets Specification\n\n## Purpose\nWidgets are built, stored and shipped by the system, one at a time.\n\n## Requirements\n${req('Store', 'The system SHALL store.')}`
   const { change, onDevelop } = mergeRepo({ main: { widgets: main }, delta: { widgets: `## MODIFIED Requirements\n\n${req('Store', 'The system SHALL store widgets dry.')}` } })
-  onDevelop({ 'openspec/specs/widgets/spec.md': main.replace('SHALL store.', 'SHALL store widgets cold.') })
+  onDevelop({ 'adf/specs/widgets/spec.md': main.replace('SHALL store.', 'SHALL store widgets cold.') })
   const out = run(['prompt', '--change', CHANGE, '--role', 'spec-merge', '--capability', 'widgets', '--root', change], { main: change })
   const dir = join(change, '.superpowers', 'sdd', CHANGE, 'spec-merge', 'widgets')
   for (const [which, text] of [['base', 'SHALL store.'], ['current', 'SHALL store widgets cold.'], ['delta', 'SHALL store widgets dry.']]) {
@@ -1038,18 +1038,18 @@ test('the spec-merge prompt names the three texts of each conflict by path, the 
 
 test('the ingest prompt reads its input file and runs on the archived change; without the file it is refused', () => {
   const root = host('no plan needed')
-  const archived = join(root, 'openspec', 'changes', 'archive', `2026-10-19-${CHANGE}`)
+  const archived = join(root, 'adf', 'changes', 'archive', `2026-10-19-${CHANGE}`)
   mkdirSync(join(archived, 'specs', 'widgets'), { recursive: true })
   writeFileSync(join(archived, 'proposal.md'), '# x\n')
   writeFileSync(join(archived, 'specs', 'widgets', 'spec.md'), '## ADDED Requirements\n')
-  execFileSync('rm', ['-r', join(root, 'openspec', 'changes', CHANGE)])
+  execFileSync('rm', ['-r', join(root, 'adf', 'changes', CHANGE)])
   assert.throws(() => run(['prompt', '--change', CHANGE, '--role', 'ingest', '--root', root], { main: MAIN }), /run ingest\.mjs stale/)
   assert.throws(() => run(['prompt', '--change', CHANGE, '--role', 'sweep', '--root', root], { main: MAIN }), /no change/)
   const input = join(root, '.superpowers', 'sdd', CHANGE, 'ingest', 'input.json')
   mkdirSync(dirname(input), { recursive: true })
   writeFileSync(input, JSON.stringify({
     change: CHANGE,
-    changeDir: `openspec/changes/archive/2026-10-19-${CHANGE}`,
+    changeDir: `adf/changes/archive/2026-10-19-${CHANGE}`,
     base: 'abc1234',
     knowledge: { index: '.claude/memory/index.md', instruction: '/plugins/adf-memory/instructions/ingest.md', paths: ['.claude/memory/**'], log: ['.claude/memory/log.md'] },
     stale: [{ path: '.claude/memory/entities/a.md', reasons: ['names src/a.mjs, which the change deleted'] }]

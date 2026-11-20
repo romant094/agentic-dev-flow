@@ -6,7 +6,7 @@
 //   sdd.mjs --change <name> [--root <dir>]
 //   sdd.mjs init --change <name> [--root <dir>]
 //       the same check, then write .superpowers/sdd/<name>/progress.md with its one identity
-//       line, `# SDD ledger — plan: <root>/openspec/changes/<name>/plan.md`, when it is missing;
+//       line, `# SDD ledger — plan: <root>/adf/changes/<name>/plan.md`, when it is missing;
 //       an existing one is kept when it names this change's plan and refused otherwise
 //       ({ ok, change, foreign, progress, written })
 //   sdd.mjs brief --change <name> --task <N> [--root <dir>] [--home <dir>]

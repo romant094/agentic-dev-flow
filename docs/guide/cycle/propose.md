@@ -37,7 +37,7 @@ The command asks about an artifact only when the context is unclear. Otherwise i
 
 The command makes a branch and a worktree. Every later step runs in the worktree. It never runs `git checkout` or `git switch` in the main checkout.
 
-It writes these files under `openspec/changes/<name>/`:
+It writes these files under `adf/changes/<name>/`:
 
 | File | Note |
 |---|---|
@@ -53,7 +53,7 @@ It writes these files under `openspec/changes/<name>/`:
 
 Each artifact has gates. The command fixes the findings of a gate in the artifact before it goes on.
 
-The commit holds the change directory and nothing else. Its message is `docs(openspec): propose <name>`. The commit refuses while an artifact is not done, while a gate fails, or while anything else is staged.
+The commit holds the change directory and nothing else. Its message is `docs(adf): propose <name>`. The commit refuses while an artifact is not done, while a gate fails, or while anything else is staged.
 
 After the commit, the command opens a merge request through the forge plugin. Without a forge plugin, it pushes nothing and the report says that no merge request exists. When the forge refuses, the artifacts stay committed. The Draft shows the links of the scope: one line for each taken or partial item, built from `scope.json` by a script. You do not write them. A change with no scope has no links in its Draft. A forge provider written for a contract below 1.10 shows no links in the Draft.
 

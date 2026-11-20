@@ -55,9 +55,9 @@ The quick cycle has one file, `quick.md`, one review round and no specs. When a 
 
 | Where | What |
 |---|---|
-| `openspec/changes/<name>/` | The change in flight: `brainstorm.md`, `proposal.md`, `design.md` (optional), `specs/`, `tasks.md`, `plan.md`, then `verify.md` and `review.md`. |
-| `openspec/changes/archive/<date>-<name>/` | The same directory after `/adf:archive`. |
-| `openspec/specs/` | The main specs. Only `/adf:archive` writes them. |
+| `adf/changes/<name>/` | The change in flight: `brainstorm.md`, `proposal.md`, `design.md` (optional), `specs/`, `tasks.md`, `plan.md`, then `verify.md` and `review.md`. |
+| `adf/changes/archive/<date>-<name>/` | The same directory after `/adf:archive`. |
+| `adf/specs/` | The main specs. Only `/adf:archive` writes them. |
 | `.claude/worktrees/` | One worktree for each change. `/adf:archive` removes it. |
 | `.superpowers/sdd/<name>/` | The working state of the commands: ledger, verify and review runs, archive state. |
 

@@ -12,7 +12,7 @@
 // so it outlives the worktree), the check inputs and prompts under check/, the replies under
 // replies/; the tracker's own files under <main>/.superpowers/sdd/<change>/tracker/ (its
 // stateDir). Once the change exists, every write is mirrored into
-// openspec/changes/<change>/scope.json of the change worktree, which the propose commit carries.
+// adf/changes/<change>/scope.json of the change worktree, which the propose commit carries.
 // A scope with no item and no skipped tracker is not mirrored: propose then runs as it did
 // before scopes existed.
 //

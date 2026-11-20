@@ -1088,7 +1088,7 @@ function bulletsUnder(text, heading) {
   return out
 }
 
-// Renders `openspec/changes/<change>/verify.md` from the template, run.json, the sections and
+// Renders `adf/changes/<change>/verify.md` from the template, run.json, the sections and
 // their verbatim output files, the c4 and c8 replies (lib/reply-render.mjs, the JSON a section
 // names in `reply`), the verdict, the rulings and the approved skill edits, deciding nothing; refuses when the verdict refuses or HEAD moved since the run. The record's last line
 // is the verdict's `line`, checked after writing. With `commit`, the record is committed alone.

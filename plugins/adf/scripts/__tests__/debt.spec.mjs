@@ -426,7 +426,7 @@ test('track writes the Tracker cell once, is idempotent, refuses an unknown id a
 
 // ---------------------------------------------------------------- resolved debt
 
-const BY = 'openspec/changes/archive/2026-10-22-fix-pool'
+const BY = 'adf/changes/archive/2026-10-22-fix-pool'
 
 test('resolve moves the row to resolved.md, keeps its id taken, and list and the groups ignore it', () => {
   const tree = tmp()
@@ -460,7 +460,7 @@ test('resolve moves the row to resolved.md, keeps its id taken, and list and the
   assert.equal(addEntry(tree, entry({ title: 'Five' })).entry.id, 'snmp-05', 'without the high-water line the resolved rows still hold their ids')
   assert.deepEqual(checkTree(tree), { ok: true, errors: [] })
 
-  assert.throws(() => resolveEntry(tree, { id: 'snmp-03', by: BY }), /snmp-03 is already resolved, by openspec\/changes\/archive\/2026-10-22-fix-pool/)
+  assert.throws(() => resolveEntry(tree, { id: 'snmp-03', by: BY }), /snmp-03 is already resolved, by adf\/changes\/archive\/2026-10-22-fix-pool/)
   assert.throws(() => resolveEntry(tree, { id: 'snmp-09', by: BY }), /no entry snmp-09/)
   assert.throws(() => resolveEntry(tree, { id: 'snmp-01', by: ' ' }), /resolved by is required/)
   assert.throws(() => resolveEntry(tree, { id: 'snmp-01', by: BY, date: '22.10.2026' }), /is not YYYY-MM-DD/)

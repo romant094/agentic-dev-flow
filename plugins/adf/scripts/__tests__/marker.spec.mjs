@@ -112,7 +112,7 @@ test('markers lists every marker of the tree and refuses a keyless or unpaired o
     'src/dup.ts': '// ADF DUP src/a.ts:3 -- the wire format differs\n',
     'src/keyless.tsx': '// ADF IGNORE -- setForm calls are safe\nz()\n',
     'lib/open.py': '# ADF IGNORE-START CWE-20 -- block\nq = 1\n',
-    'openspec/changes/c/notes.ts': '// ADF IGNORE -- inside a change record\n',
+    'adf/changes/c/notes.ts': '// ADF IGNORE -- inside a change record\n',
     'docs/about.md': 'Write `ADF IGNORE <key> -- <reason>` above the line.\n'
   })
   writeFileSync(join(root, 'untracked.sh'), '# ADF IGNORE-END\n')

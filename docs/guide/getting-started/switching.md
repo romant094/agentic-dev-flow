@@ -56,13 +56,13 @@ Paths and names on this page are examples. `develop` stands for the integration 
    | Migration order check | `adf-prisma` `verify-check` |
    | Log rotation script and skill | `adf-memory` |
    | Flow capability specs (for example in `openspec/specs/`) | removed: the plugins hold the flow's own specs |
-   | The old flow's project configuration (for example `openspec/config.yaml`) | `openspec/planning.md`, written by `/adf:init` |
+   | The old flow's project configuration (for example `openspec/config.yaml`) | `adf/settings.json` and `adf/guide.md`, written by `/adf:init` |
    | Guards and deny rules that protect the old flow's files, flow regression scripts, flow digest skills | nothing; they are obsolete with the old flow |
    | A pre-commit English check | `adf-english-check`, for the flow's commits |
    | Memory pages that describe the old flow or name its removed scripts | reworded or removed |
    | Project skills and plugins that are not part of the flow | kept; reword any that name the old commands |
 
-   Never remove the changes themselves. `openspec/changes/` keeps every change in flight and the archive. A change in flight continues with the `/adf:*` command of its next phase (steps 3, 4 and 15). If you remove its directory, you lose its artifacts. The removal touches only the tools of the flow, never the content of a change.
+   Never remove the changes themselves. `openspec/changes/` keeps every change in flight and the archive. ADF reads its directory `adf/` only: move the old flow's directory with `git mv openspec adf` before `/adf:init`, in the freeze, so that the changes and the archive move with it. A change in flight continues with the `/adf:*` command of its next phase (steps 3, 4 and 15). If you remove its directory, you lose its artifacts. The removal touches only the tools of the flow, never the content of a change.
 
    Search the whole repository for the old command names and script paths before you close the inventory. Remove or reword every hit.
 8. Reword the agent instructions of the project (for example `CLAUDE.md`) that describe the old flow. Name `/adf:propose` as the entry point for a change. An agent follows the instructions it reads, so the agent uses the old command, not the plugin's command.

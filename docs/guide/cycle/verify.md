@@ -65,11 +65,11 @@ A script computes the verdict: `PASS`, `PASS WITH WARNINGS` or `FAIL`. A failing
 
 | Where | What |
 |---|---|
-| `openspec/changes/<name>/verify.md` | The record. Its last line is the verdict. |
+| `adf/changes/<name>/verify.md` | The record. Its last line is the verdict. |
 | `.superpowers/sdd/<name>/verify/` | The raw output and the sections of each check. |
 | `.claude/skills/` | An approved skill edit, in a commit of its own. |
 
-The commit of the record holds `verify.md` and nothing else. Its message is `docs(openspec): verify <name>`. The command pushes nothing and removes no worktree.
+The commit of the record holds `verify.md` and nothing else. Its message is `docs(adf): verify <name>`. The command pushes nothing and removes no worktree.
 
 ## How it resumes
 

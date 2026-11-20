@@ -28,7 +28,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { assertIsolated, REPO } from './sandbox.mjs'
-import { SETTINGS_FILE } from '../../../plugins/adf/scripts/lib/layout.mjs'
+import { LEGACY_ROOT, ROOT, SETTINGS_FILE } from '../../../plugins/adf/scripts/lib/layout.mjs'
 import { setSetting } from '../../../plugins/adf/scripts/lib/settings.mjs'
 
 export const PLUGINS = join(REPO, 'plugins')
@@ -137,10 +137,16 @@ function snapshot(sandbox, main) {
   const out = new Map()
   // Not sandbox.git: it trims, and the first entry's status may start with a space.
   const status = execFileSync('git', ['status', '--porcelain=v1', '-uall', '-z'], { cwd: main, env: sandbox.env, encoding: 'utf8', maxBuffer: 1 << 28 })
-  for (const line of status.split('\0').filter(Boolean)) {
-    const path = line.slice(3)
+  const entries = status.split('\0').filter(Boolean)
+  const hash = (path) => {
     const file = join(main, path)
-    out.set(path, existsSync(file) ? createHash('sha256').update(readFileSync(file)).digest('hex') : null)
+    return existsSync(file) ? createHash('sha256').update(readFileSync(file)).digest('hex') : null
+  }
+  for (let i = 0; i < entries.length; i++) {
+    const path = entries[i].slice(3)
+    out.set(path, hash(path))
+    // A staged rename or copy names its source in the next entry: the source is gone.
+    if (/[RC]/.test(entries[i].slice(0, 2))) out.set(entries[++i], hash(entries[i]))
   }
   return out
 }
@@ -260,6 +266,11 @@ export function setupHost(sandbox, candidate, { registry = recordedRegistry(), g
     throw new Error(`setupHost: ${what} refused: ${out.json?.error ?? out.json?.refusal ?? (out.stderr || out.stdout).trim()}`)
   }
 
+  // The origin keeps the flow's files under openspec/; the port reads them under its own root
+  // (lib/layout.mjs), so the setup moves the directory first, as /adf:update's migration does.
+  if (LEGACY_ROOT !== ROOT && existsSync(join(main, LEGACY_ROOT))) {
+    step(`git mv ${LEGACY_ROOT} ${ROOT}`, 'migrate', (path) => (path.startsWith(`${LEGACY_ROOT}/`) || path.startsWith(`${ROOT}/`) ? `the flow's directory moved from ${LEGACY_ROOT}/ to ${ROOT}/, as /adf:update's migration moves it` : null), () => sandbox.git(main, 'mv', LEGACY_ROOT, ROOT))
+  }
   const init = step('extensions.mjs init', 'init', (path, r) => {
     const j = r.json ?? {}
     if (path === '.claude/adf-extensions.json') return `the ADF registry, contract ${j.contract}${j.reviewPrompt?.registered ? ', with review.prompt' : ''}`
@@ -357,7 +368,11 @@ export function setupHost(sandbox, candidate, { registry = recordedRegistry(), g
   })
 
   const paths = [...new Set(edits.map((e) => e.path))]
-  sandbox.git(main, 'add', '--', ...paths)
+  // A path gone from the tree is staged as removed (the move already staged its sources).
+  const present = paths.filter((p) => existsSync(join(main, p)))
+  const gone = paths.filter((p) => !existsSync(join(main, p)))
+  if (present.length) sandbox.git(main, 'add', '--', ...present)
+  if (gone.length) sandbox.git(main, 'rm', '-q', '--cached', '--ignore-unmatch', '--', ...gone)
   sandbox.git(main, 'commit', '-q', '-m', message)
   const commit = sandbox.git(main, 'rev-parse', 'HEAD')
   sandbox.git(main, 'push', '-q', 'origin', integration)

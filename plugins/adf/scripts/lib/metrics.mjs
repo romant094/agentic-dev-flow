@@ -529,7 +529,7 @@ export function fromV1(old) {
 // A record of either version as schemaVersion 2.
 export const asV2 = (record) => (record?.schemaVersion === 1 ? fromV1(record) : record)
 
-// Every archived change's record under `openspec/changes/archive/*/metrics.json`, converted and
+// Every archived change's record under `adf/changes/archive/*/metrics.json`, converted and
 // checked; one that does not parse or fails its schema is skipped with the reason.
 export function archivedRecords(root) {
   const dir = join(root, CHANGES_DIR, ARCHIVE)

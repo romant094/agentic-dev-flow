@@ -1,14 +1,14 @@
 // The host files /adf:update compares: for each, the old release's template (base), the new
 // release's (theirs) and the project's copy (ours, read by the caller). `hostFiles` lists them
 // from two clones of the repository at two tags, `classify` says what to do with each, and
-// `mergeKeep` produces the text of a merge. The flow's own settings are no host file: the project
-// keeps only values (lib/settings.mjs), and the instructions live in the plugin, so an update has
-// nothing of them to merge (#23).
+// `mergeKeep` produces the text of a merge. Only the plugins' `hostFiles` are host files. The
+// core's own files are not: the settings hold only values (lib/settings.mjs) whose instructions
+// live in the plugin, and the planning guide and the review prompt are project files /adf:init
+// writes once (#23, #26).
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { REVIEW_PROMPT } from './layout.mjs'
 
 const PLUGIN_SUFFIX = '@agentic-dev-flow'
 
@@ -16,17 +16,10 @@ function read(file) {
   return existsSync(file) ? readFileSync(file, 'utf8') : null
 }
 
-// The files each release ships to the host, as { path, base, theirs }; a file missing in a clone
-// reads as null. `ours` is left to the caller, which knows the host root.
+// The files each release's plugins ship to the host, as { path, base, theirs }; a file missing in
+// a clone reads as null. `ours` is left to the caller, which knows the host root.
 export function hostFiles(oldClone, newClone, registry) {
-  const entry = (path, from) => ({
-    path,
-    base: read(join(oldClone, from)),
-    theirs: read(join(newClone, from)),
-  })
-  const files = [
-    entry(registry?.review?.prompt ?? REVIEW_PROMPT, 'plugins/adf/host/review-prompt.md'),
-  ]
+  const files = []
   for (const extension of registry?.extensions ?? []) {
     const id = extension.plugin
     if (typeof id !== 'string' || !id.endsWith(PLUGIN_SUFFIX)) continue

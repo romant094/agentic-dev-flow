@@ -109,7 +109,7 @@ function dirs(path) {
   }
 }
 
-// The changes open in the project (directories of openspec/changes/ but archive/) and the
+// The changes open in the project (directories of adf/changes/ but archive/) and the
 // worktrees under .claude/worktrees/, paired by name; a change with no worktree has `null`.
 export function inFlight(root) {
   const main = mainCheckout(root)

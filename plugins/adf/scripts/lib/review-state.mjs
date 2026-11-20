@@ -621,7 +621,7 @@ function dirtyOutside(git, file) {
     .filter((p) => p !== file)
 }
 
-// Renders `openspec/changes/<change>/review.md` from the state, the ledger and HEAD, and with
+// Renders `adf/changes/<change>/review.md` from the state, the ledger and HEAD, and with
 // `commit` commits it alone. Refuses what no verdict can be given for; an open blocking finding
 // is a BLOCKED record, not a refusal. For a quick change a fix is not re-reviewed: the affected
 // tests passing at HEAD (quick/tests.json) stand in for the suite, and the record says so.

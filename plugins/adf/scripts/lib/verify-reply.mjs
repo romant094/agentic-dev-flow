@@ -83,7 +83,7 @@ function editPosition(root, sha, file) {
   return 'above'
 }
 
-// The commits of the change's range that edit `openspec/specs/<capability>/spec.md`, oldest
+// The commits of the change's range that edit `adf/specs/<capability>/spec.md`, oldest
 // first: [{ capability, commit, file, position: above | below }].
 export function proseEditsIn(root, change) {
   const git = gitIn(root)

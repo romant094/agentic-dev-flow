@@ -73,15 +73,15 @@ test('fresh: the change goes through every phase of the port, each from what the
     const main = join(sandbox.root, r.as, 'main')
     const git = gitIn(sandbox, main)
     const subjects = git('log', '--first-parent', '--format=%s', `origin/develop..${BRANCH}`).split('\n').reverse()
-    assert.equal(subjects[0], `docs(openspec): propose ${CHANGE}`)
-    for (const s of [`Merge branch '${BRANCH}--group-1' into ${BRANCH}`, `Merge branch '${BRANCH}--group-2' into ${BRANCH}`, `docs(openspec): verify ${CHANGE}`, 'fix(x): two in the empty case', `docs(openspec): review ${CHANGE}`, `docs(specs): archive ${CHANGE}`, `docs(memory): ingest what ${CHANGE} taught`, `chore(metrics): record ${CHANGE}`]) {
+    assert.equal(subjects[0], `docs(adf): propose ${CHANGE}`)
+    for (const s of [`Merge branch '${BRANCH}--group-1' into ${BRANCH}`, `Merge branch '${BRANCH}--group-2' into ${BRANCH}`, `docs(adf): verify ${CHANGE}`, 'fix(x): two in the empty case', `docs(adf): review ${CHANGE}`, `docs(specs): archive ${CHANGE}`, `docs(memory): ingest what ${CHANGE} taught`, `chore(metrics): record ${CHANGE}`]) {
       assert.ok(subjects.includes(s), `${s} not in\n${subjects.join('\n')}`)
     }
-    assert.ok(subjects.indexOf(`docs(openspec): verify ${CHANGE}`) < subjects.indexOf(`docs(openspec): review ${CHANGE}`))
-    const archived = git('ls-tree', '-r', '--name-only', BRANCH, '--', 'openspec/changes/archive/').split('\n')
+    assert.ok(subjects.indexOf(`docs(adf): verify ${CHANGE}`) < subjects.indexOf(`docs(adf): review ${CHANGE}`))
+    const archived = git('ls-tree', '-r', '--name-only', BRANCH, '--', 'adf/changes/archive/').split('\n')
     assert.ok(archived.some((f) => /\/\d{4}-\d{2}-\d{2}-add-thing\/ledger\.jsonl$/.test(f)), archived.join('\n'))
     assert.ok(!archived.some((f) => f.includes(ARCHIVED)), 'the archive date is the replay\'s clock')
-    assert.match(git('show', `${BRANCH}:openspec/specs/cap/spec.md`), /The system SHALL do the thing twice\./)
+    assert.match(git('show', `${BRANCH}:adf/specs/cap/spec.md`), /The system SHALL do the thing twice\./)
     assert.match(git('show', `${BRANCH}:.claude/memory/concepts/a.md`), /most plausibly get wrong/)
     assert.ok(!existsSync(join(main, '.claude', 'worktrees', CHANGE)), 'archive removed the worktree')
 
@@ -102,7 +102,7 @@ test('fresh: the change goes through every phase of the port, each from what the
 
     // The worktree preparation: the recipe holds the sandbox's fake in place of the command init
     // offered, and provision ran it in the change's worktree.
-    assert.deepEqual(JSON.parse(git('show', 'develop:openspec/settings.json')).worktreePreparation, [{ command: 'adf-replay-prepare npm run build --workspace @host/shared', inputs: ['packages/shared'] }])
+    assert.deepEqual(JSON.parse(git('show', 'develop:adf/settings.json')).worktreePreparation, [{ command: 'adf-replay-prepare npm run build --workspace @host/shared', inputs: ['packages/shared'] }])
     const prepared = sandbox.calls('adf-replay-prepare')
     assert.ok(prepared.length >= 1 && prepared.every((c) => c.argv[0] === 'npm run build --workspace @host/shared'), JSON.stringify(prepared))
     assert.ok(prepared.some((c) => c.cwd.includes(`/.claude/worktrees/${CHANGE}`)), JSON.stringify(prepared))
@@ -130,13 +130,13 @@ test('mid-flight: the origin\'s propose commit and Draft continued by the port; 
     assert.match(r.pin, /^schema: sdd-plus-superpowers$/m)
     const git = gitIn(sandbox, join(sandbox.root, r.as, 'main'))
     git('merge-base', '--is-ancestor', F.propose, BRANCH)
-    assert.match(git('show', `${BRANCH}:openspec/changes/archive/${git('ls-tree', '--name-only', `${BRANCH}:openspec/changes/archive/`).split('\n').find((d) => d.endsWith(CHANGE))}/.openspec.yaml`), /sdd-plus-superpowers/)
+    assert.match(git('show', `${BRANCH}:adf/changes/archive/${git('ls-tree', '--name-only', `${BRANCH}:adf/changes/archive/`).split('\n').find((d) => d.endsWith(CHANGE))}/.openspec.yaml`), /sdd-plus-superpowers/)
 
     // The port continues an origin change with no .adf.json: its base is the integration branch.
     const pre = r.steps.find((s) => s.phase === 'apply' && s.command?.startsWith('node preflight.mjs'))
     assert.equal(pre.refusal ?? null, null, JSON.stringify(pre))
     assert.ok(!r.differences.some((d) => /\.adf\.json/.test(d.what)))
-    assert.equal(git('ls-tree', '--name-only', `${BRANCH}:openspec/changes/archive/${git('ls-tree', '--name-only', `${BRANCH}:openspec/changes/archive/`).split('\n').find((d) => d.endsWith(CHANGE))}/`).split('\n').includes('.adf.json'), false)
+    assert.equal(git('ls-tree', '--name-only', `${BRANCH}:adf/changes/archive/${git('ls-tree', '--name-only', `${BRANCH}:adf/changes/archive/`).split('\n').find((d) => d.endsWith(CHANGE))}/`).split('\n').includes('.adf.json'), false)
 
     // The Draft as the origin opened it, finalized by the port.
     assert.deepEqual({ ...r.draft, description: undefined }, { iid: 1, draft: false, adfBlocks: 1, opsxBlocks: 0, placeholder: false, ok: true, description: undefined })

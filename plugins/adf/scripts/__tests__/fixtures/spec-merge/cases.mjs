@@ -34,7 +34,7 @@ export function loadCase(name) {
 }
 
 // openspec's own result for a case: { rebuilt } or { error }. `dist` is the openspec package's
-// dist directory (for example <global node_modules>/@fission-ai/openspec/dist).
+// dist directory (for example <global node_modules>/@fission-ai/adf/dist).
 export async function openspecBuild(dist, name) {
   const { buildUpdatedSpec } = await import(pathToFileURL(join(dist, 'core', 'specs-apply.js')).href)
   const c = loadCase(name)

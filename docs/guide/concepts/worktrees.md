@@ -60,9 +60,9 @@ The flow removes the worktree and the branch of a merged group. A blocked group 
 
 A new worktree lacks what git ignores, such as `node_modules` or an env file. The flow prepares each worktree it makes, in this order:
 
-1. The flow copies the paths listed in the key `worktreeCopies` of `openspec/settings.json` from the main checkout. It copies a path only when the worktree does not hold it and git ignores it there.
+1. The flow copies the paths listed in the key `worktreeCopies` of `adf/settings.json` from the main checkout. It copies a path only when the worktree does not hold it and git ignores it there.
 2. The flow calls the `provision` hook. Each enabled provider prepares the worktree for its stack.
-3. The flow runs the commands of the key `worktreePreparation` in `openspec/settings.json`. It runs a command again after a group merge when the inputs of the command changed.
+3. The flow runs the commands of the key `worktreePreparation` in `adf/settings.json`. It runs a command again after a group merge when the inputs of the command changed.
 
 After the hook, the flow compares `git status` of the worktree and of the main checkout with their state before. A difference refuses the provisioning and names the paths. This catches a provider that changed a tracked file or wrote into the main checkout.
 

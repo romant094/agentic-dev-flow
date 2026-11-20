@@ -19,7 +19,7 @@
 //       main run, then removes that worktree (never forced) to tell a pre-existing failure from
 //       a new one; with the settings' failedTestsCommand it runs only the failed tests
 //       there, listed in `base.selected`
-//       --record writes openspec/changes/<change>/.apply-test-record.md, apply's final commit;
+//       --record writes adf/changes/<change>/.apply-test-record.md, apply's final commit;
 //       --commit then commits that record alone through lib/commit.mjs with the message
 //       recordMessage(<change>), whatever the run's status but not-run, and pushes the change branch once
 //       through the forge role as group-finish does (lib/groups.mjs pushChange): { ..., commit,

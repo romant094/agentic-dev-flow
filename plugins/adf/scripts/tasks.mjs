@@ -12,7 +12,7 @@
 //       agent runs, such as a bench pass, takes the place of the review: a non-empty file
 //       inside the change directory that records the check (lib/tasks.mjs evidenceGate).
 //       --commit then commits the tasks file, plan.md when it changed, and the evidence file,
-//       with the message "chore(openspec): tick <item> of <change>"; other staged paths are a
+//       with the message "chore(adf): tick <item> of <change>"; other staged paths are a
 //       refusal.
 //       { item, ticked, already, planTask?, evidence?, sha?, paths? }
 //   tasks.mjs lint --change <name> [--root <dir>]

@@ -2,7 +2,7 @@
 // script joins, quotes and filters these paths through this module, so a rename of the
 // directory is one line here. `LEGACY_ROOT` is the directory of the earlier releases; only the
 // readers of past commits (`isFlowPath`) and the migration (`lib/flow-migrate.mjs`) name it.
-export const ROOT = 'openspec'
+export const ROOT = 'adf'
 export const LEGACY_ROOT = 'openspec'
 
 // The changes: one directory per change, the archived ones under `archive/`.
@@ -24,7 +24,7 @@ export const REVIEW_PROMPT = `${ROOT}/review-prompt.md`
 export const ORIGIN_META_FILE = '.openspec.yaml'
 
 // The Conventional Commits scope of the flow's own record commits.
-export const COMMIT_SCOPE = 'openspec'
+export const COMMIT_SCOPE = 'adf'
 
 // A path under the flow's directory, relative to the project root.
 export const flowPath = (file) => `${ROOT}/${file}`

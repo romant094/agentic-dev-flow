@@ -28,9 +28,9 @@ const ALIGN = `### Task 1: Apply execution ledger intro prose matches its requir
 > Implements \`tasks.md\` 1.1.
 
 **Files:**
-- Modify: \`openspec/specs/apply-execution-ledger/spec.md:3-16\`. This is the \`## Purpose\`
+- Modify: \`adf/specs/apply-execution-ledger/spec.md:3-16\`. This is the \`## Purpose\`
   section, the two paragraphs between line 3 and the \`## Requirements\` heading at line 18.
-  Resolved with \`grep -n "^## " openspec/specs/apply-execution-ledger/spec.md\`.
+  Resolved with \`grep -n "^## " adf/specs/apply-execution-ledger/spec.md\`.
 
 **Interfaces:** none.
 
@@ -98,8 +98,8 @@ const world = ({
   phase
 } = {}) => {
   const files = { ...fs }
-  if (plan !== undefined) files[`openspec/changes/${changeName}/plan.md`] = plan
-  files[`openspec/changes/${changeName}/tasks.md`] = tasks
+  if (plan !== undefined) files[`adf/changes/${changeName}/plan.md`] = plan
+  files[`adf/changes/${changeName}/tasks.md`] = tasks
   return {
     changeName,
     phase,
@@ -120,7 +120,7 @@ test('archived align-flow-specs fixture parses with suffix ranges and no unparse
   assert.equal(tasks[0].number, 1)
   assert.equal(tasks[0].implements, '1.1')
   assert.deepEqual(tasks[0].files, [
-    { verb: 'Modify', path: 'openspec/specs/apply-execution-ledger/spec.md', range: [3, 16] }
+    { verb: 'Modify', path: 'adf/specs/apply-execution-ledger/spec.md', range: [3, 16] }
   ])
   assert.deepEqual(
     tasks[1].files.map((f) => [f.path, f.range]),
@@ -564,9 +564,9 @@ function hostRepo(meta) {
   gitIn(root, 'checkout', '-q', '-b', 'feat')
   put(root, 'src/new.ts', 'export const made = 1\n')
   put(root, 'src/old.ts', 'a\nb\nc\nd\n')
-  put(root, 'openspec/changes/c/plan.md', task(1, '- Create: `src/new.ts` — x\n- Modify: `src/old.ts:1-40` — y'))
-  put(root, 'openspec/changes/c/tasks.md', '- [ ] 1.1 open\n')
-  if (meta) put(root, 'openspec/changes/c/.adf.json', `${JSON.stringify(meta)}\n`)
+  put(root, 'adf/changes/c/plan.md', task(1, '- Create: `src/new.ts` — x\n- Modify: `src/old.ts:1-40` — y'))
+  put(root, 'adf/changes/c/tasks.md', '- [ ] 1.1 open\n')
+  if (meta) put(root, 'adf/changes/c/.adf.json', `${JSON.stringify(meta)}\n`)
   gitIn(root, 'add', '-A')
   gitIn(root, 'commit', '-q', '-m', 'feature')
   return root
@@ -611,7 +611,7 @@ test('a missing plan.md and a usage error are exit 2 with an error', () => {
   const root = hostRepo({ base: 'develop' })
   const none = runCli(['nope', '--root', root])
   assert.equal(none.code, 2)
-  assert.match(none.out.error, /openspec\/changes\/nope\/plan\.md does not exist/)
+  assert.match(none.out.error, /adf\/changes\/nope\/plan\.md does not exist/)
   const usage = runCli(['c', '--root', root, '--phase'])
   assert.equal(usage.code, 2)
   assert.match(usage.out.error, /^usage:/)

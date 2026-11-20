@@ -58,9 +58,9 @@ function setup({ guide = GUIDE } = {}) {
   writeFileSync(join(root, '.env'), 'URL=main\n')
   mkdirSync(join(root, 'config'), { recursive: true })
   writeFileSync(join(root, 'config', 'local.json'), '{}\n')
-  mkdirSync(join(change, 'openspec'), { recursive: true })
-  writeFileSync(join(change, 'openspec', 'settings.json'), guide)
-  git(change, 'add', 'openspec/settings.json')
+  mkdirSync(join(change, 'adf'), { recursive: true })
+  writeFileSync(join(change, 'adf', 'settings.json'), guide)
+  git(change, 'add', 'adf/settings.json')
   git(change, 'commit', '-q', '-m', 'guide')
   return { root, change }
 }

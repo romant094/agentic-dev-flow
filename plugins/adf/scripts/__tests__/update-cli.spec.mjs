@@ -54,9 +54,9 @@ test('check sets pull when installed < ref', () => {
 
 test('check lists the changes in flight and their worktrees', () => {
   const { root, home } = setup({ ref: 'v0.10.0', installedProject: '0.10.0' })
-  mkdirSync(join(root, 'openspec', 'changes', 'archive'), { recursive: true })
-  mkdirSync(join(root, 'openspec', 'changes', 'alpha'))
-  mkdirSync(join(root, 'openspec', 'changes', 'beta'))
+  mkdirSync(join(root, 'adf', 'changes', 'archive'), { recursive: true })
+  mkdirSync(join(root, 'adf', 'changes', 'alpha'))
+  mkdirSync(join(root, 'adf', 'changes', 'beta'))
   mkdirSync(join(root, '.claude', 'worktrees', 'beta'), { recursive: true })
   const r = run(['check', '--root', root, '--home', home], { git: git(TAGS) })
   assert.deepEqual(r.inFlight.map((c) => c.change).sort(), ['alpha', 'beta'])

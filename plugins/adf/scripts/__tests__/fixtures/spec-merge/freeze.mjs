@@ -5,7 +5,7 @@
 //   node freeze.mjs <openspec dist dir>
 //
 // The fixtures were frozen with the openspec 1.5.0 installed globally:
-//   node freeze.mjs "$(npm root -g)/@fission-ai/openspec/dist"
+//   node freeze.mjs "$(npm root -g)/@fission-ai/adf/dist"
 import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { CASES_DIR, listCases, openspecBuild } from './cases.mjs'

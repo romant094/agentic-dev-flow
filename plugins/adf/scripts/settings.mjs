@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// CLI over lib/settings.mjs: the project's settings, `<root>/openspec/settings.json`, checked
+// CLI over lib/settings.mjs: the project's settings, `<root>/adf/settings.json`, checked
 // against schema/settings.schema.json. Every value a skill records goes through `set`; no skill
 // edits the file by hand. Prints one JSON object on stdout; exit 1 on a refusal, 2 on a usage
 // error.

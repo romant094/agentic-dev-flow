@@ -39,7 +39,7 @@ function host() {
   git(root, 'add', '.')
   git(root, 'commit', '-q', '-m', 'init')
   const made = create(root, { change: 'add-x', branch: 'feat/add-x', base: 'integration' })
-  const dir = join(made.root, 'openspec', 'changes', 'add-x')
+  const dir = join(made.root, 'adf', 'changes', 'add-x')
   mkdirSync(dir, { recursive: true })
   writeFileSync(join(dir, 'tasks.md'), '- [x] 1.1 a\n- [ ] 1.2 b\n')
   git(made.root, 'add', '.')
@@ -142,8 +142,8 @@ test('the guard passes a dispatch that wrote only in its target, and names any o
 test('the guard reports a commit in another change\'s worktree and a fast-forward of the main checkout as foreign', () => {
   const { root, change } = host()
   const other = create(root, { change: 'add-b', branch: 'feat/add-b', base: 'integration' }).root
-  mkdirSync(join(other, 'openspec/changes/add-b'), { recursive: true })
-  commitIn(other, 'openspec/changes/add-b/tasks.md', '- [ ] 1.1 b\n')
+  mkdirSync(join(other, 'adf/changes/add-b'), { recursive: true })
+  commitIn(other, 'adf/changes/add-b/tasks.md', '- [ ] 1.1 b\n')
   const records = join(other, '.superpowers', 'sdd', 'add-b')
   mkdirSync(records, { recursive: true })
   writeFileSync(join(records, 'ledger.jsonl'), '{"id":"session-1","kind":"session"}\n')
@@ -223,7 +223,7 @@ test('group listing is per change: another change\'s group worktree is not liste
 
 // The change's metadata names its base; the change branch moves on past it.
 function withBase(change, base = 'develop') {
-  writeFileSync(join(change, 'openspec/changes/add-x/.adf.json'), `${JSON.stringify({ base })}\n`)
+  writeFileSync(join(change, 'adf/changes/add-x/.adf.json'), `${JSON.stringify({ base })}\n`)
   git(change, 'add', '.')
   git(change, 'commit', '-q', '-m', 'meta')
 }
@@ -248,7 +248,7 @@ test('a base check is a detached worktree of the base commit, refused twice, rem
 
 test('a base check prefers the remote-tracking base and refuses an unreadable change', () => {
   const { root, change } = host()
-  assert.throws(() => addBaseCheck(change, { change: 'add-x' }), /cannot read openspec\/changes\/add-x\/\.adf\.json/)
+  assert.throws(() => addBaseCheck(change, { change: 'add-x' }), /cannot read adf\/changes\/add-x\/\.adf\.json/)
   withBase(change)
   const first = git(root, 'rev-list', '--max-parents=0', 'develop')
   commitIn(root, 'later.txt', 'later\n')
@@ -256,13 +256,13 @@ test('a base check prefers the remote-tracking base and refuses an unreadable ch
   const made = addBaseCheck(change, { change: 'add-x' })
   assert.deepEqual([made.ref, made.commit], ['origin/develop', first])
   removeBaseCheck(change, { change: 'add-x' })
-  writeFileSync(join(change, 'openspec/changes/add-x/.adf.json'), '{}\n')
+  writeFileSync(join(change, 'adf/changes/add-x/.adf.json'), '{}\n')
   assert.throws(() => addBaseCheck(change, { change: 'add-x' }), /no "base" branch/)
 })
 
 test('a change an earlier flow created, with .openspec.yaml and no .adf.json, has the integration branch as its base everywhere', () => {
   const { root, change } = host()
-  const dir = join(change, 'openspec/changes/add-x')
+  const dir = join(change, 'adf/changes/add-x')
   writeFileSync(join(dir, '.openspec.yaml'), 'schema: sdd\ncreated: 2026-10-20\n')
   writeFileSync(join(dir, 'plan.md'), '# Plan\n')
   git(change, 'add', '.')

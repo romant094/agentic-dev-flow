@@ -3,11 +3,11 @@
 // `new change`, `list`, `status` and `instructions`; the JSON keeps the fields the flow read
 // from those commands.
 //
-// Host layout: `openspec/changes/<name>/` per change, `openspec/changes/archive/` for the
-// archived ones, and the project's own guidance in `openspec/context.md` (the project, for
-// every artifact), `openspec/rules/<artifact>.md` (one rule per `- ` line) and the project
-// guides an artifact names in the schema (`guides`): `openspec/guide.md` and the settings,
-// `openspec/settings.json`, rendered (lib/settings.mjs renderSettings).
+// Host layout: `adf/changes/<name>/` per change, `adf/changes/archive/` for the
+// archived ones, and the project's own guidance in `adf/context.md` (the project, for
+// every artifact), `adf/rules/<artifact>.md` (one rule per `- ` line) and the project
+// guides an artifact names in the schema (`guides`): `adf/guide.md` and the settings,
+// `adf/settings.json`, rendered (lib/settings.mjs renderSettings).
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'

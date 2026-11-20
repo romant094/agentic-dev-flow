@@ -69,7 +69,7 @@ function commit(root, files, message = Object.keys(files)[0]) {
   return git(root, 'rev-parse', 'HEAD')
 }
 
-const changeFile = (file) => `openspec/changes/${CHANGE}/${file}`
+const changeFile = (file) => `adf/changes/${CHANGE}/${file}`
 
 // A host on develop with a synced main spec, and one complete change in its own worktree: a
 // code commit in the plan, then the apply test record naming that commit.
@@ -83,7 +83,7 @@ function host({ outsidePlan, extensions, plan = PLAN, tasks = '- [x] 1.1 greet\n
   if (outsidePlan) writeRegistry(main, { ...readRegistry(main), outsidePlan })
   if (extensions) writeRegistry(main, { ...readRegistry(main), extensions })
   ignoreLocalDirs(main)
-  write(main, 'openspec/specs/greeting/spec.md', MAIN)
+  write(main, 'adf/specs/greeting/spec.md', MAIN)
   git(main, 'add', '.')
   git(main, 'commit', '-q', '-m', 'init')
   const root = create(main, { change: CHANGE, branch: `feat/${CHANGE}`, base: 'integration' }).root
@@ -156,8 +156,8 @@ test('a fresh run deletes the sections of an earlier session; a later run keeps 
 test('validation fails on this change only; the corpus is advisory text', () => {
   const { root } = host()
   commit(root, { [changeFile('specs/greeting/spec.md')]: DELTA.replace('SHALL ', '') })
-  write(root, 'openspec/changes/other/proposal.md', '# other\n')
-  write(root, 'openspec/changes/other/specs/x/spec.md', 'nothing\n')
+  write(root, 'adf/changes/other/proposal.md', '# other\n')
+  write(root, 'adf/changes/other/specs/x/spec.md', 'nothing\n')
   git(root, 'add', '.')
   git(root, 'commit', '-q', '-m', 'other change')
   const checks = runIn(root)
@@ -168,7 +168,7 @@ test('validation fails on this change only; the corpus is advisory text', () => 
   assert.match(output, /advisory, the rest of the corpus \(strict\): 1 invalid\n {2}change other/)
 
   const clean = host()
-  write(clean.root, 'openspec/changes/other/proposal.md', '# other\n')
+  write(clean.root, 'adf/changes/other/proposal.md', '# other\n')
   assert.equal(runIn(clean.root).validation.verdict, 'pass', 'another invalid change does not fail this one')
 })
 
@@ -276,7 +276,7 @@ test('test-record: a code commit after the record is stale; a change-directory c
   const check = runIn(root)['test-record']
   assert.equal(check.verdict, 'fail')
   assert.equal(check.summary, 'stale: re-run the suite')
-  assert.match(readFileSync(join(root, check.output), 'utf8'), new RegExp(`outside openspec/changes/add-x/: 1\n {2}${late}\n {4}src/late\\.mjs`))
+  assert.match(readFileSync(join(root, check.output), 'utf8'), new RegExp(`outside adf/changes/add-x/: 1\n {2}${late}\n {4}src/late\\.mjs`))
 })
 
 test('test-record fails with no record and with a record naming no commit', () => {
@@ -383,12 +383,12 @@ test('out-of-plan exempts an approved skill edit only for its files under .claud
 
 test('out-of-plan exempts the settings in the commit suite.mjs set makes, and only there', () => {
   const { root } = host()
-  commit(root, { 'openspec/settings.json': '{ "wholeSuiteCommand": "npm test" }\n' }, 'docs(openspec): record the whole-suite command')
+  commit(root, { 'adf/settings.json': '{ "wholeSuiteCommand": "npm test" }\n' }, 'docs(adf): record the whole-suite command')
   assert.equal(runIn(root)['out-of-plan'].verdict, 'pass')
-  commit(root, { 'openspec/settings.json': '{ "wholeSuiteCommand": "npm test -- --all" }\n', 'docs/notes.md': 'n\n' }, 'docs(openspec): record the whole-suite command')
+  commit(root, { 'adf/settings.json': '{ "wholeSuiteCommand": "npm test -- --all" }\n', 'docs/notes.md': 'n\n' }, 'docs(adf): record the whole-suite command')
   assert.equal(runIn(root)['out-of-plan'].summary, '1 file(s) outside every task: docs/notes.md')
-  commit(root, { 'openspec/settings.json': '{}\n' }, 'docs: edit the settings')
-  assert.equal(runIn(root)['out-of-plan'].summary, '2 file(s) outside every task: openspec/settings.json, docs/notes.md')
+  commit(root, { 'adf/settings.json': '{}\n' }, 'docs: edit the settings')
+  assert.equal(runIn(root)['out-of-plan'].summary, '2 file(s) outside every task: adf/settings.json, docs/notes.md')
 })
 
 test('out-of-plan warns naming an unparsed Files bullet', () => {
@@ -554,7 +554,7 @@ test('specs-base passes with no touched requirement, warns with no snapshot, fai
   // merge base, as archive.mjs check warns.
   let check = runIn(root)['specs-base']
   assert.equal(check.verdict, 'warn')
-  assert.match(check.summary, /no openspec\/changes\/add-x\/specs-base\.json: .*falls back to the merge base/)
+  assert.match(check.summary, /no adf\/changes\/add-x\/specs-base\.json: .*falls back to the merge base/)
   assert.match(readFileSync(join(root, check.output), 'utf8'), /specs-base\.json: absent; 1 requirement\(s\)[^\n]*\nmissing: greeting: Greeting/)
   commit(root, { [changeFile('specs-base.json')]: '{ "capabilities": {} }\n' }, 'an empty snapshot')
   check = runIn(root)['specs-base']
@@ -740,7 +740,7 @@ test('skill-edit --diff-file applies the c8 diff with git apply, and refuses one
 })
 
 test('run --suite re-runs a missing or stale record in the same call, and drops the re-run once the record is current', () => {
-  const { root } = host({ record: false, outsidePlan: ['openspec/settings.json'] })
+  const { root } = host({ record: false, outsidePlan: ['adf/settings.json'] })
   writeCommand(root, 'node -e "console.log(\'# tests 1\'); console.log(\'# pass 1\')"')
   git(root, 'add', '.')
   git(root, 'commit', '-q', '-m', 'planning')
@@ -859,8 +859,8 @@ test('assemble renders the record from the sections, ends on the verdict line an
   assert.match(text, /## Rulings\n\nnone/)
   assert.match(text, /## Next step\n\n`\/adf:review`, which reads this record's Verdict line\./)
   assert.equal(refused.commit, git(root, 'rev-parse', 'HEAD'))
-  assert.equal(git(root, 'show', '--name-only', '--format=%s', 'HEAD'), `docs(openspec): verify ${CHANGE}\n\n${changeFile('verify.md')}`)
-  assert.match(refused.report, /^## Verification PASS WITH WARNINGS\n\n\*\*Change:\*\* add-x\n\*\*Record:\*\* openspec\/changes\/add-x\/verify\.md, commit [0-9a-f]{40}/)
+  assert.equal(git(root, 'show', '--name-only', '--format=%s', 'HEAD'), `docs(adf): verify ${CHANGE}\n\n${changeFile('verify.md')}`)
+  assert.match(refused.report, /^## Verification PASS WITH WARNINGS\n\n\*\*Change:\*\* add-x\n\*\*Record:\*\* adf\/changes\/add-x\/verify\.md, commit [0-9a-f]{40}/)
   assert.match(refused.report, /Next step: \/adf:review, which reads the record's Verdict line\./)
 
   assert.throws(() => assemble(root, { change: CHANGE }), /HEAD is [0-9a-f]{7}, but the checks ran at/)
@@ -927,8 +927,8 @@ test('c4: each REMOVED or RENAMED requirement the script lists is answered once,
 
 test('c4: the script finds each hand edit of a capability spec and where it lies; the reply gives only the reason', () => {
   const { root } = host()
-  const above = commit(root, { 'openspec/specs/greeting/spec.md': MAIN.replace('greets every user', 'greets each user') }, 'docs(specs): reword the purpose')
-  const below = commit(root, { 'openspec/specs/greeting/spec.md': MAIN.replace('greets every user', 'greets each user').replace('greet the user.', 'greet the user warmly.') }, 'edit a requirement')
+  const above = commit(root, { 'adf/specs/greeting/spec.md': MAIN.replace('greets every user', 'greets each user') }, 'docs(specs): reword the purpose')
+  const below = commit(root, { 'adf/specs/greeting/spec.md': MAIN.replace('greets every user', 'greets each user').replace('greet the user.', 'greet the user warmly.') }, 'edit a requirement')
   const listed = proseEditsIn(root, CHANGE)
   assert.deepEqual(listed.map((p) => [p.capability, p.commit, p.position]), [['greeting', above, 'above'], ['greeting', below, 'below']])
   const ctx = c4Ctx(root, { proseEdits: listed })

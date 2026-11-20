@@ -34,7 +34,7 @@ test('extract writes a valid record into the change directory', () => {
   const projects = tmp('adf-metrics-cli-projects-')
   const { code, json } = call(h.change, 'extract', '--change', 'add-x', '--projects', projects)
   assert.equal(code, 0, JSON.stringify(json))
-  assert.equal(json.file, 'openspec/changes/add-x/metrics.json')
+  assert.equal(json.file, 'adf/changes/add-x/metrics.json')
   assert.match(json.coverage.tokens, /^transcripts: /)
   assert.equal(json.coverage.timing, 'record')
   const record = JSON.parse(readFileSync(join(h.dir, 'metrics.json'), 'utf8'))
@@ -113,7 +113,7 @@ test('render gives Markdown for either schema version; an unreadable file is ref
 
 test('candidates reads every archived record, converting v1 and skipping a broken one', () => {
   const cwd = tmp('adf-metrics-cli-')
-  const archive = join(cwd, 'openspec', 'changes', 'archive')
+  const archive = join(cwd, 'adf', 'changes', 'archive')
   const put = (name, record) => {
     mkdirSync(join(archive, name), { recursive: true })
     writeFileSync(join(archive, name, 'metrics.json'), typeof record === 'string' ? record : JSON.stringify(record))
@@ -127,7 +127,7 @@ test('candidates reads every archived record, converting v1 and skipping a broke
   assert.deepEqual(json.layers, ['sweep'])
   assert.deepEqual(
     json.skipped.map((s) => s.file),
-    ['openspec/changes/archive/2026-10-04-broken/metrics.json', 'openspec/changes/archive/2026-10-05-wrong/metrics.json']
+    ['adf/changes/archive/2026-10-04-broken/metrics.json', 'adf/changes/archive/2026-10-05-wrong/metrics.json']
   )
 })
 

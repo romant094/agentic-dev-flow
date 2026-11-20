@@ -31,8 +31,8 @@ A script runs each step. The steps run in this order, one at a time.
 |---|---|
 | `check` | Reads the review record and the spec base. Shows the warnings. |
 | `placements` | Puts every unplaced debt, finding and deviation into a store. |
-| `merge` | Merges the delta specs into `openspec/specs/`. |
-| `move` | Moves the change to `openspec/changes/archive/<date>-<name>/`. |
+| `merge` | Merges the delta specs into `adf/specs/`. |
+| `move` | Moves the change to `adf/changes/archive/<date>-<name>/`. |
 | `commit-specs` | Commits the move and the merged specs. |
 | `ingest` | Dispatches an agent to update the knowledge base. |
 | `commit-memory` | Commits the knowledge base and debt changes. |

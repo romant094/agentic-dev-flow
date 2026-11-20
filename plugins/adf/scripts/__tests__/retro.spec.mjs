@@ -16,7 +16,7 @@ import { checkReply } from '../lib/reply.mjs'
 import { cyclesOf, input, lateCaught, prematureDone, RE_DERIVATION_REASON, recordRetroDispatch, recordRetroReply } from '../lib/retro.mjs'
 import { buildSidecar } from '../lib/window.mjs'
 
-const ARCHIVE = 'openspec/changes/archive'
+const ARCHIVE = 'adf/changes/archive'
 const DATE = '2026-10-19'
 const ID = `${DATE}-window`
 const AS_OF = '2026-10-19T12:00:00.000Z'

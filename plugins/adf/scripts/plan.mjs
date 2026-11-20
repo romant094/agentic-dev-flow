@@ -25,14 +25,14 @@
 //       Appends the "Added during apply" bullet to the owning task's Files block. Without
 //       --task the owner is the one `unplanned` proposes; none is a refusal. --commit then
 //       commits plan.md alone through lib/commit.mjs, with the message
-//       "docs(openspec): record work added during apply to <change>" (`commit`: its sha, or
+//       "docs(adf): record work added during apply to <change>" (`commit`: its sha, or
 //       null when plan.md was already committed); without it the next tick commits the plan.
 //   plan.mjs reopen --change <name> --title <text> --task-file <file> [--root <dir>]
 //       Opens an apply round after a verify FAIL, or adds a task to the round open for that same
 //       FAIL record: appends the fix task (the file holds its text below the back-reference:
 //       Files, Interfaces, Level, Behaviour and acceptance, the steps) to tasks.md under the
 //       round's own group and to plan.md with its back-reference, puts it in the round's own
-//       Execution Graph row (wave 1), commits both files ("docs(openspec): open apply round <r>
+//       Execution Graph row (wave 1), commits both files ("docs(adf): open apply round <r>
 //       of <change>") and writes an `apply-round` ledger record. { ok, round, opened, task,
 //       item, group, frozen, checks, base, commit, record }: `frozen` the groups merged before
 //       the round, which form no pair and get no wave from it; `checks` the failing checks the

@@ -19,7 +19,7 @@ Run it after `/adf:verify`. The preflight refuses, and writes nothing, in these 
 - `verify.md` is not committed.
 - A commit after `verify.md` touches a file outside the change directory. The code changed since verify: run `/adf:verify` again.
 
-The reviewer reads the diff of the branch against the base, and nothing else. It judges the diff by the project's review prompt, `openspec/review-prompt.md`, the same prompt that CI reads.
+The reviewer reads the diff of the branch against the base, and nothing else. It judges the diff by the project's review prompt, `adf/review-prompt.md`, the same prompt that CI reads.
 
 ## What it does
 
@@ -66,11 +66,11 @@ The registry key `review.blockOn` sets the blocking severities. Its default is `
 
 | Where | What |
 |---|---|
-| `openspec/changes/<name>/review.md` | The record. |
+| `adf/changes/<name>/review.md` | The record. |
 | `.superpowers/sdd/<name>/review/` | The state of the run: inputs, replies and findings. |
 | the change worktree | One commit for each fix, made by the fixer. A dismissal marker is a commit too. |
 
-The commit of the record holds `review.md` and nothing else. Its message is `docs(openspec): review <name>`. The command pushes nothing.
+The commit of the record holds `review.md` and nothing else. Its message is `docs(adf): review <name>`. The command pushes nothing.
 
 With an empty filtered diff, no reviewer runs. The record is `PASS` and says that nothing was reviewed.
 

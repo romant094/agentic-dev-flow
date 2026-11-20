@@ -40,7 +40,7 @@ function repo(files = {}) {
 }
 
 function archive(root, change) {
-  write(root, { [`openspec/changes/archive/2026-09-01-${change}/proposal.md`]: `# ${change}\n` })
+  write(root, { [`adf/changes/archive/2026-09-01-${change}/proposal.md`]: `# ${change}\n` })
   git(root, 'add', '.')
   git(root, 'commit', '-q', '-m', `archive ${change}`)
 }
@@ -129,12 +129,12 @@ test('the copy scan collapses an ignored directory: none of its files is listed,
 })
 
 test('the copies are added to the settings, each once, the other keys kept', () => {
-  const root = repo({ 'openspec/settings.json': JSON.stringify({ worktreePreparation: [{ command: 'npm run build', inputs: ['lib'] }] }) })
+  const root = repo({ 'adf/settings.json': JSON.stringify({ worktreePreparation: [{ command: 'npm run build', inputs: ['lib'] }] }) })
   writeCopies(root, ['.env'])
   const again = writeCopies(root, ['apps/server/.env', '.env'])
   assert.deepEqual(again.copies, ['.env', 'apps/server/.env'])
   assert.deepEqual(readCopies(root), ['.env', 'apps/server/.env'])
-  assert.deepEqual(JSON.parse(readFileSync(join(root, 'openspec/settings.json'), 'utf8')), { worktreeCopies: ['.env', 'apps/server/.env'], worktreePreparation: [{ command: 'npm run build', inputs: ['lib'] }] })
+  assert.deepEqual(JSON.parse(readFileSync(join(root, 'adf/settings.json'), 'utf8')), { worktreeCopies: ['.env', 'apps/server/.env'], worktreePreparation: [{ command: 'npm run build', inputs: ['lib'] }] })
   assert.throws(() => writeCopies(root, ['../outside']), /not a path inside the project/)
   const bare = repo()
   writeCopies(bare, ['.env'])
