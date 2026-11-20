@@ -21,7 +21,7 @@ Each command is a skill of the core plugin `adf`. In Codex, invoke the skill by 
 
 | Command | When to use it | What it does |
 |---|---|---|
-| `/adf:init` | Once per project, before the first change. | Writes the registry, the planning guide, the review prompt and the `.gitignore` lines. |
+| `/adf:init` | Once per project, before the first change. | Writes the registry, the settings, the planning guide, the review prompt and the `.gitignore` lines. |
 | `/adf:add` | To enable a plugin, or to change its configuration. | Writes the plugin entry in the registry. |
 | `/adf:remove` | To disable a plugin. | Removes the plugin entry from the registry. |
 | `/adf:propose` | To start a change. | Makes the branch and the worktree, then writes every artifact up to the plan. |
@@ -127,7 +127,7 @@ The core `adf` runs the cycle. Every other plugin is optional. A project enables
 
 ADF is built on two foundations:
 
-- **[OpenSpec](https://github.com/Fission-AI/OpenSpec)** gives the spec-driven model. The specs say what the system must do. Each change carries its proposal, design, delta specs and tasks in `openspec/changes/`. ADF has its own engine and schema for this model, so the `openspec` command-line tool is not needed.
+- **[OpenSpec](https://github.com/Fission-AI/OpenSpec)** gives the spec-driven model. The specs say what the system must do. Each change carries its proposal, design, delta specs and tasks in its own directory, `adf/changes/<name>/` in ADF. ADF has its own engine and schema for this model, so the `openspec` command-line tool is not needed.
 - **[Superpowers](https://github.com/obra/superpowers)** gives the agent's working skills: brainstorming, writing plans, test-driven development, subagent-driven execution, worktrees, code review and verification before completion. `adf` installs it as a dependency.
 
 ADF joins them into one cycle. It adds the gates between the stages and a script for each deterministic step. The agents reply in a structured form that a script checks. ADF also adds the review rounds, the delivery through a forge, the metrics and the extension points.

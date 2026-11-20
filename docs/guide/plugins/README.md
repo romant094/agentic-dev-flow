@@ -18,7 +18,7 @@ The core `adf` runs the change cycle. Each plugin adds one tool at an [extension
 | [`adf-memory`](adf-memory.md) | The `knowledge` role: the wiki memory in `.claude/memory/`. | No index is read. Archive skips the ingest and writes no log entry. |
 | [`adf-jira`](adf-jira.md) | The `tracker` role on Jira, and seven Jira skills. | The tracker steps are skipped. The scope holds only the debt store and the changes in flight. |
 | [`adf-maintainer`](adf-maintainer.md) | The `upstream` role on GitHub, for the maintainer of the flow. | A retrospective files nothing. The findings stay in its sidecar. |
-| [`adf-npm-workspaces`](adf-npm-workspaces.md) | The `provision` hook for an npm-workspaces monorepo, and a guard against `npm install` in a worktree. | The core copies the files that the planning guide names, and nothing else. The guard does not run. |
+| [`adf-npm-workspaces`](adf-npm-workspaces.md) | The `provision` hook for an npm-workspaces monorepo, and a guard against `npm install` in a worktree. | The core copies the files that the settings name in `worktreeCopies`, and nothing else. The guard does not run. |
 | [`adf-postgres`](adf-postgres.md) | The `provision` and `teardown` hooks: one database for each worktree. | No database is made for a worktree. |
 | [`adf-prisma`](adf-prisma.md) | The `provision` hook for the Prisma client and migrations, and the `verify-check` hook with the check `migration-order`. | Verify adds no migration-order section. |
 | [`adf-english-check`](adf-english-check.md) | An agent hook that stops a commit of non-English text. | No commit is checked for language. |

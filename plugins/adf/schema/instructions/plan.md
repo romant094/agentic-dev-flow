@@ -19,8 +19,8 @@ The `plan` gates, `plan-symbols` and `plan-lint`, check what this instruction ma
 `changes.mjs done plan` runs them. What they leave is the content of each task, and the
 judgements named below.
 
-**Read the project's planning guide when this artifact's `guides` field carries one,** and follow
-it for how to gather information for the plan and where checks that need the developer at run
+**Read the project's planning guide and settings when this artifact's `guides` field carries
+them,** and follow the guide for how to gather information for the plan and where checks that need the developer at run
 time — for example against a live environment — are placed. Such a check is never inside an
 implementer task: no implementer can run it. It sits in the task group that lands the path it
 checks, not in one verification task at the end. As one task at the end, such a check once

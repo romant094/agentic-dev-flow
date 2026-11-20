@@ -118,7 +118,7 @@ Paths and names on this page are examples. `develop` stands for the integration 
 
 ### After the switch
 
-13. Merge the switch into `develop` before the first propose. A change worktree reads its own copy of the registry and the planning guide. A change opened before the merge does not see the setup. End the freeze.
+13. Merge the switch into `develop` before the first propose. A change worktree reads its own copy of the registry and the settings. A change opened before the merge does not see the setup. End the freeze.
 14. Merge `develop` into every change branch that is still open. Never rebase a pushed branch. Add a `base:` line to the `.openspec.yaml` of a change that forked from a branch other than `develop`.
 15. Continue each change with the `/adf:*` command of its next phase (the table in the developer's guide below). The forge plugin takes over the existing Draft merge request of the change.
 

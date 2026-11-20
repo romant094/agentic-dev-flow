@@ -110,7 +110,7 @@
 // it refuses. `final-review` writes .superpowers/sdd/<change>/deferred.json and carries what the
 // earlier reviews deferred. In an apply round the final review's loop, the sweep's findings and
 // consolidation rounds and the deferred list read only the round's events and records. The `review` of a test-first task runs its proof first when the
-// planning guide has a `## Test-first shares` section (lib/tdd-proof.mjs taskProof) and carries
+// settings' `testFirstShares` is a list (lib/tdd-proof.mjs taskProof) and carries
 // the result; without it, the reviewer runs tdd-proof. reply then adds to a task review's result
 // the proof's critical finding (proof false, commitPasses true), to a sweep's the HEAD it ran
 // on, and rewrites deferred.json after every accepted review or re-review.
@@ -372,7 +372,7 @@ function promptFor(inputs, plan, values, root, planText, main, cut) {
     fields.push(['Files in scope', task.files.map((f) => `${f.verb}: ${join(plan.worktree, f.path)}${f.to ? ` -> ${join(plan.worktree, f.to)}` : ''}`)])
     // A fix round is a fresh dispatch: it reads the implementer's brief as the implementer did.
     if (inputs.role === 'impl' || inputs.role === 'fix') fields.push(['Task brief', join(sdd, `task-${inputs.task}-brief.md`)])
-    // A test-first task's proof runs here, before its review, when the planning guide names the
+    // A test-first task's proof runs here, before its review, when the settings name the
     // shares (lib/tdd-proof.mjs taskProof); otherwise the reviewer runs it.
     if (inputs.role === 'review' && testFirst) {
       proof = taskProof(root, change, inputs.task, { planText, main })

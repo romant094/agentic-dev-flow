@@ -18,7 +18,7 @@
 //       verdicts of the tracker issues recorded as `scope.mjs answer --verdict` does; the reply
 //       stored as estimate.json. { ok, valid, errors?, items, next }; a refusal is exit 1
 //   quick.mjs tests --change <name>
-//       run in the change's worktree (--root): the planning guide's affected tests command on the
+//       run in the change's worktree (--root): the settings' affected tests command on the
 //       files the change changed, the commits since the base's merge base plus the uncommitted
 //       files; the run recorded as quick/tests.json. An empty section runs nothing and answers
 //       { ok: true, waiting }. { ok, command, commit, status }; exit 1 on a failure

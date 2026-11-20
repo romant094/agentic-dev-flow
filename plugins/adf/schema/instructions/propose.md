@@ -122,7 +122,7 @@ holds a passage of them.
 
 **Only the change directory is committed.**
 
-`propose.mjs commit` stages only `openspec/changes/<change>/`. If anything else is staged, stop
+`propose.mjs commit` stages only `adf/changes/<change>/`. If anything else is staged, stop
 and show it: the commit refuses, and that is the developer's work, not yours to commit.
 Formatting and linting are not run: the commit holds only markdown the change generated.
 

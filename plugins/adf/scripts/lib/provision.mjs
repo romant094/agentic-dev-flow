@@ -106,7 +106,7 @@ export function hookLines(hook) {
 }
 
 // Provisions `worktree`, made from the change in `root` (the change worktree, or the worktree a
-// proof is made from: its registry and planning guide are read). `files` and `needs` come from
+// proof is made from: its registry and settings are read). `files` and `needs` come from
 // the plan (lib/plan.mjs planInputs); `needs` is passed to a change or group worktree only.
 // Returns { ok, state, worktree, kind, copies, hook, notes, report, error? }: `state` is the
 // hook's, or `refused` when the comparison found a difference; `notes` holds the copies' notes.

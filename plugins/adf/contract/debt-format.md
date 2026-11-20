@@ -68,7 +68,7 @@ file has a title, a line of prose and one table with exactly these columns:
 
 | ID | Title | Anchors | Class | Tracker | Resolved by | Date |
 |---|---|---|---|---|---|---|
-| `snmp-01` | Session pool leaks connections | `pool.ts:10` | defect | PROJ-7 | `openspec/changes/archive/2026-10-22-fix-pool` | 2026-10-22 |
+| `snmp-01` | Session pool leaks connections | `pool.ts:10` | defect | PROJ-7 | `adf/changes/archive/2026-10-22-fix-pool` | 2026-10-22 |
 
 - **ID**, **Title**, **Class** and **Tracker** are the entry's as they were.
 - **Anchors** are the entry's as they were: history, never checked against the code.

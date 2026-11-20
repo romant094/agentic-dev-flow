@@ -3,8 +3,8 @@ Delta spec template for a change.
 
 This template demonstrates the 4 delta section kinds; use whichever apply:
 - ADDED / MODIFIED / REMOVED / RENAMED
-File name and location: openspec/changes/<change-name>/specs/<capability>/spec.md
-(`<capability>` matches the openspec/specs/<capability>/ directory name)
+File name and location: adf/changes/<change-name>/specs/<capability>/spec.md
+(`<capability>` matches the adf/specs/<capability>/ directory name)
 
 Hard format rules (validated by `specs.mjs validate`):
 - A requirement sentence MUST contain `SHALL` or `MUST`
@@ -29,7 +29,7 @@ Hard format rules (validated by `specs.mjs validate`):
 
 <!--
 Modifying an existing Requirement. **MUST use the exact same normalized header
-as openspec/specs/<capability>/spec.md** (trimmed, case-sensitive comparison),
+as adf/specs/<capability>/spec.md** (trimmed, case-sensitive comparison),
 otherwise the delta apply during archive fails to find the matching requirement.
 
 **MUST paste the full modified content** (not just a diff), because

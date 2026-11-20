@@ -207,8 +207,8 @@ missing and changes nothing that exists.
    Superpowers, but every command that changes a change does.
 
 Do not commit: the developer commits the registry, `.claude/settings.json`, `.gitignore`, the
-flow's settings `openspec/settings.json` with its whole-suite command, worktree copies, worktree
-preparation, format command and affected tests command, the planning guide `openspec/guide.md`,
+flow's settings `adf/settings.json` with its whole-suite command, worktree copies, worktree
+preparation, format command and affected tests command, the planning guide `adf/guide.md`,
 the review prompt, the window seed and the debt tree's root index.
 
 End with this note to the developer: commit the setup and merge it into the integration branch

@@ -8,7 +8,7 @@
 - No delta specs: the check covers the design against the tasks. No design: it covers the specs
   against the implementation. The section says which case applied.
 - A commit in the range that edits a capability's prose above `## Requirements` in
-  `openspec/specs/` is listed with the capabilities and the reason the change gives for it; an
+  `adf/specs/` is listed with the capabilities and the reason the change gives for it; an
   edit with no stated reason is a warning. An edit at or below `## Requirements` fails: only
   archive writes there.
 - When a delta carries `REMOVED` or `RENAMED`: each such requirement's `**Code Disposition:**`
