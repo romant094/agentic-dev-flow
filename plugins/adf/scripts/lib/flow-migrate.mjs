@@ -185,11 +185,11 @@ export function reviewPromptPath(path) {
 }
 
 // [{ file, lines: [n] }] for every tracked file outside ROOT/ that names `LEGACY_ROOT/`, read from
-// the index of `root`.
+// the work tree of `root`.
 export function legacyMentions(root) {
   let out
   try {
-    out = execFileSync('git', ['grep', '--cached', '-n', '-I', '-F', '-e', `${LEGACY_ROOT}/`, '--', '.', `:!${ROOT}`, `:!${LEGACY_ROOT}`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28 })
+    out = execFileSync('git', ['grep', '-n', '-I', '-F', '-e', `${LEGACY_ROOT}/`, '--', '.', `:!${ROOT}`, `:!${LEGACY_ROOT}`], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28 })
   } catch (error) {
     if (error.status === 1) return []
     throw error

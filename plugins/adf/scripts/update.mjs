@@ -28,8 +28,10 @@
 //       when the installed release is still older than the pinned ref
 //   update.mjs plan [--to <tag>] [--root <dir>]
 //       { from, to, base, baseCommit, upToDate, plugins, log: { [plugin]: subjects }, hostFiles:
-//       [{ path, class }], contract: { from, to, compatible[, reason] }, inFlight, clones: { old,
-//       new, repo } }. Reads the project at `baseCommit`, the tip of `base`, the integration
+//       [{ path, class }], contract: { from, to, compatible[, reason] }, inFlight, migration,
+//       clones: { old, new, repo } }. `migration` is null, or the move of the flow's directory
+//       the update makes (lib/update.mjs migrationAt): { from, to, archived, guide,
+//       reviewPrompt: { from, to } | null, inFlight: [change] }. Reads the project at `baseCommit`, the tip of `base`, the integration
 //       branch (fetched first when the host has a remote). `to` defaults to the latest tag; when
 //       it is not newer, only { from, to, base, baseCommit, upToDate: true }. Refuses before
 //       cloning when the main directory has uncommitted tracked changes, or the update's branch
@@ -42,10 +44,13 @@
 //       apply refuses when the integration branch moved since. The host files are classified by
 //       this release's code; `choices` maps each edited one to keep, replace or manual.
 //       Committed when no merge conflicts and no manual file remain; a commit that fails leaves
-//       committed false, with commitError, for `commit` to finish
+//       committed false, with commitError, for `commit` to finish. With a move of the flow's
+//       directory, `migration` adds { notes, mentions: [{ file, lines }] }: the worktree holds
+//       `git mv openspec adf`, the old guide converted into adf/settings.json and adf/guide.md
+//       (lib/flow-migrate.mjs), review.prompt moved with the directory, all staged with -A
 //   update.mjs commit --worktree <dir> --to <tag>
-//       { worktree, branch, committed }: stages the files apply wrote and the manual ones, and
-//       commits; refuses while one holds a conflict marker, or when nothing is left to commit
+//       { worktree, branch, committed }: stages the files apply wrote and the manual ones (after
+//       a move, everything under adf/ too), and commits; refuses while one holds a conflict marker, or when nothing is left to commit
 //   update.mjs cleanup --clones <json>
 //       { removed }: removes the temporary directory plan made for the clones (null when it is
 //       gone already); refuses any other directory

@@ -14,7 +14,10 @@ import { DECLARATION_FILE, parseVersion, REGISTRY_PATH } from './registry.mjs'
 import { cli, detectRuntime, installCommand, runtimeHome } from './runtime.mjs'
 import { claudeHome, countsHere, mergeSettings, readJson } from './superpowers.mjs'
 import { create, worktreePath } from './workspace.mjs'
-import { CHANGES_DIR } from './layout.mjs'
+import { convertGuide, LEGACY_GUIDE, legacyMentions, reviewPromptPath } from './flow-migrate.mjs'
+import { createGuide, createSettings } from './host-files.mjs'
+import { ARCHIVE, CHANGES_DIR, GUIDE_FILE, LEGACY_ROOT, ROOT, SETTINGS_FILE } from './layout.mjs'
+import { writeSettings } from './settings.mjs'
 
 const VERSION = /^\d+\.\d+\.\d+$/
 const TAG = /^v(\d+\.\d+\.\d+)$/
@@ -372,6 +375,52 @@ function integrationState(root) {
   return { main, base, baseCommit, show, settingsText, settings, source, registryText, registry: JSON.parse(registryText) }
 }
 
+// The move of the flow's directory from LEGACY_ROOT/ to ROOT/ (lib/flow-migrate.mjs) that the
+// update makes, read at the integration commit: null when that commit holds no LEGACY_ROOT/ or
+// already holds ROOT/. `inFlight` names each change the freeze waits for: a directory of
+// LEGACY_ROOT/changes/ but the archive, or a worktree under .claude/worktrees/.
+export function migrationAt(root, { main, baseCommit, show, registry }) {
+  const dirs = (path) => {
+    try {
+      return execFileSync('git', ['-C', main, 'ls-tree', '-d', '--name-only', `${baseCommit}:${path}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).split('\n').filter(Boolean)
+    } catch {
+      return null
+    }
+  }
+  if (dirs(LEGACY_ROOT) === null || dirs(ROOT) !== null) return null
+  const changes = (dirs(`${LEGACY_ROOT}/changes`) ?? []).filter((name) => name !== ARCHIVE)
+  const trees = inFlight(root).filter((e) => e.worktree).map((e) => e.change)
+  const prompt = registry?.review?.prompt
+  const moved = reviewPromptPath(prompt)
+  return {
+    from: LEGACY_ROOT,
+    to: ROOT,
+    archived: (dirs(`${LEGACY_ROOT}/changes/${ARCHIVE}`) ?? []).length,
+    guide: show(`${LEGACY_ROOT}/${LEGACY_GUIDE}`) !== null,
+    reviewPrompt: moved !== prompt ? { from: prompt, to: moved } : null,
+    inFlight: [...new Set([...changes, ...trees])].sort()
+  }
+}
+
+// Makes the move in the update's worktree: `git mv`, the old guide converted into the settings and
+// the prose guide (or both written new when there was none), the old guide removed. Returns the
+// conversion's notes.
+function migrate(worktree) {
+  const git = gitAt(worktree)
+  git('mv', LEGACY_ROOT, ROOT)
+  const legacyGuide = join(worktree, ROOT, LEGACY_GUIDE)
+  if (!existsSync(legacyGuide)) {
+    createSettings(worktree)
+    createGuide(worktree)
+    return []
+  }
+  const converted = convertGuide(readFileSync(legacyGuide, 'utf8'))
+  if (!existsSync(join(worktree, SETTINGS_FILE))) writeSettings(worktree, converted.settings)
+  if (!existsSync(join(worktree, GUIDE_FILE))) writeFileSync(join(worktree, GUIDE_FILE), converted.guide)
+  git('rm', '-q', '-f', '--', `${ROOT}/${LEGACY_GUIDE}`)
+  return converted.notes
+}
+
 // The host files with the project's copy at the integration branch and their class.
 function classified(state, clones) {
   return hostFiles(clones.old, clones.new, state.registry).map((file) => {
@@ -429,7 +478,7 @@ export function planUpdate(root, { to = null, git = defaultGit } = {}) {
         .filter((subject) => CONVENTIONAL.test(subject))
     }
     const files = classified(state, clones).map((file) => ({ path: file.path, class: file.class }))
-    return { from: ref, to: target, ...base, upToDate: false, plugins, log, hostFiles: files, contract: contractCheck(state.registry, clones.new), inFlight: inFlight(root), clones }
+    return { from: ref, to: target, ...base, upToDate: false, plugins, log, hostFiles: files, contract: contractCheck(state.registry, clones.new), inFlight: inFlight(root), migration: migrationAt(root, state), clones }
   } catch (error) {
     rmSync(tmp, { recursive: true, force: true })
     throw error
@@ -453,8 +502,11 @@ function gitAt(dir) {
   return (...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
-function commitFiles(worktree, files, version) {
+// Stages the files the update wrote; after the move of the flow's directory, everything under
+// ROOT/ too, the renames and deletions the move made included.
+function commitFiles(worktree, files, version, { migrated = false } = {}) {
   const git = gitAt(worktree)
+  if (migrated) git('add', '-A', '--', ROOT)
   git('add', '--', ...files)
   try {
     git('diff', '--cached', '--quiet')
@@ -491,6 +543,8 @@ export async function applyUpdate(root, { to, clones, base, choices = {} }) {
   const files = classified(state, clones)
   const missing = files.filter((f) => f.class === 'edited' && !Object.hasOwn(choices, f.path)).map((f) => f.path)
   if (missing.length) throw new Error(`no choice for ${missing.join(', ')}: each edited host file needs keep, replace or manual`)
+  const migration = migrationAt(root, state)
+  if (migration?.reviewPrompt) registry.review.prompt = migration.reviewPrompt.to
 
   source.ref = to
   const writes = new Map([[SETTINGS_PATH, `${JSON.stringify(settings, null, indentOf(settingsText))}\n`]])
@@ -542,6 +596,7 @@ export async function applyUpdate(root, { to, clones, base, choices = {} }) {
     if (error.message.startsWith('uncommitted changes')) throw new Error(`the main directory has ${error.message}`)
     throw new Error(`cannot make the update branch: ${error.message}`)
   }
+  const notes = migration ? migrate(worktree) : []
   for (const [path, text] of writes) {
     mkdirSync(dirname(join(worktree, path)), { recursive: true })
     writeFileSync(join(worktree, path), text)
@@ -549,12 +604,13 @@ export async function applyUpdate(root, { to, clones, base, choices = {} }) {
   const written = [...writes.keys()]
   const record = join(worktree, updateRecord(version))
   mkdirSync(dirname(record), { recursive: true })
-  writeFileSync(record, `${JSON.stringify({ to, written, manual, conflicts }, null, 2)}\n`)
+  writeFileSync(record, `${JSON.stringify({ to, written, manual, conflicts, ...(migration ? { migrated: true } : {}) }, null, 2)}\n`)
   const result = { worktree, branch, written, manual, conflicts, dropped, ran, committed: false }
+  if (migration) result.migration = { ...migration, notes, mentions: legacyMentions(worktree) }
   if (conflicts.length === 0 && manual.length === 0) {
     // A failing commit (a hook, say) leaves the files written: `commit` finishes it.
     try {
-      commitFiles(worktree, written, version)
+      commitFiles(worktree, written, version, { migrated: Boolean(migration) })
       result.committed = true
     } catch (error) {
       result.commitError = String(error.stderr || error.message).trim()
@@ -572,6 +628,6 @@ export function commitUpdate(worktree, { to }) {
   const files = [...record.written, ...record.manual]
   const marked = files.filter((path) => /^<<<<<<< /m.test(readText(join(worktree, path)) ?? ''))
   if (marked.length) throw new Error(`${marked.join(', ')} still hold conflict markers; resolve them, then commit again`)
-  const branch = commitFiles(worktree, files, version)
+  const branch = commitFiles(worktree, files, version, { migrated: record.migrated === true })
   return { worktree, branch, committed: true }
 }

@@ -68,7 +68,7 @@ function fixtureRepo() {
 
 // A host project pinning v0.1.0, its settings indented with four spaces. `review` is its copy
 // of the review prompt.
-function hostProject(url, { review = REVIEW_V1 } = {}) {
+function hostProject(url, { review = REVIEW_V1, legacy = null } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'adf-ua-host-'))
   git(root, 'init', '-q', '-b', 'main')
   git(root, 'config', 'user.name', 't')
@@ -82,11 +82,15 @@ function hostProject(url, { review = REVIEW_V1 } = {}) {
       { plugin: 'adf-demo@agentic-dev-flow', version: '0.1.0', config: { old: 'v' } },
       { plugin: 'adf-gone@agentic-dev-flow', version: '0.1.0' },
       { path: 'local/plugin' }
-    ]
+    ],
+    ...(legacy ? { review: { prompt: 'openspec/review-prompt.md' } } : {})
   }, null, 2)}\n`)
-  // The template with its managed section filled in: a value, not an edit.
-  put(root, 'adf/planning.md', PLANNING_FILLED)
-  put(root, 'adf/review-prompt.md', 'the project\'s own review prompt\n')
+  if (legacy) for (const [path, text] of Object.entries(legacy)) put(root, path, text)
+  else {
+    // The template with its managed section filled in: a value, not an edit.
+    put(root, 'adf/planning.md', PLANNING_FILLED)
+    put(root, 'adf/review-prompt.md', 'the project\'s own review prompt\n')
+  }
   put(root, '.demo/review.md', review)
   git(root, 'add', '-A')
   git(root, 'commit', '-q', '-m', 'chore: init')
@@ -315,4 +319,61 @@ test('a github source is read as its repository on GitHub', () => {
   assert.deepEqual(asked, [['ls-remote', '--tags', 'https://github.com/owner/agentic-dev-flow.git']])
   assert.equal(run(['check', '--root', root, '--home', mkdtempSync(join(tmpdir(), 'adf-ua-home-'))], { git: fake }).latest, 'v0.1.0')
   assert.equal(asked.at(-1)[2], 'https://github.com/owner/agentic-dev-flow.git')
+})
+
+// ---------------------------------------------------------------- the move to adf/ (#26)
+
+// A project on the earlier layout: openspec/ with its specs, an archived change, the planning
+// guide with values, the review prompt at the old default, and a CLAUDE.md that names openspec/.
+const LEGACY = {
+  'openspec/planning.md': '# Planning Guide\n\n## Where to look\n\nThe memory first.\n\n## Whole-suite command\n\n`npm test -- --force`\n\n## Worktree copies\n\n- `.env`\n\n## Test-first shares\n\n- `.env`\n',
+  'openspec/review-prompt.md': 'Our review criteria.\n',
+  'openspec/context.md': 'The project.\n',
+  'openspec/specs/cap/spec.md': '# cap Specification\n\n## Purpose\nThe cap.\n',
+  'openspec/changes/archive/2026-01-01-one/proposal.md': 'Once under openspec/changes/one.\n',
+  'openspec/changes/archive/2026-01-01-one/tasks.md': '- [x] 1.1 a\n',
+  'CLAUDE.md': '# Rules\n\nThe specs are in openspec/specs/.\n'
+}
+
+test('plan shows the move: the archived changes, the guide, the review prompt, no change in flight', () => {
+  const { plan } = planned({ legacy: LEGACY })
+  assert.deepEqual(plan.migration, { from: 'openspec', to: 'adf', archived: 1, guide: true, reviewPrompt: { from: 'openspec/review-prompt.md', to: 'adf/review-prompt.md' }, inFlight: [] })
+  const { plan: moved } = planned()
+  assert.equal(moved.migration, null)
+})
+
+test('apply moves openspec/ to adf/, converts the guide, moves the review prompt and stages it all', async () => {
+  const { root, plan } = planned({ legacy: LEGACY })
+  const out = await apply(root, plan)
+  assert.equal(out.committed, true, out.commitError)
+  const wt = out.worktree
+  assert.equal(git(wt, 'status', '--porcelain').trim(), '')
+  assert.equal(existsSync(join(wt, 'openspec')), false)
+  for (const path of ['adf/review-prompt.md', 'adf/context.md', 'adf/specs/cap/spec.md', 'adf/changes/archive/2026-01-01-one/proposal.md']) assert.ok(existsSync(join(wt, path)), path)
+  assert.equal(existsSync(join(wt, 'adf/planning.md')), false)
+  // The archived change keeps its text, old paths included.
+  assert.equal(readFileSync(join(wt, 'adf/changes/archive/2026-01-01-one/proposal.md'), 'utf8'), 'Once under openspec/changes/one.\n')
+  const settings = JSON.parse(readFileSync(join(wt, 'adf/settings.json'), 'utf8'))
+  assert.deepEqual([settings.wholeSuiteCommand, settings.worktreeCopies, settings.testFirstShares], ['npm test -- --force', ['.env'], ['.env']])
+  assert.match(readFileSync(join(wt, 'adf/guide.md'), 'utf8'), /## Where to look\n\nThe memory first\./)
+  assert.equal(JSON.parse(readFileSync(join(wt, '.claude/adf-extensions.json'), 'utf8')).review.prompt, 'adf/review-prompt.md')
+  assert.deepEqual(out.migration.mentions, [{ file: 'CLAUDE.md', lines: [3] }])
+  assert.deepEqual(out.migration.notes, [])
+  assert.equal(out.migration.archived, 1)
+  // One commit, the files moved as renames.
+  const renamed = git(wt, 'show', '-M', '--name-status', '--format=', 'HEAD').trim().split('\n')
+  assert.ok(renamed.includes('R100\topenspec/specs/cap/spec.md\tadf/specs/cap/spec.md'), renamed.join('\n'))
+  assert.equal(git(wt, 'log', '-1', '--format=%s').trim(), 'chore(adf): update to v0.2.0')
+})
+
+test('a move left uncommitted is finished by commit, the moved files staged', async () => {
+  const { root, plan } = planned({ legacy: LEGACY })
+  const hook = join(root, '.git', 'hooks', 'pre-commit')
+  writeFileSync(hook, '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+  const out = await apply(root, plan)
+  assert.equal(out.committed, false)
+  writeFileSync(hook, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  assert.equal(run(['commit', '--worktree', out.worktree, '--to', 'v0.2.0']).committed, true)
+  assert.equal(git(out.worktree, 'status', '--porcelain').trim(), '')
+  assert.equal(git(out.worktree, 'ls-tree', '-r', '--name-only', 'HEAD', '--', 'openspec').trim(), '')
 })

@@ -69,7 +69,12 @@ Never merge it: the developer merges it.
    - when `contract.compatible` is false: the update is refused for `contract.reason`. Say so,
      remove the clones (step 10) and stop;
    - each change of `inFlight`, with a warning: it continues on the new release, and a conflict
-     is settled inside its own change.
+     is settled inside its own change;
+   - when `migration` is not null, the move of the flow's directory the update makes: `from`/
+     to `to`/, with every change and the `archived` archived changes; the planning guide
+     converted into `adf/settings.json` (the values) and `adf/guide.md` (the prose) when `guide`
+     is true; `review.prompt` moved from `reviewPrompt.from` to `reviewPrompt.to` when it is not
+     null. The archived changes keep their text, old paths included.
 
    Ask the developer whether to go on. On a no, remove the clones (step 10) and stop.
 
@@ -104,6 +109,10 @@ Never merge it: the developer merges it.
      branch and its worktree stay: see "Resume" below.
 
    Show `written`, `dropped` and `ran` (the config migrations each plugin ran). When
+   `migration` is present, show each of its `notes` (a value of the old guide the settings
+   could not take, kept in `adf/guide.md`), and list its `mentions`: the tracked files outside
+   `adf/` that still name `openspec/` (CLAUDE.md, memory pages, `.gitignore`, CI), each with its
+   lines. Do not edit them: the developer fixes them, in this branch or later. When
    `committed` is false (`commitError`, when present, is why apply's own commit failed: show it
    and fix its cause):
    - for each file of `conflicts`, resolve the conflict markers in `<worktree>/<path>` yourself:
@@ -137,7 +146,8 @@ Never merge it: the developer merges it.
    `adf-extension.json`, for adf-gitlab `.gitlab/merge_request_templates/adf.md`) and fill every
    `## ` section it has, without its `<!-- ... -->` comment lines:
    - `## What`: `from` → `to`, each changed plugin's versions with its `log` subjects, and the
-     dropped plugins;
+     dropped plugins; with `migration`, the move of the flow's directory to `adf/` and the
+     files of `mentions` left for the developer;
    - `## Why`: the project moves to ADF release `to`, so the team runs the fixes and
      improvements listed above;
    - `## QA`: numbered steps: merge, restart the Claude Code session, run
