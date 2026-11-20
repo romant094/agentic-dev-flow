@@ -26,6 +26,11 @@ record a script writes and checks, never free text a script parses.
    instructions live only in the plugin. `/adf:update` has nothing to merge for the guide.
 2. The review prompt is a project file. `/adf:init` writes it once; `/adf:update` never touches it.
 3. The review of OpenSpec 2.x (#57) comes after this iteration.
+4. The prose sections `Where to look` and `Checks that need the developer` go to `adf/guide.md`,
+   a project file written once by `/adf:init`.
+5. Changes in flight are handled as at the switch (iteration 15): development stops, every change
+   in flight is archived or dropped, the migration runs, and development continues. The flow does
+   not move change branches and does not read `openspec/` as a fallback.
 
 ## What exists (checked 2026-11-20 at `51d5111`)
 
@@ -67,16 +72,13 @@ record a script writes and checks, never free text a script parses.
   the difference between absent and empty). `lib/settings.mjs` reads, validates, gets and sets;
   every section parser goes. The instruction text of each key moves from `host/planning.md` into
   the schema's `description`, which `/adf:init` and the skills show when they ask for a value.
-- **Prose stays prose, in its own file.** `Where to look` and `Checks that need the developer` are
-  text for the agent, not values for a script. They go to `adf/guide.md`, a project file written
-  once by `/adf:init` like the review prompt. The plan and verify agents get `adf/guide.md` and a
-  rendering of `settings.json`. (Open question 1 below.)
+- **Prose stays prose, in its own file** (decision 4). The plan and verify agents get `adf/guide.md`
+  and a rendering of `settings.json`.
 - **Scripts write the values.** `settings.mjs set --key <k> --value <json>` replaces every hand edit
   of the guide in the init and quick skills.
-- **Changes in flight move on their own branch.** A script commits the same `git mv` on each change
-  branch (`update.mjs move-change --change <name>`), so the later merge of the integration branch
-  is clean. A command that finds `openspec/changes/<name>` in a worktree refuses and names that
-  command. Live code reads only `adf/`. (Open question 2 below.)
+- **A freeze, checked by script** (decision 5). The migration plan lists the changes in flight
+  (`update.mjs plan` `inFlight`); `apply` refuses the migration while that list is not empty and
+  names each change. Live code reads only `adf/`.
 - **History readers know both roots.** Readers of past commits (the retro window, the specs at an
   old base, `proposedAtOf`, the path filters over a commit range) use an `isFlowPath` helper that
   knows both prefixes, so a range that spans the migration and the migration commit itself never
@@ -93,15 +95,6 @@ record a script writes and checks, never free text a script parses.
   developer's yes.
 - **`adf-english-check`** gets new defaults and its first `migrations` script, which rewrites the
   `openspec/` prefixes of a host's `include` and `exclude`.
-
-## Open questions for the developer
-
-1. **The prose sections.** (a) `adf/guide.md`, a project file like the review prompt
-   (recommended: prose is not a value, and the agent reads it as text); (b) string fields in
-   `settings.json`.
-2. **Changes in flight.** (a) a script moves each change branch once, and commands refuse until it
-   ran (recommended: one code path, deterministic); (b) the live code also reads `openspec/` as a
-   fallback, with a warning, until the change is archived.
 
 ## Non-goals
 
@@ -124,8 +117,8 @@ record a script writes and checks, never free text a script parses.
 | 4 | `settings.mjs set`; the init and quick skills name no file edit | set and read-back tests |
 | 5 | The root becomes `adf`; init writes `adf/settings.json`, `adf/guide.md`, `adf/review-prompt.md`; the commit scope `docs(adf)`; `hostFiles` drops the core files, which retires `MANAGED` (#23) | full suite; `update plan` lists no core host file |
 | 6 | `lib/flow-migrate.mjs`: the old guide converted to `settings.json` and `guide.md`; the mentions report | the shipped template and an xnms-like guide convert with no value lost; the result validates |
-| 7 | The migration in `/adf:update` `apply` and `plan`, staging with `-A`; the update skill | an end-to-end test on a fixture host with archives and a change in flight |
-| 8 | Changes in flight: `update.mjs move-change`, and the refusal in a worktree that still has `openspec/` | a moved branch merges the migrated integration branch with no conflict |
+| 7 | The migration in `/adf:update` `apply` and `plan`, staging with `-A`; the update skill | an end-to-end test on a fixture host with archives |
+| 8 | The freeze: `apply` refuses the migration while a change is in flight; the update guide page describes the freeze | a fixture host with a change in flight is refused, with each change named |
 | 9 | `adf-english-check` defaults and its first `migrations` script; the `adf-postgres` message | plugin tests; `migrateConfig` on an old config |
 | 10 | Instruction text, templates, contract, guide pages | `grep -rn openspec plugins` leaves only the legacy and migration code and tests; `check-guide.mjs` |
-| 11 | `/adf:update` on a copy of the origin project: 78 specs, 7 changes in flight, 90 archived changes | the run's notes in `## Result` (also part of the live check, iteration 27) |
+| 11 | `/adf:update` on a copy of the origin project: 78 specs and 90 archived changes, after the freeze | the run's notes in `## Result` (also part of the live check, iteration 27) |
