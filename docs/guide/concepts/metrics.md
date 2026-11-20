@@ -2,11 +2,30 @@
 - plugins/adf/contract/metrics-format.md
 - plugins/adf/scripts/metrics.mjs
 - plugins/adf/scripts/lib/prices.mjs
+- plugins/adf/scripts/lib/registry.mjs
 -->
 
 # Metrics
 
 The flow measures how each change ran. The measure is one record for each change. A script builds the record, and the retrospective reads the records. The Codex form of each command is in [the Codex page](../getting-started/codex.md).
+
+## What the flow collects, and the switch
+
+**What is collected.** Token counts, times, review rounds and dispatches of each change. A script reads them from three sources: the records of the change in `.superpowers/sdd/`, git, and the local session transcripts of the agent.
+
+**Where it is kept.** In the repository. The record is `metrics.json` in the archived change, and the price table is in `.adf/prices/`. The project commits both.
+
+**What leaves the machine.** Only one request: the fetch of the public model price page. The record itself goes nowhere.
+
+**Why to keep it on.** The retrospective reads the records. With them, it finds the stages that cost much and catch nothing, and it names them as removal candidates.
+
+The registry key `metrics.enabled` is the switch. `/adf:init` asks for it, with yes as the default. A registry without the key has metrics on, so a project set up before the switch needs no migration. `metrics.mjs switch` reads the switch, and `metrics.mjs switch --set false` turns it off.
+
+With metrics off:
+
+- `/adf:archive` skips its `metrics` step. It writes no record and fetches no price page, and its report says so. The `commit-metrics` step commits only the ledger copy of the change, or it is skipped when that copy is current.
+- `/adf:quick` runs the same archive steps, so it writes no record either.
+- `/adf:retro` says that the window has no records. A record written before the switch was turned off still counts.
 
 ## The metrics record
 

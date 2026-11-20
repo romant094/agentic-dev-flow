@@ -60,9 +60,13 @@
 //                 the step's failure. No transcripts is `degraded`, the record written and the gap
 //                 named; a record that fails its schema is `failed`, nothing written. A re-run
 //                 writes the same files; once commit-metrics is done it changes nothing, since a
-//                 new record would measure its own commit.
+//                 new record would measure its own commit. With the registry's metrics switch
+//                 off (metrics.enabled false) the step is `skipped`, nothing written and no
+//                 price page fetched, and the report says so.
 //   commit-metrics `chore(metrics): record <name>`: only the paths metrics wrote and the ledger,
-//                 copied into the archived change again first.
+//                 copied into the archived change again first. After a skipped metrics step,
+//                 `chore(archive): copy the ledger of <name>` with the ledger copy alone, or
+//                 `skipped` when the copy is current.
 //   mr            the forge role's `finalize`; `none` is `skipped`, `degraded` keeps the role's
 //                 fallback file and the step is `degraded`. With a forge and no `--body` the step
 //                 holds, `pending`, and returns what it needs: mr-input, then the body file.
@@ -95,7 +99,7 @@ import { localMerge } from './local-merge.mjs'
 import { asV2, buildRecord, candidates, RECORD_FILE, RecordError } from './metrics.mjs'
 import { QUIET_RUN } from './metrics-records.mjs'
 import { addEntry, pricesUrl } from './prices.mjs'
-import { readDebtRoot } from './registry.mjs'
+import { metricsSwitch, readDebtRoot } from './registry.mjs'
 import { checkRecord, ROUND_CAP } from './review-state.mjs'
 import { callRole, CORE, forgeInput, forgeReport, knowledgeReport, provider } from './roles.mjs'
 import { debtGroups, findScope, namesKey, SCOPE_FILE, scopeKeys, trackerTargets } from './scope.mjs'
@@ -677,6 +681,7 @@ export function commitMemoryStep(ctx) {
 // ---------------------------------------------------------------- the metrics record
 
 const posix = (path) => path.split(sep).join('/')
+const METRICS_OFF = 'metrics are off in the registry (metrics.enabled false): no record written, no price fetched'
 
 export function metricsStep(ctx) {
   return runStep(ctx, 'metrics', (state) => {
@@ -687,6 +692,7 @@ export function metricsStep(ctx) {
     if (committed.state === 'done') {
       return { hold: true, out: { already: true, note: `the record is committed${committed.detail?.commit ? ` at ${committed.detail.commit.slice(0, 7)}` : ''}; a new record would measure its own commit, so nothing was written` } }
     }
+    if (!metricsSwitch(root).enabled) return { state: 'skipped', detail: { off: true, report: METRICS_OFF } }
     let record
     try {
       record = buildRecord({ root, change, now: ctx.now(), projectsDir: ctx.projectsDir, home: ctx.home })
@@ -729,6 +735,13 @@ function refreshLedger(ctx, target) {
 export function commitMetricsStep(ctx) {
   return runStep(ctx, 'commit-metrics', (state) => {
     const ledger = refreshLedger(ctx, settledDetail(state, 'move').target)
+    if (state.steps.metrics.state === 'skipped') {
+      // Metrics off: no record to commit, but the ledger copy still catches up with the live one.
+      const own = new Set(ledger)
+      const made = commitOwn(ctx, { mine: (f) => own.has(f), message: `chore(archive): copy the ledger of ${ctx.change}` })
+      if (!made.detail.commit) return { state: 'skipped', detail: { off: true, report: 'metrics off; the ledger copy is current, nothing to commit' } }
+      return { state: 'done', detail: { ...made.detail, off: true } }
+    }
     const own = new Set([...(settledDetail(state, 'metrics').files ?? []), ...ledger])
     return commitOwn(ctx, { mine: (f) => own.has(f), message: `chore(metrics): record ${ctx.change}` })
   })
@@ -924,8 +937,8 @@ const summary = {
   ingest: (d) => d.report ?? `${d.paths?.length ?? 0} path(s)`,
   'commit-memory': (d) => (d.commit ? `commit ${d.commit.slice(0, 7)}` : 'nothing to commit'),
   metrics: (d) =>
-    `${d.file}${d.attempts ? ` and ${d.attempts}` : '; no attempts.jsonl to copy'}; prices ${d.prices.state}${d.prices.path ? ` (${d.prices.path})` : ''}${d.prices.reason ? `: ${d.prices.reason}` : ''}${d.gap ? `; ${d.gap}` : ''}`,
-  'commit-metrics': (d) => (d.commit ? `commit ${d.commit.slice(0, 7)}` : 'nothing to commit'),
+    d.off ? d.report : `${d.file}${d.attempts ? ` and ${d.attempts}` : '; no attempts.jsonl to copy'}; prices ${d.prices.state}${d.prices.path ? ` (${d.prices.path})` : ''}${d.prices.reason ? `: ${d.prices.reason}` : ''}${d.gap ? `; ${d.gap}` : ''}`,
+  'commit-metrics': (d) => (d.off ? (d.commit ? `the ledger copy at ${d.commit.slice(0, 7)}; metrics off` : d.report) : d.commit ? `commit ${d.commit.slice(0, 7)}` : 'nothing to commit'),
   mr: (d) => d.report,
   'merge-local': (d) => d.report,
   remove: (d) => (d.state === 'removed' ? `worktree ${d.path} removed; branch ${d.branch} kept` : d.state === 'in-place' ? 'made in place; no worktree to remove' : 'no worktree left')
@@ -1000,6 +1013,7 @@ export function hurtSignals(input) {
 function recordSignals(ctx, state) {
   const metrics = state.steps.metrics
   if (metrics.state === 'pending') return { signals: null, lines: [] }
+  if (metrics.state === 'skipped') return { signals: null, lines: ['No metrics record: metrics are off in the registry (metrics.enabled false); the hurt signals were not read.'] }
   if (metrics.state === 'failed') return { signals: null, lines: [`No metrics record: the metrics step failed (${metrics.detail?.error ?? 'no reason recorded'}); the hurt signals were not read.`] }
   const file = metrics.detail?.file
   const commit = state.steps['commit-metrics'].detail?.commit

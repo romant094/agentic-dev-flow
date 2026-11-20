@@ -5,7 +5,9 @@ committed with the change's archive. `scripts/metrics.mjs extract` builds it by 
 change's SDD records, its session transcripts and git; `schema/metrics.schema.json` checks it, and
 a record that fails the schema is not written. `scripts/lib/metrics.mjs` is the reader:
 `fromV1` converts the origin's records, `cost` prices a record and `renderRecord` shows it to a
-person. A plugin reads records; it never writes one.
+person. A plugin reads records; it never writes one. With the registry's metrics switch off
+(`metrics.enabled` false, `README.md` "The registry") archive writes no record, so a reader
+finds none for the changes archived while it was off.
 
 ## Rules
 

@@ -34,7 +34,7 @@ This is an example:
 | `contract` | The extension contract version the project runs, in the form `major.minor`. A value in another form is an error. The current value is `version` in `plugins/adf/contract/contract.json`: 1.11. |
 | `branches` | The branch policy. `integration` names the branch that a change forks from and merges into. `protected` lists the other branches that nobody commits to directly. The integration branch is always protected. |
 | `extensions` | The list of enabled plugins. See the entry fields below. |
-| `metrics` | Optional. `metrics.pricesUrl` is an http or https URL of the pricing page. Without it, the core uses its default. See [Metrics](metrics.md). |
+| `metrics` | Optional. `metrics.enabled`, `true` or `false`, is the switch for the metrics record of each change. `/adf:init` asks for it. A registry without it has metrics on. `metrics.pricesUrl` is an http or https URL of the pricing page. Without it, the core uses its default. See [Metrics](metrics.md). |
 
 The core reads three more optional keys:
 

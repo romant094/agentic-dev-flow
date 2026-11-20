@@ -62,8 +62,8 @@ for the merge request pushed with no CI run.
      each conflict and check each reply with `specs.mjs resolution`; write a new capability's
      Purpose from `proposal.md`; pass them as `--resolutions` and `--purpose`.
    - `move`, `commit-specs`, `commit-memory`, `metrics`, `commit-metrics`, `remove`: the call
-     alone; a `degraded` `metrics` does not stop archive. After `remove`, pass
-     `--root <main>`.
+     alone; a `degraded` `metrics` does not stop archive, and a `skipped` one, with the
+     registry's metrics switch off, is settled. After `remove`, pass `--root <main>`.
    - `ingest`: `ingest.mjs stale`, then dispatch `ingest` and pass its reply as `--reply`;
      with no knowledge plugin, the call with no reply.
    - `mr`: `forge.mjs check`; with a forge, write the body from `archive.mjs mr-input` (for a quick change, from its `goal` and `summary`) and pass

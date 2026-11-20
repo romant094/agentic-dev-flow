@@ -181,17 +181,38 @@ export function setDebtRoot(root, path) {
 
 // ---------------------------------------------------------------- metrics
 
-// The metrics settings (lib/prices.mjs): `metrics.pricesUrl`, the page the price table is
-// fetched from, an http(s) URL. Optional, with its default in lib/transcripts.mjs; /adf:init
-// does not ask for it.
-const METRICS_KEYS = ['pricesUrl']
+// The metrics settings: `metrics.enabled`, the switch for the change's metrics record, asked by
+// /adf:init; true or false, a missing key on, so a project set up before the switch keeps its
+// records with no migration. Off, archive writes no record and fetches no price page, and the
+// retrospective says the window has no records (lib/archive.mjs, lib/window.mjs).
+// `metrics.pricesUrl` (lib/prices.mjs), the page the price table is fetched from, an http(s) URL;
+// optional, with its default in lib/transcripts.mjs; /adf:init does not ask for it.
+const METRICS_KEYS = ['enabled', 'pricesUrl']
 
 export function validateMetricsSettings(metrics) {
   if (metrics === null || typeof metrics !== 'object' || Array.isArray(metrics)) return ['metrics must be an object']
   const errors = []
   for (const key of Object.keys(metrics)) if (!METRICS_KEYS.includes(key)) errors.push(`metrics.${key} is not a metrics setting (${METRICS_KEYS.join(', ')})`)
+  if (metrics.enabled !== undefined && typeof metrics.enabled !== 'boolean') errors.push('metrics.enabled must be true or false')
   if (metrics.pricesUrl !== undefined && !(typeof metrics.pricesUrl === 'string' && /^https?:\/\/\S+$/.test(metrics.pricesUrl))) errors.push('metrics.pricesUrl must be an http or https URL')
   return errors
+}
+
+// The metrics switch: `enabled`, true unless the registry sets metrics.enabled false, and
+// `recorded`, whether the registry holds the key, so /adf:init asks only when it does not. A
+// value that is not a boolean is no switch; the registry check names it.
+export function metricsSwitch(root) {
+  const enabled = readRegistry(root)?.metrics?.enabled
+  return typeof enabled === 'boolean' ? { enabled, recorded: true } : { enabled: true, recorded: false }
+}
+
+export function setMetricsSwitch(root, enabled) {
+  const registry = requireRegistry(root)
+  const metrics = { ...registry.metrics, enabled }
+  const errors = validateMetricsSettings(metrics)
+  if (errors.length > 0) throw new Error(errors.join('; '))
+  writeRegistry(root, { ...registry, metrics })
+  return enabled
 }
 
 export function readRegistry(root) {

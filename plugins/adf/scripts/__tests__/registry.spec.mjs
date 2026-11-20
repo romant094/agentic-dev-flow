@@ -19,6 +19,8 @@ import {
   readDebtRoot,
   setDebtRoot,
   validateMetricsSettings,
+  metricsSwitch,
+  setMetricsSwitch,
   registryPlugins,
   enabledPlugins,
   addReport,
@@ -281,12 +283,15 @@ test('validateDebtSettings takes debt.root as a path inside the project and noth
   assert.deepEqual(validateRegistry({ contract: '1.0', extensions: [], debt: { root: '/abs' } }), ['debt.root must be a path relative to the project root'])
 })
 
-test('validateMetricsSettings takes metrics.pricesUrl as an optional http(s) URL and nothing else', () => {
+test('validateMetricsSettings takes metrics.enabled as an optional boolean and metrics.pricesUrl as an optional http(s) URL, and nothing else', () => {
   assert.deepEqual(validateMetricsSettings({ pricesUrl: 'https://example.com/pricing.md' }), [])
+  assert.deepEqual(validateMetricsSettings({ enabled: false }), [])
+  assert.deepEqual(validateMetricsSettings({ enabled: true, pricesUrl: 'https://example.com/pricing.md' }), [])
   assert.deepEqual(validateMetricsSettings({}), [])
   assert.deepEqual(validateMetricsSettings(null), ['metrics must be an object'])
+  assert.deepEqual(validateMetricsSettings({ enabled: 'no' }), ['metrics.enabled must be true or false'])
   assert.deepEqual(validateMetricsSettings({ pricesUrl: 'pricing.md', cost: true }), [
-    'metrics.cost is not a metrics setting (pricesUrl)',
+    'metrics.cost is not a metrics setting (enabled, pricesUrl)',
     'metrics.pricesUrl must be an http or https URL'
   ])
   assert.deepEqual(validateRegistry({ contract: '1.0', extensions: [], metrics: { pricesUrl: 42 } }), ['metrics.pricesUrl must be an http or https URL'])
@@ -320,6 +325,24 @@ test('init ignores .adf/, the extension plugins\' local work directory, once, an
   assert.equal(once, 'node_modules/\n.claude/worktrees/\n.superpowers/\ndocs/superpowers/\n.adf/*\n!.adf/prices/\n!.adf/retro/\n')
   assert.deepEqual(ignoreLocalDirs(root).added, [])
   assert.equal(readFileSync(join(root, '.gitignore'), 'utf8'), once)
+})
+
+test('metricsSwitch reads metrics.enabled, a missing key is on, and setMetricsSwitch records it beside pricesUrl', () => {
+  const root = host()
+  assert.throws(() => setMetricsSwitch(root, false), /run \/adf:init first/)
+  assert.deepEqual(metricsSwitch(root), { enabled: true, recorded: false }, 'no registry: on, as before the switch')
+  initRegistry(root, CORE)
+  assert.deepEqual(metricsSwitch(root), { enabled: true, recorded: false }, 'an existing project with no key keeps its metrics')
+  writeFileSync(join(root, REGISTRY_PATH), JSON.stringify({ contract: CORE, extensions: [], metrics: { pricesUrl: 'https://prices.example/p.md' } }))
+  assert.deepEqual(metricsSwitch(root), { enabled: true, recorded: false })
+  assert.equal(setMetricsSwitch(root, false), false)
+  assert.deepEqual(readRegistry(root).metrics, { pricesUrl: 'https://prices.example/p.md', enabled: false })
+  assert.deepEqual(metricsSwitch(root), { enabled: false, recorded: true })
+  assert.equal(setMetricsSwitch(root, true), true)
+  assert.deepEqual(metricsSwitch(root), { enabled: true, recorded: true })
+  assert.throws(() => setMetricsSwitch(root, 'off'), /metrics\.enabled must be true or false/)
+  writeFileSync(join(root, REGISTRY_PATH), JSON.stringify({ contract: CORE, extensions: [], metrics: { enabled: 'off' } }))
+  assert.deepEqual(metricsSwitch(root), { enabled: true, recorded: false }, 'an invalid value is no switch: the registry check names it')
 })
 
 test('setDebtRoot records debt.root, readDebtRoot reads it, and a registry is required', () => {

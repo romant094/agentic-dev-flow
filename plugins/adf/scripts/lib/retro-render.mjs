@@ -39,7 +39,7 @@ function header(s) {
   const lines = [
     `- Ref: \`${s.ref}\`, ${s.fetchedAt ? `fetched ${s.fetchedAt}` : 'not fetched'}; fix commits counted up to ${s.asOf}`,
     `- Scope: ${scopeLine(s)}`,
-    `- Records: ${s.coverage.records} of ${s.coverage.changes} changes`
+    `- Records: ${s.coverage.records} of ${s.coverage.changes} changes${s.coverage.metrics === 'off' ? '; metrics are off in the registry (metrics.enabled false)' : ''}`
   ]
   if (s.mode === 'window') lines.push(`- Next window: ${s.cutoff ? `starts after \`${short(s.cutoff.mergeSha)}\`, merged ${s.cutoff.mergedAt}` : 'starts at the first archived change'}`)
   if (s.flowVersions?.length) lines.push(`- Flow versions: ${s.flowVersions.map((v) => `${v.generator} (${v.changes.join(', ')})`).join('; ')}`)

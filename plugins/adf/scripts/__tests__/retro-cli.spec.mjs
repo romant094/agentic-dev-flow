@@ -15,7 +15,7 @@ import { setBranches } from '../lib/branches.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { fromV1, validateRecord } from '../lib/metrics.mjs'
 import { addAdfRecord, listTree, markFiled } from '../lib/debt.mjs'
-import { initRegistry, setDebtRoot } from '../lib/registry.mjs'
+import { initRegistry, setDebtRoot, setMetricsSwitch } from '../lib/registry.mjs'
 import { localMerge, MergeRefusal } from '../lib/local-merge.mjs'
 import { renderRetro, retroDocument } from '../lib/retro-render.mjs'
 import { STEPS, statePath } from '../lib/retro-run.mjs'
@@ -88,7 +88,7 @@ const ATTEMPTS = [
 // The host checkout on develop, pushed to a bare remote, with `one` and `two` archived and merged.
 // `one` also writes three lines into the knowledge base, docs/kb/. With `debt`, the registry's
 // debt root is docs/debt, holding adf-01 unfiled and adf-02 filed.
-function host({ debt = false } = {}) {
+function host({ debt = false, metrics = null } = {}) {
   const top = realpathSync(mkdtempSync(join(tmpdir(), 'adf-retro-cli-')))
   const remote = join(top, 'remote.git')
   const root = join(top, 'host')
@@ -98,6 +98,7 @@ function host({ debt = false } = {}) {
   g(root, ['config', 'user.name', 'T'])
   initRegistry(root, '1.4')
   setBranches(root, { integration: 'develop', protected: [] })
+  if (metrics !== null) setMetricsSwitch(root, metrics)
   ignoreLocalDirs(root)
   if (debt) {
     setDebtRoot(root, 'docs/debt')
@@ -441,6 +442,22 @@ test('a failure injected at a step is recorded, the steps after it wait, and a r
 
 // The knowledge base's files are left out of the git figures only when the provider names them:
 // a failed call would let them into `fixesAfter`, so window stops and writes nothing.
+test('metrics off: window reports that the window has no new records, and the rendered report says metrics are off', () => {
+  const on = host()
+  assert.equal(call(on, ['start', '--date', DATE]).ok, true)
+  assert.equal(call(on, ['window']).detail.metrics, undefined, 'on: no report')
+  const h = host({ metrics: false })
+  assert.equal(call(h, ['start', '--date', DATE]).ok, true)
+  const win = call(h, ['window'])
+  assert.equal(win.ok, true)
+  assert.equal(win.detail.metrics, 'Metrics are off in the registry (metrics.enabled false): the window has no new records; 2 of 2 changes have a record written before metrics were turned off.')
+  assert.deepEqual(win.detail.coverage, { records: 2, changes: 2, metrics: 'off' })
+  assert.equal(call(h, ['reply', '--file', writeReply(win, validReply(inputOf(win)))]).ok, true)
+  assert.equal(call(h, ['file']).ok, true)
+  assert.equal(call(h, ['render']).ok, true)
+  assert.match(readFileSync(join(h.wt, MD_FILE), 'utf8'), /^- Records: 2 of 2 changes; metrics are off in the registry \(metrics\.enabled false\)$/m)
+})
+
 test('window fails on a refused or degraded knowledge call, writes nothing, and runs again once the provider answers', () => {
   const h = host()
   let knowledge = { state: 'refused', paths: [], error: 'adf-memory context returned no result: exit null' }

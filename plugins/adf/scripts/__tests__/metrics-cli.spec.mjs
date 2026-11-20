@@ -66,11 +66,24 @@ test('extract refuses a change with no directory, and a record that fails its sc
 
 test('usage errors exit 2', () => {
   const cwd = tmp('adf-metrics-cli-')
-  for (const args of [[], ['nonsense'], ['extract'], ['render'], ['cost'], ['prices'], ['prices', 'fetch', '--file', 'x'], ['candidates', '--change', 'x'], ['render', '--file']]) {
+  for (const args of [[], ['nonsense'], ['extract'], ['render'], ['cost'], ['prices'], ['prices', 'fetch', '--file', 'x'], ['candidates', '--change', 'x'], ['render', '--file'], ['switch', '--set', 'off'], ['switch', '--set', 'yes'], ['switch', '--file', 'x']]) {
     const { code, json } = call(cwd, ...args)
     assert.equal(code, 2, args.join(' '))
     assert.equal(json.ok, false)
   }
+})
+
+test('switch reads the metrics switch, on when the registry holds no key, and --set records it', () => {
+  const cwd = tmp('adf-metrics-cli-')
+  writeRegistry(cwd, { contract: '1.0', extensions: [] })
+  assert.deepEqual(call(cwd, 'switch').json, { ok: true, enabled: true, recorded: false })
+  assert.deepEqual(call(cwd, 'switch', '--set', 'false').json, { ok: true, enabled: false, recorded: true })
+  assert.equal(readRegistry(cwd).metrics.enabled, false)
+  assert.deepEqual(call(cwd, 'switch').json, { ok: true, enabled: false, recorded: true })
+  assert.deepEqual(call(cwd, 'switch', '--set', 'true').json, { ok: true, enabled: true, recorded: true })
+  const none = call(tmp('adf-metrics-cli-'), 'switch', '--set', 'false')
+  assert.equal(none.code, 1)
+  assert.match(none.json.error, /run \/adf:init first/)
 })
 
 const v1 = (findings) => ({

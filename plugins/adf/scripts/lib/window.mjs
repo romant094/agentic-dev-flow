@@ -24,7 +24,9 @@
 //                  registry's debt root in the checkout, as archive reads it
 //
 // A change whose record is absent or unreadable is listed with coverage `{ none: reason }` for
-// every group and contributes no value: no data is never a zero. A record is never written or
+// every group and contributes no value: no data is never a zero. With the registry's metrics
+// switch off (metrics.enabled false) an absent record's reason names the switch, the sidecar's
+// coverage holds `metrics: "off"`, and metricsOffReport says the window has no records. A record is never written or
 // re-measured here; the change worktree its sources lived in is gone by the time a window runs.
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
@@ -36,7 +38,7 @@ import { median, TOKEN_FIELDS } from './metrics-facts.mjs'
 import { LAYERS, removalCandidates } from './metrics-records.mjs'
 import { asV2, cost, GROUPS, PLUGIN_ROOT, RECORD_FILE, TRANSCRIPT_GROUPS, validateRecord } from './metrics.mjs'
 import { readTable } from './prices.mjs'
-import { readDebtRoot } from './registry.mjs'
+import { metricsSwitch, readDebtRoot } from './registry.mjs'
 
 export const RETRO_DIR = '.adf/retro'
 export const MODES = ['window', 'change', 'period']
@@ -602,6 +604,18 @@ export function unfiledAdfDebt(root) {
 
 // ---------------------------------------------------------------- sidecar
 
+const METRICS_OFF = 'metrics are off in the registry (metrics.enabled false)'
+
+// Pure: what the retrospective says of a window whose sidecar coverage has metrics off; null
+// while metrics are on. A record written before the switch was turned off still counts.
+export function metricsOffReport(coverage) {
+  if (coverage?.metrics !== 'off') return null
+  const head = 'Metrics are off in the registry (metrics.enabled false): the window has'
+  if (!coverage.records) return `${head} no records; the retrospective reasons over the git figures only.`
+  const n = coverage.records
+  return `${head} no new records; ${n} of ${coverage.changes} changes ${n === 1 ? 'has' : 'have'} a record written before metrics were turned off.`
+}
+
 const today = () => new Date().toISOString().slice(0, 10)
 
 // The sidecar of a retrospective: the retro agent's input and, for a window, the next window's
@@ -617,7 +631,14 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
   const everyDir = archivedEntries(sel.history)
   const paths = [...new Set([...everyDir.map((e) => `${e.archiveDir}/${RECORD_FILE}`), ...sel.changes.map((e) => `${e.archiveDir}/tasks.md`)])]
   const blobs = readBlobs(root, ref, paths)
-  const records = new Map(everyDir.map((e) => [e.archiveDir, recordOf(blobs.get(`${e.archiveDir}/${RECORD_FILE}`), `${ref}:${e.archiveDir}/${RECORD_FILE}`)]))
+  // The registry's metrics switch off: archive writes no record, so an absent one names it.
+  const off = attempt(() => metricsSwitch(root))?.enabled === false
+  const records = new Map(
+    everyDir.map((e) => {
+      const read = recordOf(blobs.get(`${e.archiveDir}/${RECORD_FILE}`), `${ref}:${e.archiveDir}/${RECORD_FILE}`)
+      return [e.archiveDir, off && read.absent ? { ...read, reason: `${read.reason}; ${METRICS_OFF}` } : read]
+    })
+  )
   const figures = sel.changes.length === 0 ? new Map() : mergeFigures(root, sel.history, sel.changes, { asOf, excluded: excluder(root, exclude) })
   const branchOf = (e) => records.get(e.archiveDir).record?.branch ?? e.branch
   const sessionsOf = (e) => records.get(e.archiveDir).record?.sources?.transcripts?.sessions ?? []
@@ -703,7 +724,7 @@ export function buildSidecar(root, { mode = 'window', change, from, to, ref = in
     scope: sel.scope,
     cutoff: sel.cutoff,
     changes,
-    coverage: { records: changes.filter((c) => c.record === 'record').length, changes: changes.length },
+    coverage: { records: changes.filter((c) => c.record === 'record').length, changes: changes.length, ...(off ? { metrics: 'off' } : {}) },
     flowVersions: [...versions].map(([key, names]) => ({ generator: key, changes: names })),
     aggregates,
     delta: previous?.sidecar?.aggregates ? delta(previous.sidecar, aggregates) : null,

@@ -59,7 +59,9 @@ write `state.json`.
    the knowledge base's paths left out of the diff figures, and the ADF debt records with no
    Filed value, read from the debt tree in `<wt>`; the agent's input and its prompt written; the
    dispatch recorded. `detail.changes` lists the changes, `detail.coverage` how many have a
-   metrics record and `detail.adfDebt` the debt not yet filed: show them. `detail.dispatch` is
+   metrics record and `detail.adfDebt` the debt not yet filed: show them. With the registry's
+   metrics switch off (`metrics.enabled` false), `detail.metrics` says the window has no
+   records: show it as it is. `detail.dispatch` is
    the plan of the dispatch. The agent sees the debt, so that a finding can name the record it
    is seen again in. When the knowledge provider is enabled and its `context` call is refused or
    degraded, `window` fails and writes nothing: the knowledge base's files would count in the
