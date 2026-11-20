@@ -43,6 +43,7 @@ import { baseRef } from './plan-symbols.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { parseDeltaSpec } from './specs.mjs'
 import { applyCheck, patchPaths } from './verify.mjs'
+import { SPECS_DIR } from './layout.mjs'
 
 export const INGEST_SCHEMA_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema', 'ingest.schema.json')
 export const REWRITE_SHARE = 0.5
@@ -214,7 +215,7 @@ export function pageReasons(text, pagePath, { touched = [], capabilities = [] } 
     else reasons.push(`names ${t.path}, which the change rewrote (${pct(t.share)} of its lines)`)
   }
   for (const { capability, requirements } of capabilities) {
-    const dir = `openspec/specs/${capability}`
+    const dir = `${SPECS_DIR}/${capability}`
     const named =
       namesPath(text, dir) ||
       text.includes(`${dir}/`) ||

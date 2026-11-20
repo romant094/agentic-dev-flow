@@ -25,12 +25,12 @@ import { baseRef } from './plan-symbols.mjs'
 import { callHook, CORE } from './roles.mjs'
 import { prepareWorktree } from './prepare.mjs'
 import { defaultHome } from './runtime.mjs'
+import { PLANNING_FILE } from './layout.mjs'
 
 export const KINDS = ['change', 'group', 'base-check', 'proof']
 // The kinds a change's needs go to; a base-check or proof tree gets none.
 export const NEEDS_KINDS = ['change', 'group']
 export const COPIES_HEADING = '## Worktree copies'
-const GUIDE = 'openspec/planning.md'
 
 const defaultCore = () => ({ ...CORE, home: defaultHome() })
 
@@ -55,7 +55,7 @@ export function copiesIn(text) {
 }
 
 export function readCopies(root) {
-  const file = join(resolve(root), GUIDE)
+  const file = join(resolve(root), PLANNING_FILE)
   return existsSync(file) ? copiesIn(readFileSync(file, 'utf8')) : []
 }
 

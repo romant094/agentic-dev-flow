@@ -17,6 +17,7 @@ import { prepareWorktree } from './prepare.mjs'
 import { provisionWorktree, teardownWorktree } from './provision.mjs'
 import { callRole } from './roles.mjs'
 import { gitIn, WORKTREES_DIR } from './workspace.mjs'
+import { CHANGES_DIR } from './layout.mjs'
 
 const GROUP = /^[1-9]\d*$/
 
@@ -229,7 +230,7 @@ export function addBaseCheck(changeRoot, { change }, { core } = {}) {
   const git = gitIn(changeRoot)
   const meta = readChangeMeta(changeRoot, changeDir(changeRoot, change))
   if (!meta) {
-    throw new Error(`cannot read openspec/changes/${change}/${META_FILE} in ${changeRoot}; run this from the change worktree`)
+    throw new Error(`cannot read ${CHANGES_DIR}/${change}/${META_FILE} in ${changeRoot}; run this from the change worktree`)
   }
   const ref = baseRef(meta, (name) => attempt(git, 'rev-parse', '--verify', '--quiet', name) !== null)
   const commit = attempt(git, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`)

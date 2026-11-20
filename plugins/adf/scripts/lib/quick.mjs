@@ -253,7 +253,7 @@ export function tests(root, change, { runner = defaultRunner } = {}) {
     refuse(error.message)
   }
   if (template === null) {
-    return { ok: true, change, step: 'tests', waiting: "the affected tests command: propose one from the project's test runner, and write it under ## Affected tests command in openspec/planning.md on the developer's yes" }
+    return { ok: true, change, step: 'tests', waiting: `the affected tests command: propose one from the project's test runner, and write it under ## Affected tests command in ${PLANNING_FILE} on the developer's yes` }
   }
   const changed = changedFiles(top, change)
   if (changed.length === 0) return { ok: true, change, step: 'tests', skipped: 'no changed files' }

@@ -111,6 +111,7 @@ import { defaultProjectsDir } from './transcripts.mjs'
 import { fetchRef, LINT_DUE, sinceLastRetro } from './window.mjs'
 import { remove as removeWorktree } from './workspace.mjs'
 import { handOver } from './active.mjs'
+import { SPECS_DIR } from './layout.mjs'
 
 export const STEPS = ['check', 'placements', 'merge', 'move', 'commit-specs', 'ingest', 'commit-memory', 'metrics', 'commit-metrics', 'mr', 'merge-local', 'remove']
 export const STEP_STATES = ['pending', 'done', 'degraded', 'failed', 'skipped']
@@ -309,7 +310,7 @@ function inScope(ctx) {
   const { paths, log } = knowledgeGlobs(ctx)
   const knowledge = matcher([...paths, ...log])
   return (file) =>
-    file.startsWith(`${CHANGES_DIR}/`) || file.startsWith('openspec/specs/') || knowledge(file) || (debt !== null && (file === debt || file.startsWith(`${debt.replace(/\/$/, '')}/`)))
+    file.startsWith(`${CHANGES_DIR}/`) || file.startsWith(`${SPECS_DIR}/`) || knowledge(file) || (debt !== null && (file === debt || file.startsWith(`${debt.replace(/\/$/, '')}/`)))
 }
 
 function commitOwn(ctx, { mine, later = new Set(), message }) {
@@ -588,7 +589,7 @@ export function commitSpecsStep(ctx) {
     const { root, change } = ctx
     const { target } = settledDetail(state, 'move')
     if (!target) refuse('the move recorded no target; run archive.mjs move again')
-    const specFiles = new Set([...(settledDetail(state, 'merge').written ?? []), ...specCapabilities(join(root, target)).map((c) => `openspec/specs/${c}/spec.md`)])
+    const specFiles = new Set([...(settledDetail(state, 'merge').written ?? []), ...specCapabilities(join(root, target)).map((c) => `${SPECS_DIR}/${c}/spec.md`)])
     const mine = (f) => f.startsWith(`${CHANGES_DIR}/${change}/`) || f.startsWith(`${target}/`) || specFiles.has(f)
     return commitOwn(ctx, { mine, later: new Set(settledDetail(state, 'placements').debtFiles ?? []), message: `docs(specs): archive ${change}` })
   })
@@ -1061,7 +1062,7 @@ export function report(ctx) {
   const hurt = recordSignals(ctx, state)
   const notes = [
     window.line,
-    ...(due.length ? [`Corpus lint due: ${due.join('; ')}; run the spec corpus lint over openspec/specs/, which reports and never gates.`] : []),
+    ...(due.length ? [`Corpus lint due: ${due.join('; ')}; run the spec corpus lint over ${SPECS_DIR}/, which reports and never gates.`] : []),
     ...(removal.line ? [removal.line] : []),
     ...hurt.lines
   ]

@@ -22,11 +22,11 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, normalize, resolve } from 'node:path'
+import { PLANNING_FILE } from './layout.mjs'
 
 export const HEADING = '## Worktree preparation'
 export const STATE_NAME = 'adf-prepare.json'
 export const DEFAULT_TIMEOUT_MINUTES = 30
-const GUIDE = 'openspec/planning.md'
 const TAIL_LINES = 20
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28 }).trimEnd()
@@ -69,7 +69,7 @@ export function recipeIn(text) {
 }
 
 export function readRecipe(root) {
-  const file = join(resolve(root), GUIDE)
+  const file = join(resolve(root), PLANNING_FILE)
   return existsSync(file) ? recipeIn(readFileSync(file, 'utf8')) : []
 }
 
@@ -84,7 +84,7 @@ export function addStep(root, { command, inputs }) {
   if (paths.length === 0) throw new Error('a step needs at least one input path')
   const outside = paths.filter((p) => !inside(p) || p.includes('`'))
   if (outside.length) throw new Error(`${outside.join(', ')} is not a path inside the project`)
-  const file = join(resolve(root), GUIDE)
+  const file = join(resolve(root), PLANNING_FILE)
   const text = existsSync(file) ? readFileSync(file, 'utf8') : ''
   const eol = text.includes('\r\n') ? '\r\n' : '\n'
   const lines = text === '' ? [] : text.split(/\r?\n/)

@@ -33,6 +33,7 @@ import { DEFAULT_CAP, parsePlan, parseTaskItems, schedule, testFirst } from './p
 import { tickMessage } from './tasks.mjs'
 import { readMarker, readResult, runMarker } from './suite-run.mjs'
 import { gitIn } from './workspace.mjs'
+import { CHANGES_DIR } from './layout.mjs'
 
 export const TEST_RECORD = '.apply-test-record.md'
 
@@ -83,9 +84,9 @@ function ticksSince(git, change, since) {
 
 export function applyStatus(root, change, { tracks = 'tasks.md', cap = DEFAULT_CAP } = {}) {
   const dir = changeDir(root, change)
-  if (!existsSync(dir)) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
+  if (!existsSync(dir)) throw new Error(`no change "${change}" in ${root}/${CHANGES_DIR}`)
   const planText = read(join(dir, 'plan.md'))
-  if (planText === null) throw new Error(`openspec/changes/${change}/plan.md does not exist`)
+  if (planText === null) throw new Error(`${CHANGES_DIR}/${change}/plan.md does not exist`)
   const items = parseTaskItems(read(join(dir, tracks)) ?? '')
   const records = readRecords(root, change)
   const lastHandoff = records.filter((r) => r.kind === 'handoff').at(-1) ?? null

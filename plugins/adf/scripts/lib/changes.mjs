@@ -13,12 +13,10 @@ import { dirname, join, relative, sep } from 'node:path'
 import { readBranches } from './branches.mjs'
 import { ledgerPath } from './ledger.mjs'
 import { buildOrder, readSchemaFile } from './schema.mjs'
+import { ARCHIVE, CHANGES_DIR, CONTEXT_FILE, flowPath, ORIGIN_META_FILE, RULES_DIR } from './layout.mjs'
 
-export const CHANGES_DIR = 'openspec/changes'
-export const ARCHIVE = 'archive'
+export { ARCHIVE, CHANGES_DIR, ORIGIN_META_FILE }
 export const META_FILE = '.adf.json'
-// The metadata file of a change an earlier flow created (the openspec CLI's), still in flight.
-export const ORIGIN_META_FILE = '.openspec.yaml'
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
 function walk(dir) {
@@ -177,11 +175,11 @@ export function changeStatus(root, name, schema) {
 
 function projectGuidance(root, artifact) {
   const read = (path) => (existsSync(join(root, path)) ? readFileSync(join(root, path), 'utf8') : null)
-  const rules = read(`openspec/rules/${artifact.id}.md`)
+  const rules = read(`${RULES_DIR}/${artifact.id}.md`)
   return {
-    context: read('openspec/context.md')?.trim() || null,
+    context: read(CONTEXT_FILE)?.trim() || null,
     rules: rules === null ? [] : rules.split('\n').filter((l) => l.startsWith('- ')).map((l) => l.slice(2).trim()),
-    guides: (artifact.guides ?? []).map((file) => ({ path: `openspec/${file}`, text: read(`openspec/${file}`)?.trim() || null }))
+    guides: (artifact.guides ?? []).map((file) => ({ path: flowPath(file), text: read(flowPath(file))?.trim() || null }))
   }
 }
 

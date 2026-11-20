@@ -8,9 +8,9 @@ import { PRICES_DIR } from './prices.mjs'
 import { readRegistry, validateReviewSettings, writeRegistry } from './registry.mjs'
 import { RETRO_DIR } from './window.mjs'
 import { gitIn, WORKTREES_DIR } from './workspace.mjs'
+import { PLANNING_FILE, REVIEW_PROMPT } from './layout.mjs'
 
-export const PLANNING_GUIDE = 'openspec/planning.md'
-export const REVIEW_PROMPT = 'openspec/review-prompt.md'
+export { REVIEW_PROMPT }
 const HOST_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'host')
 const GUIDE_TEMPLATE = join(HOST_DIR, 'planning.md')
 const REVIEW_TEMPLATE = join(HOST_DIR, 'review-prompt.md')
@@ -47,11 +47,11 @@ function append(root, lines) {
 }
 
 export function createPlanningGuide(root) {
-  const file = join(root, PLANNING_GUIDE)
-  if (existsSync(file)) return { path: PLANNING_GUIDE, created: false }
+  const file = join(root, PLANNING_FILE)
+  if (existsSync(file)) return { path: PLANNING_FILE, created: false }
   mkdirSync(dirname(file), { recursive: true })
   copyFileSync(GUIDE_TEMPLATE, file)
-  return { path: PLANNING_GUIDE, created: true }
+  return { path: PLANNING_FILE, created: true }
 }
 
 // The review criteria at the registry's `review.prompt`. A registry without the key gets the

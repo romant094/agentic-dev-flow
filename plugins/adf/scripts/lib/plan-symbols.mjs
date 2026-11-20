@@ -6,6 +6,7 @@
 //
 // All I/O is injected (read, exists, lineCount, grep, branchChanges), so the checks run
 // against an in-memory tree in tests and against the host repository from the CLI.
+import { CHANGES_DIR } from './layout.mjs'
 
 export const VERBS = ['Create', 'Modify', 'Test', 'Move', 'Delete', 'Revert']
 export const EXTENSIONS = 'mjs|cjs|js|ts|tsx|jsx|json|md|yaml|yml|sh|css|html|sql'
@@ -197,7 +198,7 @@ export const NO_TASKS = 'no `### Task N` heading found'
 //   symbol-missing    a Consumes symbol is found nowhere                  { symbol, path? }
 //   unparsed          a Files line has no shape this module reads         { line }
 export async function checkPlanSymbols({ read, exists, lineCount, grep, branchChanges, changeName, phase = 'propose' }) {
-  const dir = `openspec/changes/${changeName}`
+  const dir = `${CHANGES_DIR}/${changeName}`
   const tasks = parsePlanTasks(await read(`${dir}/plan.md`))
   // A plan with no task heading would otherwise pass with nothing checked.
   if (!tasks.length) return [{ task: null, kind: 'no-tasks', message: NO_TASKS }]

@@ -32,7 +32,7 @@ export const CLOSED = ['fixed', 'dismissed', 'accepted']
 // change records are the flow's own and never code.
 export const DEFAULT_EXCLUDE = [
   '**/*.md',
-  'openspec/changes/**',
+  `${CHANGES_DIR}/**`,
   '**/package-lock.json',
   '**/yarn.lock',
   '**/pnpm-lock.yaml',

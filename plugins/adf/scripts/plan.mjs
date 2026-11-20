@@ -49,7 +49,6 @@ import { changeDir, globToRegExp, inferChange } from './lib/changes.mjs'
 import { appendScripted, applyRound, readRecords } from './lib/ledger.mjs'
 import { failingChecks, lastVerdict } from './lib/preflight.mjs'
 import { checkCommitPlace, commitPaths } from './lib/commit.mjs'
-import { PLANNING_GUIDE } from './lib/host-files.mjs'
 import { groupState } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
 import {
@@ -78,6 +77,7 @@ import { readDebtRoot } from './lib/registry.mjs'
 import { loadSchema, schemaOf } from './lib/schema.mjs'
 import { defaultHome } from './lib/runtime.mjs'
 import { gitIn } from './lib/workspace.mjs'
+import { CHANGES_DIR, COMMIT_SCOPE, PLANNING_FILE } from './lib/layout.mjs'
 
 const USAGE = 'usage: plan.mjs lint|graph|schedule|unplanned|added|reopen [--change <name>] [--root <dir>] (see the header for each command; without --change, the one active change under the root)'
 
@@ -107,11 +107,11 @@ function options(argv, flags, switches = []) {
 const read = (path) => (existsSync(path) ? readFileSync(path, 'utf8') : null)
 // The groups the current apply round froze; none in round 0.
 const frozenOf = (root, change) => applyRound(readRecords(root, change))?.frozen ?? []
-const rel = (change, file) => `openspec/changes/${change}/${file}`
+const rel = (change, file) => `${CHANGES_DIR}/${change}/${file}`
 
 function changeFiles(root, change) {
   const dir = changeDir(root, change)
-  if (!existsSync(dir)) throw new Refusal(`no change "${change}" in ${root}/openspec/changes`)
+  if (!existsSync(dir)) throw new Refusal(`no change "${change}" in ${root}/${CHANGES_DIR}`)
   const planPath = join(dir, 'plan.md')
   const planText = read(planPath)
   if (planText === null) throw new Refusal(`${rel(change, 'plan.md')} does not exist`)
@@ -122,7 +122,7 @@ function changeFiles(root, change) {
 // `git grep` over the tracked tree, the change records excluded. Exit 1 is "no match".
 function grepIn(root) {
   return async ({ fixed, word }) => {
-    const args = ['grep', '-l', '-F', ...(word ? ['-w'] : []), ...fixed.flatMap((p) => ['-e', p]), '--', '.', ':!openspec/changes', ':!.superpowers']
+    const args = ['grep', '-l', '-F', ...(word ? ['-w'] : []), ...fixed.flatMap((p) => ['-e', p]), '--', '.', `:!${CHANGES_DIR}`, ':!.superpowers']
     try {
       return gitIn(root)(...args).split('\n').filter(Boolean)
     } catch (error) {
@@ -163,7 +163,7 @@ async function lint(o) {
     planText,
     tasksText,
     designText: read(join(dir, 'design.md')),
-    guideText: read(join(o.root, PLANNING_GUIDE)),
+    guideText: read(join(o.root, PLANNING_FILE)),
     planFile: rel(o.change, 'plan.md'),
     tasksFile: rel(o.change, tracks),
     designFile: rel(o.change, 'design.md'),
@@ -310,7 +310,7 @@ function reopen(o) {
   const base = git('rev-parse', 'HEAD')
   writeFileSync(planPath, out.planText)
   writeFileSync(join(dir, tracks), out.tasksText)
-  const { commit } = commitPaths(o.root, { only: [rel(o.change, 'plan.md'), rel(o.change, tracks)], message: `docs(openspec): open apply round ${round} of ${o.change}` })
+  const { commit } = commitPaths(o.root, { only: [rel(o.change, 'plan.md'), rel(o.change, tracks)], message: `docs(${COMMIT_SCOPE}): open apply round ${round} of ${o.change}` })
   const checks = failingChecks(recordText)
   const list = (values) => (values.length ? values.join(',') : 'none')
   const { record } = appendScripted(o.root, o.change, 'apply-round', { round: String(round), checks: list(checks), task: out.item, group: out.group ?? 'none', base, verify, frozen: list(frozen) })

@@ -16,6 +16,7 @@ import { pathMatcher, plannedPaths } from './verify.mjs'
 import { baseRef, EXTENSIONS, parseNameStatus, parsePlanTasks } from './plan-symbols.mjs'
 import { readRegistry } from './registry.mjs'
 import { gitIn } from './workspace.mjs'
+import { CHANGES_DIR, COMMIT_SCOPE } from './layout.mjs'
 
 export const LEVELS = ['mechanical', 'integration', 'architecture']
 export const COUPLINGS = ['none', 'weak', 'medium', 'strong']
@@ -829,7 +830,7 @@ export function rangeCommits(root, change, { range, git = gitIn(root) } = {}) {
 // same commits touched most.
 export function unplannedIn(root, change, planText, { range, owner, git = gitIn(root) } = {}) {
   const { base, commits, status } = rangeCommits(root, change, { range, git })
-  const prefix = `openspec/changes/${change}/`
+  const prefix = `${CHANGES_DIR}/${change}/`
   const allowed = (readRegistry(root)?.outsidePlan ?? []).map((g) => globToRegExp(g))
   const exempt = (file) => file.startsWith(prefix) || allowed.some((re) => re.test(file))
   const files = unplannedFiles(planText, commits, { exempt, status })
@@ -837,7 +838,7 @@ export function unplannedIn(root, change, planText, { range, owner, git = gitIn(
 }
 
 // The message of the commit `plan.mjs added --commit` makes.
-export const addedMessage = (change) => `docs(openspec): record work added during apply to ${change}`
+export const addedMessage = (change) => `docs(${COMMIT_SCOPE}): record work added during apply to ${change}`
 
 // plan.md with ``- <Verb>: `<path>` — Added during apply, <date>: <why>`` appended to Task N's
 // Files block. A path the task already names is left alone.

@@ -31,6 +31,7 @@ import { PLANNING_FILE } from './guide.mjs'
 import { countsOf, readTestRecord, SET_MESSAGE } from './suite.mjs'
 import { defaultHome } from './runtime.mjs'
 import { gitIn } from './workspace.mjs'
+import { CHANGES_DIR, COMMIT_SCOPE, SPECS_DIR } from './layout.mjs'
 
 export const CHECKS = {
   validation: 'Structural validation',
@@ -63,7 +64,7 @@ const NOT_SECTIONS = ['run.json', C8_CANDIDATES]
 
 export const verifyDir = (root, change) => join(root, '.superpowers', 'sdd', change, 'verify')
 const relOutput = (change, file) => `.superpowers/sdd/${change}/verify/${file}`
-const changePrefix = (change) => `openspec/changes/${change}/`
+const changePrefix = (change) => `${CHANGES_DIR}/${change}/`
 
 function attempt(fn) {
   try {
@@ -219,7 +220,7 @@ function checkDeltas(root, change) {
   const lines = []
   const byState = { synced: [], 'needs sync': [], conflict: [] }
   for (const name of capabilities) {
-    const mainPath = join(root, 'openspec', 'specs', name, 'spec.md')
+    const mainPath = join(root, SPECS_DIR, name, 'spec.md')
     const mainText = existsSync(mainPath) ? readFileSync(mainPath, 'utf8') : null
     const result = deltaState(readFileSync(join(specsDir, name, 'spec.md'), 'utf8'), mainText)
     byState[result.state].push(name)
@@ -541,7 +542,7 @@ export function extensionChecks(root, change, git, base, core) {
 // `skillEdits` the caller names.
 export function runChecks(rootArg, { change, skillEdits = [], tracks = 'tasks.md', fresh = false, env = process.env, now = new Date().toISOString(), home = defaultHome(env) }) {
   const root = resolve(rootArg)
-  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/${CHANGES_DIR}`)
   const git = gitIn(root)
   const base = resolveBase(root, change, git)
   const outDir = verifyDir(root, change)
@@ -749,7 +750,7 @@ const listOrNone = (items) => (items.length === 0 ? ' none' : `\n${items.map((i)
 // The report the command prints, from a computeVerdict result: failing, warnings, accepted and
 // the next step; on a refusal, the refusals and what resolves them.
 export function renderReport(result, { change, commit = null } = {}) {
-  const record = `openspec/changes/${change}/verify.md`
+  const record = `${CHANGES_DIR}/${change}/verify.md`
   if (result.ok === false && result.refusals) {
     return [
       '## Verification: no verdict yet',
@@ -794,7 +795,7 @@ function nextStep(result) {
 // verdict re-dispatches c4, whose prompt names developer.txt: `stale` lists what was removed.
 export function writeDeveloper(rootArg, { change, text, verdict, summary }) {
   const root = resolve(rootArg)
-  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/${CHANGES_DIR}`)
   if (typeof text !== 'string' || !text.trim()) throw new Error('the developer text is empty; write what was run and what it showed')
   if (!VERDICTS.includes(verdict)) throw new Error(`--verdict must be one of ${VERDICTS.join(', ')}`)
   const dir = verifyDir(root, change)
@@ -896,7 +897,7 @@ export function candidateLines(text, terms) {
 // the list its reply is checked against (lib/verify-reply.mjs).
 export function skillCandidates(rootArg, { change }) {
   const root = resolve(rootArg)
-  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/${CHANGES_DIR}`)
   const git = gitIn(root)
   const base = resolveBase(root, change, git)
   if (base.error) throw new Error(`no commit range: ${base.error}`)
@@ -1020,7 +1021,7 @@ function applySkillDiff(root, diffText) {
 // Refused when any staged, changed or untracked path lies outside `.claude/skills/`.
 export function skillEdit(rootArg, { change, message, diff: diffArg = null, tracks = 'tasks.md', env = process.env, now }) {
   const root = resolve(rootArg)
-  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/${CHANGES_DIR}`)
   if (typeof message !== 'string' || !CONVENTIONAL.test(message)) throw new Error('the message must be a Conventional Commit: type(scope): description')
   const c8Diff = join(verifyDir(root, change), C8_DIFF)
   const diff = diffArg ?? (changedPaths(root).length === 0 && existsSync(c8Diff) ? readFileSync(c8Diff, 'utf8') : null)
@@ -1038,7 +1039,7 @@ export function skillEdit(rootArg, { change, message, diff: diffArg = null, trac
 // ---------------------------------------------------------------- the record
 
 export const TEMPLATE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema', 'templates', 'verify.md')
-export const recordPath = (change) => `openspec/changes/${change}/verify.md`
+export const recordPath = (change) => `${CHANGES_DIR}/${change}/verify.md`
 
 // Each heading of the template and the check id whose section fills it.
 const HEADING_IDS = {
@@ -1202,7 +1203,7 @@ export function assemble(rootArg, { change, commit = false, template = TEMPLATE,
   writeFileSync(join(root, file), out.join('\n'))
   const last = readFileSync(join(root, file), 'utf8').trimEnd().split('\n').at(-1)
   if (last !== result.line) throw new Error(`the record's last line is "${last}", not "${result.line}"`)
-  const committed = commit ? commitPaths(root, { only: [file], message: `docs(openspec): verify ${change}` }) : null
+  const committed = commit ? commitPaths(root, { only: [file], message: `docs(${COMMIT_SCOPE}): verify ${change}` }) : null
   const sha = committed?.commit ?? null
   return { ok: true, file, verdict: result.verdict, line: result.line, commit: sha, report: renderReport(result, { change, commit: sha }) }
 }

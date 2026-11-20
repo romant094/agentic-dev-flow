@@ -63,6 +63,7 @@ import { CHECKS, countsIn, RECORD_FILE, reconcileCounts, verifyDir } from './ver
 import { quote } from './commit.mjs'
 import { marked, runMarker } from './suite-run.mjs'
 import { gitIn } from './workspace.mjs'
+import { CHANGES_DIR, COMMIT_SCOPE } from './layout.mjs'
 
 export { PLANNING_FILE }
 export const HEADING = '## Whole-suite command'
@@ -80,8 +81,8 @@ export const QUOTE_LINES = 60
 export const CANNOT_RUN = [126, 127]
 export const DEFAULT_TIMEOUT_MINUTES = 30
 // The messages of the commits `suite.mjs set --commit` and `suite.mjs run --record --commit` make.
-export const SET_MESSAGE = 'docs(openspec): record the whole-suite command'
-export const recordMessage = (change) => `docs(openspec): record the whole-suite run of ${change}`
+export const SET_MESSAGE = `docs(${COMMIT_SCOPE}): record the whole-suite command`
+export const recordMessage = (change) => `docs(${COMMIT_SCOPE}): record the whole-suite run of ${change}`
 // What a run with no command in the guide replies: how to set one.
 export const setRemedy = (root) =>
   `find the project's whole-suite command, confirm it with the developer, record it with \`node "${join(dirname(fileURLToPath(import.meta.url)), '..', 'suite.mjs')}" set --command "<command>" --root "${root}" --commit\`, and run again`
@@ -374,7 +375,7 @@ function compare(head, base) {
 }
 
 function dirtyPaths(git, change) {
-  const record = `openspec/changes/${change}/${RECORD_FILE}`
+  const record = `${CHANGES_DIR}/${change}/${RECORD_FILE}`
   const status = attempt(() => git('status', '--porcelain', '--untracked-files=all')) ?? ''
   return status
     .split('\n')
@@ -498,7 +499,7 @@ export function runSuite(rootArg, { change, baseCheck: withBaseArg = false, reco
   const root = resolve(rootArg)
   if (!change) throw new Error('no change name')
   if (!(typeof timeoutMinutes === 'number' && timeoutMinutes > 0 && Number.isFinite(timeoutMinutes))) throw new Error('the timeout must be a positive number of minutes')
-  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/${CHANGES_DIR}`)
   if (section !== null && !SECTIONS.includes(section)) throw new Error(`--section must be one of ${SECTIONS.join(', ')}`)
   // The review's run tells a new failure from a pre-existing one, so it always checks the base.
   const withBase = withBaseArg || section === REVIEW_SECTION
@@ -670,7 +671,7 @@ export function runCovering(rootArg, { change, name, command, worktree, timeoutM
   if (!cmd) throw new Error('no command to run')
   if (!worktree) throw new Error('no worktree')
   if (!(typeof timeoutMinutes === 'number' && timeoutMinutes > 0 && Number.isFinite(timeoutMinutes))) throw new Error('the timeout must be a positive number of minutes')
-  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${root}/${CHANGES_DIR}`)
   const dir = resolve(worktree)
   if (!existsSync(dir)) throw new Error(`the worktree ${dir} does not exist`)
   refusePinnedPaths(cmd, dir)

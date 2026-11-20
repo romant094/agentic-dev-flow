@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join } from 'node:path'
 import { changeDir, changeMeta } from './changes.mjs'
 import { baseRef } from './plan-symbols.mjs'
+import { CHANGES_DIR, specPath, SPECS_DIR } from './layout.mjs'
 
 export const MIN_PURPOSE_LENGTH = 50
 export const MAX_REQUIREMENT_TEXT_LENGTH = 500
@@ -330,7 +331,7 @@ export function findMainSpecStructureIssues(content) {
       issues.push({
         line: i + 1,
         message: `Main spec contains delta header "${trimmed}". ` +
-          'Delta headers are only valid inside openspec/changes/<name>/specs/<capability>/spec.md ' +
+          `Delta headers are only valid inside ${CHANGES_DIR}/<name>/specs/<capability>/spec.md ` +
           'and truncate the parsed ## Requirements section.'
       })
       continue
@@ -571,21 +572,21 @@ function listDirs(dir, keep) {
 
 // Active changes: directories under openspec/changes, archive excluded, holding proposal.md.
 export function listChangeIds(root) {
-  const dir = join(root, 'openspec', 'changes')
+  const dir = join(root, CHANGES_DIR)
   return listDirs(dir, (name) => name !== 'archive' && existsSync(join(dir, name, 'proposal.md')))
 }
 
 // Capabilities: directories under openspec/specs holding spec.md.
 export function listSpecIds(root) {
-  const dir = join(root, 'openspec', 'specs')
+  const dir = join(root, SPECS_DIR)
   return listDirs(dir, (name) => existsSync(join(dir, name, 'spec.md')))
 }
 
 export function validateItem(root, type, id, { strict = false } = {}) {
   const start = Date.now()
   const result = type === 'change'
-    ? validateChangeDeltaSpecs(join(root, 'openspec', 'changes', id), { strict })
-    : validateSpecFile(join(root, 'openspec', 'specs', id, 'spec.md'), { name: id, strict })
+    ? validateChangeDeltaSpecs(join(root, CHANGES_DIR, id), { strict })
+    : validateSpecFile(join(root, SPECS_DIR, id, 'spec.md'), { name: id, strict })
   return { id, type, valid: result.valid, issues: result.issues, durationMs: Date.now() - start }
 }
 
@@ -665,10 +666,10 @@ export function parseProposalCapabilities(proposalText) {
 // `specs/<capability>/spec.md`, every spec folder is listed, a modified capability names an
 // existing main spec, a new one does not, and a new name is kebab-case of at least two words.
 export function checkCapabilities(root, change) {
-  const dir = join(root, 'openspec', 'changes', change)
+  const dir = join(root, CHANGES_DIR, change)
   const proposalPath = join(dir, 'proposal.md')
   if (!existsSync(proposalPath)) {
-    return { ok: false, error: `openspec/changes/${change}/proposal.md does not exist`, new: [], modified: [], missingSpec: [], unlistedSpec: [], modifiedNotFound: [], newCollides: [], badName: [], listedTwice: [] }
+    return { ok: false, error: `${CHANGES_DIR}/${change}/proposal.md does not exist`, new: [], modified: [], missingSpec: [], unlistedSpec: [], modifiedNotFound: [], newCollides: [], badName: [], listedTwice: [] }
   }
   const caps = parseProposalCapabilities(readFileSync(proposalPath, 'utf8'))
   const specsDir = join(dir, 'specs')
@@ -743,9 +744,9 @@ export function deltaAgainstMain(deltaText, mainText) {
 // Every delta spec of a change against the main specs: { ok, capabilities: [{ capability,
 // mainSpec, findings }] }.
 export function changeAgainstMain(root, change) {
-  const specsDir = join(root, 'openspec', 'changes', change, 'specs')
+  const specsDir = join(root, CHANGES_DIR, change, 'specs')
   const capabilities = listDirs(specsDir, (name) => existsSync(join(specsDir, name, 'spec.md'))).map((capability) => {
-    const mainPath = join(root, 'openspec', 'specs', capability, 'spec.md')
+    const mainPath = join(root, SPECS_DIR, capability, 'spec.md')
     const mainText = existsSync(mainPath) ? readFileSync(mainPath, 'utf8') : null
     return { capability, mainSpec: mainText !== null, findings: deltaAgainstMain(readFileSync(join(specsDir, capability, 'spec.md'), 'utf8'), mainText) }
   })
@@ -997,7 +998,6 @@ function resolvePlan(plan, conflict, resolution) {
 
 // ---- The merge over a change: read, check, build, validate; write only when all is well ----
 
-const SPECS_DIR = join('openspec', 'specs')
 const mainSpecPath = (root, capability) => join(root, SPECS_DIR, capability, 'spec.md')
 const readOrNull = (path) => (existsSync(path) ? readFileSync(path, 'utf8') : null)
 
@@ -1008,7 +1008,7 @@ function gitText(root, ...args) {
 // The change's base branch as a ref: `origin/<base>` when the remote has it.
 export function changeBaseRef(root, change) {
   const meta = changeMeta(root, change)
-  if (typeof meta.base !== 'string' || !meta.base.trim()) throw new Error(`the metadata of openspec/changes/${change}/ has no "base" branch; the three-way check needs it`)
+  if (typeof meta.base !== 'string' || !meta.base.trim()) throw new Error(`the metadata of ${CHANGES_DIR}/${change}/ has no "base" branch; the three-way check needs it`)
   return baseRef(meta, (name) => {
     try {
       gitText(root, 'rev-parse', '--verify', '--quiet', name)
@@ -1032,7 +1032,7 @@ export function changeMergeBase(root, change) {
 // A capability's main spec at a commit; null when it has none there.
 function mainSpecAt(root, rev, capability) {
   try {
-    return gitText(root, 'show', `${rev}:./openspec/specs/${capability}/spec.md`)
+    return gitText(root, 'show', `${rev}:./${specPath(capability)}`)
   } catch {
     return null
   }
@@ -1056,7 +1056,7 @@ const deltaCapabilities = (root, change) => {
 // requirement is keyed by its FROM name.
 export const SPECS_BASE_FILE = 'specs-base.json'
 export const specsBasePath = (root, change) => join(changeDir(root, change), SPECS_BASE_FILE)
-const specsBaseRel = (change) => `openspec/changes/${change}/${SPECS_BASE_FILE}`
+const specsBaseRel = (change) => `${CHANGES_DIR}/${change}/${SPECS_BASE_FILE}`
 export const NO_SPECS_BASE = `no ${SPECS_BASE_FILE}; base from git merge-base, which a rebase moves`
 
 const comparable = (text) => collapseBlankRuns(text).split('\n').map((l) => l.trimEnd()).join('\n').trim()
@@ -1066,7 +1066,7 @@ const isRecord = (value) => typeof value === 'object' && value !== null && !Arra
 // Every requirement the change's deltas modify, remove or rename, by capability in directory
 // order: [{ capability, requirement, operation, hash }].
 function touchedInChange(root, change) {
-  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in openspec/changes`)
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${CHANGES_DIR}`)
   return deltaCapabilities(root, change).flatMap((capability) => {
     const deltaText = readFileSync(join(changeDir(root, change), 'specs', capability, 'spec.md'), 'utf8')
     return touchedRequirements(parseDeltaSpec(deltaText), deltaText).map((t) => ({ capability, requirement: t.requirement, operation: t.operation, hash: deltaHash(t.operation, t.delta) }))
@@ -1173,7 +1173,7 @@ export function checkSpecsBase(root, change) {
 // `purposes` gives a new capability's Purpose line; the default is PURPOSE_PLACEHOLDER.
 // Returns { preview, rebuilt: Map(capability -> text) }.
 function prepareMerge(root, change, { resolutions = [], purposes = {} } = {}) {
-  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in openspec/changes`)
+  if (!existsSync(changeDir(root, change))) throw new Error(`no change "${change}" in ${CHANGES_DIR}`)
   checkResolutions(resolutions)
   const used = new Set()
   const rebuilt = new Map()
@@ -1293,7 +1293,7 @@ export function writeMerge(root, change, options = {}) {
     const path = mainSpecPath(root, capability)
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, text)
-    written.push(`openspec/specs/${capability}/spec.md`)
+    written.push(`${SPECS_DIR}/${capability}/spec.md`)
   }
   return { ...preview, written }
 }

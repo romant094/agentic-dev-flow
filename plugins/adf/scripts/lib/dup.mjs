@@ -13,6 +13,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, relative } from 'node:path'
 import { commentFor, dupText, parseMarker as parseAny, placeMarker } from './marker.mjs'
+import { CHANGES_DIR } from './layout.mjs'
 
 // The comment syntax table lives in lib/marker.mjs, shared with the review's markers.
 export { BY_NAME, COMMENTS, commentFor } from './marker.mjs'
@@ -79,7 +80,7 @@ export function markFile(root, { file, line, existing: given, reason }) {
 export function findMarkers(root) {
   let out
   try {
-    out = execFileSync('git', ['grep', '-n', '-I', '--untracked', '-F', '-e', 'ADF DUP ', '--', '.', ':!openspec/changes', ':!.superpowers'], {
+    out = execFileSync('git', ['grep', '-n', '-I', '--untracked', '-F', '-e', 'ADF DUP ', '--', '.', `:!${CHANGES_DIR}`, ':!.superpowers'], {
       cwd: root,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],

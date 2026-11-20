@@ -80,6 +80,7 @@ import { readTestRecord, recordName, TESTS_DIR } from './suite.mjs'
 import { dupFilter, locationErrors, sweepInputs } from './sweep.mjs'
 import { relativeFindings } from './dup.mjs'
 import { gitIn } from './workspace.mjs'
+import { CHANGES_DIR } from './layout.mjs'
 
 export const SCHEMA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema')
 export const SPEC_CATEGORIES = ['missing', 'extra', 'misunderstood']
@@ -255,7 +256,7 @@ function implFacts(reply, ctx) {
   const covers = taskMatchers(parsePlan(ctx.planText).tasks)
     .filter((t) => ctx.scope.includes(t.number))
     .flatMap((t) => t.covers)
-  const prefix = `openspec/changes/${ctx.change}/`
+  const prefix = `${CHANGES_DIR}/${ctx.change}/`
   const allowed = (readRegistry(ctx.root)?.outsidePlan ?? []).map((g) => globToRegExp(g))
   // A consolidation's fix also works in the duplicate's files (lib/loop.mjs consolidationState).
   const own = new Set(ctx.consolidation?.files ?? [])
@@ -347,8 +348,8 @@ export function replyContext(root, change, name, { main = root } = {}) {
   const ctx = { root, change, name, parts }
   try {
     if (parts.role === 'impl' || parts.role === 'fix') {
-      const planText = readOr(join(root, 'openspec', 'changes', change, 'plan.md'))
-      if (planText === null) throw new Error(`openspec/changes/${change}/plan.md does not exist`)
+      const planText = readOr(join(root, CHANGES_DIR, change, 'plan.md'))
+      if (planText === null) throw new Error(`${CHANGES_DIR}/${change}/plan.md does not exist`)
       const plan = planDispatch({ change, ...parts }, { root, main, planText, exists: existsSync })
       Object.assign(ctx, { planText, worktree: plan.worktree, scope: scopeOf(planText, parts) })
     }

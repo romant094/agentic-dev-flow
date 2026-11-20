@@ -2,7 +2,8 @@
 // its `## ` heading to the next heading of level one or two. Here, not in lib/suite.mjs, so that
 // lib/commit.mjs reads a section without importing suite.mjs, which imports it back through
 // lib/verify.mjs.
-export const PLANNING_FILE = 'openspec/planning.md'
+import { PLANNING_FILE } from './layout.mjs'
+export { PLANNING_FILE }
 
 // [start, end) line indexes of the section body, or null when the heading is absent.
 export function sectionBounds(lines, heading) {

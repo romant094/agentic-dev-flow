@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLANNING_GUIDE, REVIEW_PROMPT } from './host-files.mjs'
+import { PLANNING_FILE, REVIEW_PROMPT } from './layout.mjs'
 
 // The sections of openspec/planning.md the project fills in; an update never overwrites them.
 export const MANAGED = ['## Whole-suite command', '## Worktree copies', '## Worktree preparation', '## Format command', '## Affected tests command']
@@ -26,7 +26,7 @@ export function hostFiles(oldClone, newClone, registry) {
     theirs: read(join(newClone, from)),
   })
   const files = [
-    entry(PLANNING_GUIDE, 'plugins/adf/host/planning.md'),
+    entry(PLANNING_FILE, 'plugins/adf/host/planning.md'),
     entry(registry?.review?.prompt ?? REVIEW_PROMPT, 'plugins/adf/host/review-prompt.md'),
   ]
   for (const extension of registry?.extensions ?? []) {
@@ -70,7 +70,7 @@ export function hostFiles(oldClone, newClone, registry) {
 export function classify({ base, ours, theirs, path }) {
   if (theirs === null) return 'absent'
   if (ours === null) return 'new'
-  if (path === PLANNING_GUIDE) [base, ours, theirs] = [base, ours, theirs].map((text) => (text === null ? null : unmanaged(text)))
+  if (path === PLANNING_FILE) [base, ours, theirs] = [base, ours, theirs].map((text) => (text === null ? null : unmanaged(text)))
   if (ours === theirs) return 'same'
   if (base !== null && base === theirs) return 'kept'
   if (base !== null && ours === base) return 'replace'
@@ -105,7 +105,7 @@ function unmanaged(text) {
 
 // The new template, with the project's own MANAGED sections of openspec/planning.md carried over.
 export function replaceFromUpdate(path, ours, theirs) {
-  if (path !== PLANNING_GUIDE) return theirs
+  if (path !== PLANNING_FILE) return theirs
   const mine = sections(ours)
   const result = sections(theirs)
   const appended = []
@@ -152,7 +152,7 @@ export function mergeKeep(base, ours, theirs, run = execFileSync) {
 // sections are the project's values. The merge runs with ours' MANAGED sections set to the old
 // template's, so a template change there merges cleanly, and ours' are put back afterwards.
 export function keepFromUpdate(path, base, ours, theirs) {
-  if (path !== PLANNING_GUIDE || base === null) return mergeKeep(base, ours, theirs)
+  if (path !== PLANNING_FILE || base === null) return mergeKeep(base, ours, theirs)
   const merged = mergeKeep(base, replaceFromUpdate(path, base, ours), theirs)
   return { text: replaceFromUpdate(path, ours, merged.text), conflicts: merged.conflicts }
 }

@@ -50,6 +50,7 @@ import { checkouts } from './resolve.mjs'
 import { callRole, knowledgeReport, provider, TRACKER_SKIPPED, trackerReport } from './roles.mjs'
 import { checkFields, handoffFields, heldWrite as trackerHold, trackerCall as tracker } from './tracker.mjs'
 import { worktreePath } from './workspace.mjs'
+import { CHANGES_DIR, SPECS_DIR } from './layout.mjs'
 
 const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 export const SCOPE_SCHEMA = join(PLUGIN_ROOT, 'schema', SCOPE_ROLES['scope-check'].schema)
@@ -74,7 +75,7 @@ const refuse = (message, extra) => {
 export const scopeDir = (main, change) => join(sddDir(main, change), 'scope')
 export const trackerDir = (main, change) => join(sddDir(main, change), 'tracker')
 export const scopeFile = (main, change) => join(scopeDir(main, change), SCOPE_FILE)
-export const changeScopeFile = (root, change) => join(root, 'openspec', 'changes', change, SCOPE_FILE)
+export const changeScopeFile = (root, change) => join(root, CHANGES_DIR, change, SCOPE_FILE)
 const posix = (path) => path.split(sep).join('/')
 const relMain = (main, path) => (isAbsolute(path) ? posix(relative(main, path)) : posix(path))
 const fileKey = (key) => key.replace(/[^A-Za-z0-9._-]/g, '_')
@@ -92,7 +93,7 @@ export const recordable = (scope) => Boolean(scope && (scope.items.length > 0 ||
 
 // The change's own copy, in its worktree, once `propose.mjs create` made it.
 function changeCopy(main, change) {
-  const dir = join(worktreePath(main, change), 'openspec', 'changes', change)
+  const dir = join(worktreePath(main, change), CHANGES_DIR, change)
   return existsSync(dir) ? join(dir, SCOPE_FILE) : null
 }
 
@@ -281,7 +282,7 @@ function inFlight(main, change, keys) {
   }
   const found = new Map()
   for (const root of roots) {
-    const dir = join(root, 'openspec', 'changes')
+    const dir = join(root, CHANGES_DIR)
     if (!existsSync(dir)) continue
     for (const name of readdirSync(dir)) {
       if (name === 'archive' || name === change || found.has(name)) continue
@@ -519,7 +520,7 @@ function baseCommit(main) {
 }
 
 function capabilities(main) {
-  const dir = join(main, 'openspec', 'specs')
+  const dir = join(main, SPECS_DIR)
   if (!existsSync(dir)) return []
   return readdirSync(dir).filter((name) => existsSync(join(dir, name, 'spec.md'))).sort()
 }
@@ -624,7 +625,7 @@ export function checkInput(root, change, { key = null, core, runtime = 'claude-c
       })),
       knowledgeIndex: index,
       knowledge: knowledgeReport('context', knowledge),
-      specs: { dir: join(main, 'openspec', 'specs'), matched: matchedSpecs(main, item, names) },
+      specs: { dir: join(main, SPECS_DIR), matched: matchedSpecs(main, item, names) },
       base: scope.base,
       bug: item.kind === 'bug',
       replyFile,
@@ -811,7 +812,7 @@ export function sectionOf(markdown, title) {
   return lines.slice(start, end).join('\n').trim()
 }
 
-const proposalOf = (root, change) => join(root, 'openspec', 'changes', change, 'proposal.md')
+const proposalOf = (root, change) => join(root, CHANGES_DIR, change, 'proposal.md')
 
 // Writes the section into the change's proposal, replacing the one there or appending it.
 export function render(root, change) {
@@ -819,7 +820,7 @@ export function render(root, change) {
   const file = changeScopeFile(root, change)
   if (!existsSync(file)) return { ok: true, change, step: 'render', written: false, report: 'The change holds no scope.json; the proposal has no Scope sources section.' }
   const proposal = proposalOf(root, change)
-  if (!existsSync(proposal)) refuse(`openspec/changes/${change}/proposal.md does not exist yet; write it, then render`)
+  if (!existsSync(proposal)) refuse(`${CHANGES_DIR}/${change}/proposal.md does not exist yet; write it, then render`)
   const scope = JSON.parse(readFileSync(file, 'utf8'))
   const section = renderSection(scope)
   const textNow = readFileSync(proposal, 'utf8')

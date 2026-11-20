@@ -171,6 +171,7 @@ import { gitIn } from './lib/workspace.mjs'
 import { c4Inputs, candidatesFile, recordVerifyReply, schemaPath } from './lib/verify-reply.mjs'
 import { skillCandidates } from './lib/verify.mjs'
 import { checkCommands, PLANNING_FILE } from './lib/guide.mjs'
+import { CHANGES_DIR } from './lib/layout.mjs'
 
 export const PLUGIN_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const PROMPTS_DIR = join(PLUGIN_ROOT, 'schema', 'prompts')
@@ -388,7 +389,7 @@ function promptFor(inputs, plan, values, root, planText, main, cut) {
   // A dispatch that serves no single task records its compromises without a task number.
   if (inputs.task === undefined) tokens[' --task <n>'] = ''
   if (inputs.role !== 'verify') {
-    fields.push(['Plan', join(root, 'openspec', 'changes', change, 'plan.md')])
+    fields.push(['Plan', join(root, CHANGES_DIR, change, 'plan.md')])
     if (inputs.role === 'impl' || inputs.role === 'fix') fields.push(['Check commands', checksField(root)])
     // A fix and its re-review carry the subject's open findings, rendered from the accepted
     // review results and the rulings, once a review of the subject is recorded.
@@ -436,7 +437,7 @@ function promptFor(inputs, plan, values, root, planText, main, cut) {
       }
       tokens['<base>'] = sweep.base
       dispositions = sweep.secondQuestion
-      fields.push(['Base', sweep.base], ['Range', sweep.range], ['Planning guide', join(root, 'openspec', 'planning.md')])
+      fields.push(['Base', sweep.base], ['Range', sweep.range], ['Planning guide', join(root, PLANNING_FILE)])
       // A re-sweep reads the consolidation's diff and re-reports the open findings that still stand.
       if (inputs.round !== undefined) {
         const open = sweepState(root, change).open
@@ -457,7 +458,7 @@ function promptFor(inputs, plan, values, root, planText, main, cut) {
     if (run === null) throw new DispatchError(`no ${join(verify, 'run.json')}: run verify.mjs run first`)
     const { base, head } = JSON.parse(run)
     fields.push(['Base', base], ['Range', base && head ? `${base}..${head}` : undefined], ['Run record', join(verify, 'run.json')])
-    const changeDir = join(root, 'openspec', 'changes', change)
+    const changeDir = join(root, CHANGES_DIR, change)
     if (inputs.check === 'c4') {
       // The checks run with the developer are recorded runs: what they exercised counts.
       const developer = join(verify, 'developer.txt')
@@ -603,8 +604,8 @@ export function run(argv, { cwd = process.cwd(), main, env = process.env, runtim
   const change = values.change
   // The ingest runs on the archived change; every other dispatch on an active one.
   const archived = values.role === 'ingest' || values.name === 'ingest'
-  if (!/^[a-z0-9][a-z0-9-]*$/.test(change) || !(existsSync(join(root, 'openspec', 'changes', change)) || (archived && existsArchived(root, change)))) {
-    throw new DispatchError(`no change "${change}" in ${join(root, 'openspec', 'changes')}`)
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(change) || !(existsSync(join(root, CHANGES_DIR, change)) || (archived && existsArchived(root, change)))) {
+    throw new DispatchError(`no change "${change}" in ${join(root, CHANGES_DIR)}`)
   }
 
   if (command === 'attempt') {
@@ -648,7 +649,7 @@ export function run(argv, { cwd = process.cwd(), main, env = process.env, runtim
     capability: values.capability,
     pass: number(values.pass)
   }
-  const planText = readOr(join(root, 'openspec', 'changes', change, 'plan.md'))
+  const planText = readOr(join(root, CHANGES_DIR, change, 'plan.md'))
   const checkout = main ?? mainCheckout(root)
   const plan = planDispatch(inputs, { root, main: checkout, planText, exists: existsSync })
   const shown = forRuntime(plan, runtime)

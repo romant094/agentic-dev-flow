@@ -14,6 +14,7 @@ import { DECLARATION_FILE, parseVersion, REGISTRY_PATH } from './registry.mjs'
 import { cli, detectRuntime, installCommand, runtimeHome } from './runtime.mjs'
 import { claudeHome, countsHere, mergeSettings, readJson } from './superpowers.mjs'
 import { create, worktreePath } from './workspace.mjs'
+import { CHANGES_DIR } from './layout.mjs'
 
 const VERSION = /^\d+\.\d+\.\d+$/
 const TAG = /^v(\d+\.\d+\.\d+)$/
@@ -112,7 +113,7 @@ function dirs(path) {
 // worktrees under .claude/worktrees/, paired by name; a change with no worktree has `null`.
 export function inFlight(root) {
   const main = mainCheckout(root)
-  const changes = dirs(join(main, 'openspec', 'changes')).filter((name) => name !== 'archive')
+  const changes = dirs(join(main, CHANGES_DIR)).filter((name) => name !== 'archive')
   const trees = dirs(join(main, '.claude', 'worktrees'))
   const result = changes.map((change) => ({ change, worktree: trees.includes(change) ? join(main, '.claude', 'worktrees', change) : null }))
   for (const tree of trees) {

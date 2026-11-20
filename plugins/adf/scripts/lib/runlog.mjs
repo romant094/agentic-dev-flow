@@ -35,6 +35,7 @@ import { REGISTRY_PATH, readRegistry } from './registry.mjs'
 import { cli, detectRuntime, runtimeHome } from './runtime.mjs'
 import { encodeKeys, WORKTREE_KEY } from './transcripts.mjs'
 import { gitIn, worktrees } from './workspace.mjs'
+import { ROOT } from './layout.mjs'
 
 export const WARNING = 'The archive holds whole session transcripts: everything said in them, commands and their output included. Read it before you send it.'
 const DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -124,7 +125,7 @@ function packChange(stage, name, places) {
     const archive = join(root, CHANGES_DIR, ARCHIVE)
     const archived = existsSync(archive) ? readdirSync(archive).filter((d) => /^\d{4}-\d{2}-\d{2}-/.test(d) && d.slice(11) === name) : []
     for (const dir of [live, ...archived.map((d) => join(archive, d))]) {
-      if (existsSync(dir)) copyTree(dir, join(stage, 'changes', name, 'openspec'))
+      if (existsSync(dir)) copyTree(dir, join(stage, 'changes', name, ROOT))
     }
   }
 }

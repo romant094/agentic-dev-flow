@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync
 import { dirname, join, resolve } from 'node:path'
 import { installedPath } from './installed.mjs'
 import { PLUGIN_ID as SUPERPOWERS_ID } from './superpowers.mjs'
+import { changePath, CHANGES_DIR } from './layout.mjs'
 
 export const ROOT = '.superpowers/sdd'
 export const LEGACY = 'plan'
@@ -91,7 +92,7 @@ export function initSddWorkspace({ changeName, planPath, read, list, write }) {
     return { ok: true, foreign: null, progress, written: true }
   }
   const plan = planOf(text)
-  if (plan && plan.endsWith(`/openspec/changes/${changeName}/plan.md`)) return { ok: true, foreign: null, progress, written: false }
+  if (plan && plan.endsWith(`/${changePath(changeName, 'plan.md')}`)) return { ok: true, foreign: null, progress, written: false }
   return { ok: false, foreign: { path: `${ROOT}/${changeName}`, plan }, progress, written: false }
 }
 
@@ -114,7 +115,7 @@ export function fsIo(root) {
 export function initSdd(root, change) {
   const out = initSddWorkspace({
     changeName: change,
-    planPath: join(resolve(root), 'openspec', 'changes', change, 'plan.md'),
+    planPath: join(resolve(root), CHANGES_DIR, change, 'plan.md'),
     ...fsIo(root)
   })
   const result = { ok: out.ok, change, foreign: out.foreign, progress: out.progress, written: out.written }
@@ -179,12 +180,12 @@ function callSkill(root, change, script, args, { home } = {}) {
   return { ok: true, said, stray }
 }
 
-const planFile = (root, change) => join(resolve(root), 'openspec', 'changes', change, 'plan.md')
+const planFile = (root, change) => join(resolve(root), CHANGES_DIR, change, 'plan.md')
 
 export function brief(root, change, task, { home } = {}) {
   if (!/^[1-9]\d*$/.test(String(task ?? ''))) throw new Error(`task "${task}" is not a positive number`)
   const plan = planFile(root, change)
-  if (!existsSync(plan)) throw new Error(`openspec/changes/${change}/plan.md does not exist in ${root}`)
+  if (!existsSync(plan)) throw new Error(`${CHANGES_DIR}/${change}/plan.md does not exist in ${root}`)
   const file = briefFile(change, task)
   const out = callSkill(root, change, 'task-brief', [plan, String(task), join(resolve(root), file)], { home })
   return { ...out, change, task: Number(task), file: join(resolve(root), file) }
@@ -194,7 +195,7 @@ export function brief(root, change, task, { home } = {}) {
 // their own branches, and its file name carries the first seven characters of each.
 export function reviewPackage(root, change, baseRef, headRef, { home } = {}) {
   const plan = planFile(root, change)
-  if (!existsSync(plan)) throw new Error(`openspec/changes/${change}/plan.md does not exist in ${root}`)
+  if (!existsSync(plan)) throw new Error(`${CHANGES_DIR}/${change}/plan.md does not exist in ${root}`)
   const sha = (ref) => {
     const r = spawnSync('git', ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { cwd: root, encoding: 'utf8' })
     if (r.status !== 0) throw new Error(`${ref} does not resolve to a commit in ${root}`)
