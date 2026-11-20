@@ -7,6 +7,7 @@ import { formatPaths } from './commit.mjs'
 import { notClean, subjectState } from './loop.mjs'
 import { lintTasks, parsePlan } from './plan.mjs'
 import { gitIn } from './workspace.mjs'
+import { CHANGES_DIR, COMMIT_SCOPE } from './layout.mjs'
 
 const ITEM = /^\d+(\.\d+)*$/
 
@@ -54,7 +55,7 @@ export function evidenceGate(root, change, number, planText, file) {
   const task = parsePlan(planText).tasks.find((t) => t.number === Number(number))
   if (!task) throw new Error(`plan.md has no Task ${number}`)
   if (!task.commitsNothing) throw new Error(`Task ${number} is not ticked on evidence: Task ${number}'s Commit step does not say none, so its review loop closes it`)
-  const prefix = `openspec/changes/${change}/`
+  const prefix = `${CHANGES_DIR}/${change}/`
   const path = relative(root, isAbsolute(file) ? file : resolve(root, file)).split(sep).join('/')
   if (!path.startsWith(prefix) || path === prefix) throw new Error(`the evidence ${file} lies outside ${prefix}; record it in the change directory`)
   let text
@@ -67,7 +68,7 @@ export function evidenceGate(root, change, number, planText, file) {
   return path
 }
 
-export const tickMessage = (item, change) => `chore(openspec): tick ${item} of ${change}`
+export const tickMessage = (item, change) => `chore(${COMMIT_SCOPE}): tick ${item} of ${change}`
 
 // Commits the tick: the tasks file, plan.md when it differs from HEAD (an "Added during apply"
 // bullet), and the evidence file of a verification-only task. Staged paths outside these are
@@ -75,7 +76,7 @@ export const tickMessage = (item, change) => `chore(openspec): tick ${item} of $
 // then staged and committed through the index, as lib/commit.mjs does. Returns { sha, paths },
 // sha null when nothing changed; `dryRun` runs the refusal alone.
 export function commitTick(root, change, item, { tracks = 'tasks.md', git = gitIn(root), dryRun = false, evidence = null } = {}) {
-  const dir = `openspec/changes/${change}`
+  const dir = `${CHANGES_DIR}/${change}`
   const candidates = [`${dir}/${tracks}`, `${dir}/plan.md`, ...(evidence ? [evidence] : [])]
   const staged = git('diff', '--cached', '--name-only').split('\n').filter(Boolean)
   const foreign = staged.filter((p) => !candidates.includes(p))

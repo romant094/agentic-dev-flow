@@ -44,8 +44,8 @@ test('codex rollouts of the project and its worktrees are packed, others are not
     put(join(s.home, 'auth.json'), '{"token":"secret"}')
     put(join(s.main, '.superpowers', 'sdd', 'my-change', 'ledger.jsonl'), `${JSON.stringify({ id: 'x-1', kind: 'note', at: '2026-11-02T09:00:00Z' })}\n`)
     for (const secret of ['.env', '.envrc', '.env.local', '.ENV', 'tls.pem', 'id.key']) put(join(s.main, '.superpowers', 'sdd', 'my-change', secret), 'SECRET=1')
-    put(join(s.main, 'openspec', 'changes', 'my-change', '.env.local'), 'SECRET=1')
-    put(join(s.main, 'openspec', 'changes', 'my-change', 'proposal.md'), '# p')
+    put(join(s.main, 'adf', 'changes', 'my-change', '.env.local'), 'SECRET=1')
+    put(join(s.main, 'adf', 'changes', 'my-change', 'proposal.md'), '# p')
     put(join(s.main, '.superpowers', 'sdd', 'old-change', 'ledger.jsonl'), `${JSON.stringify({ id: 'x-1', kind: 'note', at: '2026-09-02T09:00:00Z' })}\n`)
     const result = collectIn(s, 'codex')
     assert.equal(result.ok, true, JSON.stringify(result))
@@ -53,7 +53,7 @@ test('codex rollouts of the project and its worktrees are packed, others are not
     assert.equal(result.sessions, 3)
     assert.deepEqual(result.changes, ['my-change'])
     const files = list(result.archive)
-    for (const f of ['sessions/rollout-a.jsonl', 'sessions/rollout-b.jsonl', 'sessions/rollout-c.jsonl', 'changes/my-change/sdd/ledger.jsonl', 'changes/my-change/openspec/proposal.md', 'registry.json', 'versions.json']) {
+    for (const f of ['sessions/rollout-a.jsonl', 'sessions/rollout-b.jsonl', 'sessions/rollout-c.jsonl', 'changes/my-change/sdd/ledger.jsonl', 'changes/my-change/adf/proposal.md', 'registry.json', 'versions.json']) {
       assert.ok(files.includes(f), `${f} missing from ${files}`)
     }
     assert.ok(!files.some((f) => /other|old|auth\.json|\.env|\.ENV|\.pem|\.key|old-change/.test(f)), files.join('\n'))

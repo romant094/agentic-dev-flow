@@ -28,6 +28,7 @@ import {
 import { failed, run as specsCli } from '../specs.mjs'
 import { listCases, loadCase, OPENSPEC_PURPOSE, openspecBuild } from './fixtures/spec-merge/cases.mjs'
 import { commitFiles, git, mergeRepo } from './fixtures/spec-merge/repo.mjs'
+import { CHANGES_DIR } from '../lib/layout.mjs'
 
 const PURPOSE = 'Widgets are built, stored and shipped by the system, one at a time.'
 const req = (name, body = `The system SHALL ${name.toLowerCase()}.`, scenario = 'Works') =>
@@ -39,7 +40,8 @@ const port = (name) => {
   try {
     return { rebuilt: build(name, c.deltaText, c.mainText, OPENSPEC_PURPOSE).rebuilt }
   } catch (error) {
-    return { error: error.message }
+    // The one difference from openspec: a message names the port's own directory.
+    return { error: error.message.replaceAll(`${CHANGES_DIR}/`, 'openspec/changes/') }
   }
 }
 
@@ -122,7 +124,7 @@ test('checkResolutions takes an array of { capability, requirement, text, reason
 
 const BASE_MAIN = mainSpec('widgets', req('Build'), req('Store'), req('Ship'))
 const DELTA = `## MODIFIED Requirements\n\n${req('Store', 'The system SHALL store widgets dry.')}\n## ADDED Requirements\n\n${req('Track')}`
-const read = (dir, capability) => readFileSync(join(dir, 'openspec', 'specs', capability, 'spec.md'), 'utf8')
+const read = (dir, capability) => readFileSync(join(dir, 'adf', 'specs', capability, 'spec.md'), 'utf8')
 const status = (dir) => git(dir, 'status', '--porcelain')
 
 test('with no edit since the base the merge writes, and a re-run reports merged and writes nothing', () => {
@@ -142,7 +144,7 @@ test('with no edit since the base the merge writes, and a re-run reports merged 
   assert.equal(status(change), '', 'the preview writes nothing')
 
   const written = writeMerge(change, 'add-x', { purposes: { 'new-cap': 'Labels are put on every widget the system builds, before it ships.' } })
-  assert.deepEqual(written.written, ['openspec/specs/new-cap/spec.md', 'openspec/specs/widgets/spec.md'])
+  assert.deepEqual(written.written, ['adf/specs/new-cap/spec.md', 'adf/specs/widgets/spec.md'])
   assert.deepEqual(written.placeholderPurpose, [])
   assert.match(read(change, 'widgets'), /SHALL store widgets dry\.[\s\S]*### Requirement: Track/)
   assert.match(read(change, 'new-cap'), /## Purpose\nLabels are put/)
@@ -155,7 +157,7 @@ test('with no edit since the base the merge writes, and a re-run reports merged 
 
 test('a requirement edited on the base branch since the merge base is a conflict, and nothing is written', () => {
   const { change, onDevelop } = mergeRepo({ main: { widgets: BASE_MAIN, other: mainSpec('other', req('Keep')) }, delta: { widgets: DELTA, other: `## ADDED Requirements\n\n${req('More')}` }, origin: true })
-  onDevelop({ 'openspec/specs/widgets/spec.md': BASE_MAIN.replace('The system SHALL store.', 'The system SHALL store widgets cold.') })
+  onDevelop({ 'adf/specs/widgets/spec.md': BASE_MAIN.replace('The system SHALL store.', 'The system SHALL store widgets cold.') })
   const preview = mergePreview(change, 'add-x')
   assert.equal(preview.ok, false)
   assert.equal(preview.base.ref, 'origin/develop')
@@ -175,13 +177,13 @@ test('a requirement edited on the base branch since the merge base is a conflict
 
 test('an edit on the base branch to a requirement the delta does not touch is no conflict', () => {
   const { change, onDevelop } = mergeRepo({ main: { widgets: BASE_MAIN }, delta: { widgets: DELTA } })
-  onDevelop({ 'openspec/specs/widgets/spec.md': BASE_MAIN.replace('The system SHALL ship.', 'The system SHALL ship by sea.') })
+  onDevelop({ 'adf/specs/widgets/spec.md': BASE_MAIN.replace('The system SHALL ship.', 'The system SHALL ship by sea.') })
   assert.deepEqual(mergePreview(change, 'add-x').conflicts, [])
 })
 
 test('a main spec edited in the change worktree itself is a worktree conflict', () => {
   const { change } = mergeRepo({ main: { widgets: BASE_MAIN }, delta: { widgets: DELTA } })
-  writeFileSync(join(change, 'openspec', 'specs', 'widgets', 'spec.md'), BASE_MAIN.replace('The system SHALL store.', 'The system SHALL store here.'))
+  writeFileSync(join(change, 'adf', 'specs', 'widgets', 'spec.md'), BASE_MAIN.replace('The system SHALL store.', 'The system SHALL store here.'))
   assert.deepEqual(mergePreview(change, 'add-x').conflicts.map((c) => [c.requirement, c.side]), [['Store', 'worktree']])
 })
 
@@ -189,7 +191,7 @@ test('resolutions apply to conflicts only: MODIFIED, REMOVED and RENAMED', () =>
   const main = mainSpec('widgets', req('Build'), req('Store'), req('Ship'), req('Paint'))
   const delta = `## MODIFIED Requirements\n\n${req('Store', 'The system SHALL store widgets dry.')}\n## REMOVED Requirements\n\n${req('Ship', '**Reason**: gone.')}\n## RENAMED Requirements\n\n- FROM: \`### Requirement: Paint\`\n- TO: \`### Requirement: Colour\`\n`
   const { change, onDevelop } = mergeRepo({ main: { widgets: main }, delta: { widgets: delta } })
-  onDevelop({ 'openspec/specs/widgets/spec.md': main.replace('SHALL store.', 'SHALL store cold.').replace('SHALL ship.', 'SHALL ship fast.').replace('SHALL paint.', 'SHALL paint red.') })
+  onDevelop({ 'adf/specs/widgets/spec.md': main.replace('SHALL store.', 'SHALL store cold.').replace('SHALL ship.', 'SHALL ship fast.').replace('SHALL paint.', 'SHALL paint red.') })
   const conflicts = mergePreview(change, 'add-x').conflicts
   assert.deepEqual(conflicts.map((c) => c.requirement), ['Store', 'Ship', 'Paint'])
   // The worktree still holds the base text: a resolution is built on it, the base branch's edit
@@ -204,7 +206,7 @@ test('resolutions apply to conflicts only: MODIFIED, REMOVED and RENAMED', () =>
   assert.deepEqual(preview.capabilities[0].conflicts.map((c) => [c.requirement, c.resolved, c.reason]), [
     ['Store', true, 'both edits kept'], ['Ship', true, 'the removal stands'], ['Paint', true, 'rename kept, colour kept']
   ])
-  assert.deepEqual(writeMerge(change, 'add-x', { resolutions }).written, ['openspec/specs/widgets/spec.md'])
+  assert.deepEqual(writeMerge(change, 'add-x', { resolutions }).written, ['adf/specs/widgets/spec.md'])
   const text = read(change, 'widgets')
   assert.match(text, /SHALL store widgets cold and dry\./)
   assert.doesNotMatch(text, /Requirement: Ship/)
@@ -217,16 +219,16 @@ test('resolutions apply to conflicts only: MODIFIED, REMOVED and RENAMED', () =>
 
 test('a REMOVED conflict resolved with a text keeps the requirement', () => {
   const { change, onDevelop } = mergeRepo({ main: { widgets: BASE_MAIN }, delta: { widgets: `## REMOVED Requirements\n\n${req('Ship', '**Reason**: gone.')}` } })
-  onDevelop({ 'openspec/specs/widgets/spec.md': BASE_MAIN.replace('SHALL ship.', 'SHALL ship fast.') })
+  onDevelop({ 'adf/specs/widgets/spec.md': BASE_MAIN.replace('SHALL ship.', 'SHALL ship fast.') })
   const resolutions = [{ capability: 'widgets', requirement: 'Ship', text: req('Ship', 'The system SHALL ship fast.'), reason: 'still needed' }]
-  assert.deepEqual(writeMerge(change, 'add-x', { resolutions }).written, ['openspec/specs/widgets/spec.md'])
+  assert.deepEqual(writeMerge(change, 'add-x', { resolutions }).written, ['adf/specs/widgets/spec.md'])
   assert.match(read(change, 'widgets'), /### Requirement: Ship\nThe system SHALL ship fast\./)
 })
 
 test('a resolution for a requirement that is no conflict, or with the wrong header, is refused', () => {
   const { change, onDevelop } = mergeRepo({ main: { widgets: BASE_MAIN }, delta: { widgets: DELTA } })
   assert.throws(() => mergePreview(change, 'add-x', { resolutions: [{ capability: 'widgets', requirement: 'Store', text: req('Store'), reason: 'r' }] }), /answer no conflict: widgets "Store"/)
-  onDevelop({ 'openspec/specs/widgets/spec.md': BASE_MAIN.replace('SHALL store.', 'SHALL store cold.') })
+  onDevelop({ 'adf/specs/widgets/spec.md': BASE_MAIN.replace('SHALL store.', 'SHALL store cold.') })
   assert.throws(() => mergePreview(change, 'add-x', { resolutions: [{ capability: 'widgets', requirement: 'Store', text: req('Stash'), reason: 'r' }] }), /must start with "### Requirement: Store"/)
   assert.throws(() => mergePreview(change, 'add-x', { resolutions: [{ capability: 'widgets', requirement: 'Store', text: '', reason: 'r' }] }), /empty text resolves a REMOVED conflict only/)
   assert.throws(() => mergePreview(change, 'add-x', { resolutions: [{ capability: 'widgets', requirement: 'Build', text: req('Build'), reason: 'r' }] }), /answer no conflict: widgets "Build"/)
@@ -255,14 +257,14 @@ test('a refusal of the merge itself is reported per capability, and an unknown c
   const preview = mergePreview(change, 'add-x')
   assert.deepEqual(preview.errors, [{ capability: 'widgets', error: 'widgets validation failed - duplicate requirement in ADDED for header "### Requirement: Store"' }])
   assert.throws(() => mergePreview(change, 'add-y'), /no change "add-y"/)
-  assert.equal(existsSync(join(change, 'openspec', 'specs', 'widgets', 'spec.md')), true)
+  assert.equal(existsSync(join(change, 'adf', 'specs', 'widgets', 'spec.md')), true)
 })
 
 // ---- The base snapshot (specs-base.json) ----
 
-const SPEC = 'openspec/specs/widgets/spec.md'
-const DELTA_PATH = 'openspec/changes/add-x/specs/widgets/spec.md'
-const BASE_PATH = 'openspec/changes/add-x/specs-base.json'
+const SPEC = 'adf/specs/widgets/spec.md'
+const DELTA_PATH = 'adf/changes/add-x/specs/widgets/spec.md'
+const BASE_PATH = 'adf/changes/add-x/specs-base.json'
 const snapshotOf = (dir) => JSON.parse(readFileSync(specsBasePath(dir, 'add-x'), 'utf8')).capabilities
 const ids = (list) => list.map((m) => `${m.capability}: ${m.requirement}`)
 

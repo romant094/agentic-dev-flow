@@ -30,7 +30,7 @@ export function mergeRepo({ main = {}, delta = {}, origin = false } = {}) {
   execFileSync('git', ['init', '-q', '-b', 'develop', root])
   git(root, 'config', 'user.email', 't@example.com')
   git(root, 'config', 'user.name', 'T')
-  commitFiles(root, { 'a.txt': 'a\n', ...Object.fromEntries(Object.entries(main).map(([c, t]) => [`openspec/specs/${c}/spec.md`, t])) }, 'init')
+  commitFiles(root, { 'a.txt': 'a\n', ...Object.fromEntries(Object.entries(main).map(([c, t]) => [`adf/specs/${c}/spec.md`, t])) }, 'init')
   if (origin) {
     execFileSync('git', ['clone', '-q', '--bare', root, join(top, 'origin.git')])
     git(root, 'remote', 'add', 'origin', join(top, 'origin.git'))
@@ -38,7 +38,7 @@ export function mergeRepo({ main = {}, delta = {}, origin = false } = {}) {
   }
   const change = join(top, 'wt')
   git(root, 'worktree', 'add', '-q', '-b', 'feat/add-x', change)
-  const dir = 'openspec/changes/add-x'
+  const dir = 'adf/changes/add-x'
   commitFiles(change, {
     [`${dir}/proposal.md`]: '# add-x\n',
     [`${dir}/.adf.json`]: '{"base":"develop"}\n',

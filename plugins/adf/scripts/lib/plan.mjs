@@ -16,6 +16,7 @@ import { pathMatcher, plannedPaths } from './verify.mjs'
 import { baseRef, EXTENSIONS, parseNameStatus, parsePlanTasks } from './plan-symbols.mjs'
 import { readRegistry } from './registry.mjs'
 import { gitIn } from './workspace.mjs'
+import { CHANGES_DIR, COMMIT_SCOPE } from './layout.mjs'
 
 export const LEVELS = ['mechanical', 'integration', 'architecture']
 export const COUPLINGS = ['none', 'weak', 'medium', 'strong']
@@ -215,19 +216,11 @@ export function planInputs(root, change) {
   return { files: plannedPaths(text).paths, needs: parseNeeds(text).needs }
 }
 
-// The packages a planning guide lists under `## Packages`: every backticked directory-like token.
-export function packagesFromGuide(guideText) {
-  if (!guideText) return []
-  const m = /^##\s+Packages\s*$([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(stripComments(guideText))
-  if (!m) return []
-  return [...new Set([...m[1].matchAll(/`([^`]+)`/g)].map((t) => t[1].replace(/\/\*\*$|\/\*$|\/$/, '')).filter((t) => /^[\w.@-][\w./@-]*$/.test(t)))]
-}
-
 // The package a path is in: the longest listed package it is under. With no list there is no
 // package boundary, so a path is in none: top-level directories are not packages (they joined
 // `apps/server` and `apps/client` and split `apps` from `tests`).
 export function packageOf(path, packages) {
-  return packages.filter((p) => path === p || path.startsWith(`${p}/`)).sort((a, b) => b.length - a.length)[0] ?? null
+  return packages.map((p) => p.replace(/\/\*{1,2}$|\/+$/, '')).filter((p) => path === p || path.startsWith(`${p}/`)).sort((a, b) => b.length - a.length)[0] ?? null
 }
 
 // ---------------------------------------------------------------- risks
@@ -383,7 +376,7 @@ export async function sweepDeletes(tasks, { grep, read, exclude = () => false })
 // the core judges no need word, so a word is reported only when nothing would provide it.
 // `frozen` names the groups an apply round froze (graphFindings).
 // Findings: { severity, kind, task?, file, line, message }.
-export function lintPlanText({ planText, tasksText, designText = null, guideText = null, planFile = 'plan.md', tasksFile = 'tasks.md', designFile = 'design.md', provisioned = false, frozen = [] }) {
+export function lintPlanText({ planText, tasksText, designText = null, packages = [], planFile = 'plan.md', tasksFile = 'tasks.md', designFile = 'design.md', provisioned = false, frozen = [] }) {
   const { tasks, lines } = parsePlan(planText)
   const findings = []
   const at = (file, line) => ({ file, line })
@@ -421,7 +414,6 @@ export function lintPlanText({ planText, tasksText, designText = null, guideText
     if (t.red !== t.green) say('error', 'red-green', here, `Task ${t.number} has ${t.red ? 'RED without GREEN' : 'GREEN without RED'}`, x)
     if (t.refactor) say('error', 'refactor-step', at(planFile, t.refactor), `Task ${t.number} has a REFACTOR step; no task gets one`, x)
 
-    const packages = packagesFromGuide(guideText)
     const spanned = [...new Set(t.files.flatMap((f) => [f.path, f.to].filter(Boolean)).map((p) => packageOf(p, packages)).filter(Boolean))]
     if (spanned.length >= 2)
       say('warning', 'cross-package', at(planFile, t.fields.files ?? t.line), `Task ${t.number} spans ${spanned.join(', ')}; split it if it also changes a failure or rollback path`, { ...x, packages: spanned })
@@ -829,7 +821,7 @@ export function rangeCommits(root, change, { range, git = gitIn(root) } = {}) {
 // same commits touched most.
 export function unplannedIn(root, change, planText, { range, owner, git = gitIn(root) } = {}) {
   const { base, commits, status } = rangeCommits(root, change, { range, git })
-  const prefix = `openspec/changes/${change}/`
+  const prefix = `${CHANGES_DIR}/${change}/`
   const allowed = (readRegistry(root)?.outsidePlan ?? []).map((g) => globToRegExp(g))
   const exempt = (file) => file.startsWith(prefix) || allowed.some((re) => re.test(file))
   const files = unplannedFiles(planText, commits, { exempt, status })
@@ -837,7 +829,7 @@ export function unplannedIn(root, change, planText, { range, owner, git = gitIn(
 }
 
 // The message of the commit `plan.mjs added --commit` makes.
-export const addedMessage = (change) => `docs(openspec): record work added during apply to ${change}`
+export const addedMessage = (change) => `docs(${COMMIT_SCOPE}): record work added during apply to ${change}`
 
 // plan.md with ``- <Verb>: `<path>` — Added during apply, <date>: <why>`` appended to Task N's
 // Files block. A path the task already names is left alone.

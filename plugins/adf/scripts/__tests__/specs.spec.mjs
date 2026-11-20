@@ -276,7 +276,7 @@ test('merge --dry-run previews the spec merge, writes nothing, and exits 1 on a 
   assert.deepEqual(clean.out.conflicts, [])
   assert.deepEqual(adf(change, 'merge', '--dry-run').out, clean.out, 'the one active change is inferred')
 
-  onDevelop({ 'openspec/specs/widgets/spec.md': main.replace('SHALL store it.', 'SHALL store it cold.') })
+  onDevelop({ 'adf/specs/widgets/spec.md': main.replace('SHALL store it.', 'SHALL store it cold.') })
   const conflicted = adf(change, 'merge', '--dry-run', '--change', 'add-x')
   assert.equal(conflicted.code, 1)
   assert.deepEqual(conflicted.out.conflicts.map((c) => [c.capability, c.requirement, c.operation, c.side]), [['widgets', 'Store', 'MODIFIED', 'base-branch']])

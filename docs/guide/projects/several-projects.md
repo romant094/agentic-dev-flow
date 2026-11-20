@@ -13,7 +13,7 @@ Several projects can use the flow on one machine, each on its own release. This 
 
 ### What belongs to a project
 
-Each project declares the marketplace and enables the plugins in its own `.claude/settings.json`, and the project commits that file. The registry, `.claude/adf-extensions.json`, and the planning guide, `openspec/planning.md`, are also the project's own.
+Each project declares the marketplace and enables the plugins in its own `.claude/settings.json`, and the project commits that file. The registry, `.claude/adf-extensions.json`, the settings, `adf/settings.json`, and the planning guide, `adf/guide.md`, are also the project's own.
 
 A plugin acts only in the sessions of a project that enables it. A hook of `adf-english-check` or `adf-npm-workspaces` does nothing in a project without an entry in its registry.
 

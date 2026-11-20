@@ -5,7 +5,7 @@
 //   plan-symbols.mjs <change-name> [--root <dir>] [--phase propose|apply]
 //
 // --root names the host repository (default: `git rev-parse --show-toplevel` of the cwd); the
-// plan is <root>/openspec/changes/<change-name>/plan.md. --phase apply skips ticked tasks and
+// plan is <root>/adf/changes/<change-name>/plan.md. --phase apply skips ticked tasks and
 // exempts what the branch already did since its base, read from the change's metadata. At
 // either phase the Create lines of a ticked task are not checked: the task made the file.
 //

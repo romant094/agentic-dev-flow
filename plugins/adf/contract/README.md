@@ -204,7 +204,7 @@ Prepares a worktree the core made, before anything runs in it. The core makes fo
 change's worktree, a task group's, the throwaway worktree of the change's base that tells a
 pre-existing failure from a new one (`base-check`), and the throwaway worktree of a test-first
 proof (`proof`). Before the call, the core copies into the worktree the untracked files the
-planning guide's `## Worktree copies` names, from the main checkout, where the worktree holds
+settings' `worktreeCopies` names (`adf/settings.json`), from the main checkout, where the worktree holds
 none and git ignores the path, never through a link.
 
 | Input | Result when `done` |

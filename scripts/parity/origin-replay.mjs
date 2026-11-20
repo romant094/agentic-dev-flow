@@ -49,6 +49,12 @@ import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isMain } from '../lib/main.mjs'
 import { cells } from '../check-lessons.mjs'
+import { ARCHIVE_DIR, LEGACY_ROOT, ROOT } from '../../plugins/adf/scripts/lib/layout.mjs'
+
+// The origin keeps the flow's files under openspec/, the port under its own root: a port path as
+// the origin names it, and back.
+const toOrigin = (p) => (p.startsWith(`${ROOT}/`) ? `${LEGACY_ROOT}/${p.slice(ROOT.length + 1)}` : p)
+const toPort = (p) => (p.startsWith(`${LEGACY_ROOT}/`) ? `${ROOT}/${p.slice(LEGACY_ROOT.length + 1)}` : p)
 
 const here = dirname(fileURLToPath(import.meta.url))
 export const REPO = join(here, '..', '..')
@@ -354,8 +360,8 @@ export function compareRun({ cache, main, record, candidate, forge = [], glabCal
 
   // artifacts
   const oArch = `openspec/changes/archive/${candidate.dir}`
-  const pDir = portTip ? P.lines('ls-tree', '--name-only', `${portTip}:openspec/changes/archive/`).find((d) => d.replace(/^\d{4}-\d{2}-\d{2}-/, '') === name) : null
-  const pArch = pDir ? `openspec/changes/archive/${pDir}` : null
+  const pDir = portTip ? P.lines('ls-tree', '--name-only', `${portTip}:${ARCHIVE_DIR}/`).find((d) => d.replace(/^\d{4}-\d{2}-\d{2}-/, '') === name) : null
+  const pArch = pDir ? `${ARCHIVE_DIR}/${pDir}` : null
   if (!pArch) add('artifacts', 'artifact-archive', `the port's branch holds no archive directory of ${name}`)
   else {
     compared.push('artifacts', 'headings')
@@ -493,7 +499,7 @@ export function compareRun({ cache, main, record, candidate, forge = [], glabCal
     for (const cap of caps) {
       const path = `openspec/specs/${cap}/spec.md`
       const o = O.orNull('show', `${m}:${path}`)
-      const p = P.orNull('show', `${portTip}:${path}`)
+      const p = P.orNull('show', `${portTip}:${toPort(path)}`)
       if (norm(o) === norm(p)) continue
       // Layout only: the same text once blank lines and the title line are left out.
       const bare = (t) => norm(t).split('\n').filter((l) => l.trim() && !/^#\s/.test(l)).join('\n')
@@ -513,19 +519,20 @@ export function compareRun({ cache, main, record, candidate, forge = [], glabCal
   if (portTip) {
     compared.push('openspec/ and memory tree')
     const roots = ['openspec/', '.claude/memory/']
-    const list = (git, rev, arch) => git.lines('ls-tree', '-r', '--name-only', rev, '--', ...roots).filter((f) => !f.startsWith(`${arch}/`) && !f.startsWith(`openspec/changes/${name}/`))
-    const o = new Set(list(O, m, oArch))
-    const p = new Set(list(P, portTip, pArch ?? oArch))
+    // Both trees as the origin names their paths.
+    const list = (git, rev, arch, own) => git.lines('ls-tree', '-r', '--name-only', rev, '--', ...own).filter((f) => !f.startsWith(`${arch}/`)).map(toOrigin).filter((f) => !f.startsWith(`openspec/changes/${name}/`))
+    const o = new Set(list(O, m, oArch, roots))
+    const p = new Set(list(P, portTip, pArch ?? toPort(oArch), roots.map(toPort)))
     for (const f of [...p].filter((f) => !o.has(f))) add('tree', `tree-only-port:${f}`, `${f} is in the port's final tree, not the origin's`, { flags: flagsOf(f) })
     for (const f of [...o].filter((f) => !p.has(f))) add('tree', `tree-only-origin:${f}`, `${f} is in the origin's final tree, not the port's`, { flags: flagsOf(f) })
     const touched = m1 ? O.lines('diff', '--no-renames', '--name-only', m1, m, '--', ...roots).filter((f) => !f.startsWith(`${oArch}/`) && !f.startsWith('openspec/specs/') && o.has(f) && p.has(f)) : []
     for (const f of touched) {
-      if (O.orNull('rev-parse', `${m}:${f}`) === P.orNull('rev-parse', `${portTip}:${f}`)) continue
+      if (O.orNull('rev-parse', `${m}:${f}`) === P.orNull('rev-parse', `${portTip}:${toPort(f)}`)) continue
       const rewrite = (t) => (rules.contentNormalize ?? []).filter((n) => new RegExp(n.path).test(f)).reduce((x, n) => x.replace(new RegExp(n.pattern, n.flags ?? 'gm'), n.replace), t ?? '')
-      const same = rewrite(O.orNull('show', `${m}:${f}`)) === rewrite(P.orNull('show', `${portTip}:${f}`))
+      const same = rewrite(O.orNull('show', `${m}:${f}`)) === rewrite(P.orNull('show', `${portTip}:${toPort(f)}`))
       // A file the origin's integration branch changed between the base and the merge (D3) that
       // the port edited exactly as the origin's change did: the difference is that drift alone.
-      const driftOnly = drift.has(f) && !same && editLines(O.orNull('diff', '--no-renames', m1, m, '--', f), rewrite).join('\n') === editLines(P.orNull('diff', '--no-renames', base, portTip, '--', f), rewrite).join('\n')
+      const driftOnly = drift.has(f) && !same && editLines(O.orNull('diff', '--no-renames', m1, m, '--', f), rewrite).join('\n') === editLines(P.orNull('diff', '--no-renames', base, portTip, '--', toPort(f)), rewrite).join('\n')
       add('tree', `${same ? 'tree-content-normalized' : 'tree-content'}:${f}`, `${f}, which the origin's merge changed, differs in the port${same ? ' only where the rules normalize (time, author)' : driftOnly ? ' only by the origin\'s base drift: the port made the same edit' : ''}`, { flags: [...flagsOf(f), ...(driftOnly ? ['drift-only'] : [])] })
     }
   }

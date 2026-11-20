@@ -34,6 +34,7 @@ import { isMain } from './lib/main.mjs'
 import { buildRecord, candidates, cost, RECORD_FILE, renderRecord } from './lib/metrics.mjs'
 import { pricesUrl, readTable, updateTable } from './lib/prices.mjs'
 import { metricsSwitch, setMetricsSwitch } from './lib/registry.mjs'
+import { CHANGES_DIR } from './lib/layout.mjs'
 
 export const USAGE = `usage:
   metrics.mjs extract --change <name> [--out <file>] [--projects <dir>] [--root <dir>]
@@ -114,7 +115,7 @@ export async function run(argv, { cwd = process.cwd(), fetch, now, projectsDir, 
       return { ok: true, ...metricsSwitch(root) }
     case 'extract': {
       const dir = values.out ? null : changeDirOf(root, values.change)
-      if (!values.out && !dir) return { ok: false, error: `no change "${values.change}" in openspec/changes or its archive; pass --out` }
+      if (!values.out && !dir) return { ok: false, error: `no change "${values.change}" in ${CHANGES_DIR} or its archive; pass --out` }
       const file = values.out ? resolve(cwd, values.out) : join(dir, RECORD_FILE)
       let record
       try {

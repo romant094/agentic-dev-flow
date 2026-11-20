@@ -39,7 +39,7 @@ function setup({ files = { 'src/a.ts': 'line1\nline2\nline3\n' }, command = 'tru
     writeRegistry(change, { ...readRegistry(change), review: settings })
     git(change, 'add', '.claude')
   }
-  commitAll(change, { 'openspec/planning.md': `# Planning\n\n## Whole-suite command\n\n${command}\n`, ...files })
+  commitAll(change, { 'adf/settings.json': JSON.stringify({ wholeSuiteCommand: command }), ...files })
   return change
 }
 
@@ -118,7 +118,7 @@ test('a run: start, round, input, response, fixplan, fix, recorded, a second rou
   const reviewedAt = git(change, 'rev-parse', 'HEAD')
   const record = R(change, 'assemble', '--change', 'add-x', '--commit')
   assert.deepEqual([record.ok, record.verdict, record.rounds], [true, 'PASS', 2], record.error)
-  assert.equal(git(change, 'show', '--name-only', '--format=%s', 'HEAD'), 'docs(openspec): review add-x\n\nopenspec/changes/add-x/review.md')
+  assert.equal(git(change, 'show', '--name-only', '--format=%s', 'HEAD'), 'docs(adf): review add-x\n\nadf/changes/add-x/review.md')
   assert.match(record.report, /Next step: \/adf:archive/)
   const md = readFileSync(join(change, record.file), 'utf8')
   assert.match(md, new RegExp(`\\*\\*Reviewed commit\\*\\*: \`${reviewedAt}\``))
@@ -466,7 +466,7 @@ test('assemble refuses a dirty tree and a commit no round reviewed; a marker-onl
   reviewed(change)
   assert.equal(R(change, 'assemble', '--change', 'add-x').verdict, 'PASS')
   write(change, 'src/a.ts', 'dirty\n')
-  assert.match(R(change, 'assemble', '--change', 'add-x').error, /changes outside openspec\/changes\/add-x\/review\.md: src\/a\.ts/)
+  assert.match(R(change, 'assemble', '--change', 'add-x').error, /changes outside adf\/changes\/add-x\/review\.md: src\/a\.ts/)
   git(change, 'checkout', '--', 'src/a.ts')
   R(change, 'mark', '--file', 'src/a.ts', '--line', '1', '--key', 'CWE-1', '--reason', 'r', '--commit')
   assert.equal(R(change, 'assemble', '--change', 'add-x').verdict, 'PASS')
@@ -480,7 +480,7 @@ test('assemble refuses a dirty tree and a commit no round reviewed; a marker-onl
 test('a commit of the change record or of files the filter excludes after round 1 does not block assemble', () => {
   const change = setup()
   reviewed(change)
-  commitIn(change, 'openspec/changes/add-x/tasks.md', '- [x] 1.1 done\n', 'chore: tick')
+  commitIn(change, 'adf/changes/add-x/tasks.md', '- [x] 1.1 done\n', 'chore: tick')
   commitIn(change, 'docs/guide.md', 'prose\n', 'docs: guide')
   assert.equal(R(change, 'assemble', '--change', 'add-x').verdict, 'PASS')
 })
@@ -491,11 +491,11 @@ test('re-entry after a PASS record: start reports the record stands while only r
   const record = R(change, 'assemble', '--change', 'add-x', '--commit')
   assert.equal(record.verdict, 'PASS')
   const reviewedAt = git(change, 'rev-parse', 'HEAD~1')
-  commitIn(change, 'openspec/changes/add-x/tasks.md', '- [x] 1.1 done\n', 'chore: tick')
+  commitIn(change, 'adf/changes/add-x/tasks.md', '- [x] 1.1 done\n', 'chore: tick')
   const startFile = join(reviewDir(change, 'add-x'), 'start.json')
   const run = readFileSync(startFile, 'utf8')
   const again = R(change, 'start', '--change', 'add-x')
-  assert.deepEqual([again.ok, again.recordStands, again.record], [true, true, { file: 'openspec/changes/add-x/review.md', verdict: 'PASS', commit: reviewedAt }])
+  assert.deepEqual([again.ok, again.recordStands, again.record], [true, true, { file: 'adf/changes/add-x/review.md', verdict: 'PASS', commit: reviewedAt }])
   assert.match(again.next, /the record stands/)
   assert.equal(readFileSync(startFile, 'utf8'), run, 'the run is left as it was')
   // --fresh is the developer's request for a new review: it overrides a standing record.
@@ -583,7 +583,7 @@ const QUICK_MD = '## Goal\n\nFix a.\n\n## Scope\n\nsrc/a.ts.\n\n## Plan\n\n1. Fi
 // A quick change: its metadata names the quick schema, its plan is quick.md's.
 function setupQuick() {
   const { change } = host({ '.adf.json': '{"base":"develop","schema":"quick"}\n', 'quick.md': QUICK_MD })
-  commitAll(change, { 'openspec/planning.md': '# Planning\n\n## Whole-suite command\n\ntrue\n', 'src/a.ts': 'line1\nline2\nline3\n' })
+  commitAll(change, { 'adf/settings.json': JSON.stringify({ wholeSuiteCommand: 'true' }), 'src/a.ts': 'line1\nline2\nline3\n' })
   return change
 }
 

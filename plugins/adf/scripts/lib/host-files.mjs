@@ -1,6 +1,6 @@
 // Files /adf:init adds to the host project, each only when missing: the `.gitignore` lines that
-// keep the flow's local state out of the tree, the planning guide the team fills in, and the
-// review prompt the team tunes.
+// keep the flow's local state out of the tree, the settings the flow's scripts read and write,
+// the planning guide the team fills in, and the review prompt the team tunes.
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,11 +8,12 @@ import { PRICES_DIR } from './prices.mjs'
 import { readRegistry, validateReviewSettings, writeRegistry } from './registry.mjs'
 import { RETRO_DIR } from './window.mjs'
 import { gitIn, WORKTREES_DIR } from './workspace.mjs'
+import { GUIDE_FILE, REVIEW_PROMPT, SETTINGS_FILE } from './layout.mjs'
+import { INITIAL, writeSettings } from './settings.mjs'
 
-export const PLANNING_GUIDE = 'openspec/planning.md'
-export const REVIEW_PROMPT = 'openspec/review-prompt.md'
+export { REVIEW_PROMPT }
 const HOST_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'host')
-const GUIDE_TEMPLATE = join(HOST_DIR, 'planning.md')
+const GUIDE_TEMPLATE = join(HOST_DIR, 'guide.md')
 const REVIEW_TEMPLATE = join(HOST_DIR, 'review-prompt.md')
 
 // Local working state of the flow, never committed: change worktrees, the execution ledger
@@ -46,12 +47,20 @@ function append(root, lines) {
   appendFileSync(file, `${text === '' || text.endsWith('\n') ? '' : '\n'}${lines.join('\n')}\n`)
 }
 
-export function createPlanningGuide(root) {
-  const file = join(root, PLANNING_GUIDE)
-  if (existsSync(file)) return { path: PLANNING_GUIDE, created: false }
+// The planning guide's prose, a project file from then on: written once, never updated.
+export function createGuide(root) {
+  const file = join(root, GUIDE_FILE)
+  if (existsSync(file)) return { path: GUIDE_FILE, created: false }
   mkdirSync(dirname(file), { recursive: true })
   copyFileSync(GUIDE_TEMPLATE, file)
-  return { path: PLANNING_GUIDE, created: true }
+  return { path: GUIDE_FILE, created: true }
+}
+
+// The settings with every key at its initial value (lib/settings.mjs INITIAL).
+export function createSettings(root) {
+  if (existsSync(join(root, SETTINGS_FILE))) return { path: SETTINGS_FILE, created: false }
+  writeSettings(root, INITIAL)
+  return { path: SETTINGS_FILE, created: true }
 }
 
 // The review criteria at the registry's `review.prompt`. A registry without the key gets the

@@ -92,7 +92,7 @@ test('the default filter excludes prose, locks, build output, generated files an
     'lib/a.min.js',
     'lib/a.min.css',
     'lib/a.js.map',
-    'openspec/changes/add-x/.adf.json',
+    'adf/changes/add-x/.adf.json',
     'src/regenerated.ts',
     'distill/a.ts',
     'src/markdown.ts',
@@ -148,7 +148,7 @@ test('start reads the change base merge base to HEAD, filters it and counts what
   assert.equal(out.range.head, git(change, 'rev-parse', 'HEAD'))
   assert.deepEqual([out.range.from, out.range.baseRef], ['change', 'develop'])
   assert.deepEqual(out.kept.map((f) => f.file), ['src/a.ts'])
-  assert.deepEqual(out.excluded.map((e) => e.file).sort(), ['README.md', 'openspec/changes/add-x/.adf.json', 'openspec/changes/add-x/plan.md', 'openspec/changes/add-x/tasks.md', 'src/generated.ts'])
+  assert.deepEqual(out.excluded.map((e) => e.file).sort(), ['README.md', 'adf/changes/add-x/.adf.json', 'adf/changes/add-x/plan.md', 'adf/changes/add-x/tasks.md', 'src/generated.ts'])
   assert.deepEqual(out.counts, { changed: 6, kept: 1, excluded: 5 })
   assert.equal(out.bytes, out.kept[0].bytes)
   assert.ok(out.bytes > 0)

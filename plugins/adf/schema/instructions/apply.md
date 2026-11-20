@@ -29,8 +29,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" provision --change <change> -
 
 Every worktree the core makes is provisioned by the `provision` hook of the project's plugins:
 this call for the change worktree, and `group-add`, the base check and the test-first proof for
-theirs. The script first copies the untracked files the planning guide's `## Worktree copies`
-names from the main checkout, then passes the plan's paths and its `**Needs:**` to the hook; it
+theirs. The script first copies the untracked files the settings' `worktreeCopies` name
+(`adf/settings.json`) from the main checkout, then passes the plan's paths and its `**Needs:**` to the hook; it
 refuses when a provider changed a tracked path or wrote into the main checkout. With no
 provider, nothing is installed and nothing else is made. Show its `report`, which holds each
 provider's notes; on `ok: false`, print `error` and stop. It is safe to run again on a resumed
@@ -337,9 +337,9 @@ first only "if task says to". Before Task 1, say which tasks are test-driven: `t
 `apply-status.mjs`, the plan's tasks carrying both a RED and a GREEN step. A task that should be (a behaviour change whose
 failing test can be written before the code) and is not listed is corrected in the plan text
 before it is dispatched. Pass `--base` and `--head` to the `review` prompt of a test-first task
-so it names the task's commit. When the planning guide has a `## Test-first shares` section, the
+so it names the task's commit. When the settings' `testFirstShares` is a list, the
 `prompt` call runs the test-first proof itself, before the review: the commit and the test
-command from the task's accepted `impl` result, the shared paths from that section. The prompt
+command from the task's accepted `impl` result, the shared paths from that list. The prompt
 carries the proof's result, and `dispatch.mjs reply` adds the `critical` finding of category
 `tests` to the review's result when the proof is false and the commit passes. Without the section,
 the reviewer runs the proof.
@@ -394,7 +394,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/specs.mjs" base --change <change> --root <ro
 **A bench pass is ticked on its evidence.** A verification-only task whose check no agent can
 run, such as the developer's bench pass, has no implementer and no review. Ask the developer to
 run it, record what they report in a file in the change directory, such as
-`openspec/changes/<change>/bench-pass.md`, and tick the task on that file:
+`adf/changes/<change>/bench-pass.md`, and tick the task on that file:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/tasks.mjs" tick --plan-task <N> --evidence <file> --change <change> --root <root> --commit
@@ -607,15 +607,15 @@ again. Never schedule a wakeup (`ScheduleWakeup`, `CronCreate`), in any session 
 pending wakeup keeps a headless session alive after its work is done. The report refuses until
 the recorded run's marker is done.
 
-It runs the `## Whole-suite command` of the project's planning guide, `openspec/planning.md`,
+It runs the `wholeSuiteCommand` of the project's settings, `adf/settings.json`,
 uncached, with `<root>` as the working directory, its output to a file, never to your context.
-When the guide has a `## Fresh-run proof` line, a run whose output lacks it fails: it may be
+When the settings have a `freshRunProof` line, a run whose output lacks it fails: it may be
 cached.
 It is the whole suite, not the parts this change touched: this is the only point where a
 cross-group regression shows, since two groups green in isolation can merge red. A failure
 blocks unless it also fails on the change's base. `--base-check` checks that in a throwaway
-worktree of the base, never by stashing, after the main run and, when the planning guide has a
-`## Failed-tests command`, on the failed tests alone, made as `workspace.mjs base-check-add --change <change>
+worktree of the base, never by stashing, after the main run and, when the settings have a
+`failedTestsCommand`, on the failed tests alone, made as `workspace.mjs base-check-add --change <change>
 --root <root>` makes it and removed, never forced; `preExisting` failures are named as separate
 work and do not block, `newFailures` pause apply like any other implementation issue, and a
 base that cannot run the command blocks until the developer rules. When the runner's names
@@ -623,7 +623,7 @@ cannot be parsed and the two failure sets only partly overlap, `comparison` says
 from the output files, and say how. `--commit` commits the record and pushes the change branch
 once, as `group-finish` does; read its `push.state` as there.
 
-`status` `not-run` means the guide holds no command. Nothing ran, so nothing is written,
+`status` `not-run` means the settings hold no command. Nothing ran, so nothing is written,
 committed or pushed: there is no record, and `remedy` names the `set` call. Find a command in the
 project's own files (its package manifest's scripts, a build file, its continuous-integration
 configuration), propose it to the developer, and on their confirmation record it and run again:
@@ -634,8 +634,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" set --command "<command>" --root 
 
 On a decline, run nothing and report that the whole suite was not run; never a silent pass.
 Verify then finds no record and runs the suite itself, which is `not-run` until the developer
-rules. The commit `set` makes writes the planning guide on the change branch; verify's
-`out-of-plan` check exempts the guide in a commit with that message, and nothing else.
+rules. The commit `set` makes writes the settings on the change branch; verify's
+`out-of-plan` check exempts the settings in a commit with that message, and nothing else.
 
 `status` `environment-broken` means the base measured its environment, not its code:
 `environment.reason` says whether it failed at scale with one environment error, or a package's
@@ -655,14 +655,14 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/ledger.mjs" ruling --change <change> --check
 
 Never record such a run as `pre-existing`.
 
-**Worktree preparation is the scripts' job.** The planning guide's `## Worktree preparation`
+**Worktree preparation is the scripts' job.** The settings' `worktreePreparation`
 lists the builds a fresh worktree lacks. The scripts run them: at provisioning, before each
 covering and whole-suite run when their inputs changed, and after a group merge
 (`group-merge` reports it as `prepare`; a failed step there goes to the developer). No agent
 runs those builds itself, the orchestrator included; a missing build is a missing step of the
 recipe, for the developer to add with `prepare.mjs add`.
 
-`--record` writes `openspec/changes/<change>/.apply-test-record.md`, whose `**Commit:**` line
+`--record` writes `adf/changes/<change>/.apply-test-record.md`, whose `**Commit:**` line
 verify reads, and `--commit` commits that file alone. Run it as apply's final commit, after
 every tick and any documentation commit: verify reads the commits after this record, and a
 record written earlier leaves work it does not cover.

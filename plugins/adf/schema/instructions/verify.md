@@ -76,9 +76,10 @@ pass. What resolves each check:
   stopped, most likely at a blocked group; it fails whatever the other checks say. Resolve it
   through apply, never by deleting it from verify.
 - `out-of-plan`: a file that no task's `**Files:**` block names, outside the change's own
-  directory, the registry's `outsidePlan` globs, the approved skill edits and the planning guide
-  in a commit `suite.mjs set --commit` made (its message `docs(openspec): record the whole-suite
-  command`), fails with its commit. The resolution is a plan amendment the developer approves, an "Added during apply"
+  directory, the registry's `outsidePlan` globs, the approved skill edits and the settings
+  (`adf/settings.json`) in a commit `suite.mjs set --commit` or `settings.mjs set --commit` made
+  (its message `docs(adf): record the whole-suite command`, or `docs(adf): record <key> in the
+  settings`), fails with its commit. The resolution is a plan amendment the developer approves, an "Added during apply"
   line as the apply instruction states it, or a ruling; never a rewritten verdict. An unparsed
   `**Files:**` bullet is a warning: its path is not in backticks, so the check could not read it.
 - `ext:<plugin>:<id>`: a check a project plugin returns through the `verify-check` hook, after
@@ -100,7 +101,7 @@ directory, which no test reads.
   `test-record` check fails, and the whole suite runs as if no record existed.
 
 `--suite` makes that re-run part of the same `verify.mjs run` call: on a failing `test-record`
-check it runs the whole-suite command of the planning guide with `<root>` as its working
+check it runs the whole-suite command of the settings with `<root>` as its working
 directory, exactly as the apply instruction's whole-suite rule describes, uncached, with the base
 check, and writes `<verify>test-record.json` with its output file; the result carries the run as
 `suite`, and its `ok` reads that section in place of the check. On a current record it removes a
@@ -191,7 +192,7 @@ starts again with each verify session, at `started` in `run.json`.
 - No delta specs: the check covers the design against the tasks. No design: it covers the specs
   against the implementation. The section says which case applied.
 - A commit in the range that edits a capability's prose above `## Requirements` in
-  `openspec/specs/` is listed with the capabilities and the reason the change gives for it; an
+  `adf/specs/` is listed with the capabilities and the reason the change gives for it; an
   edit with no stated reason is a warning. An edit at or below `## Requirements` fails: only
   archive writes there.
 - When a delta carries `REMOVED` or `RENAMED`: each such requirement's `**Code Disposition:**`
@@ -314,7 +315,7 @@ check that waits for the developer's ruling, with the reason left for their word
 node "${CLAUDE_PLUGIN_ROOT}/scripts/verify.mjs" assemble --change <change> --root <root> --commit
 ```
 
-It renders `openspec/changes/<change>/verify.md` from the template, `run.json`, the sections in
+It renders `adf/changes/<change>/verify.md` from the template, `run.json`, the sections in
 the template's order (a script check with the verbatim content of its output file, `c4` and `c8`
 from their recorded replies), the verdict, the rulings and the approved skill edits, deciding
 nothing; the record's last line is the verdict's `line`. It

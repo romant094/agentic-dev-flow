@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { run as dispatch } from '../dispatch.mjs'
 import { recordReply } from '../lib/attempts.mjs'
-import { isTestFile, sharesIn, taskProof } from '../lib/tdd-proof.mjs'
+import { isTestFile, taskProof } from '../lib/tdd-proof.mjs'
 import { run } from '../tdd-proof.mjs'
 import { commitIn, git, host, superpowersHome } from './git-host.mjs'
 
@@ -113,7 +113,7 @@ const PLAN = `# Plan
 `
 
 // A test-first task done: its commit, the accepted T1 impl reply naming it and its covering run,
-// and the planning guide's shares section when `shares` is given.
+// and the settings' testFirstShares when `shares` is given.
 function doneTask(testText, shares) {
   const { root, change } = host({ 'plan.md': PLAN, 'tasks.md': '- [ ] 1.1 f is 2\n' })
   const parent = commitIn(change, 'src/f.mjs', 'export const f = () => 1\n')
@@ -124,8 +124,8 @@ function doneTask(testText, shares) {
   git(change, 'commit', '-q', '-m', 'feat: f is 2')
   const sha = git(change, 'rev-parse', 'HEAD')
   if (shares !== undefined) {
-    mkdirSync(join(change, 'openspec'), { recursive: true })
-    writeFileSync(join(change, 'openspec', 'planning.md'), `# Planning\n\n## Test-first shares\n\n<!-- untracked paths the tests need -->\n${shares}\n## Whole-suite command\n\n\`npm test\`\n`)
+    mkdirSync(join(change, 'adf'), { recursive: true })
+    writeFileSync(join(change, 'adf', 'settings.json'), JSON.stringify({ testFirstShares: shares, wholeSuiteCommand: 'npm test' }))
   }
   const result = { status: 'DONE', commits: [{ sha, subject: 'feat: f is 2', files: ['src/f.mjs', 'test/f.test.mjs'] }], range: { base: parent, head: sha }, tests: { result: 'pass', runs: [{ command: 'node test/f.test.mjs' }] } }
   recordReply(change, 'add-x', { name: 'T1 impl', file: 'impl.json', result })
@@ -140,14 +140,8 @@ function doneTask(testText, shares) {
   return { root, change, sha, prompt, review }
 }
 
-test('the shares section lists one path per line; its absence is null', () => {
-  assert.deepEqual(sharesIn('## Test-first shares\n\n<!-- c -->\n- `node_modules`\n* .venv\nvendor/lib\n\n## Next\n- x\n'), ['node_modules', '.venv', 'vendor/lib'])
-  assert.deepEqual(sharesIn('## Test-first shares\n'), [])
-  assert.equal(sharesIn('## Whole-suite command\n\n`npm test`\n'), null)
-})
-
 test('a done test-first task is proved before its review, and the review prompt carries the result', () => {
-  const { root, change, sha, prompt, review } = doneTask(TEST, '- `node_modules`\n')
+  const { root, change, sha, prompt, review } = doneTask(TEST, ['node_modules'])
   const text = prompt()
   const file = join(change, '.superpowers/sdd/add-x/tdd/T1.json')
   assert.ok(text.includes('- Test-first proof:\n  - proof: true\n  - parentFails: true\n  - commitPasses: true'), text)
@@ -162,19 +156,19 @@ test('a done test-first task is proved before its review, and the review prompt 
 })
 
 test('a proof kept under other shares runs again; the same shares in another order keep it', () => {
-  const { root, change } = doneTask(TEST, '- `node_modules`\n- `.venv`\n')
+  const { root, change } = doneTask(TEST, ['node_modules', '.venv'])
   const proof = () => taskProof(change, 'add-x', 1, { planText: PLAN, main: root, prove: (worktree, { commit }) => ({ proof: true, commit }) })
   assert.equal(proof().cached, false)
-  const planning = join(change, 'openspec', 'planning.md')
-  writeFileSync(planning, readFileSync(planning, 'utf8').replace('- `node_modules`\n- `.venv`\n', '- `.venv`\n- `node_modules`\n'))
+  const settings = join(change, 'adf', 'settings.json')
+  writeFileSync(settings, JSON.stringify({ testFirstShares: ['.venv', 'node_modules'] }))
   assert.equal(proof().cached, true)
-  writeFileSync(planning, readFileSync(planning, 'utf8').replace('- `.venv`\n', ''))
+  writeFileSync(settings, JSON.stringify({ testFirstShares: ['node_modules'] }))
   const again = proof()
   assert.deepEqual([again.cached, again.share], [false, ['node_modules']])
 })
 
 test('a test that passes without the code adds the critical tests finding to the review result', () => {
-  const { prompt, review } = doneTask("import { f } from '../src/f.mjs'\nif (typeof f !== 'function') process.exit(1)\n", '')
+  const { prompt, review } = doneTask("import { f } from '../src/f.mjs'\nif (typeof f !== 'function') process.exit(1)\n", [])
   assert.match(prompt(), /  - proof: false\n  - parentFails: false\n  - commitPasses: true/)
   const minor = { severity: 'minor', kind: 'quality', category: 'quality', file: 'src/f.mjs', line: 1, title: 'Naming', body: 'Call it two.' }
   const result = review([minor])
@@ -184,10 +178,10 @@ test('a test that passes without the code adds the critical tests finding to the
   assert.match(added.body, /parent [0-9a-f]{7}, where they passed/)
 })
 
-test('without the shares section the reviewer runs the proof, and the prompt says why', () => {
+test('without testFirstShares the reviewer runs the proof, and the prompt says why', () => {
   const { change, prompt, review } = doneTask(TEST)
   const text = prompt()
-  assert.match(text, /- Test-first proof: not run by the flow: openspec\/planning\.md has no ## Test-first shares section/)
+  assert.match(text, /- Test-first proof: not run by the flow: adf\/settings\.json sets no testFirstShares/)
   assert.match(text, /the review proves the new test can fail/)
   assert.equal(existsSync(join(change, '.superpowers/sdd/add-x/tdd/T1.json')), false)
   assert.equal(review().tddProof, undefined)

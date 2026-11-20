@@ -52,42 +52,42 @@ test('the line text is echoed whole and line numbers are 1-based', () => {
 })
 
 test('a filled-in change plan.md is excluded', () => {
-  assert.equal(inScope('openspec/changes/integrate-superpowers-workflow/plan.md'), false)
+  assert.equal(inScope('adf/changes/integrate-superpowers-workflow/plan.md'), false)
 })
 
 test('a change plan stays exempt after it is archived', () => {
-  assert.equal(inScope('openspec/changes/integrate-superpowers-workflow/plan.md'), false)
-  assert.equal(inScope('openspec/changes/archive/2026-08-03-integrate-superpowers-workflow/plan.md'), false)
+  assert.equal(inScope('adf/changes/integrate-superpowers-workflow/plan.md'), false)
+  assert.equal(inScope('adf/changes/archive/2026-08-03-integrate-superpowers-workflow/plan.md'), false)
 })
 
 test('an archived artifact other than the plan stays in scope', () => {
-  assert.equal(inScope('openspec/changes/archive/2026-08-03-integrate-superpowers-workflow/proposal.md'), true)
+  assert.equal(inScope('adf/changes/archive/2026-08-03-integrate-superpowers-workflow/proposal.md'), true)
 })
 
 test('the default scope is the change artifacts and the specs', () => {
-  assert.equal(inScope('openspec/changes/x/proposal.md'), true)
-  assert.equal(inScope('openspec/changes/x/specs/cap/spec.md'), true)
-  assert.equal(inScope('openspec/specs/cap/spec.md'), true)
-  assert.equal(inScope('openspec/changes/x/.adf.json'), true)
+  assert.equal(inScope('adf/changes/x/proposal.md'), true)
+  assert.equal(inScope('adf/changes/x/specs/cap/spec.md'), true)
+  assert.equal(inScope('adf/specs/cap/spec.md'), true)
+  assert.equal(inScope('adf/changes/x/.adf.json'), true)
   assert.equal(inScope('.claude/memory/index.md'), false)
   assert.equal(inScope('src/app.ts'), false)
 })
 
 test('a path outside the extension list is out of scope', () => {
-  assert.equal(inScope('openspec/changes/x/diagram.png'), false)
-  assert.equal(inScope('openspec/changes/x/notes'), false)
-  assert.equal(inScope('openspec/changes/x/a.yml'), true)
+  assert.equal(inScope('adf/changes/x/diagram.png'), false)
+  assert.equal(inScope('adf/changes/x/notes'), false)
+  assert.equal(inScope('adf/changes/x/a.yml'), true)
 })
 
 test('a path is normalised before it is matched', () => {
-  assert.equal(inScope('./openspec/changes/x/proposal.md'), true)
-  assert.equal(inScope('openspec/changes/x/../y/plan.md'), false)
+  assert.equal(inScope('./adf/changes/x/proposal.md'), true)
+  assert.equal(inScope('adf/changes/x/../y/plan.md'), false)
 })
 
 test('a configured include brings an opsx command file into scope', () => {
   const config = resolveConfig({ include: ['.claude/commands/opsx/**/*.md'] })
   assert.equal(inScope('.claude/commands/opsx/apply.md', config), true)
-  assert.equal(inScope('openspec/changes/x/proposal.md', config), false)
+  assert.equal(inScope('adf/changes/x/proposal.md', config), false)
 })
 
 test('a wiki memory page is out of scope unless included', () => {

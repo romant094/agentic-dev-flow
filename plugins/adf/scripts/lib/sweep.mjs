@@ -27,6 +27,7 @@ import { attemptsFile, parseEvents, readLog } from './attempts.mjs'
 import { MAX_ROUNDS, parseName } from './dispatch.mjs'
 import { atOrAfter, consolidationState, roundStart, sweepState } from './loop.mjs'
 import { findSection, parseSections } from './specs.mjs'
+import { CHANGES_DIR } from './layout.mjs'
 
 export const SWEEP_SCHEMA = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema', 'sweep.schema.json')
 
@@ -104,7 +105,7 @@ function consolidationBase(root, change, records, k) {
 // { ref, mergeBase, head, round, from, records }; throws when the base does not resolve.
 export function changeRange(root, change) {
   const dir = changeDir(root, change)
-  if (!existsSync(dir)) throw new Error(`no change "${change}" in ${root}/openspec/changes`)
+  if (!existsSync(dir)) throw new Error(`no change "${change}" in ${root}/${CHANGES_DIR}`)
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
   // No metadata: baseRef names the missing base.
   const ref = baseRef(readChangeMeta(root, dir), (name) => {

@@ -36,6 +36,7 @@ import { create as createWorkspace } from './workspace.mjs'
 import { run as tasksCli } from '../tasks.mjs'
 import { run as planCli } from '../plan.mjs'
 import { run as planSymbolsCli } from '../plan-symbols.mjs'
+import { CHANGES_DIR, COMMIT_SCOPE, CONTEXT_FILE, flowPath, RULES_DIR } from './layout.mjs'
 
 const SCRIPTS = join(dirname(fileURLToPath(import.meta.url)), '..')
 const rel = (root, path) => relative(root, path).split(sep).join('/')
@@ -169,10 +170,10 @@ export const MIN_PARAGRAPH = 80
 export function copiedGuidance(root, artifact, outputs) {
   const read = (path) => (existsSync(join(root, path)) ? readFileSync(join(root, path), 'utf8') : null)
   const sources = []
-  const rules = read(`openspec/rules/${artifact.id}.md`)
-  for (const line of (rules ?? '').split('\n').filter((l) => l.startsWith('- '))) sources.push({ source: `openspec/rules/${artifact.id}.md`, kind: 'rule', text: flat(line.slice(2)), min: MIN_RULE })
-  for (const path of ['openspec/context.md', ...(artifact.guides ?? []).map((g) => `openspec/${g}`)]) {
-    for (const paragraph of (read(path) ?? '').split(/\n\s*\n/)) sources.push({ source: path, kind: path === 'openspec/context.md' ? 'context' : 'guide', text: flat(paragraph), min: MIN_PARAGRAPH })
+  const rules = read(`${RULES_DIR}/${artifact.id}.md`)
+  for (const line of (rules ?? '').split('\n').filter((l) => l.startsWith('- '))) sources.push({ source: `${RULES_DIR}/${artifact.id}.md`, kind: 'rule', text: flat(line.slice(2)), min: MIN_RULE })
+  for (const path of [CONTEXT_FILE, ...(artifact.guides ?? []).map(flowPath)]) {
+    for (const paragraph of (read(path) ?? '').split(/\n\s*\n/)) sources.push({ source: path, kind: path === CONTEXT_FILE ? 'context' : 'guide', text: flat(paragraph), min: MIN_PARAGRAPH })
   }
   const copied = []
   for (const output of outputs) {
@@ -195,7 +196,7 @@ export async function markDone(root, change, artifactId, schema) {
   const { moved, strays } = redirectSkillOutput(root, change, artifactId)
   const outputs = resolveOutputs(changeDir(root, change), artifact.generates)
   const out = { ok: false, change, artifact: artifactId, outputs: outputs.map((p) => rel(root, p)), moved, strays, copied: [], gates: [] }
-  if (outputs.length === 0) return { ...out, refusal: `${artifactId} has no output at openspec/changes/${change}/${artifact.generates}; write it first` }
+  if (outputs.length === 0) return { ...out, refusal: `${artifactId} has no output at ${CHANGES_DIR}/${change}/${artifact.generates}; write it first` }
   out.copied = copiedGuidance(root, artifact, outputs)
   out.gates = await runGates(root, change, artifact)
   const failed = out.gates.filter((g) => !g.ok).map((g) => g.gate)
@@ -271,7 +272,7 @@ export function createChange(mainRoot, { change, branch, base }, schema, { env =
   let copied = null
   if (recordable(scope)) {
     writeFileSync(changeScopeFile(made.root, change), `${JSON.stringify(scope, null, 2)}\n`)
-    copied = `openspec/changes/${change}/scope.json`
+    copied = `${CHANGES_DIR}/${change}/scope.json`
   }
   let ledger
   try {
@@ -296,7 +297,7 @@ export function createChange(mainRoot, { change, branch, base }, schema, { env =
   return { ok: true, change, root: made.root, branch: made.branch, base: made.base, baseRef: made.baseRef, changeRoot: created.changeRoot, ledger, active: { key, file }, ...(copied ? { scope: copied } : {}) }
 }
 
-export const proposeMessage = (change) => `docs(openspec): propose ${change}`
+export const proposeMessage = (change) => `docs(${COMMIT_SCOPE}): propose ${change}`
 
 // The propose commit: refused until every artifact apply needs is done and every gate of every
 // written artifact passes; then only the change directory is committed.
@@ -314,5 +315,5 @@ export async function commitChange(root, change, schema) {
   }
   const failed = gates.filter((g) => !g.ok)
   if (failed.length) return { ok: false, gates: failed, refusal: `gate(s) fail: ${failed.map((g) => `${g.artifact}/${g.gate}`).join(', ')}; nothing was committed` }
-  return { ...commitPaths(root, { only: [`openspec/changes/${change}`], message: proposeMessage(change) }), gates: gates.map((g) => g.gate) }
+  return { ...commitPaths(root, { only: [`${CHANGES_DIR}/${change}`], message: proposeMessage(change) }), gates: gates.map((g) => g.gate) }
 }

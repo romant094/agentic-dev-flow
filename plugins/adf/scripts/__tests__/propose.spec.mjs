@@ -40,8 +40,8 @@ function host() {
   git(root, 'config', 'user.name', 'T')
   mkdirSync(join(root, 'src'))
   writeFileSync(join(root, 'src', 'a.ts'), 'export const a = 1\n')
-  mkdirSync(join(root, 'openspec', 'specs', 'thing-store'), { recursive: true })
-  writeFileSync(join(root, 'openspec', 'specs', 'thing-store', 'spec.md'), MAIN_SPEC)
+  mkdirSync(join(root, 'adf', 'specs', 'thing-store'), { recursive: true })
+  writeFileSync(join(root, 'adf', 'specs', 'thing-store', 'spec.md'), MAIN_SPEC)
   initRegistry(root, '1.2')
   setBranches(root, { integration: 'develop', protected: ['main'] })
   ignoreLocalDirs(root)
@@ -131,7 +131,7 @@ const PLAN = `# Export Implementation Plan
 function started(change = 'add-thing') {
   const main = host()
   const made = createChange(main, { change, branch: `feat/${change}`, base: 'integration' }, schema, { env })
-  return { main, root: made.root, made, dir: join(made.root, 'openspec', 'changes', change) }
+  return { main, root: made.root, made, dir: join(made.root, 'adf', 'changes', change) }
 }
 
 const write = (dir, file, text) => {
@@ -146,7 +146,7 @@ test('every gate the schema may declare has a runner', () => {
 test('create makes the worktree, the change with its base, and the propose session', () => {
   const { root, made, main } = started()
   assert.deepEqual([made.ok, made.branch, made.base, made.root], [true, 'feat/add-thing', 'develop', join(main, '.claude', 'worktrees', 'add-thing')])
-  assert.equal(JSON.parse(readFileSync(join(root, 'openspec', 'changes', 'add-thing', '.adf.json'), 'utf8')).base, 'develop')
+  assert.equal(JSON.parse(readFileSync(join(root, 'adf', 'changes', 'add-thing', '.adf.json'), 'utf8')).base, 'develop')
   assert.equal(made.ledger.recorded, true)
   assert.equal(git(root, 'branch', '--show-current'), 'feat/add-thing')
   // The new change is the worktree's active change (lib/active.mjs).
@@ -158,11 +158,11 @@ test('create --schema quick makes a quick change; next hands out quick.md and do
   const made = await proposeCli(['create', '--change', 'fix-it', '--branch', 'feat/fix-it', '--base', 'integration', '--schema', 'quick', '--root', main], { env })
   assert.equal(made.code, 0, JSON.stringify(made.result))
   const root = made.result.root
-  assert.equal(JSON.parse(readFileSync(join(root, 'openspec', 'changes', 'fix-it', '.adf.json'), 'utf8')).schema, 'quick')
+  assert.equal(JSON.parse(readFileSync(join(root, 'adf', 'changes', 'fix-it', '.adf.json'), 'utf8')).schema, 'quick')
   const quick = loadSchema('quick')
   const next = await nextArtifact(root, 'fix-it', quick)
   assert.deepEqual([next.artifact, next.gates], ['quick', ['quick-plan']])
-  write(join(root, 'openspec', 'changes', 'fix-it'), 'quick.md', '## Plan\n\n1. Fix\n   **Files:** `a.mjs`\n')
+  write(join(root, 'adf', 'changes', 'fix-it'), 'quick.md', '## Plan\n\n1. Fix\n   **Files:** `a.mjs`\n')
   const done = await markDone(root, 'fix-it', 'quick', quick)
   assert.deepEqual(done.gates.map((g) => [g.gate, g.ok]), [['quick-plan', true]])
 })
@@ -191,7 +191,7 @@ test('next hands out each artifact in order, done gates it, and commit takes onl
   write(dir, 'brainstorm.md', '# Brainstorm\n')
   const brainstorm = await markDone(root, 'add-thing', 'brainstorm', schema)
   assert.equal(brainstorm.ok, true)
-  assert.deepEqual(brainstorm.moved.map((m) => m.to), ['openspec/changes/add-thing/design.md'])
+  assert.deepEqual(brainstorm.moved.map((m) => m.to), ['adf/changes/add-thing/design.md'])
   assert.equal(existsSync(join(main, 'docs/superpowers/specs/2026-10-15-thing-design.md')), false)
 
   next = await nextArtifact(root, 'add-thing', schema)
@@ -220,9 +220,9 @@ test('next hands out each artifact in order, done gates it, and commit takes onl
   write(root, 'stray.txt', 'not the change\n')
   const commit = await proposeCli(['commit', '--root', root])
   assert.equal(commit.code, 0, JSON.stringify(commit.result))
-  assert.equal(git(root, 'log', '-1', '--format=%s'), 'docs(openspec): propose add-thing')
-  assert.ok(commit.result.files.every((f) => f.startsWith('openspec/changes/add-thing/')))
-  assert.ok(commit.result.files.includes('openspec/changes/add-thing/specs-base.json'), 'the specs-base gate wrote the snapshot, and the commit holds it')
+  assert.equal(git(root, 'log', '-1', '--format=%s'), 'docs(adf): propose add-thing')
+  assert.ok(commit.result.files.every((f) => f.startsWith('adf/changes/add-thing/')))
+  assert.ok(commit.result.files.includes('adf/changes/add-thing/specs-base.json'), 'the specs-base gate wrote the snapshot, and the commit holds it')
   assert.equal(git(root, 'status', '--porcelain'), '?? stray.txt')
 
   const report = node('changes.mjs', ['status', '--report', '--root', root], root).out.report
@@ -296,13 +296,13 @@ test('a change that skips specs with a reason goes on to tasks and commits with 
 
 test('done refuses a project rule copied into the artifact, and a missing output', async () => {
   const { root, dir } = started()
-  write(root, 'openspec/rules/proposal.md', '- Name every capability after the domain, never after a screen.\n')
+  write(root, 'adf/rules/proposal.md', '- Name every capability after the domain, never after a screen.\n')
   write(dir, 'brainstorm.md', '# B\n')
   assert.match((await markDone(root, 'add-thing', 'proposal', schema)).refusal, /has no output/)
   write(dir, 'proposal.md', `${PROPOSAL()}\nName every capability after the domain, never after a screen.\n`)
   const done = await markDone(root, 'add-thing', 'proposal', schema)
   assert.equal(done.ok, false)
-  assert.deepEqual(done.copied.map((c) => [c.kind, c.source]), [['rule', 'openspec/rules/proposal.md']])
+  assert.deepEqual(done.copied.map((c) => [c.kind, c.source]), [['rule', 'adf/rules/proposal.md']])
 })
 
 test('the writing subcommands refuse the main checkout; status infers the one change in a worktree', () => {

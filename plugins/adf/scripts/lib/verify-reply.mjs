@@ -37,6 +37,7 @@ import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { sweepInputs } from './sweep.mjs'
 import { applyCheck, C8_CANDIDATES, C8_DIFF, patchPaths, resolveBase, SKILLS_DIR, verifyDir } from './verify.mjs'
 import { gitIn } from './workspace.mjs'
+import { SPECS_DIR } from './layout.mjs'
 
 export const SCHEMA_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'schema')
 export const TITLES = { c4: 'Design and specs coherence', c8: 'Stale skills' }
@@ -58,7 +59,7 @@ const readOr = (path) => attempt(() => readFileSync(path, 'utf8'))
 const rawGit = (root, ...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28 })
 const short = (sha) => sha.slice(0, 7)
 const REQUIREMENTS = /^##\s+Requirements\s*$/i
-const SPEC_FILE = /^openspec\/specs\/([^/]+)\/spec\.md$/
+const SPEC_FILE = new RegExp(`^${SPECS_DIR}/([^/]+)/spec\\.md$`)
 
 // ---------------------------------------------------------------- what the script lists
 
@@ -82,13 +83,13 @@ function editPosition(root, sha, file) {
   return 'above'
 }
 
-// The commits of the change's range that edit `openspec/specs/<capability>/spec.md`, oldest
+// The commits of the change's range that edit `adf/specs/<capability>/spec.md`, oldest
 // first: [{ capability, commit, file, position: above | below }].
 export function proseEditsIn(root, change) {
   const git = gitIn(root)
   const base = resolveBase(root, change, git)
   if (base.error) throw new Error(`no commit range: ${base.error}`)
-  const log = rawGit(root, 'log', '--no-renames', '--name-only', '--format=%x1e%H', `${base.ref}..HEAD`, '--', 'openspec/specs')
+  const log = rawGit(root, 'log', '--no-renames', '--name-only', '--format=%x1e%H', `${base.ref}..HEAD`, '--', SPECS_DIR)
   const out = []
   for (const chunk of log.split('\x1e').map((c) => c.trim()).filter(Boolean).reverse()) {
     const [sha, ...files] = chunk.split('\n').map((l) => l.trim())

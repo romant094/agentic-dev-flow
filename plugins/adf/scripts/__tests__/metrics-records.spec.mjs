@@ -88,7 +88,7 @@ test('every reader gives null and a reason when its source is absent, never 0', 
     assert.ok(got.reason.length > 0, name)
   }
   assert.match(readReplies(change, CHANGE).reason, /no \.superpowers\/sdd\/add-x\/attempts\.jsonl/)
-  assert.match(readCompliance(change, CHANGE).reason, /no openspec\/changes\/add-x\/plan\.md/)
+  assert.match(readCompliance(change, CHANGE).reason, /no adf\/changes\/add-x\/plan\.md/)
   assert.match(readTests(change, CHANGE).reason, /tests\//)
   assert.match(readReview(change, CHANGE).reason, /did not start/)
   assert.match(readVerify(change, CHANGE).reason, /verify\/run\.json/)
@@ -174,7 +174,7 @@ test('test runs from the suite records: runs, failed, uncounted, and a file that
 
 test('review state: verdict from the assembled record, rounds, dispositions; ai-review from findings.json; after the move too', () => {
   const { change } = host()
-  commitIn(change, 'openspec/planning.md', '# Planning\n\n## Whole-suite command\n\ntrue\n')
+  commitIn(change, 'adf/settings.json', JSON.stringify({ wholeSuiteCommand: 'true' }))
   commitIn(change, 'src/a.ts', 'line1\nline2\nline3\n')
   const prompt = join(realpathSync(mkdtempSync(join(tmpdir(), 'adf-mr-prompt-'))), 'prompt.md')
   writeFileSync(prompt, 'Look for bugs.\n')
@@ -206,7 +206,7 @@ test('review state: verdict from the assembled record, rounds, dispositions; ai-
   assert.deepEqual(findings['ai-review'], { dispatches: 1, findings: 2, native: { MEDIUM: 1, LOW: 1 }, mapped: { CRITICAL: 0, HIGH: 0, MEDIUM: 1, LOW: 1 } })
   assert.deepEqual(readReplies(change, CHANGE).value['ai-review'], { dispatches: 0, valid: 1, invalid: 1, retries: 1, stops: 0 })
   // Archive builds the record after the move: plan.md and review.md are read from the archive.
-  writeFileSync(join(change, 'openspec', 'changes', CHANGE, 'plan.md'), PLAN)
+  writeFileSync(join(change, 'adf', 'changes', CHANGE, 'plan.md'), PLAN)
   applyLog(change)
   archiveChange(change, CHANGE, { now: new Date('2026-10-19T12:00:00Z') })
   const moved = readSddRecords(change, CHANGE)

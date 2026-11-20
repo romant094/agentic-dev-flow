@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setBranches } from '../lib/branches.mjs'
-import { commitPaths, formatCommandIn, normalizePath, Refusal } from '../lib/commit.mjs'
-import { sectionLine } from '../lib/guide.mjs'
+import { commitPaths, normalizePath, Refusal } from '../lib/commit.mjs'
+import { setSetting } from '../lib/settings.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { initRegistry } from '../lib/registry.mjs'
 import { create, gitIn } from '../lib/workspace.mjs'
@@ -33,7 +33,7 @@ function host() {
 }
 
 function writeChange(change) {
-  const dir = join(change, 'openspec', 'changes', 'add-x')
+  const dir = join(change, 'adf', 'changes', 'add-x')
   mkdirSync(join(dir, 'specs', 'cap'), { recursive: true })
   writeFileSync(join(dir, 'proposal.md'), 'p\n')
   writeFileSync(join(dir, 'specs', 'cap', 'spec.md'), 's\n')
@@ -43,12 +43,12 @@ test('commits only the named paths, with the message unchanged', () => {
   const { change } = host()
   writeChange(change)
   writeFileSync(join(change, 'a.txt'), 'changed but not named\n')
-  const message = 'docs(openspec): propose add-x'
-  const out = commitPaths(change, { only: ['openspec/changes/add-x'], message })
+  const message = 'docs(adf): propose add-x'
+  const out = commitPaths(change, { only: ['adf/changes/add-x'], message })
   assert.equal(out.ok, true)
   assert.equal(out.commit, git(change, 'rev-parse', 'HEAD'))
   assert.equal(out.branch, 'feat/add-x')
-  assert.deepEqual(out.files.sort(), ['openspec/changes/add-x/proposal.md', 'openspec/changes/add-x/specs/cap/spec.md'])
+  assert.deepEqual(out.files.sort(), ['adf/changes/add-x/proposal.md', 'adf/changes/add-x/specs/cap/spec.md'])
   assert.equal(git(change, 'log', '-1', '--format=%B'), message, 'no trailer is appended')
   assert.equal(git(change, 'status', '--porcelain', '--', 'a.txt'), 'M a.txt', 'an unnamed change stays uncommitted')
 })
@@ -66,7 +66,7 @@ test('another staged file refuses, and nothing new is staged', () => {
   writeFileSync(join(change, 'b.txt'), 'b\n')
   git(change, 'add', 'b.txt')
   const head = git(change, 'rev-parse', 'HEAD')
-  assert.throws(() => commitPaths(change, { only: ['openspec/changes/add-x'], message: 'm' }), (e) => e instanceof Refusal && /b\.txt/.test(e.message))
+  assert.throws(() => commitPaths(change, { only: ['adf/changes/add-x'], message: 'm' }), (e) => e instanceof Refusal && /b\.txt/.test(e.message))
   assert.equal(git(change, 'rev-parse', 'HEAD'), head)
   assert.equal(git(change, 'diff', '--cached', '--name-only'), 'b.txt')
 })
@@ -107,7 +107,7 @@ test('nothing to commit, an empty message and paths outside the root refuse', ()
   assert.throws(() => commitPaths(change, { only: [], message: 'm' }), /no path/)
   assert.throws(() => normalizePath(change, '../x'), /outside/)
   assert.throws(() => normalizePath(change, '.'), /whole repository/)
-  assert.equal(normalizePath(change, './openspec/changes/'), 'openspec/changes')
+  assert.equal(normalizePath(change, './adf/changes/'), 'adf/changes')
 })
 
 test('a registry with no branch policy refuses: the protected list is unknown', () => {
@@ -132,7 +132,7 @@ test('the CLI prints one JSON object and exits 0, 1 on a refusal, 2 on a usage e
     const r = spawnSync('node', [CLI, ...args], { encoding: 'utf8' })
     return { code: r.status, out: JSON.parse(r.stdout) }
   }
-  const done = call('--root', change, '--only', 'openspec/changes/add-x', '--only', 'a.txt', '--message', 'm')
+  const done = call('--root', change, '--only', 'adf/changes/add-x', '--only', 'a.txt', '--message', 'm')
   assert.equal(done.code, 0)
   assert.equal(done.out.files.length, 3)
   const refused = call('--root', root, '--only', 'a.txt', '--message', 'm')
@@ -190,55 +190,45 @@ test('a pre-commit hook that formats and re-stages leaves the index and the tree
 test('a file staged under the given paths before the step is committed with them', () => {
   const { change } = host()
   writeChange(change)
-  git(change, 'add', 'openspec/changes/add-x/proposal.md')
-  const out = commitPaths(change, { only: ['openspec/changes/add-x'], message: 'm' })
-  assert.deepEqual(out.files.sort(), ['openspec/changes/add-x/proposal.md', 'openspec/changes/add-x/specs/cap/spec.md'])
+  git(change, 'add', 'adf/changes/add-x/proposal.md')
+  const out = commitPaths(change, { only: ['adf/changes/add-x'], message: 'm' })
+  assert.deepEqual(out.files.sort(), ['adf/changes/add-x/proposal.md', 'adf/changes/add-x/specs/cap/spec.md'])
   assert.equal(git(change, 'status', '--porcelain'), '')
 })
 
-// ---------------------------------------------------------------- the guide's format command
+// ---------------------------------------------------------------- the settings' format command
 
-const guide = (change, body) => {
-  mkdirSync(join(change, 'openspec'), { recursive: true })
-  writeFileSync(join(change, 'openspec', 'planning.md'), `# Planning Guide\n\n## Format command\n\n${body}\n\n## Packages\n`)
-}
+const guide = (change, command) => setSetting(change, 'formatCommand', command)
 
-test('formatCommandIn reads the one line of the section; no section or an empty one is null', () => {
-  assert.equal(formatCommandIn('## Format command\n\n`npx biome format --write {files}`\n'), 'npx biome format --write {files}')
-  assert.equal(formatCommandIn('## Format command\n\n<!-- none -->\n\n## Packages\n'), null)
-  assert.equal(formatCommandIn('# Planning Guide\n'), null)
-  assert.throws(() => sectionLine('## Format command\n\na\nb\n', '## Format command', 'command'), /holds 2 lines; it must hold one command/)
-})
-
-test('the guide\'s format command runs on the step\'s paths before the commit, and the commit holds its output (#2)', () => {
+test('the settings\' format command runs on the step\'s paths before the commit, and the commit holds its output (#2)', () => {
   const { change } = host()
   writeChange(change)
-  guide(change, "`perl -pi -e 's/^p$/formatted p/' {files}`")
+  guide(change, "perl -pi -e 's/^p$/formatted p/' {files}")
   writeFileSync(join(change, 'it\'s here.txt'), 'p\n')
-  const out = commitPaths(change, { only: ['openspec/changes/add-x/proposal.md', "it's here.txt"], message: 'm' })
-  assert.deepEqual(out.files.sort(), ["it's here.txt", 'openspec/changes/add-x/proposal.md'])
-  assert.equal(git(change, 'show', 'HEAD:openspec/changes/add-x/proposal.md'), 'formatted p')
+  const out = commitPaths(change, { only: ['adf/changes/add-x/proposal.md', "it's here.txt"], message: 'm' })
+  assert.deepEqual(out.files.sort(), ['adf/changes/add-x/proposal.md', "it's here.txt"])
+  assert.equal(git(change, 'show', 'HEAD:adf/changes/add-x/proposal.md'), 'formatted p')
   assert.equal(git(change, 'show', "HEAD:it's here.txt"), 'formatted p', 'a path with a quote reaches the command as one argument')
-  assert.equal(git(change, 'status', '--porcelain', '--', 'openspec/changes/add-x/proposal.md', "it's here.txt"), '')
+  assert.equal(git(change, 'status', '--porcelain', '--', 'adf/changes/add-x/proposal.md', "it's here.txt"), '')
 })
 
 test('a format command that exits non-zero refuses with its output, and nothing is staged or committed', () => {
   const { change } = host()
   writeChange(change)
-  guide(change, "`echo 'cannot format {files}'; exit 3`")
+  guide(change, "echo 'cannot format {files}'; exit 3")
   const head = git(change, 'rev-parse', 'HEAD')
   assert.throws(
-    () => commitPaths(change, { only: ['openspec/changes/add-x'], message: 'm' }),
+    () => commitPaths(change, { only: ['adf/changes/add-x'], message: 'm' }),
     (e) => e instanceof Refusal && /the format command .*exited 3/.test(e.message) && /cannot format/.test(e.message)
   )
   assert.equal(git(change, 'rev-parse', 'HEAD'), head)
   assert.equal(git(change, 'diff', '--cached', '--name-only'), '')
 })
 
-test('a guide with no format command commits the files as written', () => {
+test('settings with no format command commit the files as written', () => {
   const { change } = host()
   writeChange(change)
-  guide(change, '<!-- none -->')
-  commitPaths(change, { only: ['openspec/changes/add-x/proposal.md'], message: 'm' })
-  assert.equal(git(change, 'show', 'HEAD:openspec/changes/add-x/proposal.md'), 'p')
+  guide(change, null)
+  commitPaths(change, { only: ['adf/changes/add-x/proposal.md'], message: 'm' })
+  assert.equal(git(change, 'show', 'HEAD:adf/changes/add-x/proposal.md'), 'p')
 })

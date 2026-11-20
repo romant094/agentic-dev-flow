@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { readChangeMeta } from './changes.mjs'
 import { baseRef, checkPlanSymbols, parseArgs, parseNameStatus } from './plan-symbols.mjs'
+import { CHANGES_DIR } from './layout.mjs'
 
 export const USAGE = 'usage: plan-symbols.mjs <change-name> [--root <dir>] [--phase propose|apply]  (outside a git repository, --root is required)'
 
@@ -20,7 +21,7 @@ export async function runPlanSymbols(argv) {
   if (!parsed) return fail(USAGE)
   const { changeName, phase, root } = parsed
   if (!existsSync(root)) return fail(`repository ${root} does not exist`)
-  const dir = `openspec/changes/${changeName}`
+  const dir = `${CHANGES_DIR}/${changeName}`
   if (!existsSync(resolve(root, dir, 'plan.md'))) return fail(`${dir}/plan.md does not exist`)
 
   const inRoot = (args) => git(['-C', root, ...args])
@@ -57,7 +58,7 @@ export async function runPlanSymbols(argv) {
         try {
           // The plans name every symbol they consume, so the change records are excluded.
           return (
-            inRoot(['grep', '-w', '-l', '-F', '-e', symbol, '--', '.', ':!openspec/changes', ':!.superpowers']).trim() !== ''
+            inRoot(['grep', '-w', '-l', '-F', '-e', symbol, '--', '.', `:!${CHANGES_DIR}`, ':!.superpowers']).trim() !== ''
           )
         } catch (e) {
           if (e.status === 1) return false

@@ -12,6 +12,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { changeDir, changeMeta, CHANGES_DIR, globToRegExp } from './changes.mjs'
+import { SETTINGS_FILE } from './layout.mjs'
 import { baseRef } from './plan-symbols.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { readRegistry, SEVERITIES, validateReviewSettings } from './registry.mjs'
@@ -29,10 +30,11 @@ export const CLOSED = ['fixed', 'dismissed', 'accepted']
 // The files no reviewer reads: prose, lock files, build output, generated code, snapshots and
 // coverage. The union of the origin's local pathspecs and its CI filter, with `.md` excluded on
 // both sides; generated files and `__snapshots__/` at any depth, the top level included. The
-// change records are the flow's own and never code.
+// change records and the settings are the flow's own and never code.
 export const DEFAULT_EXCLUDE = [
   '**/*.md',
-  'openspec/changes/**',
+  `${CHANGES_DIR}/**`,
+  SETTINGS_FILE,
   '**/package-lock.json',
   '**/yarn.lock',
   '**/pnpm-lock.yaml',

@@ -107,8 +107,9 @@ test('the setup records each debt refusal with its minimal edit, commits on deve
     assert.deepEqual(edits['.claude/adf-extensions.json'], ['init', 'branches', 'debt-root', 'add'])
     assert.deepEqual(edits['.claude/memory/tech-debt/snmp/index.md'], ['refusal'])
     assert.deepEqual(edits['.claude/memory/tech-debt/index.md'], ['refusal'])
-    assert.deepEqual(edits['openspec/planning.md'], ['init', 'recorded'])
-    for (const path of ['.claude/settings.json', '.gitignore', 'openspec/review-prompt.md', '.gitlab/merge_request_templates/adf.md', '.claude/memory/log.md', '.claude/memory/system.md']) assert.ok(edits[path], path)
+    assert.deepEqual(edits['adf/settings.json'], ['init', 'recorded'])
+    assert.deepEqual(edits['adf/guide.md'], ['init'])
+    for (const path of ['.claude/settings.json', '.gitignore', 'adf/review-prompt.md', '.gitlab/merge_request_templates/adf.md', '.claude/memory/log.md', '.claude/memory/system.md']) assert.ok(edits[path], path)
     assert.equal(edits['.claude/memory/index.md'], undefined, 'a host file already present is kept')
     assert.ok(Object.keys(edits).some((p) => /^\.adf\/prices\/\d{4}-\d{2}-\d{2}\.json$/.test(p)))
 
@@ -124,8 +125,8 @@ test('the setup records each debt refusal with its minimal edit, commits on deve
     assert.deepEqual(registry.branches, { integration: 'develop', protected: [] })
     assert.deepEqual(registry.debt, { root: '.claude/memory/tech-debt' })
     assert.match(readFileSync(join(main, '.claude/memory/tech-debt/snmp/index.md'), 'utf8'), /^\| ID \| Title \| Anchors \| Class \| Source \| Tracker \|$/m)
-    const guide = readFileSync(join(main, 'openspec', 'planning.md'), 'utf8')
-    for (const line of ['npm test -- --force', '`Cached:    0 cached`', '- `packages/shared`', '- `.env`']) assert.ok(guide.includes(line), line)
+    const settings = JSON.parse(readFileSync(join(main, 'adf', 'settings.json'), 'utf8'))
+    assert.deepEqual([settings.wholeSuiteCommand, settings.freshRunProof, settings.packages, settings.worktreeCopies], ['npm test -- --force', 'Cached:    0 cached', ['packages/shared', 'apps/server', 'apps/client'], ['.env']])
 
     // The checks after the commit.
     assert.deepEqual(r.checks.registry.plugins, ORDER)
@@ -144,7 +145,7 @@ test('the setup records each debt refusal with its minimal edit, commits on deve
   assert.deepEqual(snapshot(origin.dir), before)
 })
 
-test('the setup runs init\'s worktree preparation step: every candidate confirmed, written to the host guide and committed', () => {
+test('the setup runs init\'s worktree preparation step: every candidate confirmed, recorded in the host settings and committed', () => {
   const origin = fixtureOrigin({
     extra: {
       'package.json': `${JSON.stringify({ name: 'host', private: true, workspaces: ['packages/*', 'apps/*'] })}\n`,
@@ -157,14 +158,14 @@ test('the setup runs init\'s worktree preparation step: every candidate confirme
     assert.equal(r.ok, true, editReport(r))
     assert.deepEqual(r.unclaimed, [])
     const prepare = r.edits.filter((e) => e.kind === 'prepare')
-    assert.deepEqual(prepare.map((e) => [e.path, e.step]), [['openspec/planning.md', 'prepare.mjs add npm run build --workspace @host/shared']])
+    assert.deepEqual(prepare.map((e) => [e.path, e.step]), [['adf/settings.json', 'prepare.mjs add npm run build --workspace @host/shared']])
     assert.match(prepare[0].why, /@host\/server depends on @host\/shared/)
-    const guide = git(c.main, 'show', 'HEAD:openspec/planning.md')
-    assert.match(guide, /^## Worktree preparation$[\s\S]*^- `npm run build --workspace @host\/shared` from `packages\/shared`$/m)
+    const settings = JSON.parse(git(c.main, 'show', 'HEAD:adf/settings.json'))
+    assert.deepEqual(settings.worktreePreparation, [{ command: 'npm run build --workspace @host/shared', inputs: ['packages/shared'] }])
   })
 })
 
-test('with a prepare command, the substitute is written to the host guide with the candidate\'s own inputs, the offered command kept in its why', () => {
+test('with a prepare command, the substitute is recorded in the host settings with the candidate\'s own inputs, the offered command kept in its why', () => {
   const origin = fixtureOrigin({
     extra: {
       'package.json': `${JSON.stringify({ name: 'host', private: true, workspaces: ['packages/*', 'apps/*'] })}\n`,
@@ -179,8 +180,8 @@ test('with a prepare command, the substitute is written to the host guide with t
     const prepare = r.edits.filter((e) => e.kind === 'prepare')
     assert.deepEqual(prepare.map((e) => e.step), ['prepare.mjs add fake-prepare npm run build --workspace @host/shared'])
     assert.match(prepare[0].why, /the substitute for `npm run build --workspace @host\/shared`, the candidate init offers/)
-    const guide = git(c.main, 'show', 'HEAD:openspec/planning.md')
-    assert.match(guide, /^- `fake-prepare npm run build --workspace @host\/shared` from `packages\/shared`$/m)
+    const settings = JSON.parse(git(c.main, 'show', 'HEAD:adf/settings.json'))
+    assert.deepEqual(settings.worktreePreparation, [{ command: 'fake-prepare npm run build --workspace @host/shared', inputs: ['packages/shared'] }])
   })
 })
 

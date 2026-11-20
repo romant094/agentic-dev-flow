@@ -3,22 +3,22 @@
 // `new change`, `list`, `status` and `instructions`; the JSON keeps the fields the flow read
 // from those commands.
 //
-// Host layout: `openspec/changes/<name>/` per change, `openspec/changes/archive/` for the
-// archived ones, and the project's own guidance in `openspec/context.md` (the project, for
-// every artifact), `openspec/rules/<artifact>.md` (one rule per `- ` line) and the project
-// guides an artifact names in the schema (`guides`), such as `openspec/planning.md`.
+// Host layout: `adf/changes/<name>/` per change, `adf/changes/archive/` for the
+// archived ones, and the project's own guidance in `adf/context.md` (the project, for
+// every artifact), `adf/rules/<artifact>.md` (one rule per `- ` line) and the project
+// guides an artifact names in the schema (`guides`): `adf/guide.md` and the settings,
+// `adf/settings.json`, rendered (lib/settings.mjs renderSettings).
 import { execFileSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { readBranches } from './branches.mjs'
 import { ledgerPath } from './ledger.mjs'
 import { buildOrder, readSchemaFile } from './schema.mjs'
+import { ARCHIVE, CHANGES_DIR, CONTEXT_FILE, flowPath, ORIGIN_META_FILE, RULES_DIR, SETTINGS_FILE } from './layout.mjs'
+import { readSettings, renderSettings } from './settings.mjs'
 
-export const CHANGES_DIR = 'openspec/changes'
-export const ARCHIVE = 'archive'
+export { ARCHIVE, CHANGES_DIR, ORIGIN_META_FILE }
 export const META_FILE = '.adf.json'
-// The metadata file of a change an earlier flow created (the openspec CLI's), still in flight.
-export const ORIGIN_META_FILE = '.openspec.yaml'
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/
 
 function walk(dir) {
@@ -175,13 +175,20 @@ export function changeStatus(root, name, schema) {
   }
 }
 
+// A guide's text for the agent: the settings rendered with what each key means (lib/settings.mjs),
+// any other guide as the project wrote it; null when absent or empty.
+function guideText(root, file, read) {
+  if (flowPath(file) === SETTINGS_FILE) return existsSync(join(root, SETTINGS_FILE)) ? renderSettings(readSettings(root)).trim() : null
+  return read(flowPath(file))?.trim() || null
+}
+
 function projectGuidance(root, artifact) {
   const read = (path) => (existsSync(join(root, path)) ? readFileSync(join(root, path), 'utf8') : null)
-  const rules = read(`openspec/rules/${artifact.id}.md`)
+  const rules = read(`${RULES_DIR}/${artifact.id}.md`)
   return {
-    context: read('openspec/context.md')?.trim() || null,
+    context: read(CONTEXT_FILE)?.trim() || null,
     rules: rules === null ? [] : rules.split('\n').filter((l) => l.startsWith('- ')).map((l) => l.slice(2).trim()),
-    guides: (artifact.guides ?? []).map((file) => ({ path: `openspec/${file}`, text: read(`openspec/${file}`)?.trim() || null }))
+    guides: (artifact.guides ?? []).map((file) => ({ path: flowPath(file), text: guideText(root, file, read) }))
   }
 }
 

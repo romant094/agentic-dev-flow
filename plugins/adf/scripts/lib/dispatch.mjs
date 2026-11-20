@@ -26,6 +26,7 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { CHANGES_DIR } from './layout.mjs'
 
 export const LEVELS = ['mechanical', 'integration', 'architecture']
 export const TASK_ROLES = ['impl', 'review', 're-review', 'fix']
@@ -445,7 +446,7 @@ export function planDispatch(inputs, { root, main, planText, exists }) {
     return out
   }
 
-  if (planText == null) refuse(`openspec/changes/${change}/plan.md does not exist`)
+  if (planText == null) refuse(`${CHANGES_DIR}/${change}/plan.md does not exist`)
   const graph = parseGraph(planText)
   if (task === undefined) {
     // merge-review <G>, fix <G>, re-review <G>: in the change worktree, over the group's tasks.

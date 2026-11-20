@@ -14,6 +14,7 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { basename, extname, isAbsolute, join, relative } from 'node:path'
+import { CHANGES_DIR } from './layout.mjs'
 
 const LINE = (open) => ({ open, close: '' })
 const BLOCK = (open, close) => ({ open, close })
@@ -218,7 +219,7 @@ export function coveringIgnore(lines, n, key = null) {
 export function scanMarkers(root) {
   let out
   try {
-    out = execFileSync('git', ['grep', '-n', '-I', '--untracked', '-E', '-e', 'ADF (IGNORE|DUP)', '--', '.', ':!openspec/changes', ':!.superpowers'], {
+    out = execFileSync('git', ['grep', '-n', '-I', '--untracked', '-E', '-e', 'ADF (IGNORE|DUP)', '--', '.', `:!${CHANGES_DIR}`, ':!.superpowers'], {
       cwd: root,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],

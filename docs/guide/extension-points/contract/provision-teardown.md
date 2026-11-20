@@ -27,7 +27,7 @@ A provider writes only paths that git ignores in the worktree. It never writes i
 | `provision` | [/adf:propose](../../cycle/propose.md) makes the `change` worktree. [/adf:apply](../../cycle/apply.md) makes the `group`, `base-check` and `proof` worktrees. |
 | `teardown` | Before the core removes any of those worktrees. [/adf:archive](../../cycle/archive.md) removes the `change` worktree. |
 
-Before the `provision` call, the core copies into the worktree the untracked files that the section `## Worktree copies` of the planning guide names. It takes them from the main checkout.
+Before the `provision` call, the core copies into the worktree the untracked files that the key `worktreeCopies` of the settings names. It takes them from the main checkout.
 
 ## With no provider
 

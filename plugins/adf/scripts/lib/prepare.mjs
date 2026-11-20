@@ -1,11 +1,7 @@
 // Worktree preparation: what a fresh worktree lacks because git ignores it, such as a built
-// workspace package or generated code, rebuilt by the project's own commands. The recipe lives
-// under `## Worktree preparation` in `openspec/planning.md`, one list item per step:
-//
-//   - `<command>` from `<input path>`, `<input path>`
-//
-// the first code span the command, every other code span an input path relative to the project
-// root (HTML comments ignored). `/adf:init` gathers candidates (`candidates`) and writes the ones
+// workspace package or generated code, rebuilt by the project's own commands. The recipe is the
+// settings' `worktreePreparation` (lib/settings.mjs): one { command, inputs } per step, each
+// input a path relative to the project root. `/adf:init` gathers candidates (`candidates`) and writes the ones
 // the developer confirms (`addStep`).
 //
 // `prepareWorktree` runs, in recipe order and with the worktree as the working directory, each
@@ -22,11 +18,10 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, normalize, resolve } from 'node:path'
+import { getSetting, setSetting } from './settings.mjs'
 
-export const HEADING = '## Worktree preparation'
 export const STATE_NAME = 'adf-prepare.json'
 export const DEFAULT_TIMEOUT_MINUTES = 30
-const GUIDE = 'openspec/planning.md'
 const TAIL_LINES = 20
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 1 << 28 }).trimEnd()
@@ -41,71 +36,23 @@ const inside = (path) => path !== '' && !isAbsolute(path) && !normalize(path).st
 
 // ---------------------------------------------------------------- the recipe
 
-// [start, end) line indexes of the section body, or null when the heading is absent.
-function bounds(lines) {
-  const at = lines.findIndex((l) => l.trim() === HEADING)
-  if (at < 0) return null
-  let end = lines.findIndex((l, i) => i > at && /^#{1,2}\s/.test(l))
-  if (end < 0) end = lines.length
-  return { start: at + 1, end }
-}
+export const readRecipe = (root) => getSetting(root, 'worktreePreparation')
 
-export function recipeIn(text) {
-  const lines = String(text ?? '').split(/\r?\n/)
-  const b = bounds(lines)
-  if (!b) return []
-  const body = lines.slice(b.start, b.end).join('\n').replace(/<!--[\s\S]*?-->/g, '')
-  const steps = []
-  for (const line of body.split('\n').filter((l) => /^\s*[-*]\s/.test(l))) {
-    const spans = [...line.matchAll(/`([^`]+)`/g)].map((m) => m[1].trim())
-    if (spans.length === 0) continue
-    const [command, ...inputs] = spans
-    if (inputs.length === 0) throw new Error(`${HEADING}: the step \`${command}\` names no input path; a step runs when its inputs change`)
-    const outside = inputs.filter((p) => !inside(p))
-    if (outside.length) throw new Error(`${HEADING}: ${outside.join(', ')} is not a path inside the project`)
-    steps.push({ command, inputs: inputs.map((p) => p.replace(/\/+$/, '')) })
-  }
-  return steps
-}
-
-export function readRecipe(root) {
-  const file = join(resolve(root), GUIDE)
-  return existsSync(file) ? recipeIn(readFileSync(file, 'utf8')) : []
-}
-
-const stepLine = ({ command, inputs }) => `- \`${command}\` from ${inputs.map((p) => `\`${p}\``).join(', ')}`
-
-// Adds a step to the recipe, or replaces the step of the same command; creates the file or the
-// section when absent. Committing it is the caller's job.
+// Adds a step to the recipe, or replaces the step of the same command; creates the file when
+// absent. Committing it is the caller's job.
 export function addStep(root, { command, inputs }) {
   const cmd = String(command ?? '').trim()
-  if (!cmd || /[`\r\n]/.test(cmd)) throw new Error('the command is one line with no backtick')
+  if (!cmd || /[\r\n]/.test(cmd)) throw new Error('the command is one line')
   const paths = (inputs ?? []).map((p) => String(p).trim().replace(/\/+$/, '')).filter(Boolean)
   if (paths.length === 0) throw new Error('a step needs at least one input path')
-  const outside = paths.filter((p) => !inside(p) || p.includes('`'))
+  const outside = paths.filter((p) => !inside(p))
   if (outside.length) throw new Error(`${outside.join(', ')} is not a path inside the project`)
-  const file = join(resolve(root), GUIDE)
-  const text = existsSync(file) ? readFileSync(file, 'utf8') : ''
-  const eol = text.includes('\r\n') ? '\r\n' : '\n'
-  const lines = text === '' ? [] : text.split(/\r?\n/)
-  const line = stepLine({ command: cmd, inputs: paths })
-  const b = bounds(lines)
-  if (!b) {
-    while (lines.length && lines.at(-1) === '') lines.pop()
-    lines.push(...(lines.length ? [''] : []), HEADING, '', line, '')
-  } else {
-    const same = lines.findIndex((l, i) => i >= b.start && i < b.end && /^\s*[-*]\s/.test(l) && /`([^`]+)`/.exec(l)?.[1].trim() === cmd)
-    if (same >= 0) lines[same] = line
-    else {
-      let last = b.end - 1
-      while (last >= b.start && lines[last].trim() === '') last--
-      lines.splice(last + 1, 0, ...(last + 1 === b.start ? [''] : []), line)
-    }
-  }
-  mkdirSync(dirname(file), { recursive: true })
-  const out = lines.join(eol)
-  writeFileSync(file, out.endsWith(eol) ? out : out + eol)
-  return { file, steps: readRecipe(root) }
+  const steps = readRecipe(root)
+  const step = { command: cmd, inputs: paths }
+  const same = steps.findIndex((s) => s.command === cmd)
+  const next = same >= 0 ? steps.map((s, i) => (i === same ? step : s)) : [...steps, step]
+  const { file, settings } = setSetting(root, 'worktreePreparation', next)
+  return { file, steps: settings.worktreePreparation }
 }
 
 // ---------------------------------------------------------------- candidates
@@ -208,7 +155,7 @@ export function prepareWorktree(worktreeArg, { guideRoot = worktreeArg, force = 
   const dir = resolve(worktreeArg)
   const steps = readRecipe(guideRoot)
   const result = { ok: true, worktree: dir, ran: [], skipped: [] }
-  if (steps.length === 0) return { ...result, report: `Preparation: no ${HEADING} steps` }
+  if (steps.length === 0) return { ...result, report: 'Preparation: no worktreePreparation steps' }
   const file = stateFile(dir)
   const state = readJson(file) ?? {}
   const head = git(dir, 'rev-parse', 'HEAD')

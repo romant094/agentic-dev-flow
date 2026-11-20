@@ -47,7 +47,7 @@ function host({ plan = PLAN('notes.md'), tasks = '- [ ] 1.1 a\n' } = {}) {
   git(root, 'add', '.')
   git(root, 'commit', '-q', '-m', 'init')
   const { root: change } = create(root, { change: 'add-x', branch: 'feat/add-x', base: 'integration' })
-  const dir = join(change, 'openspec', 'changes', 'add-x')
+  const dir = join(change, 'adf', 'changes', 'add-x')
   mkdirSync(join(dir, 'specs', 'cap'), { recursive: true })
   writeFileSync(join(dir, '.adf.json'), JSON.stringify({ schema: 'adf', schemaVersion: 1, created: '2026-10-15', base: 'develop' }))
   for (const f of ['brainstorm.md', 'proposal.md', 'specs/cap/spec.md']) writeFileSync(join(dir, f), 'x\n')
@@ -75,7 +75,7 @@ test('apply passes in the change worktree and reports what the phase needs', asy
   assert.deepEqual(out.planFindings, [])
   assert.equal(out.sdd.written, true)
   const progress = readFileSync(join(change, '.superpowers', 'sdd', 'add-x', 'progress.md'), 'utf8')
-  assert.equal(progress, `# SDD ledger — plan: ${change}/openspec/changes/add-x/plan.md\n`)
+  assert.equal(progress, `# SDD ledger — plan: ${change}/adf/changes/add-x/plan.md\n`)
   assert.equal(out.ledger.recorded, true)
   const record = JSON.parse(readFileSync(out.ledger.path, 'utf8').trim())
   assert.equal(record.kind, 'session')
@@ -161,7 +161,7 @@ test('apply refuses without a plan, with every task done, on a plan finding and 
 
   const { change } = host()
   mkdirSync(join(change, '.superpowers', 'sdd', 'plan'), { recursive: true })
-  writeFileSync(join(change, '.superpowers', 'sdd', 'plan', 'progress.md'), '# SDD ledger — plan: /x/openspec/changes/other/plan.md\n')
+  writeFileSync(join(change, '.superpowers', 'sdd', 'plan', 'progress.md'), '# SDD ledger — plan: /x/adf/changes/other/plan.md\n')
   const foreign = await check('apply', change)
   assert.equal(foreign.sdd.ok, false)
   assert.match(foreign.refusal, /^STOP: .*other/)
@@ -172,7 +172,7 @@ test('apply refuses a tasks.md item no plan task covers, naming it in planFindin
   const stale = await check('apply', host({ tasks: '## 1. G\n\n- [x] 1.1 a\n- [ ] 1.2 added by the update\n- [x] 1.3 ticked by hand\n' }).change)
   assert.equal(stale.ok, false)
   assert.deepEqual(stale.planFindings, [
-    { task: null, kind: 'unplanned-item', item: '1.2', file: 'openspec/changes/add-x/tasks.md', line: 4, message: 'tasks.md 1.2 has no plan task; revise plan.md to cover it' }
+    { task: null, kind: 'unplanned-item', item: '1.2', file: 'adf/changes/add-x/tasks.md', line: 4, message: 'tasks.md 1.2 has no plan task; revise plan.md to cover it' }
   ])
   assert.match(stale.refusal, /1 item\(s\) of tasks\.md no plan task covers; revise plan\.md from planFindings, then run apply again/)
   assert.equal(stale.ledger, null)
@@ -181,10 +181,10 @@ test('apply refuses a tasks.md item no plan task covers, naming it in planFindin
 test('a progress.md of another plan in the change workspace refuses', async () => {
   const { change } = host()
   mkdirSync(join(change, '.superpowers', 'sdd', 'add-x'), { recursive: true })
-  writeFileSync(join(change, '.superpowers', 'sdd', 'add-x', 'progress.md'), '# SDD ledger — plan: /x/openspec/changes/other/plan.md\n')
+  writeFileSync(join(change, '.superpowers', 'sdd', 'add-x', 'progress.md'), '# SDD ledger — plan: /x/adf/changes/other/plan.md\n')
   const out = await check('apply', change)
   assert.equal(out.ok, false)
-  assert.equal(out.sdd.foreign.plan, '/x/openspec/changes/other/plan.md')
+  assert.equal(out.sdd.foreign.plan, '/x/adf/changes/other/plan.md')
 })
 
 test('verify passes with its dependencies done and refuses without the plan', async () => {
@@ -228,7 +228,7 @@ test('review reads the verify record: committed, its Verdict line not FAIL, and 
   writeFileSync(join(change, 'a.txt'), 'changed code\n')
   commitAll('code after verify')
   const stale = await check('review', change)
-  assert.match(stale.refusal, new RegExp(`commit\\(s\\) ${git(change, 'rev-parse', '--short=7', 'HEAD')} after the verify record touch files outside openspec/changes/add-x/: .*run /adf:verify add-x again`))
+  assert.match(stale.refusal, new RegExp(`commit\\(s\\) ${git(change, 'rev-parse', '--short=7', 'HEAD')} after the verify record touch files outside adf/changes/add-x/: .*run /adf:verify add-x again`))
   assert.match((await check('review', host().root)).refusal, /main checkout/)
 })
 
@@ -323,7 +323,7 @@ test('archive needs the review artifact and a tree clean outside the change, unl
   writeFileSync(join(change, 'a.txt'), 'edited\n')
   const dirty = await check('archive', change)
   assert.equal(dirty.ok, false)
-  assert.match(dirty.refusal, /uncommitted files outside openspec\/changes\/add-x\/: a\.txt, stray\.txt; archive commits only what it writes/)
+  assert.match(dirty.refusal, /uncommitted files outside adf\/changes\/add-x\/: a\.txt, stray\.txt; archive commits only what it writes/)
   const state = join(root, '.superpowers', 'sdd', 'add-x', 'archive', 'state.json')
   mkdirSync(join(state, '..'), { recursive: true })
   writeFileSync(state, JSON.stringify({ steps: { check: { state: 'done' }, placements: { state: 'failed' } } }))
@@ -353,12 +353,12 @@ test('archive preflight accepts a quick change', async () => {
 
 test('archive passes for a change already moved to the archive, and refuses a change that is nowhere', async () => {
   const { change, dir } = host()
-  mkdirSync(join(change, 'openspec', 'changes', 'archive'))
-  git(change, 'mv', dir, join(change, 'openspec', 'changes', 'archive', '2026-10-19-add-x'))
+  mkdirSync(join(change, 'adf', 'changes', 'archive'))
+  git(change, 'mv', dir, join(change, 'adf', 'changes', 'archive', '2026-10-19-add-x'))
   git(change, 'commit', '-q', '-m', 'archive')
   const out = await check('archive', change)
   assert.equal(out.ok, true, out.refusal)
-  assert.equal(out.archived, 'openspec/changes/archive/2026-10-19-add-x')
+  assert.equal(out.archived, 'adf/changes/archive/2026-10-19-add-x')
   assert.equal(out.state, 'archived')
   assert.equal(out.base, 'develop')
   const missing = await preflight({ phase: 'archive', change: 'add-y', root: change, env, home: home() })
@@ -375,7 +375,7 @@ test('sdd.mjs init writes the identity line once and refuses a placeholder name'
   const first = call('init', '--change', 'add-x', '--root', root)
   assert.equal(first.code, 0)
   assert.deepEqual(first.out, { ok: true, change: 'add-x', foreign: null, progress: '.superpowers/sdd/add-x/progress.md', written: true })
-  assert.equal(readFileSync(join(root, first.out.progress), 'utf8'), `# SDD ledger — plan: ${root}/openspec/changes/add-x/plan.md\n`)
+  assert.equal(readFileSync(join(root, first.out.progress), 'utf8'), `# SDD ledger — plan: ${root}/adf/changes/add-x/plan.md\n`)
   assert.equal(call('init', '--change', 'add-x', '--root', root).out.written, false)
   assert.equal(call('init', '--change', '<name>', '--root', root).code, 2)
   assert.equal(existsSync(join(root, '.superpowers', 'sdd', '<name>')), false)

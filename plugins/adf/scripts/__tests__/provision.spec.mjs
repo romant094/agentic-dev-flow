@@ -1,5 +1,5 @@
-// lib/provision.mjs and its callers against real git repositories: the copies of the planning
-// guide's `## Worktree copies`, the `provision` hook on all four worktree kinds, the comparison
+// lib/provision.mjs and its callers against real git repositories: the copies of the settings'
+// `worktreeCopies`, the `provision` hook on all four worktree kinds, the comparison
 // that refuses a provider writing a tracked path or into the main checkout, and the `teardown`
 // hook before every removal. The providers are fixture plugins named by an absolute registry path.
 import { test } from 'node:test'
@@ -8,7 +8,7 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFile
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { addBaseCheck, addGroup, mergeGroup, removeBaseCheck, removeGroup } from '../lib/groups.mjs'
-import { copiesIn, provisionWorktree, teardownWorktree } from '../lib/provision.mjs'
+import { provisionWorktree, teardownWorktree } from '../lib/provision.mjs'
 import { readRegistry, writeRegistry } from '../lib/registry.mjs'
 import { tddProof } from '../lib/tdd-proof.mjs'
 import { remove } from '../lib/workspace.mjs'
@@ -30,7 +30,7 @@ const PLAN = [
   ''
 ].join('\n')
 
-const GUIDE = ['# Planning Guide', '', '## Worktree copies', '', '<!-- untracked files every worktree gets -->', '- `.env`', '- `config/local.json`', '- `missing.txt`', '- `../outside`', '', '## Packages', ''].join('\n')
+const GUIDE = JSON.stringify({ worktreeCopies: ['.env', 'config/local.json', 'missing.txt'] })
 
 // A provider that logs each call's operation and input to config.log, writes config.writes
 // ([where, path, text], where `worktree` or `main`) and answers config.state.
@@ -58,9 +58,9 @@ function setup({ guide = GUIDE } = {}) {
   writeFileSync(join(root, '.env'), 'URL=main\n')
   mkdirSync(join(root, 'config'), { recursive: true })
   writeFileSync(join(root, 'config', 'local.json'), '{}\n')
-  mkdirSync(join(change, 'openspec'), { recursive: true })
-  writeFileSync(join(change, 'openspec', 'planning.md'), guide)
-  git(change, 'add', 'openspec/planning.md')
+  mkdirSync(join(change, 'adf'), { recursive: true })
+  writeFileSync(join(change, 'adf', 'settings.json'), guide)
+  git(change, 'add', 'adf/settings.json')
   git(change, 'commit', '-q', '-m', 'guide')
   return { root, change }
 }
@@ -83,19 +83,13 @@ function providers(change, list) {
   return () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [])
 }
 
-test('copiesIn reads every backticked path of the section, comments left out', () => {
-  assert.deepEqual(copiesIn(GUIDE), ['.env', 'config/local.json', 'missing.txt', '../outside'])
-  assert.deepEqual(copiesIn('## Worktree copies\n\n`dir/`, `a`\n## Next\n`b`\n'), ['dir', 'a'])
-  assert.deepEqual(copiesIn('# Guide\n'), [])
-})
-
 test('the change worktree gets its copies and the provision call; a second run changes nothing', () => {
   const { root, change } = setup()
   const calls = providers(change, [{ name: 'one', config: { notes: ['dependencies linked'] } }, { name: 'two' }])
   const out = run(['provision', '--change', 'add-x', '--root', change, '--need', 'queue', '--need', 'cache'])
   assert.equal(out.ok, true, out.error)
   assert.deepEqual(out.copies.copied, ['.env'])
-  assert.deepEqual(out.copies.skipped.map((s) => s.path), ['config/local.json', 'missing.txt', '../outside'])
+  assert.deepEqual(out.copies.skipped.map((s) => s.path), ['config/local.json', 'missing.txt'])
   assert.equal(readFileSync(join(change, '.env'), 'utf8'), 'URL=main\n')
   assert.match(out.report, /copy config\/local\.json skipped: git does not ignore it in the worktree/, 'a copy git would see is never made')
   assert.equal(existsSync(join(change, 'config', 'local.json')), false)
@@ -134,13 +128,13 @@ test('the provision command summarises each provider\'s actions as counts per ki
   assert.deepEqual(out.actions, { many: { link: 500, mkdir: 1 } })
   assert.equal(out.hook, undefined, 'the per-action list stays out of the output')
   assert.equal(out.input, undefined, 'the hook input is not echoed')
-  assert.deepEqual(out.copies.skipped.map((s) => s.path), ['config/local.json', 'missing.txt', '../outside'], 'problems are kept')
+  assert.deepEqual(out.copies.skipped.map((s) => s.path), ['config/local.json', 'missing.txt'], 'problems are kept')
   assert.ok(JSON.stringify(out).length < 4096, `${JSON.stringify(out).length} bytes`)
   assert.match(out.report, /many: done/)
 })
 
 test('no copy is written through a link: a link in its place is replaced, a linked parent is skipped', () => {
-  const { root, change } = setup({ guide: '## Worktree copies\n\n`.env`\n`linked/x.txt`\n' })
+  const { root, change } = setup({ guide: JSON.stringify({ worktreeCopies: ['.env', 'linked/x.txt'] }) })
   const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), 'adf-elsewhere-')))
   writeFileSync(join(elsewhere, 'target'), 'keep\n')
   symlinkSync(join(elsewhere, 'target'), join(change, '.env'))

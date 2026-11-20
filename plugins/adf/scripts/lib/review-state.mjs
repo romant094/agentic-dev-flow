@@ -42,14 +42,15 @@ import { quickDir } from './quick.mjs'
 import { cell, checkFindings, checkFix, CLOSED, computeVerdict, filterPaths, reviewConfig, SEVERITIES, where } from './review.mjs'
 import { schemaOf } from './schema.mjs'
 import { isTestFile } from './tdd-proof.mjs'
+import { CHANGES_DIR, COMMIT_SCOPE } from './layout.mjs'
 
 export const ROUND_CAP = 3
 export const REVIEWER_LEVEL = 'architecture'
 export const fixLevel = (round) => (round >= 2 ? 'architecture' : 'integration')
 export const fixName = (id, round) => `ai-fix ${id} r${round}`
 export const RULINGS = { range: 'review-range', slices: 'review-slices', suite: 'review-suite', round: (k) => `review-round-${k}` }
-export const recordPath = (change) => `openspec/changes/${change}/review.md`
-export const recordMessage = (change) => `docs(openspec): review ${change}`
+export const recordPath = (change) => `${CHANGES_DIR}/${change}/review.md`
+export const recordMessage = (change) => `docs(${COMMIT_SCOPE}): review ${change}`
 // A quick change has one round: the session's own fixes are settled by the affected tests run
 // at HEAD (quick.mjs tests), never by a second review.
 const isQuick = (root, change) => schemaOf(root, change).name === 'quick'
@@ -573,7 +574,7 @@ function outsideReview(git, sha, change, config) {
     .split('\0')
     .map((p) => p.replace(/^\n+/, ''))
     .filter(Boolean)
-  return paths.length > 0 && (paths.every((p) => p.startsWith(`openspec/changes/${change}/`)) || filterPaths(paths, config).kept.length === 0)
+  return paths.length > 0 && (paths.every((p) => p.startsWith(`${CHANGES_DIR}/${change}/`)) || filterPaths(paths, config).kept.length === 0)
 }
 
 // The committed PASS record of `change` that still stands: { file, verdict, commit } when
@@ -620,7 +621,7 @@ function dirtyOutside(git, file) {
     .filter((p) => p !== file)
 }
 
-// Renders `openspec/changes/<change>/review.md` from the state, the ledger and HEAD, and with
+// Renders `adf/changes/<change>/review.md` from the state, the ledger and HEAD, and with
 // `commit` commits it alone. Refuses what no verdict can be given for; an open blocking finding
 // is a BLOCKED record, not a refusal. For a quick change a fix is not re-reviewed: the affected
 // tests passing at HEAD (quick/tests.json) stand in for the suite, and the record says so.

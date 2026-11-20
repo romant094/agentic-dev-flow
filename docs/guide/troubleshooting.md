@@ -28,7 +28,7 @@ A refusal is a stop that changes nothing, or nothing that you must undo. A scrip
 
 | Message | Cause | What to do |
 |---|---|---|
-| `<paths> is not a path inside the project` | A path for `## Worktree copies` is absolute, climbs out with `..`, or holds a backtick. | Give a path relative to the project. |
+| `<paths> is not a path inside the project` | A path for `worktreeCopies` is absolute, climbs out with `..`, or holds a backtick. | Give a path relative to the project. |
 | `.claude/adf-extensions.json sets no branches; run /adf:init` | The registry has no `branches` key. Other commands print this when they need the branch policy. | Run `/adf:init`, and answer the question about the integration branch. |
 
 ## `/adf:add` and `/adf:remove`
@@ -58,7 +58,7 @@ A refusal is a stop that changes nothing, or nothing that you must undo. A scrip
 | `.claude/worktrees/ is not ignored by git; run /adf:init` | The `.gitignore` line is missing. | Run `/adf:init`, and commit the line. |
 | `HEAD is detached; there is no current branch to fork from` | You chose your current branch as the base, and no branch is checked out. | Check out a branch, or choose the integration branch. |
 | `<branch> is protected; fork from the integration branch` | You chose a protected branch as the base. | Choose the integration branch. |
-| `<id> has no output at openspec/changes/<change>/<file>; write it first` | An artifact is marked done and its file is missing. | Write the file. |
+| `<id> has no output at adf/changes/<change>/<file>; write it first` | An artifact is marked done and its file is missing. | Write the file. |
 | `<id> fails its gate(s) <gates>; fix it, then run <command>` | An artifact fails a check. | Fix the artifact, then run the command in the message. |
 | `<ids> is not done; run changes.mjs next` | The commit of the propose stage found an artifact that is not done. | Run `/adf:propose <change>` to continue. |
 | `gate(s) fail: <artifact>/<gate>; nothing was committed` | A check of an artifact fails at the commit. | Fix the artifact, then run `/adf:propose <change>` again. |
@@ -76,7 +76,7 @@ A refusal is a stop that changes nothing, or nothing that you must undo. A scrip
 | `The plan names <n> thing(s) the tree does not hold; correct plan.md from planFindings, then run apply again.` | `plan.md` names a file or symbol that the tree does not hold. | Correct `plan.md`, then run `/adf:apply` again. |
 | `The change has <n> item(s) of tasks.md no plan task covers; revise plan.md from planFindings, then run apply again.` | An open item of `tasks.md` has no task in `plan.md`. This happens when a change is updated after its plan was written. | Add a plan task for each item that `planFindings` names, then run `/adf:apply` again. |
 | `Every task is complete; run /adf:verify next.` | No task is left. | Run `/adf:verify`. |
-| ``Every task is complete and openspec/changes/<change>/verify.md says Verdict: FAIL; open an apply round for the fix with plan.mjs reopen --change <change> --title "<the fix>" --task-file <file>, then run apply again.`` | Verify failed, and the plan has no open task. | Run `plan.mjs reopen` as the message says. |
+| ``Every task is complete and adf/changes/<change>/verify.md says Verdict: FAIL; open an apply round for the fix with plan.mjs reopen --change <change> --title "<the fix>" --task-file <file>, then run apply again.`` | Verify failed, and the plan has no open task. | Run `plan.mjs reopen` as the message says. |
 
 ## `/adf:verify`, `/adf:review` and `/adf:archive`
 
@@ -85,13 +85,13 @@ The same preflight checks run for these stages. It also prints these messages:
 | Message | Cause | What to do |
 |---|---|---|
 | `<stage> needs <ids> done first; run <command> to write it.` | A record that the stage reads is missing. | Run the command in the message. |
-| `openspec/changes/<change>/verify.md says Verdict: FAIL; fix what it names and run /adf:verify <change> before the review.` | The verify record has a failing verdict. | Fix what `verify.md` names, then run `/adf:verify`. |
-| `openspec/changes/<change>/verify.md has no Verdict: line; run /adf:verify <change> again.` | The record is incomplete. | Run `/adf:verify` again. |
-| `openspec/changes/<change>/verify.md is not committed; run /adf:verify <change> to assemble and commit it.` | The record is not in a commit. | Run `/adf:verify`. |
-| `commit(s) <shas> after the verify record touch files outside openspec/changes/<change>/: the code changed since it was verified; run /adf:verify <change> again.` | The code changed after verify. | Run `/adf:verify` again. |
+| `adf/changes/<change>/verify.md says Verdict: FAIL; fix what it names and run /adf:verify <change> before the review.` | The verify record has a failing verdict. | Fix what `verify.md` names, then run `/adf:verify`. |
+| `adf/changes/<change>/verify.md has no Verdict: line; run /adf:verify <change> again.` | The record is incomplete. | Run `/adf:verify` again. |
+| `adf/changes/<change>/verify.md is not committed; run /adf:verify <change> to assemble and commit it.` | The record is not in a commit. | Run `/adf:verify`. |
+| `commit(s) <shas> after the verify record touch files outside adf/changes/<change>/: the code changed since it was verified; run /adf:verify <change> again.` | The code changed after verify. | Run `/adf:verify` again. |
 | `archive needs review done first; run /adf:review <change> to write it.` | `review.md` is not done. | Run `/adf:review`. |
 | `archive needs review done first; run /adf:quick <change> to write it.` | A quick change has no `review.md`. | Run `/adf:quick` with the change name. |
-| `uncommitted files outside openspec/changes/<change>/: <files>; archive commits only what it writes, so the developer commits, moves or discards them first.` | The worktree holds other uncommitted files. | Commit, move or discard them. |
+| `uncommitted files outside adf/changes/<change>/: <files>; archive commits only what it writes, so the developer commits, moves or discards them first.` | The worktree holds other uncommitted files. | Commit, move or discard them. |
 
 ## `/adf:update`
 

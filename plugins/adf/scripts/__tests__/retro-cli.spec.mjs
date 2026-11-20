@@ -22,7 +22,7 @@ import { STEPS, statePath } from '../lib/retro-run.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const CLI = join(here, '..', 'retro.mjs')
-const ARCHIVE = 'openspec/changes/archive'
+const ARCHIVE = 'adf/changes/archive'
 const DATE = '2026-10-19'
 const ID = `${DATE}-window`
 const NOW = new Date('2026-10-19T12:00:00Z')

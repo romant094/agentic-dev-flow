@@ -86,7 +86,7 @@
 //       non-blocking severity and --body-file, why it was left.
 //       { ok, finding, disposition, as, ... }
 //   review.mjs assemble --change <name> [--not-reviewed <reason>] [--commit] [--root <dir>]
-//       render openspec/changes/<change>/review.md from the state, the rulings and HEAD; the
+//       render adf/changes/<change>/review.md from the state, the rulings and HEAD; the
 //       verdict BLOCKED while a blocking finding is open, a fix is not re-reviewed, or the suite
 //       after the fixes fails with no `review-suite` ruling. Refused: a dirty tree outside the
 //       record, a non-blocking finding with no disposition, a ruling not applied, a commit no

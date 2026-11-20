@@ -20,7 +20,7 @@ test('brief writes the task brief into the change workspace through bash', () =>
   const out = run(['brief', '--change', 'add-x', '--task', '1', '--root', change, '--home', home])
   assert.equal(out.ok, true, out.error)
   assert.equal(out.file, join(change, '.superpowers/sdd/add-x/task-1-brief.md'))
-  assert.match(readFileSync(out.file, 'utf8'), /^brief 1 of .*openspec\/changes\/add-x\/plan\.md/)
+  assert.match(readFileSync(out.file, 'utf8'), /^brief 1 of .*adf\/changes\/add-x\/plan\.md/)
   assert.deepEqual(out.stray, [])
 })
 

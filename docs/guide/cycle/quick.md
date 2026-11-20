@@ -15,7 +15,7 @@
 
 Use it for a small fix that restores specified behaviour. A small addition of the same kind also fits, for example a missing log line.
 
-It is not for a change to what the system does. A quick change writes no proposal, no specs, no tasks, no plan and no verify record. It never writes `openspec/specs/`. When the fix changes behaviour, take [/adf:propose](propose.md).
+It is not for a change to what the system does. A quick change writes no proposal, no specs, no tasks, no plan and no verify record. It never writes `adf/specs/`. When the fix changes behaviour, take [/adf:propose](propose.md).
 
 The command takes one path and has no flags.
 
@@ -62,7 +62,7 @@ The command writes `quick.md` and commits the change directory. It then opens a 
 
 ## quick.md
 
-`quick.md` is the one file of the change, in `openspec/changes/<name>/`. It has four sections:
+`quick.md` is the one file of the change, in `adf/changes/<name>/`. It has four sections:
 
 | Section | Content |
 |---|---|
@@ -75,13 +75,13 @@ The `quick-plan` gate refuses a plan of more than three steps and a step with no
 
 ## The affected tests
 
-After the code, the command runs the affected tests. It reads one command from the section `## Affected tests command` of `openspec/planning.md`. It runs the command in the worktree on the files that the change changed. It leaves out the change directory, `openspec/planning.md` and the files under `.superpowers/`. `{files}` in the command stands for those paths. An example command for vitest is `npx vitest related --run --passWithNoTests {files}`. The run goes into a record, `quick/tests.json`, under the change's state directory.
+After the code, the command runs the affected tests. It reads one command from the key `affectedTestsCommand` of `adf/settings.json`. It runs the command in the worktree on the files that the change changed. It leaves out the change directory, `adf/settings.json` and the files under `.superpowers/`. `{files}` in the command stands for those paths. An example command for vitest is `npx vitest related --run --passWithNoTests {files}`. The run goes into a record, `quick/tests.json`, under the change's state directory.
 
 - With no changed file, no test runs.
-- With an empty section, the command waits. The session reads your test runner and proposes one command. On your yes, it writes the command into the section and commits that file alone. On a no, no affected tests run.
+- With no command, the command waits. The session reads your test runner and proposes one command. On your yes, `settings.mjs set` records the command and commits the settings alone. On a no, no affected tests run.
 - After a failure, the session fixes the code and runs the tests again.
 
-For the other sections of the planning guide, see [Host files](../concepts/host-files.md).
+For the other settings, see [Host files](../concepts/host-files.md).
 
 ## The one review
 

@@ -30,7 +30,7 @@ const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8',
 
 const CHANGE = 'fix-pool'
 const BRANCH = 'fix/PROJ-1/fix-pool'
-const ARCHIVED = 'openspec/changes/archive/2026-10-19-fix-pool'
+const ARCHIVED = 'adf/changes/archive/2026-10-19-fix-pool'
 const MR = 'https://gitlab.example.com/group/repo/-/merge_requests/7'
 const JIRA = { baseUrl: 'https://jira.example.com', allowlist: ['PROJ'], statuses: { start: 'In Progress', handoff: 'Review' } }
 const CHECK = { verdict: 'current', requirements: [], bug: null, corrections: [], questions: [], checked: [] }
@@ -109,7 +109,7 @@ test('scope.mjs start holds the moves for the yes and applies them; retest sends
   mkdirSync(dirname(scopeFile), { recursive: true })
   writeFileSync(scopeFile, JSON.stringify(scopeOf([trackerItem('PROJ-1'), corrected, bug], { base: { commit: base } })))
   // propose.mjs create has made the change's worktree.
-  mkdirSync(join(h.root, '.claude', 'worktrees', CHANGE, 'openspec', 'changes', CHANGE), { recursive: true })
+  mkdirSync(join(h.root, '.claude', 'worktrees', CHANGE, 'adf', 'changes', CHANGE), { recursive: true })
 
   const held = cli(h, 'scope.mjs', 'start')
   assert.deepEqual([held.code, held.ok, held.state, held.held], [0, true, 'pending', true], JSON.stringify(held))

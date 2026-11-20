@@ -30,7 +30,7 @@ const home = mkdtempSync(join(tmpdir(), 'adf-home-'))
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
 const CHANGE = 'fix-pool'
 const BRANCH = 'fix/PROJ-1/fix-pool'
-const ARCHIVED = 'openspec/changes/archive/2026-10-19-fix-pool'
+const ARCHIVED = 'adf/changes/archive/2026-10-19-fix-pool'
 const MR = 'https://forge.example/mr/7'
 
 // Answers each operation from config[op], else held plans and applied ones; records each call.

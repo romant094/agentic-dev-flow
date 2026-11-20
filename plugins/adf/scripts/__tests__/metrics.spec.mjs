@@ -45,7 +45,7 @@ function transcripts(repoPath) {
 
 function measuredHost() {
   const h = host({ 'tasks.md': '- [x] 1.1 a\n- [x] 1.2 b\n- [ ] 1.3 c\n' })
-  commitIn(h.change, `openspec/changes/${CHANGE}/specs/cap-a/spec.md`, '# A\n\nline\n', 'spec')
+  commitIn(h.change, `adf/changes/${CHANGE}/specs/cap-a/spec.md`, '# A\n\nline\n', 'spec')
   commitIn(h.change, 'src/x.txt', 'one\ntwo\n', 'code')
   recordDispatch(h.change, CHANGE, 'T1 impl', { now: '2026-10-02T00:00:30.000Z' })
   recordReply(h.change, CHANGE, { name: 'T1 impl', file: 'replies/T1 impl.json', result: { status: 'DONE' }, now: '2026-10-02T00:02:00.000Z' })
@@ -91,7 +91,7 @@ test('a record built from SDD records, transcripts and git validates', () => {
   // Git: the range's figures, the proposal time, the tasks; isolation.
   assert.equal(r.maintainability.capabilities['cap-a'], 3)
   assert.deepEqual(r.maintainability.perFile.find((f) => f.file === 'src/x.txt'), { file: 'src/x.txt', insertions: 2, deletions: 0 })
-  assert.equal(r.timing.proposedAt, git(h.change, 'log', '-1', '--format=%aI', `develop..HEAD`, '--', `openspec/changes/${CHANGE}/tasks.md`))
+  assert.equal(r.timing.proposedAt, git(h.change, 'log', '-1', '--format=%aI', `develop..HEAD`, '--', `adf/changes/${CHANGE}/tasks.md`))
   assert.equal(r.timing.tasks, 3)
   assert.equal(r.timing.extractedAt, NOW.toISOString())
   assert.equal(r.timing.first, '2026-10-01T23:50:00.000Z')

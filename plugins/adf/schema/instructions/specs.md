@@ -5,12 +5,12 @@ no delta spec: skip `specs` with the reason, `changes.mjs skip specs --reason "<
 and its reason are recorded in the change's `.adf.json`; verify fails the change if it holds a
 delta spec anyway, and archive merges nothing for it.
 
-Write delta specs under this change only. The project's `openspec/specs/` is written by archive
+Write delta specs under this change only. The project's `adf/specs/` is written by archive
 alone; a hand-authored main spec drifts from the archived deltas.
 
 Create one spec file per capability listed in the proposal's Capabilities section:
 - New capabilities: use the exact kebab-case name from the proposal (`specs/<capability>/spec.md`).
-- Modified capabilities: use the existing folder name from `openspec/specs/<capability>/` for the
+- Modified capabilities: use the existing folder name from `adf/specs/<capability>/` for the
   delta spec at `specs/<capability>/spec.md`.
 
 Delta operations (`##` headers):

@@ -15,8 +15,8 @@
 //       { ok, change, root, branch, base, baseRef, changeRoot, ledger, active, scope? }
 //   propose.mjs commit [--change <name>] [--root <worktree>]
 //       Refused until every artifact apply needs is done and every gate of every written
-//       artifact passes; then commits openspec/changes/<name>/ alone with the message
-//       "docs(openspec): propose <name>" (lib/commit.mjs: nothing else staged, not protected,
+//       artifact passes; then commits adf/changes/<name>/ alone with the message
+//       "docs(adf): propose <name>" (lib/commit.mjs: nothing else staged, not protected,
 //       not the main checkout). { ok, commit, branch, files, gates }
 //
 // --root defaults to the current directory. Without --change, commit acts on the one active

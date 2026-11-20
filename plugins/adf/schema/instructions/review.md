@@ -207,7 +207,7 @@ are `review-range`, `review-slices`, `review-suite`, `review-round-<k>` on a che
     node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" run --change <change> --section review --root <root>
     ```
 
-    It runs the planning guide's whole-suite command with the base check and writes the result
+    It runs the settings' whole-suite command with the base check and writes the result
     the record reads. Wait for it as the apply instruction's whole-suite rule states: in the
     foreground with the maximum timeout, never with a scheduled wakeup. A new failure blocks the verdict. The resolution is another fix, which
     the next round re-reviews, or the developer's `review-suite` ruling with their reason. A
@@ -220,7 +220,7 @@ are `review-range`, `review-slices`, `review-suite`, `review-round-<k>` on a che
     ```
 
     For an empty filtered diff, add `--not-reviewed "<reason>"`: the record is PASS with no
-    round. The script reads HEAD itself, renders `openspec/changes/<change>/review.md` from the
+    round. The script reads HEAD itself, renders `adf/changes/<change>/review.md` from the
     run's state and the rulings, computes `PASS` or `BLOCKED`, and commits the record alone. It
     refuses a tree with changes outside the record. A commit after the last round that no
     round reviewed is refused, unless it is a recorded fix, adds ADF IGNORE markers only, or

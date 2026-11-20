@@ -26,7 +26,7 @@
 //       an unresolved conflict or a refusal. Nothing is written: the writing merge is
 //       `archive.mjs merge`, after archive's gate.
 //   specs.mjs base [--check] [--change <name>]
-//       writes openspec/changes/<name>/specs-base.json (lib/specs.mjs writeSpecsBase): the main
+//       writes adf/changes/<name>/specs-base.json (lib/specs.mjs writeSpecsBase): the main
 //       spec's text of every requirement a delta modifies, removes or renames, with the hash of
 //       the delta block it was taken for, so a rebase cannot move the three-way check's base.
 //       An entry whose delta block is unchanged keeps its text; a changed one is taken again
@@ -48,7 +48,7 @@
 // Without --change, capabilities, merge, base and --against-main act on the one active change under the root.
 //
 // --strict also fails an item on a WARNING, as the CLI's --strict does. --root <dir> names the
-// project holding openspec/ (default: the current directory).
+// project holding adf/ (default: the current directory).
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { changeAgainstMain, checkCapabilities, checkSpecsBase, mergePreview, validateProject, writeSpecsBase } from './lib/specs.mjs'

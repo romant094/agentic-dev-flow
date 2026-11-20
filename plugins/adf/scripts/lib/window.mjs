@@ -32,7 +32,8 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { requireBranches } from './branches.mjs'
-import { ARCHIVE, CHANGES_DIR, globToRegExp, parseTasks } from './changes.mjs'
+import { ARCHIVE, globToRegExp, parseTasks } from './changes.mjs'
+import { FLOW_ROOTS, flowRelative } from './layout.mjs'
 import { listTree } from './debt.mjs'
 import { median, TOKEN_FIELDS } from './metrics-facts.mjs'
 import { LAYERS, removalCandidates } from './metrics-records.mjs'
@@ -46,7 +47,6 @@ export const SIDECAR_VERSION = 1
 export const WAITING_PATH = join(PLUGIN_ROOT, 'schema', 'retro-waiting.json')
 // The corpus lint is due when this many changes were archived since the last window retro.
 export const LINT_DUE = 3
-const ARCHIVE_ROOT = `${CHANGES_DIR}/${ARCHIVE}/`
 // A window sidecar's file name, `<date>-window.json`: no other id has it, since retro.mjs start
 // refuses a change named `window`.
 const SIDECAR = /^(\d{4}-\d{2}-\d{2})-(window)\.json$/
@@ -57,9 +57,10 @@ const MERGE_SUBJECT = /^Merge branch '([^']+)'/
 const FIX_SUBJECT = /^fix(\([^)]*\))?!?:/
 
 // Paths that are not a change's delivered work: the flow's bookkeeping and generated files. The
-// registry's debt tree is added at run time; `exclude` adds more.
+// registry's debt tree is added at run time; `exclude` adds more. The change records of both flow
+// roots (lib/layout.mjs FLOW_ROOTS), so a commit range over the directory's move reads alike.
 export const EXCLUDED = [
-  `${CHANGES_DIR}/**`,
+  ...FLOW_ROOTS.map((root) => `${root}/changes/**`),
   '.adf/**',
   '**/package-lock.json',
   '**/npm-shrinkwrap.json',
@@ -206,18 +207,23 @@ export function readHistory(root, ref) {
 // The archive directories each commit added, oldest first: a directory is added by the first
 // commit that brings a file into it, so a file added later to a directory already present (a
 // backfilled record) adds no change. Within one commit, dated directories by name, undated ones
-// after them.
-export function archivedEntries(history) {
+// after them. A directory is known by its name under either flow root (lib/layout.mjs), so the
+// commit that moves the flow's directory adds none; its `archiveDir` is where the newest commit
+// that touches it put it, the path the ref holds.
+export function archivedEntries(history, roots = FLOW_ROOTS) {
   const seen = new Set()
   const entries = []
+  const where = new Map()
   for (const c of history) {
     const added = new Set()
-    for (const path of c.files.keys()) {
-      if (!path.startsWith(ARCHIVE_ROOT)) continue
-      const rest = path.slice(ARCHIVE_ROOT.length)
+    for (const [path, { status }] of c.files) {
+      const rest = flowRelative(path, `changes/${ARCHIVE}`, roots)
+      if (rest === null) continue
       const slash = rest.indexOf('/')
       if (slash <= 0) continue
       const dir = rest.slice(0, slash)
+      if (status === 'D') continue
+      where.set(dir, path.slice(0, path.length - rest.length))
       if (!seen.has(dir)) added.add(dir)
     }
     const order = (d) => (DATED.test(d) ? `0${d}` : `1${d}`)
@@ -226,7 +232,7 @@ export function archivedEntries(history) {
       const dated = DATED.exec(dir)
       entries.push({
         change: dated ? dated[2] : dir,
-        archiveDir: `${ARCHIVE_ROOT}${dir}`,
+        archiveDir: dir,
         archivedOn: dated ? dated[1] : null,
         mergeSha: c.sha,
         mergedAt: c.at,
@@ -235,6 +241,7 @@ export function archivedEntries(history) {
       })
     }
   }
+  for (const entry of entries) entry.archiveDir = `${where.get(entry.archiveDir)}${entry.archiveDir}`
   return entries
 }
 

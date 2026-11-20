@@ -7,7 +7,7 @@ Read `brainstorm.md` for the validated design. Extract:
   - **New Capabilities**: capabilities being introduced. Each becomes a new
     `specs/<name>/spec.md`.
   - **Modified Capabilities**: existing capabilities whose REQUIREMENTS are changing. Use the
-    existing folder name under `openspec/specs/`.
+    existing folder name under `adf/specs/`.
 - **Impact**: affected code, APIs, dependencies or systems.
 
 Capability names are kebab-case and scoped to the domain, not to a UI screen

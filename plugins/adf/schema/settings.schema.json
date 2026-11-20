@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/romant094/agentic-dev-flow/plugins/adf/schema/settings.schema.json",
+  "title": "The project's flow settings",
+  "description": "The values the flow's scripts read from the host project, one key per value. /adf:init writes the file; scripts change one key at a time with settings.mjs set. A key that is absent takes its default (lib/settings.mjs DEFAULTS).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "packages": {
+      "description": "The project's packages or top-level source directories, each a path relative to the project root, in the order a change usually lands in them when one depends on another. The plan groups its tasks by these packages; with none, a path is in no package.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "checks": {
+      "description": "The commands that install, build, test, lint, format and type-check the project, one per item, and which of them a task's verification runs. Every implementer and fixer prompt quotes these items, and the agent runs them as written instead of guessing a command.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "wholeSuiteCommand": {
+      "description": "The one command that runs every test of the project with no cache, so a pass proves the current code. Apply runs it once, at the end. /adf:init proposes one from the CI configuration and the package scripts; while it is null, apply finds the command in the project's own files, proposes it, and records it once the developer confirms.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "affectedTestsCommand": {
+      "description": "Optional. The one command that runs the tests a change touches, with {files} where the changed paths go, for example `npx vitest related --run --passWithNoTests {files}`. A quick task runs it from the change worktree on the files the change changed, each path quoted, and records the result; apply's whole-suite command stays the proof for any other change. While it is null, a quick task asks for the command. /adf:init proposes a command and records the one the developer confirms.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "failedTestsCommand": {
+      "description": "Optional. The one command that runs only the tests it is given, with {tests} where their names go, for example `npx vitest run {tests}`. When the whole suite fails, the flow checks each failure on the change's base after the run; with this command it runs only the tests that failed, each name quoted, instead of the whole suite a second time. Null, or a command with no {tests}, runs the whole suite on the base.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "freshRunProof": {
+      "description": "One line that the whole-suite output contains only when nothing was replayed from a cache, such as a test runner's or a build tool's cache counter at zero. A run whose output lacks it fails, since it may be cached. Null when the command's output proves nothing of the kind.",
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "testFirstShares": {
+      "description": "The untracked paths a test-first task's new test needs to run in a fresh checkout, such as a local environment file; what a provision plugin gives every worktree is not listed here. With a list, the flow proves each test-first task itself before its review: the new test runs in a throwaway worktree of the commit's parent, where it must fail, then on the commit, where it must pass, with these paths linked into it and nothing installed. An empty list when the tests need no untracked path. Null leaves that proof to the task's reviewer.",
+      "type": ["array", "null"],
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "worktreeCopies": {
+      "description": "The untracked files every worktree the flow makes needs from the main checkout, such as a local environment file. Each is copied when the worktree has none, never linked; a path git does not ignore is skipped. The project's plugins adjust the copies, for example a database address. /adf:init proposes the .env* files git ignores in the main checkout and records the ones the developer confirms.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "worktreePreparation": {
+      "description": "The commands that rebuild what a fresh worktree lacks because git ignores it, such as a built shared package or generated code: each step a command and the input paths whose change makes it run again, for example {\"command\": \"npm run build --workspace <package>\", \"inputs\": [\"packages/<package>\"]}. The flow's scripts run each command in a new worktree once its providers have run, and again before a covering or whole-suite run, or after a group merge, when its inputs changed since its last run there. /adf:init proposes candidates and records the ones the developer confirms.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "inputs"],
+        "properties": {
+          "command": { "type": "string", "minLength": 1 },
+          "inputs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "formatCommand": {
+      "description": "Optional. The one command that formats files in the project's own style, with {files} where the paths go, for example `npx biome format --write {files}`. Before each commit the flow's scripts make, they run it from the project root on the paths that commit takes, each path quoted, then stage and commit them. A command that exits non-zero refuses the commit with its output. Null commits the files as the flow wrote them. /adf:init proposes a command and records the one the developer confirms.",
+      "type": ["string", "null"],
+      "minLength": 1
+    }
+  }
+}

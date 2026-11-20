@@ -54,7 +54,7 @@ test('writeConflictTexts writes each text that exists and leaves an absent one n
 
 test('specs.mjs resolution checks a reply against the conflicts the dry run finds', () => {
   const { change, onDevelop } = mergeRepo({ main: { widgets: MAIN }, delta: { widgets: `## MODIFIED Requirements\n\n${req('Store', 'The system SHALL store widgets dry.')}` } })
-  onDevelop({ 'openspec/specs/widgets/spec.md': MAIN.replace('SHALL store.', 'SHALL store widgets cold.') })
+  onDevelop({ 'adf/specs/widgets/spec.md': MAIN.replace('SHALL store.', 'SHALL store widgets cold.') })
   const cli = (...args) => {
     const r = spawnSync(process.execPath, [SPECS, 'resolution', ...args, '--change', 'add-x', '--root', change], { encoding: 'utf8' })
     return { status: r.status, out: JSON.parse(r.stdout) }
@@ -76,7 +76,7 @@ test('specs.mjs resolution checks a reply against the conflicts the dry run find
 
 test('specs.mjs resolution records each checked reply of `spec-merge <capability>`: one retry, then stop', () => {
   const { change, onDevelop } = mergeRepo({ main: { widgets: MAIN }, delta: { widgets: `## MODIFIED Requirements\n\n${req('Store', 'The system SHALL store widgets dry.')}` } })
-  onDevelop({ 'openspec/specs/widgets/spec.md': MAIN.replace('SHALL store.', 'SHALL store widgets cold.') })
+  onDevelop({ 'adf/specs/widgets/spec.md': MAIN.replace('SHALL store.', 'SHALL store widgets cold.') })
   const cli = (...args) => JSON.parse(spawnSync(process.execPath, [SPECS, 'resolution', '--capability', 'widgets', ...args, '--change', 'add-x', '--root', change], { encoding: 'utf8' }).stdout)
   const reply = join(change, 'reply.json')
   writeFileSync(reply, '[]')

@@ -63,27 +63,32 @@ Never merge it: the developer merges it.
    - the dropped plugins, those with `to: null`: the new release no longer ships them, and their
      registry entries stay as they are;
    - the host files by `class`: `replace` and `new` take the new template, `edited` needs the
-     developer's choice, `same`, `kept` and `absent` stay as they are. In
-     `openspec/planning.md` the sections the flow's scripts write (whole-suite command, worktree
-     copies, worktree preparation, format command) are values: they never count as edits, and
-     every choice keeps them;
+     developer's choice, `same`, `kept` and `absent` stay as they are. Only the plugins'
+     `hostFiles` are host files: the settings, the planning guide and the review prompt are the
+     project's own, and the update never changes them;
    - when `contract.compatible` is false: the update is refused for `contract.reason`. Say so,
      remove the clones (step 10) and stop;
    - each change of `inFlight`, with a warning: it continues on the new release, and a conflict
-     is settled inside its own change.
+     is settled inside its own change;
+   - when `migration` is not null, the move of the flow's directory the update makes: `from`/
+     to `to`/, with every change and the `archived` archived changes; the planning guide
+     converted into `adf/settings.json` (the values) and `adf/guide.md` (the prose) when `guide`
+     is true; `review.prompt` moved from `reviewPrompt.from` to `reviewPrompt.to` when it is not
+     null. The archived changes keep their text, old paths included. When `migration.inFlight`
+     is not empty, the move waits: development stops, and each change it names is archived or
+     dropped first, since the flow moves no change branch. `apply` refuses until the list is
+     empty. Name each change, remove the clones (step 10) and stop.
 
    Ask the developer whether to go on. On a no, remove the clones (step 10) and stop.
 
 5. For each host file with class `edited`, show its three versions: the old release's template
    (`<clones.old>/<template path>`), the project's file at `baseCommit` (`git show
    <baseCommit>:<path>`, not the main directory's copy), and the new release's template
-   (`<clones.new>/<template path>`). The core's templates are `plugins/adf/host/planning.md` for
-   `openspec/planning.md` and `plugins/adf/host/review-prompt.md` for the review prompt; a
-   plugin's are the `hostFiles` of `plugins/<name>/adf-extension.json`. Ask "How to merge?":
+   (`<clones.new>/<template path>`). A plugin's templates are the `hostFiles` of
+   `plugins/<name>/adf-extension.json`. Ask "How to merge?":
    - **automatic**, then a second question: *Keep everything* (choice `keep`: the template's
      changes are carried into the project's file, the project's edits stay) or *Replace from the
-     update* (choice `replace`: the file becomes the new template; the sections of
-     `openspec/planning.md` the flow's scripts write are kept);
+     update* (choice `replace`: the file becomes the new template);
    - **manual** (choice `manual`): the file is left as it is, for the developer.
 
    For a file under `.claude/memory/` (the knowledge plugin's seed pages, which the project
@@ -107,6 +112,10 @@ Never merge it: the developer merges it.
      branch and its worktree stay: see "Resume" below.
 
    Show `written`, `dropped` and `ran` (the config migrations each plugin ran). When
+   `migration` is present, show each of its `notes` (a value of the old guide the settings
+   could not take, kept in `adf/guide.md`), and list its `mentions`: the tracked files outside
+   `adf/` that still name `openspec/` (CLAUDE.md, memory pages, `.gitignore`, CI), each with its
+   lines. Do not edit them: the developer fixes them, in this branch or later. When
    `committed` is false (`commitError`, when present, is why apply's own commit failed: show it
    and fix its cause):
    - for each file of `conflicts`, resolve the conflict markers in `<worktree>/<path>` yourself:
@@ -140,7 +149,8 @@ Never merge it: the developer merges it.
    `adf-extension.json`, for adf-gitlab `.gitlab/merge_request_templates/adf.md`) and fill every
    `## ` section it has, without its `<!-- ... -->` comment lines:
    - `## What`: `from` → `to`, each changed plugin's versions with its `log` subjects, and the
-     dropped plugins;
+     dropped plugins; with `migration`, the move of the flow's directory to `adf/` and the
+     files of `mentions` left for the developer;
    - `## Why`: the project moves to ADF release `to`, so the team runs the fixes and
      improvements listed above;
    - `## QA`: numbered steps: merge, restart the Claude Code session, run

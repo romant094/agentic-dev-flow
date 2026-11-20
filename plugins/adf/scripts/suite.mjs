@@ -4,10 +4,9 @@
 // `wait` returns with the run still going.
 //
 //   suite.mjs command [--root <dir>]
-//       the whole-suite command of <root>/openspec/planning.md: { file, command | null, reason? }
+//       the whole-suite command, wholeSuiteCommand of the settings (lib/settings.mjs): { file, command | null, reason? }
 //   suite.mjs set --command "<cmd>" [--root <dir>] [--commit]
-//       write the command under `## Whole-suite command`, creating the file or the section when
-//       absent: { file, command }. --commit then commits that file alone through lib/commit.mjs
+//       set wholeSuiteCommand in the settings, creating the file when absent: { file, command }. --commit then commits that file alone through lib/commit.mjs
 //       with the message SET_MESSAGE: { ..., commit }
 //   suite.mjs run --change <name> [--root <change worktree>] [--base-check] [--record [--commit]]
 //                 [--section test-record|review] [--timeout <minutes>]
@@ -18,9 +17,9 @@
 //       pre-existing, environment-broken (with `environment.reason`) or not-run
 //       --base-check on a failure runs it again in a worktree of the change's base, after the
 //       main run, then removes that worktree (never forced) to tell a pre-existing failure from
-//       a new one; with the guide's `## Failed-tests command` it runs only the failed tests
+//       a new one; with the settings' failedTestsCommand it runs only the failed tests
 //       there, listed in `base.selected`
-//       --record writes openspec/changes/<change>/.apply-test-record.md, apply's final commit;
+//       --record writes adf/changes/<change>/.apply-test-record.md, apply's final commit;
 //       --commit then commits that record alone through lib/commit.mjs with the message
 //       recordMessage(<change>), whatever the run's status but not-run, and pushes the change branch once
 //       through the forge role as group-finish does (lib/groups.mjs pushChange): { ..., commit,
@@ -48,7 +47,7 @@
 //       the .json beside it: { ok: true, file, command, exit, counts | null, failing, outputFile,
 //       worktree, sha, timedOut?, error? }. Exit 0 whenever the run happened, failing tests and
 //       a timeout included: the record says so. Exit 1 on a refusal (no change, no worktree)
-//   With no command in the guide, run reports `status: "not-run"` with the reason and `remedy`,
+//   With no command in the settings, run reports `status: "not-run"` with the reason and `remedy`,
 //   the `set` call that records one; never a pass. It writes no record, so --commit commits and
 //   pushes nothing.
 import { readFileSync } from 'node:fs'

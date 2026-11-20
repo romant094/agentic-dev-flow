@@ -25,14 +25,14 @@
 //       Appends the "Added during apply" bullet to the owning task's Files block. Without
 //       --task the owner is the one `unplanned` proposes; none is a refusal. --commit then
 //       commits plan.md alone through lib/commit.mjs, with the message
-//       "docs(openspec): record work added during apply to <change>" (`commit`: its sha, or
+//       "docs(adf): record work added during apply to <change>" (`commit`: its sha, or
 //       null when plan.md was already committed); without it the next tick commits the plan.
 //   plan.mjs reopen --change <name> --title <text> --task-file <file> [--root <dir>]
 //       Opens an apply round after a verify FAIL, or adds a task to the round open for that same
 //       FAIL record: appends the fix task (the file holds its text below the back-reference:
 //       Files, Interfaces, Level, Behaviour and acceptance, the steps) to tasks.md under the
 //       round's own group and to plan.md with its back-reference, puts it in the round's own
-//       Execution Graph row (wave 1), commits both files ("docs(openspec): open apply round <r>
+//       Execution Graph row (wave 1), commits both files ("docs(adf): open apply round <r>
 //       of <change>") and writes an `apply-round` ledger record. { ok, round, opened, task,
 //       item, group, frozen, checks, base, commit, record }: `frozen` the groups merged before
 //       the round, which form no pair and get no wave from it; `checks` the failing checks the
@@ -49,7 +49,6 @@ import { changeDir, globToRegExp, inferChange } from './lib/changes.mjs'
 import { appendScripted, applyRound, readRecords } from './lib/ledger.mjs'
 import { failingChecks, lastVerdict } from './lib/preflight.mjs'
 import { checkCommitPlace, commitPaths } from './lib/commit.mjs'
-import { PLANNING_GUIDE } from './lib/host-files.mjs'
 import { groupState } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
 import {
@@ -78,6 +77,8 @@ import { readDebtRoot } from './lib/registry.mjs'
 import { loadSchema, schemaOf } from './lib/schema.mjs'
 import { defaultHome } from './lib/runtime.mjs'
 import { gitIn } from './lib/workspace.mjs'
+import { CHANGES_DIR, COMMIT_SCOPE } from './lib/layout.mjs'
+import { getSetting } from './lib/settings.mjs'
 
 const USAGE = 'usage: plan.mjs lint|graph|schedule|unplanned|added|reopen [--change <name>] [--root <dir>] (see the header for each command; without --change, the one active change under the root)'
 
@@ -107,11 +108,11 @@ function options(argv, flags, switches = []) {
 const read = (path) => (existsSync(path) ? readFileSync(path, 'utf8') : null)
 // The groups the current apply round froze; none in round 0.
 const frozenOf = (root, change) => applyRound(readRecords(root, change))?.frozen ?? []
-const rel = (change, file) => `openspec/changes/${change}/${file}`
+const rel = (change, file) => `${CHANGES_DIR}/${change}/${file}`
 
 function changeFiles(root, change) {
   const dir = changeDir(root, change)
-  if (!existsSync(dir)) throw new Refusal(`no change "${change}" in ${root}/openspec/changes`)
+  if (!existsSync(dir)) throw new Refusal(`no change "${change}" in ${root}/${CHANGES_DIR}`)
   const planPath = join(dir, 'plan.md')
   const planText = read(planPath)
   if (planText === null) throw new Refusal(`${rel(change, 'plan.md')} does not exist`)
@@ -122,7 +123,7 @@ function changeFiles(root, change) {
 // `git grep` over the tracked tree, the change records excluded. Exit 1 is "no match".
 function grepIn(root) {
   return async ({ fixed, word }) => {
-    const args = ['grep', '-l', '-F', ...(word ? ['-w'] : []), ...fixed.flatMap((p) => ['-e', p]), '--', '.', ':!openspec/changes', ':!.superpowers']
+    const args = ['grep', '-l', '-F', ...(word ? ['-w'] : []), ...fixed.flatMap((p) => ['-e', p]), '--', '.', `:!${CHANGES_DIR}`, ':!.superpowers']
     try {
       return gitIn(root)(...args).split('\n').filter(Boolean)
     } catch (error) {
@@ -163,7 +164,7 @@ async function lint(o) {
     planText,
     tasksText,
     designText: read(join(dir, 'design.md')),
-    guideText: read(join(o.root, PLANNING_GUIDE)),
+    packages: getSetting(o.root, 'packages'),
     planFile: rel(o.change, 'plan.md'),
     tasksFile: rel(o.change, tracks),
     designFile: rel(o.change, 'design.md'),
@@ -310,7 +311,7 @@ function reopen(o) {
   const base = git('rev-parse', 'HEAD')
   writeFileSync(planPath, out.planText)
   writeFileSync(join(dir, tracks), out.tasksText)
-  const { commit } = commitPaths(o.root, { only: [rel(o.change, 'plan.md'), rel(o.change, tracks)], message: `docs(openspec): open apply round ${round} of ${o.change}` })
+  const { commit } = commitPaths(o.root, { only: [rel(o.change, 'plan.md'), rel(o.change, tracks)], message: `docs(${COMMIT_SCOPE}): open apply round ${round} of ${o.change}` })
   const checks = failingChecks(recordText)
   const list = (values) => (values.length ? values.join(',') : 'none')
   const { record } = appendScripted(o.root, o.change, 'apply-round', { round: String(round), checks: list(checks), task: out.item, group: out.group ?? 'none', base, verify, frozen: list(frozen) })

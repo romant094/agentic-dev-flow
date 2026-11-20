@@ -12,7 +12,7 @@
 //       agent runs, such as a bench pass, takes the place of the review: a non-empty file
 //       inside the change directory that records the check (lib/tasks.mjs evidenceGate).
 //       --commit then commits the tasks file, plan.md when it changed, and the evidence file,
-//       with the message "chore(openspec): tick <item> of <change>"; other staged paths are a
+//       with the message "chore(adf): tick <item> of <change>"; other staged paths are a
 //       refusal.
 //       { item, ticked, already, planTask?, evidence?, sha?, paths? }
 //   tasks.mjs lint --change <name> [--root <dir>]
@@ -29,6 +29,7 @@ import { scopeNaming } from './lib/scope.mjs'
 import { commitTick, evidenceGate, itemForPlanTask, lintTasks, tickGate, tickTask } from './lib/tasks.mjs'
 import { isMain } from './lib/main.mjs'
 import { schemaOf } from './lib/schema.mjs'
+import { CHANGES_DIR } from './lib/layout.mjs'
 
 const USAGE =
   'usage: tasks.mjs tick <item> | --plan-task <N> [--evidence <file>] --change <name> [--root <dir>] [--commit]; tasks.mjs lint --change <name> [--root <dir>]'
@@ -75,7 +76,7 @@ function exec(argv) {
     }))
     const findings = [...lintTasks(text), ...unnamed]
     const ok = !findings.some((f) => f.severity === 'error')
-    return { code: ok ? 0 : 1, result: { ok, file: `openspec/changes/${change}/${tracks}`, findings } }
+    return { code: ok ? 0 : 1, result: { ok, file: `${CHANGES_DIR}/${change}/${tracks}`, findings } }
   }
   if (command !== 'tick' || args.length > 2 || Boolean(item) === Boolean(planTask)) throw new Usage('tick takes an item or --plan-task, not both')
   if (evidenceFile && !planTask) throw new Usage('--evidence closes a plan task: pass --plan-task')

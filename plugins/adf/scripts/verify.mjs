@@ -25,9 +25,9 @@
 //       to the developer) and `rerunCommand`. --out
 //       also writes the result to a file; --report adds `report`, the text block to show
 //   verify.mjs assemble --change <name> [--root <dir>] [--commit]
-//       render openspec/changes/<change>/verify.md from the template, run.json, the sections,
+//       render adf/changes/<change>/verify.md from the template, run.json, the sections,
 //       the verdict, the rulings and the approved skill edits; its last line is the verdict's
-//       `line`. --commit commits the record alone ("docs(openspec): verify <change>").
+//       `line`. --commit commits the record alone ("docs(adf): verify <change>").
 //       Refused when the verdict refuses: { ok:false, refusals, redispatch, needsRuling, report }.
 //       Otherwise { ok:true, file, verdict, line, commit, report }, also on a FAIL verdict
 //   verify.mjs skill-edit --change <name> --message "<type(scope): description>"

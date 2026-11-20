@@ -75,7 +75,7 @@ The `config` object of the registry entry:
 
 The plugin refuses an unknown field.
 
-`build` still runs, but only at provisioning. Use the worktree preparation recipe of the core instead. It is `## Worktree preparation` in `openspec/planning.md` of the project. It names each build with the input paths that trigger it. The scripts of the core run it at provisioning, before a covering or whole-suite run, and after a group merge, when its inputs changed. `/adf:init` proposes the candidates.
+`build` still runs, but only at provisioning. Use the worktree preparation recipe of the core instead. It is the key `worktreePreparation` in `adf/settings.json` of the project. It names each build with the input paths that trigger it. The scripts of the core run it at provisioning, before a covering or whole-suite run, and after a group merge, when its inputs changed. `/adf:init` proposes the candidates.
 
 To move a build into the recipe:
 

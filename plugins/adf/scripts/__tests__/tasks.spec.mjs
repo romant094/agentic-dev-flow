@@ -12,11 +12,11 @@ import { run } from '../tasks.mjs'
 
 function host(text) {
   const root = mkdtempSync(join(tmpdir(), 'adf-tasks-'))
-  mkdirSync(join(root, 'openspec', 'changes', 'c'), { recursive: true })
-  writeFileSync(join(root, 'openspec', 'changes', 'c', 'tasks.md'), text)
+  mkdirSync(join(root, 'adf', 'changes', 'c'), { recursive: true })
+  writeFileSync(join(root, 'adf', 'changes', 'c', 'tasks.md'), text)
   return root
 }
-const read = (root) => readFileSync(join(root, 'openspec', 'changes', 'c', 'tasks.md'), 'utf8')
+const read = (root) => readFileSync(join(root, 'adf', 'changes', 'c', 'tasks.md'), 'utf8')
 
 test('tick marks exactly the named task, not one whose number starts the same', () => {
   const root = host('## 1. G\n\n- [ ] 1.1 one\n- [ ] 1.10 ten\n- [ ] 1.2 two\n')
@@ -97,7 +97,7 @@ const PLAN = '## Execution Graph\n\nsingle group\n\n### Task 1: a\n\n> Implement
 function repo() {
   const root = host('## 1. G\n\n- [ ] 1.1 one\n- [ ] 1.2 two\n')
   const real = realpathSync(root)
-  writeFileSync(join(real, 'openspec', 'changes', 'c', 'plan.md'), PLAN)
+  writeFileSync(join(real, 'adf', 'changes', 'c', 'plan.md'), PLAN)
   writeFileSync(join(real, '.gitignore'), '.superpowers/\n')
   git(real, 'init', '-q', '-b', 'main')
   git(real, 'config', 'user.email', 't@example.com')
@@ -114,14 +114,14 @@ const reviewed = (root, n, over = {}, name = `T${n} review`) =>
 test('tick --plan-task resolves the item from the back-reference and --commit commits by path', () => {
   const root = repo()
   reviewed(root, 1)
-  writeFileSync(join(root, 'openspec', 'changes', 'c', 'plan.md'), `${PLAN}- added line\n`)
+  writeFileSync(join(root, 'adf', 'changes', 'c', 'plan.md'), `${PLAN}- added line\n`)
   writeFileSync(join(root, 'unrelated.txt'), 'left alone\n')
   const out = run(['tick', '--plan-task', '1', '--change', 'c', '--root', root, '--commit'])
   assert.equal(out.code, 0)
   assert.equal(out.result.item, '1.2')
-  assert.deepEqual(out.result.paths, ['openspec/changes/c/tasks.md', 'openspec/changes/c/plan.md'])
+  assert.deepEqual(out.result.paths, ['adf/changes/c/tasks.md', 'adf/changes/c/plan.md'])
   assert.equal(out.result.sha, git(root, 'rev-parse', 'HEAD'))
-  assert.equal(git(root, 'log', '-1', '--format=%s'), 'chore(openspec): tick 1.2 of c')
+  assert.equal(git(root, 'log', '-1', '--format=%s'), 'chore(adf): tick 1.2 of c')
   assert.equal(git(root, 'status', '--porcelain'), '?? unrelated.txt')
   assert.equal(read(root), '## 1. G\n\n- [ ] 1.1 one\n- [x] 1.2 two\n')
   // Ticked already and nothing changed: no commit.
@@ -135,21 +135,21 @@ test('tick --plan-task resolves the item from the back-reference and --commit co
 test('a verification-only task closes on a recorded evidence file, committed with its tick', () => {
   const root = repo()
   const bench = "## Execution Graph\n\nsingle group\n\n### Task 1: bench\n\n> Implements `tasks.md` 1.2.\n\n- [ ] **Step 1: Commit** — none: the developer's bench pass\n\n### Task 2: b\n\n"
-  writeFileSync(join(root, 'openspec', 'changes', 'c', 'plan.md'), bench)
+  writeFileSync(join(root, 'adf', 'changes', 'c', 'plan.md'), bench)
   git(root, 'commit', '-q', '-am', 'plan')
   const tick = (...extra) => run(['tick', '--plan-task', '1', '--change', 'c', '--root', root, ...extra])
-  const evidence = 'openspec/changes/c/bench.md'
+  const evidence = 'adf/changes/c/bench.md'
   assert.match(tick().result.error, /no accepted review of T1 is recorded/)
   assert.match(tick('--evidence', evidence).result.error, /bench\.md does not exist/)
   writeFileSync(join(root, evidence), '\n')
   assert.match(tick('--evidence', evidence).result.error, /bench\.md is empty/)
   writeFileSync(join(root, 'notes.md'), 'passed\n')
-  assert.match(tick('--evidence', 'notes.md').result.error, /lies outside openspec\/changes\/c\//)
+  assert.match(tick('--evidence', 'notes.md').result.error, /lies outside adf\/changes\/c\//)
   writeFileSync(join(root, evidence), 'Passed on the Windows bench.\n')
   const out = tick('--evidence', evidence, '--commit')
   assert.equal(out.code, 0, JSON.stringify(out.result))
-  assert.deepEqual([out.result.item, out.result.evidence, out.result.paths], ['1.2', evidence, ['openspec/changes/c/tasks.md', evidence]])
-  assert.equal(git(root, 'log', '-1', '--format=%s'), 'chore(openspec): tick 1.2 of c')
+  assert.deepEqual([out.result.item, out.result.evidence, out.result.paths], ['1.2', evidence, ['adf/changes/c/tasks.md', evidence]])
+  assert.equal(git(root, 'log', '-1', '--format=%s'), 'chore(adf): tick 1.2 of c')
   assert.equal(git(root, 'status', '--porcelain'), '?? notes.md')
   // A task that commits code closes on its review, never on evidence; evidence names a plan task.
   const coded = repo()
@@ -172,22 +172,22 @@ test('tick --commit commits through the index: a pre-commit hook that formats an
   const root = repo()
   const hook = join(root, '.git', 'hooks', 'pre-commit')
   mkdirSync(dirname(hook), { recursive: true })
-  writeFileSync(hook, "#!/bin/sh\nprintf '# formatted\\n' >> openspec/changes/c/tasks.md\ngit add openspec/changes/c/tasks.md\n")
+  writeFileSync(hook, "#!/bin/sh\nprintf '# formatted\\n' >> adf/changes/c/tasks.md\ngit add adf/changes/c/tasks.md\n")
   chmodSync(hook, 0o755)
   const out = run(['tick', '1.1', '--change', 'c', '--root', root, '--commit'])
   assert.equal(out.code, 0)
-  assert.match(git(root, 'show', 'HEAD:openspec/changes/c/tasks.md'), /- \[x\] 1\.1 one\n- \[ \] 1\.2 two\n# formatted$/)
+  assert.match(git(root, 'show', 'HEAD:adf/changes/c/tasks.md'), /- \[x\] 1\.1 one\n- \[ \] 1\.2 two\n# formatted$/)
   assert.equal(git(root, 'status', '--porcelain'), '')
 })
 
-test('tick --commit runs the guide\'s format command on the tick\'s paths first (#2)', () => {
+test('tick --commit runs the settings\' format command on the tick\'s paths first (#2)', () => {
   const root = repo()
-  writeFileSync(join(root, 'openspec', 'planning.md'), "## Format command\n\n`perl -pi -e 's/^- \\[x\\]/- [X]/' {files}`\n")
-  git(root, 'add', 'openspec/planning.md')
+  writeFileSync(join(root, 'adf', 'settings.json'), JSON.stringify({ formatCommand: "perl -pi -e 's/^- \\[x\\]/- [X]/' {files}" }))
+  git(root, 'add', 'adf/settings.json')
   git(root, 'commit', '-q', '-m', 'guide')
   const out = run(['tick', '1.1', '--change', 'c', '--root', root, '--commit'])
   assert.equal(out.code, 0)
-  assert.equal(git(root, 'show', 'HEAD:openspec/changes/c/tasks.md'), '## 1. G\n\n- [X] 1.1 one\n- [ ] 1.2 two')
+  assert.equal(git(root, 'show', 'HEAD:adf/changes/c/tasks.md'), '## 1. G\n\n- [X] 1.1 one\n- [ ] 1.2 two')
   assert.equal(git(root, 'status', '--porcelain'), '')
 })
 
@@ -207,7 +207,7 @@ test('tasks.mjs lint refuses a taken or partial scope key that no task names, by
     { source: 'tracker', key: 'PROJ-12', state: 'partial' },
     { source: 'tracker', key: 'PROJ-3', state: 'excluded', reason: 'later' }
   ]
-  writeFileSync(join(root, 'openspec', 'changes', 'c', 'scope.json'), JSON.stringify({ version: 1, change: 'c', tracker: { state: 'done', plugin: 't' }, items }))
+  writeFileSync(join(root, 'adf', 'changes', 'c', 'scope.json'), JSON.stringify({ version: 1, change: 'c', tracker: { state: 'done', plugin: 't' }, items }))
   const out = run(['lint', '--change', 'c', '--root', root])
   assert.equal(out.code, 1)
   assert.deepEqual(
@@ -217,7 +217,7 @@ test('tasks.mjs lint refuses a taken or partial scope key that no task names, by
       ['error', 'PROJ-12 (partial) is named by no task: name it, as a whole word, on the task that addresses it']
     ]
   )
-  writeFileSync(join(root, 'openspec', 'changes', 'c', 'tasks.md'), '## 1. G\n\n- [ ] 1.1 greet the user (PROJ-1)\n- [ ] 1.2 wave for snmp-01\n- [ ] 1.3 the rest of PROJ-12\n')
+  writeFileSync(join(root, 'adf', 'changes', 'c', 'tasks.md'), '## 1. G\n\n- [ ] 1.1 greet the user (PROJ-1)\n- [ ] 1.2 wave for snmp-01\n- [ ] 1.3 the rest of PROJ-12\n')
   assert.deepEqual([run(['lint', '--change', 'c', '--root', root]).code, run(['lint', '--change', 'c', '--root', root]).result.findings], [0, []])
 })
 

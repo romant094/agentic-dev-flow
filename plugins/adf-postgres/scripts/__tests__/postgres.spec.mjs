@@ -292,7 +292,7 @@ test('a symlinked env file in the worktree is refused, not followed', () => {
 test('a missing env file in the worktree is refused and names the guide section', () => {
   const r = op('provision', provisionInput(fixture({ worktreeEnv: null })), [['docker exec', yes]])
   assert.equal(r.code, 1)
-  assert.match(r.result.error, /the core's ## Worktree copies must name \.env/)
+  assert.match(r.result.error, /the core's settings must list \.env in worktreeCopies \(adf\/settings\.json\)/)
   assert.equal(r.calls.length, 0)
 })
 

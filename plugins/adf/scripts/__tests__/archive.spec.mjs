@@ -31,7 +31,7 @@ const FIX = join(here, 'fixtures', 'spec-merge', 'modify-remove-add')
 const MAIN_SPEC = readFileSync(join(FIX, 'main.md'), 'utf8')
 const DELTA = readFileSync(join(FIX, 'delta.md'), 'utf8')
 const NOW = new Date('2026-10-19T10:00:00Z')
-const TARGET = 'openspec/changes/archive/2026-10-19-add-x'
+const TARGET = 'adf/changes/archive/2026-10-19-add-x'
 const OFFLINE = () => ({ ok: false, reason: 'could not fetch the pricing page: offline' })
 const NO_TRANSCRIPTS = realpathSync(mkdtempSync(join(tmpdir(), 'adf-archive-no-projects-')))
 const NONE = { now: () => NOW, knowledge: () => ({ state: 'none', point: 'knowledge' }), forge: () => ({ state: 'none', point: 'forge' }), projectsDir: NO_TRANSCRIPTS, fetchPrices: OFFLINE }
@@ -91,7 +91,7 @@ function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widg
   execFileSync('git', ['init', '-q', '-b', 'develop', root])
   git(root, 'config', 'user.email', 't@example.com')
   git(root, 'config', 'user.name', 'T')
-  put(root, { 'a.txt': 'a\n', 'openspec/specs/widgets/spec.md': MAIN_SPEC, ...extra })
+  put(root, { 'a.txt': 'a\n', 'adf/specs/widgets/spec.md': MAIN_SPEC, ...extra })
   initRegistry(root, '1.3')
   setBranches(root, { integration: 'develop', protected: [] })
   if (debt) setDebtRoot(root, debt)
@@ -100,7 +100,7 @@ function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widg
   git(root, 'add', '.')
   git(root, 'commit', '-q', '-m', 'init')
   const wt = create(root, { change: 'add-x', branch: 'feat/add-x', base: 'integration' }).root
-  const dir = 'openspec/changes/add-x'
+  const dir = 'adf/changes/add-x'
   const files = {
       [`${dir}/.adf.json`]: `${JSON.stringify({ schema: 'adf', schemaVersion: 1, created: '2026-10-15', base: 'develop', ...meta })}\n`,
       [`${dir}/brainstorm.md`]: '# Brainstorm\n',
@@ -123,7 +123,7 @@ function archiveHost({ delta = { widgets: DELTA }, tasks = '- [x] 1.1 store widg
   put(wt, files)
   if (specsBase && quick === null) assert.equal(writeSpecsBase(wt, 'add-x').ok, true)
   const reviewed = commit(wt, {}, 'feat: store widgets dry')
-  commit(wt, { [`${dir}/review.md`]: reviewRecord(reviewed, { verdict }) }, 'docs(openspec): review add-x')
+  commit(wt, { [`${dir}/review.md`]: reviewRecord(reviewed, { verdict }) }, 'docs(adf): review add-x')
   ledger?.(wt)
   return { root, wt, reviewed, dir }
 }
@@ -182,10 +182,10 @@ test('a full archive with no forge and no knowledge base: merged, moved, committ
   assert.equal(check.detail.verdict, 'PASS')
   assert.equal(check.detail.commit, h.reviewed)
   assert.deepEqual(check.detail.warnings, [])
-  assert.deepEqual(merge.detail.written, ['openspec/specs/widgets/spec.md'])
+  assert.deepEqual(merge.detail.written, ['adf/specs/widgets/spec.md'])
   assert.deepEqual(merge.detail.totals, { added: 1, modified: 1, removed: 1, renamed: 0 })
-  assert.deepEqual(move.detail, { from: 'openspec/changes/add-x', target: TARGET, ledger: 'copied' })
-  assert.deepEqual(specs.detail.files.filter((f) => !f.startsWith(`${TARGET}/`) && !f.startsWith('openspec/changes/add-x/')), ['openspec/specs/widgets/spec.md'])
+  assert.deepEqual(move.detail, { from: 'adf/changes/add-x', target: TARGET, ledger: 'copied' })
+  assert.deepEqual(specs.detail.files.filter((f) => !f.startsWith(`${TARGET}/`) && !f.startsWith('adf/changes/add-x/')), ['adf/specs/widgets/spec.md'])
   assert.ok(specs.detail.files.includes(`${TARGET}/ledger.jsonl`))
   assert.equal(git(h.root, 'log', '-1', '--format=%s', specs.detail.commit), 'docs(specs): archive add-x')
   assert.match(ingest.detail.report, /no knowledge plugin is enabled, so no log entry was written and archive skipped the ingest/)
@@ -211,13 +211,13 @@ test('a full archive with no forge and no knowledge base: merged, moved, committ
   assert.deepEqual([removed.detail.pointer, readPointers(h.root)['feat/add-x'].change], ['feat/add-x', 'add-x'])
   assert.equal(git(h.root, 'branch', '--show-current'), 'develop')
   assert.equal(git(h.root, 'rev-list', '--parents', '-1', 'HEAD').split(' ').length, 3, 'a --no-ff merge commit')
-  assert.match(readFileSync(join(h.root, 'openspec/specs/widgets/spec.md'), 'utf8'), /### Requirement: Track/)
+  assert.match(readFileSync(join(h.root, 'adf/specs/widgets/spec.md'), 'utf8'), /### Requirement: Track/)
   assert.ok(existsSync(join(h.root, TARGET, 'ledger.jsonl')))
   assert.equal(git(h.root, 'branch', '--list', 'feat/add-x'), 'feat/add-x', 'the branch is kept')
   const report = call(h, ['report'], deps)
   assert.equal(report.complete, true)
   assert.match(report.report, /^## Archive complete: add-x/)
-  assert.match(report.report, /- metrics: done — openspec\/changes\/archive\/2026-10-19-add-x\/metrics\.json and .*attempts\.jsonl; prices none: could not fetch the pricing page: offline/)
+  assert.match(report.report, /- metrics: done — adf\/changes\/archive\/2026-10-19-add-x\/metrics\.json and .*attempts\.jsonl; prices none: could not fetch the pricing page: offline/)
   assert.match(report.report, /- commit-metrics: done — commit [0-9a-f]{7}/)
   assert.match(report.report, /- merge: done — added 1, modified 1, removed 1, renamed 0/)
   assert.match(report.report, /- remove: done — worktree .* removed; branch feat\/add-x kept/)
@@ -435,7 +435,7 @@ test('check refuses code committed after the reviewed commit, naming the change 
   commit(h.wt, { 'src/late.txt': 'late\n' }, 'feat: late')
   const out = call(h, ['check'])
   assert.equal(out.ok, false)
-  assert.match(out.refusal, /after the reviewed commit .* change files other than openspec\/changes\/add-x\/review\.md/)
+  assert.match(out.refusal, /after the reviewed commit .* change files other than adf\/changes\/add-x\/review\.md/)
   assert.ok(out.refusal.includes(`change root ${h.wt}`) && out.refusal.includes(`repository root ${h.wt}`), out.refusal)
   assert.deepEqual(out.detail.roots, { change: h.wt, repository: h.wt })
 })
@@ -525,13 +525,13 @@ const DEBT_SCOPE = { version: 1, change: 'add-x', items: [debtItem('snmp-01', 't
 
 test('placements moves the taken debt to resolved.md by the archived directory, keeps the partial, and commit-memory commits the move', () => {
   // snmp-04 was resolved by an earlier run: it counts as resolved, and its row is not touched.
-  const OLD = '| `snmp-04` | Entry snmp-04 | `a.ts:1` | debt |  | `openspec/changes/archive/2026-10-18-add-x` | 2026-10-18 |'
+  const OLD = '| `snmp-04` | Entry snmp-04 | `a.ts:1` | debt |  | `adf/changes/archive/2026-10-18-add-x` | 2026-10-18 |'
   const extra = { ...DEBT_TREE, 'docs/debt/snmp/resolved.md': ['# Resolved debt of `snmp`', '', '| ID | Title | Anchors | Class | Tracker | Resolved by | Date |', '|---|---|---|---|---|---|---|', OLD, ''].join('\n') }
   const h = archiveHost({ debt: 'docs/debt', extra, scope: { ...DEBT_SCOPE, items: [...DEBT_SCOPE.items, debtItem('snmp-04', 'taken')] } })
   assert.equal(call(h, ['check']).ok, true)
   const placed = call(h, ['placements'])
   assert.equal(placed.ok, true, placed.refusal)
-  const by = 'openspec/changes/archive/2026-10-19-add-x'
+  const by = 'adf/changes/archive/2026-10-19-add-x'
   assert.deepEqual(
     [placed.detail.resolvedDebt, placed.detail.goneDebt, placed.detail.resolvedBy, placed.detail.resolvedOn, placed.detail.debtFiles],
     [['snmp-01', 'snmp-04'], ['snmp-03'], by, '2026-10-19', ['docs/debt/snmp/index.md', 'docs/debt/snmp/resolved.md']]
@@ -553,7 +553,7 @@ test('placements moves the taken debt to resolved.md by the archived directory, 
   assert.equal(state.steps.ingest.detail.debtLogged, false)
   assert.deepEqual(state.steps['commit-memory'].detail.files, ['docs/debt/snmp/index.md', 'docs/debt/snmp/resolved.md'])
   assert.equal(git(h.root, 'log', '--format=%B', 'develop').includes('snmp-01'), false, 'no commit message names the resolved id')
-  assert.match(call(h, ['report']).report, /placements: done — every debt, recorded finding and deviation placed; resolved debt moved to resolved\.md: snmp-01, snmp-04, resolved by openspec\/changes\/archive\/2026-10-19-add-x; taken debt gone from the tree: snmp-03/)
+  assert.match(call(h, ['report']).report, /placements: done — every debt, recorded finding and deviation placed; resolved debt moved to resolved\.md: snmp-01, snmp-04, resolved by adf\/changes\/archive\/2026-10-19-add-x; taken debt gone from the tree: snmp-03/)
 })
 
 test('placements with no scope.json leaves the debt tree as it is', () => {
@@ -635,15 +635,15 @@ test('merge refuses a new capability\'s placeholder Purpose until --purpose give
   assert.match(call(h, ['merge', '--purpose', `widgets=${purpose}`]).refusal, /--purpose names widgets, which is not a new capability/)
   const out = call(h, ['merge', '--purpose', `labels=${purpose}`])
   assert.equal(out.ok, true, out.refusal)
-  assert.deepEqual(out.detail.written, ['openspec/specs/labels/spec.md', 'openspec/specs/widgets/spec.md'])
+  assert.deepEqual(out.detail.written, ['adf/specs/labels/spec.md', 'adf/specs/widgets/spec.md'])
   assert.deepEqual(out.detail.purposes, ['labels'])
-  assert.match(readFileSync(join(h.wt, 'openspec/specs/labels/spec.md'), 'utf8'), /Labels name every widget/)
+  assert.match(readFileSync(join(h.wt, 'adf/specs/labels/spec.md'), 'utf8'), /Labels name every widget/)
   assert.throws(() => run(['merge', '--change', 'add-x', '--purpose', 'labels'], { deps: NONE }), UsageError)
 })
 
 test('merge stops on a conflict with its texts for the spec-merge dispatch, and applies the joined resolution files', () => {
   const h = archiveHost()
-  commit(h.root, { 'openspec/specs/widgets/spec.md': MAIN_SPEC.replace('The system SHALL store widgets.', 'The system SHALL store widgets on shelves.') }, 'develop moves')
+  commit(h.root, { 'adf/specs/widgets/spec.md': MAIN_SPEC.replace('The system SHALL store widgets.', 'The system SHALL store widgets on shelves.') }, 'develop moves')
   call(h, ['check'])
   call(h, ['placements'])
   const out = call(h, ['merge'])
@@ -662,17 +662,17 @@ test('merge stops on a conflict with its texts for the spec-merge dispatch, and 
   const merged = call(h, ['merge', '--resolutions', a, '--resolutions', b])
   assert.equal(merged.ok, true, merged.refusal)
   assert.deepEqual(merged.detail.resolved, ['widgets: Store'])
-  assert.match(readFileSync(join(h.wt, 'openspec/specs/widgets/spec.md'), 'utf8'), /on dry shelves/)
+  assert.match(readFileSync(join(h.wt, 'adf/specs/widgets/spec.md'), 'utf8'), /on dry shelves/)
 })
 
 test('commit-specs refuses an uncommitted file it did not write and commits only its own paths', () => {
   const h = archiveHost()
   for (const step of STEPS.slice(0, 4)) assert.equal(call(h, [step]).ok, true, step)
-  put(h.wt, { 'openspec/changes/add-y/notes.md': 'another change\n', 'src/wip.txt': 'not archive scope\n' })
+  put(h.wt, { 'adf/changes/add-y/notes.md': 'another change\n', 'src/wip.txt': 'not archive scope\n' })
   const out = call(h, ['commit-specs'])
   assert.equal(out.ok, false)
-  assert.match(out.refusal, /uncommitted files archive did not write: openspec\/changes\/add-y\/notes\.md;/)
-  rmSync(join(h.wt, 'openspec/changes/add-y'), { recursive: true })
+  assert.match(out.refusal, /uncommitted files archive did not write: adf\/changes\/add-y\/notes\.md;/)
+  rmSync(join(h.wt, 'adf/changes/add-y'), { recursive: true })
   const done = call(h, ['commit-specs'])
   assert.equal(done.ok, true, done.refusal)
   assert.equal(done.detail.files.includes('src/wip.txt'), false)
@@ -763,7 +763,7 @@ test('a refused ingest reply goes back once, resumed, and a second refusal stops
 test('ingest applies the reply\'s page edits; a bad patch or a path outside the knowledge base is refused with nothing applied', () => {
   const MEM = '.claude/memory'
   const SPEC = `${MEM}/concepts/widgets.md`
-  const h = archiveHost({ extra: { [`${MEM}/index.md`]: '# Index\n', [`${MEM}/log.md`]: '# Log\n', [SPEC]: '# Widgets\n\nRead openspec/specs/widgets/spec.md: widgets are stored wet.\n', [`${MEM}/entities/old.md`]: '# Old\n' } })
+  const h = archiveHost({ extra: { [`${MEM}/index.md`]: '# Index\n', [`${MEM}/log.md`]: '# Log\n', [SPEC]: '# Widgets\n\nRead adf/specs/widgets/spec.md: widgets are stored wet.\n', [`${MEM}/entities/old.md`]: '# Old\n' } })
   const context = { state: 'done', plugin: 'memory', index: `${MEM}/index.md`, instructions: { ingest: '/p/ingest.md' }, paths: [`${MEM}/**`], log: [`${MEM}/log.md`] }
   let logAnswer = { state: 'done', path: `${MEM}/log.md`, entry: '', rotated: [] }
   const deps = { ...NONE, knowledge: () => context, knowledgeLog: () => logAnswer }
@@ -772,7 +772,7 @@ test('ingest applies the reply\'s page edits; a bad patch or a path outside the 
   assert.deepEqual(stale.stale.map((s) => s.path), [SPEC])
   const before = git(h.wt, 'status', '--porcelain', '--untracked-files=all')
   const pages = [
-    { path: SPEC, why: 'widgets are stored dry now', patch: pagePatch(h.wt, SPEC, '# Widgets\n\nRead openspec/specs/widgets/spec.md: widgets are stored dry.\n') },
+    { path: SPEC, why: 'widgets are stored dry now', patch: pagePatch(h.wt, SPEC, '# Widgets\n\nRead adf/specs/widgets/spec.md: widgets are stored dry.\n') },
     { path: `${MEM}/entities/old.md`, why: 'nothing is old any more', patch: pagePatch(h.wt, `${MEM}/entities/old.md`, null) },
     { path: `${MEM}/concepts/dry.md`, why: 'the invariant', patch: pagePatch(h.wt, `${MEM}/concepts/dry.md`, '# Dry\n\nA widget is stored dry.\n') }
   ]
@@ -1006,19 +1006,19 @@ test('check refuses a stale or missing spec base entry, and warns of a change wi
   const [requirement] = Object.keys(data.capabilities.widgets)
   data.capabilities.widgets[requirement].delta = '0'.repeat(64)
   commit(stale.wt, { [`${stale.dir}/specs-base.json`]: `${JSON.stringify(data, null, 2)}\n` }, 'docs: a base for another delta')
-  commit(stale.wt, { [`${stale.dir}/review.md`]: reviewRecord(git(stale.wt, 'rev-parse', 'HEAD')) }, 'docs(openspec): review add-x again')
+  commit(stale.wt, { [`${stale.dir}/review.md`]: reviewRecord(git(stale.wt, 'rev-parse', 'HEAD')) }, 'docs(adf): review add-x again')
   const refused = call(stale, ['check'])
   assert.equal(refused.state, 'failed')
   assert.match(refused.refusal, new RegExp(`a base taken for another delta text for widgets "${requirement}".*the merge must not use a base the delta was not written against`))
   assert.deepEqual(refused.detail.specsBase.stale, [{ capability: 'widgets', requirement }])
   delete data.capabilities.widgets[requirement]
   commit(stale.wt, { [`${stale.dir}/specs-base.json`]: `${JSON.stringify(data, null, 2)}\n` }, 'docs: drop a base')
-  commit(stale.wt, { [`${stale.dir}/review.md`]: reviewRecord(git(stale.wt, 'rev-parse', 'HEAD')) }, 'docs(openspec): review add-x again')
+  commit(stale.wt, { [`${stale.dir}/review.md`]: reviewRecord(git(stale.wt, 'rev-parse', 'HEAD')) }, 'docs(adf): review add-x again')
   assert.deepEqual(call(stale, ['check']).detail.specsBase.missing, [{ capability: 'widgets', requirement }])
   const none = archiveHost({ specsBase: false })
   const out = call(none, ['check'])
   assert.equal(out.ok, true, out.refusal)
-  assert.deepEqual(out.detail.warnings, ['no openspec/changes/add-x/specs-base.json: the change was made before the spec base snapshot, so the merge\'s three-way check falls back to the merge base, which a rebase moves'])
+  assert.deepEqual(out.detail.warnings, ['no adf/changes/add-x/specs-base.json: the change was made before the spec base snapshot, so the merge\'s three-way check falls back to the merge base, which a rebase moves'])
 })
 
 test('the report names the capabilities verify.md lists as hand-edited and says the corpus lint is due', () => {
@@ -1037,7 +1037,7 @@ test('the report names the capabilities verify.md lists as hand-edited and says 
 // Three archived v1 records, oldest first: the sweep found nothing in any, the review in two.
 const ARCHIVED = Object.fromEntries(
   ['01', '02', '03'].map((day, i) => [
-    `openspec/changes/archive/2026-10-${day}-c${i}/metrics.json`,
+    `adf/changes/archive/2026-10-${day}-c${i}/metrics.json`,
     JSON.stringify({ schemaVersion: 1, change: `c${i}`, branch: `feat/c${i}`, generatedAt: `2026-10-${day}T10:00:00.000Z`, sessions: [], cost: { total: {} }, facts: { rows: [], dispatches: [] }, ledger: { dispatches: {}, deviations: {} }, compliance: [], maintainability: {}, findings: { sweep: { dispatches: 1, findings: 0 }, review: { dispatches: 1, findings: i } } })
   ])
 )
@@ -1050,7 +1050,7 @@ test('the report: changes since the last window retro with the ref and its fetch
   assert.equal(out.ok, true)
   assert.match(out.report, /\nSince the first archive \(no window retro yet\): 3 changes archived \(c0, c1, c2\) on develop \(fetched 5 min ago\)\.\n/)
   assert.equal(out.report.match(/Corpus lint due/g).length, 1, 'one corpus lint line for both reasons')
-  assert.match(out.report, /Corpus lint due: verify\.md lists hand-edited capability prose \(widgets: the Purpose names the dry store\); 3 changes archived and no window retro yet \(3 or more\); run the spec corpus lint over openspec\/specs\/, which reports and never gates\./)
+  assert.match(out.report, /Corpus lint due: verify\.md lists hand-edited capability prose \(widgets: the Purpose names the dry store\); 3 changes archived and no window retro yet \(3 or more\); run the spec corpus lint over adf\/specs\/, which reports and never gates\./)
   assert.match(out.report, /\nRemoval candidates, quiet for 3 changes \(information only\): layers sweep\.\n/)
   assert.deepEqual(out.candidates, { layers: ['sweep'], checks: [] })
   assert.equal(out.lintDue, true)
@@ -1059,7 +1059,7 @@ test('the report: changes since the last window retro with the ref and its fetch
   // A window retro anchors the next window: one change archived after its cut-off, no lint due.
   const cutoff = git(h.root, 'rev-parse', 'HEAD')
   commit(h.root, { '.adf/retro/2026-10-10-window.json': JSON.stringify({ cutoff: { mergeSha: cutoff, mergedAt: '2026-10-10T00:00:00Z' } }) }, 'docs(retro): window retrospective 2026-10-10')
-  commit(h.root, { 'openspec/changes/archive/2026-10-12-c3/metrics.json': '{}' }, 'chore: archive c3')
+  commit(h.root, { 'adf/changes/archive/2026-10-12-c3/metrics.json': '{}' }, 'chore: archive c3')
   const after = call(h, ['report'], { ...NONE, fetchRef: FETCHED() })
   assert.match(after.report, /\nSince the last window retro \(2026-10-10\): 1 change archived \(c3\) on develop \(fetched just now\)\.\n/)
   assert.match(after.report, /Corpus lint due: verify\.md lists hand-edited capability prose \(widgets: the Purpose names the dry store\); run the spec corpus lint/)

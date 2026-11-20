@@ -12,7 +12,7 @@ import { baseCheckPath } from '../lib/groups.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
 import { initRegistry, readRegistry } from '../lib/registry.mjs'
-import { commandIn, countLines, countsOf, failingIn, proofIn, readCommand, readTestRecord, runCovering, runSuite, writeCommand } from '../lib/suite.mjs'
+import { countLines, countsOf, failingIn, readCommand, readTestRecord, runCovering, runSuite, writeCommand } from '../lib/suite.mjs'
 import { isStale, readMarker, runMarker, waitForRun } from '../lib/suite-run.mjs'
 import { computeVerdict, runChecks, verifyDir } from '../lib/verify.mjs'
 import { create } from '../lib/workspace.mjs'
@@ -21,7 +21,7 @@ import { judged } from './verify-replies.mjs'
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'suite.mjs')
 const CHANGE = 'add-x'
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
-const changeFile = (file) => `openspec/changes/${CHANGE}/${file}`
+const changeFile = (file) => `adf/changes/${CHANGE}/${file}`
 
 // mode.txt: `pass`, `fail:a,b` (TAP names the failures), `spec:a,b` (the node:test spec reporter
 // names them, twice, under its "failing tests:" header), `anon` (fails, names nothing); a
@@ -70,16 +70,11 @@ console.log('# fail ' + failing.length)
 process.exit(failing.length ? 1 : 0)
 `
 
-const PLANNING = `# Planning guide
-
-## Whole-suite command
-
-<!-- The one command that runs every test. -->
-
-## Checks that need the developer
-
-<!-- none -->
-`
+// The change's settings with one more key, committed.
+function withSetting(root, key, value, message) {
+  const file = 'adf/settings.json'
+  commit(root, { [file]: `${JSON.stringify({ ...JSON.parse(readFileSync(join(root, file), 'utf8')), [key]: value })}\n` }, message)
+}
 
 function write(root, file, text) {
   mkdirSync(dirname(join(root, file)), { recursive: true })
@@ -94,7 +89,7 @@ function commit(root, files, message = Object.keys(files)[0]) {
 }
 
 // A host on develop whose suite runs in `baseMode`, and a change worktree that moves it to
-// `headMode`. `command: null` leaves the guide's section empty.
+// `headMode`. `command: null` leaves the settings without a whole-suite command.
 function host({ baseMode = 'pass', headMode = 'pass', command = 'node suite.mjs' } = {}) {
   const main = join(realpathSync(mkdtempSync(join(tmpdir(), 'adf-suite-'))), 'host')
   execFileSync('git', ['init', '-q', '-b', 'develop', main])
@@ -105,7 +100,7 @@ function host({ baseMode = 'pass', headMode = 'pass', command = 'node suite.mjs'
   ignoreLocalDirs(main)
   write(main, 'suite.mjs', FAKE_SUITE)
   write(main, 'mode.txt', `${baseMode}\n`)
-  write(main, 'openspec/planning.md', PLANNING)
+  write(main, 'adf/settings.json', '{}\n')
   if (command) writeCommand(main, command)
   git(main, 'add', '.')
   git(main, 'commit', '-q', '-m', 'init')
@@ -125,33 +120,24 @@ const cli = (args) => {
   return { code: r.status, stdout: r.stdout, json: JSON.parse(r.stdout) }
 }
 
-// ---------------------------------------------------------------- the planning guide
+// ---------------------------------------------------------------- the settings
 
-test('the command reads from a fence, an inline code span or a plain line, never a comment', () => {
-  assert.equal(commandIn(PLANNING), null)
-  assert.equal(commandIn('## Whole-suite command\n\n```bash\nnpm test -- --no-cache\n```\n'), 'npm test -- --no-cache')
-  assert.equal(commandIn('## Whole-suite command\n\n`make test`\n\n## Next\n\nnot this\n'), 'make test')
-  assert.equal(commandIn('## Whole-suite command\r\n\r\n<!-- note -->\r\npytest -p no:cacheprovider\r\n'), 'pytest -p no:cacheprovider')
-  assert.equal(commandIn('# Guide\n'), null)
-  assert.throws(() => commandIn('## Whole-suite command\n\nnpm test\nnpm run e2e\n'), /holds 2 lines; it must hold one command/)
-})
-
-test('set writes under the heading, keeps its comment, replaces an earlier command, and creates the file', () => {
+test('set records the command in the settings, replaces an earlier one, keeps the other keys, and creates the file', () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'adf-suite-set-')))
-  assert.deepEqual(readCommand(root), { file: join(root, 'openspec/planning.md'), command: null, reason: 'openspec/planning.md does not exist' })
-  write(root, 'openspec/planning.md', PLANNING)
-  assert.match(readCommand(root).reason, /holds no command under ## Whole-suite command/)
+  assert.deepEqual(readCommand(root), { file: join(root, 'adf/settings.json'), command: null, reason: 'adf/settings.json does not exist' })
+  write(root, 'adf/settings.json', '{ "formatCommand": "fmt {files}" }\n')
+  assert.equal(readCommand(root).reason, 'adf/settings.json holds no wholeSuiteCommand')
   writeCommand(root, 'npm test')
   writeCommand(root, 'npm run test:all')
-  const text = readFileSync(join(root, 'openspec/planning.md'), 'utf8')
-  assert.equal(text, PLANNING.replace('<!-- The one command that runs every test. -->\n', '<!-- The one command that runs every test. -->\n\n```sh\nnpm run test:all\n```\n'))
+  const text = readFileSync(join(root, 'adf/settings.json'), 'utf8')
+  assert.deepEqual(JSON.parse(text), { wholeSuiteCommand: 'npm run test:all', formatCommand: 'fmt {files}' })
   assert.equal(readCommand(root).command, 'npm run test:all')
 
   const bare = realpathSync(mkdtempSync(join(tmpdir(), 'adf-suite-set-')))
   const out = cli(['set', '--root', bare, '--command', 'go test -count=1 ./...'])
   assert.equal(out.code, 0)
-  assert.equal(readFileSync(join(bare, 'openspec/planning.md'), 'utf8'), '## Whole-suite command\n\n```sh\ngo test -count=1 ./...\n```\n')
-  assert.deepEqual(cli(['command', '--root', bare]).json, { file: join(bare, 'openspec/planning.md'), command: 'go test -count=1 ./...' })
+  assert.equal(readFileSync(join(bare, 'adf/settings.json'), 'utf8'), '{\n  "wholeSuiteCommand": "go test -count=1 ./..."\n}\n')
+  assert.deepEqual(cli(['command', '--root', bare]).json, { file: join(bare, 'adf/settings.json'), command: 'go test -count=1 ./...' })
   assert.throws(() => writeCommand(bare, 'a\nb'), /must be one line/)
 })
 
@@ -312,9 +298,9 @@ test('a failure that also fails on the base is pre-existing; a partial overlap b
 
 // #54: the base check runs after the main run, on the failed tests alone when the runner can
 // select them, so it never doubles the load of a whole run.
-test('the base check runs the failed tests alone when the guide gives a failed-tests command', () => {
+test('the base check runs the failed tests alone when the settings give a failed-tests command', () => {
   const { main, root } = host({ baseMode: 'fail:a,c', headMode: 'fail:a,b' })
-  commit(root, { 'openspec/planning.md': `${readFileSync(join(main, 'openspec/planning.md'), 'utf8')}\n## Failed-tests command\n\n\`node suite.mjs {tests}\`\n` }, 'guide')
+  withSetting(root, 'failedTestsCommand', 'node suite.mjs {tests}', 'guide')
   const r = runSuite(root, { change: CHANGE, baseCheck: true })
   assert.deepEqual(r.base.selected, ['a', 'b'])
   assert.match(readFileSync(join(root, r.base.outputFile), 'utf8'), /^SELECTED a b$/m)
@@ -322,7 +308,7 @@ test('the base check runs the failed tests alone when the guide gives a failed-t
   assert.deepEqual([r.base.failing, r.preExisting, r.newFailures, r.status], [['a'], ['a'], ['b'], 'fail'])
   // A main run that names no failing test leaves nothing to select: the whole command runs.
   const anon = host({ baseMode: 'anon', headMode: 'anon' })
-  commit(anon.root, { 'openspec/planning.md': `${readFileSync(join(anon.main, 'openspec/planning.md'), 'utf8')}\n## Failed-tests command\n\n\`node suite.mjs {tests}\`\n` }, 'guide')
+  withSetting(anon.root, 'failedTestsCommand', 'node suite.mjs {tests}', 'guide')
   const whole = runSuite(anon.root, { change: CHANGE, baseCheck: true })
   assert.equal(whole.base.selected, undefined)
   assert.doesNotMatch(readFileSync(join(anon.root, whole.base.outputFile), 'utf8'), /SELECTED/)
@@ -414,19 +400,8 @@ test('a base-check worktree whose provisioning refused runs nothing, cannot run,
 
 // ---------------------------------------------------------------- the fresh-run proof
 
-test('the fresh-run proof reads one line of its section; no section is null', () => {
-  assert.equal(proofIn('## Fresh-run proof\n\n<!-- c -->\n`Cached:    0 cached`\n'), 'Cached:    0 cached')
-  assert.equal(proofIn('## Fresh-run proof\n\n```text\nfresh run\n```\n## Next\n'), 'fresh run')
-  assert.equal(proofIn('# Guide\n'), null)
-  assert.equal(proofIn('## Fresh-run proof\n\n<!-- only a comment -->\n'), null)
-  assert.throws(() => proofIn('## Fresh-run proof\n\na\nb\n'), /the ## Fresh-run proof section holds 2 lines; it must hold one line/)
-})
-
-// The change's guide with a `## Fresh-run proof` section holding `line`, committed.
-function withProof(root, line) {
-  const file = 'openspec/planning.md'
-  commit(root, { [file]: `${readFileSync(join(root, file), 'utf8')}\n## Fresh-run proof\n\n\`${line}\`\n` }, 'proof')
-}
+// The change's settings with `line` as the fresh-run proof, committed.
+const withProof = (root, line) => withSetting(root, 'freshRunProof', line, 'proof')
 
 test('a run whose output holds the proof line stands; one that lacks it fails, as maybe cached', () => {
   const fresh = host()
@@ -440,7 +415,7 @@ test('a run whose output holds the proof line stands; one that lacks it fails, a
   assert.equal(out.code, 1)
   const r = out.json
   assert.deepEqual([r.status, r.exit, r.ok, r.fresh, r.blocking], ['fail', 0, false, false, true])
-  assert.equal(r.reason, 'the output lacks the fresh-run proof line `Cached:    0 cached` of openspec/planning.md: the run may be cached')
+  assert.equal(r.reason, 'the output lacks the fresh-run proof line `Cached:    0 cached` of adf/settings.json: the run may be cached')
   const record = readFileSync(join(root, r.record), 'utf8')
   assert.doesNotMatch(record, /\*\*Commit:\*\*/, 'a run that may be cached is no record verify cites')
   assert.match(record, /\*\*Fresh-run proof:\*\* the output lacks the fresh-run proof line/)
@@ -496,12 +471,12 @@ test('a timed-out suite is stopped with its grandchildren', { skip: process.plat
   assert.equal(alive(), false, `the grandchild ${pid} outlived the timeout`)
 })
 
-test('no command in the guide is not-run with the reason, never a pass', () => {
+test('no command in the settings is not-run with the reason, never a pass', () => {
   const { root } = host({ command: null })
   const out = cli(['run', '--change', CHANGE, '--root', root, '--record', '--section', 'test-record'])
   assert.equal(out.code, 1)
   assert.equal(out.json.status, 'not-run')
-  assert.match(out.json.reason, /holds no command/)
+  assert.match(out.json.reason, /holds no wholeSuiteCommand/)
   assert.equal(out.json.record, undefined, 'no record for a suite that has no command')
   assert.equal(existsSync(join(root, changeFile('.apply-test-record.md'))), false)
   runChecks(root, { change: CHANGE, now: 'T' })
@@ -513,13 +488,13 @@ test('no command in the guide is not-run with the reason, never a pass', () => {
 test('no command in the guide: run --record --commit writes, commits and pushes nothing, and names the remedy', () => {
   const { root } = host({ command: null })
   const head = git(root, 'rev-parse', 'HEAD')
-  const status = git(root, 'status', '--porcelain', '--untracked-files=all', '--', 'openspec')
+  const status = git(root, 'status', '--porcelain', '--untracked-files=all', '--', 'adf')
   const out = cli(['run', '--change', CHANGE, '--root', root, '--record', '--commit'])
   assert.deepEqual([out.code, out.json.ok, out.json.status], [1, false, 'not-run'])
   assert.deepEqual([out.json.record, out.json.commit, out.json.push], [undefined, undefined, undefined])
   assert.match(out.json.remedy, /suite\.mjs" set --command "<command>" --root .* --commit/)
   assert.equal(git(root, 'rev-parse', 'HEAD'), head)
-  assert.equal(git(root, 'status', '--porcelain', '--untracked-files=all', '--', 'openspec'), status)
+  assert.equal(git(root, 'status', '--porcelain', '--untracked-files=all', '--', 'adf'), status)
   assert.equal(existsSync(join(root, `.superpowers/sdd/${CHANGE}/push.json`)), false)
 })
 
@@ -532,19 +507,19 @@ test('usage errors exit 2', () => {
   assert.equal(cli(['run', '--change', 'nope', '--root', tmpdir()]).code, 1)
 })
 
-test('--commit commits the test record, or the planning guide, alone with the fixed message', () => {
+test('--commit commits the test record, or the settings, alone with the fixed message', () => {
   const { root } = host()
   write(root, 'stray.txt', 'not mine\n')
   assert.equal(cli(['run', '--change', CHANGE, '--root', root, '--commit']).code, 2)
   const out = cli(['run', '--change', CHANGE, '--root', root, '--record', '--commit'])
   assert.equal(out.code, 0)
   assert.equal(out.json.commit, git(root, 'rev-parse', 'HEAD'))
-  assert.equal(git(root, 'log', '-1', '--format=%s'), `docs(openspec): record the whole-suite run of ${CHANGE}`)
+  assert.equal(git(root, 'log', '-1', '--format=%s'), `docs(adf): record the whole-suite run of ${CHANGE}`)
   assert.equal(git(root, 'show', '--name-only', '--format=', 'HEAD'), changeFile('.apply-test-record.md'))
   const set = cli(['set', '--root', root, '--command', 'node suite.mjs --all', '--commit'])
   assert.equal(set.code, 0)
-  assert.equal(git(root, 'log', '-1', '--format=%s'), 'docs(openspec): record the whole-suite command')
-  assert.equal(git(root, 'show', '--name-only', '--format=', 'HEAD'), 'openspec/planning.md')
+  assert.equal(git(root, 'log', '-1', '--format=%s'), 'docs(adf): record the whole-suite command')
+  assert.equal(git(root, 'show', '--name-only', '--format=', 'HEAD'), 'adf/settings.json')
   assert.equal(git(root, 'status', '--porcelain', '--', 'stray.txt'), '?? stray.txt')
 })
 

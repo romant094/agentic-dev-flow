@@ -40,6 +40,7 @@ import { markerFor, originMarkerFor, originPlaceholder } from '../../../plugins/
 import { parseGraph, taskBody } from '../../../plugins/adf/scripts/lib/dispatch.mjs'
 import { parsePlanTasks } from '../../../plugins/adf/scripts/lib/plan-symbols.mjs'
 import { isTestOf } from '../../../plugins/adf/scripts/lib/review-state.mjs'
+import { CHANGES_DIR, COMMIT_SCOPE, LEGACY_ROOT, ROOT } from '../../../plugins/adf/scripts/lib/layout.mjs'
 
 export const PHASES = ['propose', 'apply', 'verify', 'review', 'archive', 'land']
 export const MID_FLIGHT_PHASES = ['apply', 'verify', 'review', 'archive']
@@ -201,8 +202,12 @@ function writeFrom(git, cwd, rev, files, at = (file) => file) {
   return written
 }
 
-// Where the origin's merge holds a path: the change directory is in the archive there.
-const atMerge = (ctx) => (file) => (file.startsWith(`openspec/changes/${ctx.name}/`) ? `openspec/changes/archive/${ctx.candidate.dir}/${file.slice(`openspec/changes/${ctx.name}/`.length)}` : file)
+// Where the origin's merge holds a port path: the change directory is in the archive there, and
+// the flow's files are under the origin's root.
+const atMerge = (ctx) => (file) => {
+  if (file.startsWith(`${CHANGES_DIR}/${ctx.name}/`)) return `${LEGACY_ROOT}/changes/archive/${ctx.candidate.dir}/${file.slice(`${CHANGES_DIR}/${ctx.name}/`.length)}`
+  return file.startsWith(`${ROOT}/`) ? `${LEGACY_ROOT}/${file.slice(ROOT.length + 1)}` : file
+}
 
 // An origin commit made again in `cwd`: cherry-picked, or, when the pick conflicts, its files as
 // the commit holds them, committed with its subject. Returns { sha, how, actions }.
@@ -334,7 +339,7 @@ function preflight(ctx, phase) {
   return out
 }
 
-const changeDir = (ctx, root = ctx.root) => join(root, 'openspec', 'changes', ctx.name)
+const changeDir = (ctx, root = ctx.root) => join(root, CHANGES_DIR, ctx.name)
 const writeJson = (file, value) => {
   mkdirSync(dirname(file), { recursive: true })
   writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`)
@@ -489,9 +494,9 @@ function propose(ctx) {
     }
     const commit = ctx.run('propose', 'propose.mjs', ['commit', '--change', name, '--root', ctx.root])
     if (!commit.ok) {
-      ctx.git(ctx.root, 'add', '--', `openspec/changes/${name}`)
-      ctx.git(ctx.root, 'commit', '-q', '-m', `docs(openspec): propose ${name}`)
-      ctx.rec.hint(ctx.rec.agent('propose', 'commit the change past its gates', [`git add openspec/changes/${name}`, `git commit -m "docs(openspec): propose ${name}"`]), 'injected', 'propose.mjs commit refuses while a gate fails; the driver commits the change directory itself to go on')
+      ctx.git(ctx.root, 'add', '--', `${CHANGES_DIR}/${name}`)
+      ctx.git(ctx.root, 'commit', '-q', '-m', `docs(${COMMIT_SCOPE}): propose ${name}`)
+      ctx.rec.hint(ctx.rec.agent('propose', 'commit the change past its gates', [`git add ${CHANGES_DIR}/${name}`, `git commit -m "docs(${COMMIT_SCOPE}): propose ${name}"`]), 'injected', 'propose.mjs commit refuses while a gate fails; the driver commits the change directory itself to go on')
     }
   } else {
     // 9. Commit.
@@ -1206,7 +1211,16 @@ export function driveMidFlight(sandbox, candidate, replies, { as = `m-${candidat
   ctx.git(main, 'fetch', '-q', 'origin')
   const path = join(main, '.claude', 'worktrees', candidate.name)
   ctx.git(main, 'worktree', 'add', '-q', '-b', candidate.branch, path, `origin/${candidate.branch}`)
-  ctx.git(path, 'merge', '-q', '--no-ff', '-m', `Merge branch 'develop' into ${candidate.branch}`, 'origin/develop')
+  // The host moved the flow's directory; with directory renames followed, the in-flight change's
+  // own files follow it into the port's root.
+  ctx.git(path, '-c', 'merge.directoryRenames=true', 'merge', '-q', '--no-ff', '-m', `Merge branch 'develop' into ${candidate.branch}`, 'origin/develop')
+  const legacy = join(LEGACY_ROOT, 'changes', candidate.name)
+  if (LEGACY_ROOT !== ROOT && existsSync(join(path, legacy))) {
+    mkdirSync(join(path, CHANGES_DIR), { recursive: true })
+    ctx.git(path, 'mv', legacy, join(CHANGES_DIR, candidate.name))
+    ctx.git(path, 'commit', '-q', '-m', `chore(${COMMIT_SCOPE}): move ${candidate.name} to ${CHANGES_DIR}/`)
+    ctx.rec.hint(ctx.rec.agent('host', 'the in-flight change follows the move', [`git mv ${legacy} ${CHANGES_DIR}/${candidate.name}`]), 'injected', `the host moved the flow's directory to ${ROOT}/; the in-flight change is moved as a developer moves it`)
+  }
   ctx.git(path, 'push', '-q', '--set-upstream', 'origin', candidate.branch)
   ctx.root = path
   ctx.rec.hint(ctx.rec.agent('host', 'the in-flight change', [`git worktree add -b ${candidate.branch} .claude/worktrees/${candidate.name} origin/${candidate.branch} (the origin's propose commit ${propose.slice(0, 8)})`, 'git merge --no-ff origin/develop (the host setup reaches the branch as the switch brings it to an in-flight change)', `git push --set-upstream origin ${candidate.branch}`]), 'injected', 'the in-flight state the switch meets, made by the driver')

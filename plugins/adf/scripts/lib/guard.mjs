@@ -133,7 +133,7 @@ export function targetsOf(root, change, names) {
   if (!Array.isArray(names) || names.length === 0) throw new Error('name the dispatches of the round (--dispatch)')
   let planText = null
   try {
-    planText = readFileSync(join(root, 'openspec', 'changes', change, 'plan.md'), 'utf8')
+    planText = readFileSync(join(root, CHANGES_DIR, change, 'plan.md'), 'utf8')
   } catch {
     // a task or group dispatch then refuses, naming the missing plan
   }

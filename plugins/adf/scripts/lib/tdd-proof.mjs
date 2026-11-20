@@ -29,10 +29,10 @@
 // `taskProof` is the run the orchestrator's script makes after a done test-first task, before its
 // review (dispatch.mjs prompt for `T<n> review`): the commit and the test command come from the
 // task's accepted `T<n> impl` result (the last commit, the last covering run's command), the
-// shared paths from the planning guide's `## Test-first shares` section, one path per line. Its
+// shared paths from the settings' `testFirstShares` (lib/settings.mjs). Its
 // record is `tdd/T<n>.json`, kept while the commit, the command and the set of shared paths stay
-// the same. Without the
-// section nothing runs, and the reviewer runs tdd-proof itself.
+// the same. While `testFirstShares` is null
+// nothing runs, and the reviewer runs tdd-proof itself.
 import { execFileSync } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmdirSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -41,7 +41,9 @@ import { planDispatch } from './dispatch.mjs'
 import { mainCheckout } from './installed.mjs'
 import { planInputs } from './plan.mjs'
 import { provisionWorktree, teardownWorktree } from './provision.mjs'
-import { PLANNING_FILE, refusePinnedPaths, runOnce, sectionBounds } from './suite.mjs'
+import { refusePinnedPaths, runOnce } from './suite.mjs'
+import { SETTINGS_FILE } from './layout.mjs'
+import { getSetting } from './settings.mjs'
 import { gitIn, WORKTREES_DIR } from './workspace.mjs'
 
 export const TEST_FILE = /(^|\/)(__tests__|tests?|specs?)\/|[._-](test|spec)\.[^/]+$|(^|\/)test_[^/]+\.py$/
@@ -185,27 +187,9 @@ export function tddProof(worktree, { change, commit, test, testFiles = null, sha
 
 // ---------------------------------------------------------------- the orchestrator's run
 
-export const SHARES_HEADING = '## Test-first shares'
-
-// The paths of the `## Test-first shares` section, one per line (a list item, a code span or a
-// plain line; HTML comments and fences ignored); null when the section is absent.
-export function sharesIn(text) {
-  const lines = String(text ?? '').split(/\r?\n/)
-  const bounds = sectionBounds(lines, SHARES_HEADING)
-  if (!bounds) return null
-  return lines
-    .slice(bounds.start, bounds.end)
-    .join('\n')
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .split('\n')
-    .map((l) => l.trim().replace(/^[-*]\s+/, '').replace(/^`([^`]+)`\.?$/, '$1').trim())
-    .filter((l) => l && !/^(```|~~~)/.test(l))
-}
-
-export function readShares(root) {
-  const file = join(resolve(root), PLANNING_FILE)
-  return existsSync(file) ? sharesIn(readFileSync(file, 'utf8')) : null
-}
+// The settings' `testFirstShares`: null leaves the proof to the reviewer, a list (even empty) has
+// the flow run it.
+export const readShares = (root) => getSetting(root, 'testFirstShares')
 
 export const taskProofFile = (root, change, task) => join(resolve(root), '.superpowers', 'sdd', change, 'tdd', `T${task}.json`)
 
@@ -225,7 +209,7 @@ const sameSet = (a, b) => Array.isArray(a) && new Set(a).size === new Set(b).siz
 export function taskProof(root, change, task, { planText, main = mainCheckout(root), prove = tddProof } = {}) {
   const skip = (reason) => ({ ran: false, reason })
   const share = readShares(root)
-  if (share === null) return skip(`${PLANNING_FILE} has no ${SHARES_HEADING} section`)
+  if (share === null) return skip(`${SETTINGS_FILE} sets no testFirstShares`)
   const impl = parseEvents(readLog(attemptsFile(root, change)))
     .filter((e) => e.event === 'valid' && e.name === `T${task} impl` && e.result)
     .at(-1)?.result

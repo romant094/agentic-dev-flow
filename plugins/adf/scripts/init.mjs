@@ -4,14 +4,14 @@
 // Nothing is committed.
 //
 //   init.mjs suggest [--root <dir>]
-//       what the planning guide holds and what init offers: { suite: { current, candidates:
+//       what the settings hold and what init offers: { suite: { current, candidates:
 //       [{ command, source, why }] }, copies: { current, candidates } }. The suite candidates come
 //       from the CI configuration, then the package scripts; the copy candidates are the `.env*`
 //       files git ignores in the main checkout. Nothing is written; `suite.mjs set` writes a
 //       confirmed command. `trustHooks` is true in Codex, which runs a hook only after the
 //       developer trusts it in `/hooks`
 //   init.mjs copies --path <p> [--path <p> ...] [--root <dir>]
-//       add confirmed paths to `## Worktree copies`, creating the guide or the section when
+//       add confirmed paths to the settings' worktreeCopies, creating the file when
 //       absent: { file, copies }
 //   init.mjs seed [--date YYYY-MM-DD] [--root <dir>]
 //       after the branch policy is set: write the window marker `.adf/retro/<date>-window.json`

@@ -9,9 +9,9 @@ In a runtime that does not substitute them: `${CLAUDE_PLUGIN_ROOT}` is the direc
 
 Run a quick task: a small fix that restores specified behaviour, or a small addition of the same
 kind, such as a missing log line. A quick task is a change of the quick cycle. Its one file is
-`openspec/changes/<name>/quick.md`: the goal, the scope, a short plan and, at the end, the
+`adf/changes/<name>/quick.md`: the goal, the scope, a short plan and, at the end, the
 summary. The `quick-plan` gate holds the plan to at most three numbered steps. A quick task
-writes no proposal, specs, tasks, plan or verify record, and never `openspec/specs/`. A change
+writes no proposal, specs, tasks, plan or verify record, and never `adf/specs/`. A change
 to what the system does is `/adf:propose`. The quick task takes one path and has no flags.
 
 The rules of `quick.md` are stated in full in
@@ -58,7 +58,7 @@ The branch and `quick.md` stay for the developer to keep or remove.
    - `ledger.mjs list --change <name> --root <root>` holds no `session` record of phase `code`:
      resume at step 5, after `propose.mjs create`.
    - `quick` is not `done` in `status`: resume at step 6.
-   - `openspec/changes/<name>/review.md` is committed, and `review.mjs check --file <it>` gives
+   - `adf/changes/<name>/review.md` is committed, and `review.mjs check --file <it>` gives
      `verdict` `PASS`: resume at step 9.
    - `<root>/.superpowers/sdd/<name>/review/r1/` exists: resume at step 8, at the round.
    - Compare the plan's steps with `git -C <root> log --oneline` since the base. A step with no
@@ -214,9 +214,13 @@ The branch and `quick.md` stay for the developer to keep or remove.
    - `skipped`: say that the branch changed no file, so no test ran, and go on.
    - `waiting`: read the project's test runner: the `package.json` scripts, the `Makefile`, the
      CI configuration. Propose one command, with `{files}` where the paths go. On the
-     developer's yes, write it as one line in backticks under `## Affected tests command` of
-     `<root>/openspec/planning.md`. Commit that file alone with `commit.mjs`, with the message
-     `chore(flow): the affected tests command`. Then run `quick.mjs tests` again. On a no,
+     developer's yes, record and commit it with a script, never by hand:
+
+     ```bash
+     node "${CLAUDE_PLUGIN_ROOT}/scripts/settings.mjs" set --key affectedTestsCommand --value '"<command>"' --root <root> --commit
+     ```
+
+     Then run `quick.mjs tests` again. On a no,
      report that no affected tests ran.
    - A failure: fix the code, commit the fix, and run the tests again.
 

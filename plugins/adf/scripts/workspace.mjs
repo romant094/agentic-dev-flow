@@ -17,7 +17,7 @@
 //   workspace.mjs provision --change <name> [--worktree <path>] [--kind change|group|base-check|proof]
 //                          [--need <word> ...]
 //       from the change worktree: provision a worktree the core made (default: the change
-//       worktree itself, kind change). Copies the paths the planning guide's `## Worktree copies`
+//       worktree itself, kind change). Copies the paths the settings' `worktreeCopies`
 //       names from the main checkout where the worktree holds nothing, then calls the
 //       `provision` hook with the plan's paths and needs (`**Needs:**`, plus each --need; a
 //       change or group worktree only). Refused when the worktree's or the main checkout's

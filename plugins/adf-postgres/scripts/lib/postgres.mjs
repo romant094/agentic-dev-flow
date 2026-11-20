@@ -281,7 +281,7 @@ function provision({ run, root, config, input }) {
   try {
     stat = lstatSync(target)
   } catch {
-    return refused(`${cfg.file} is missing in the worktree: the core's ## Worktree copies must name ${cfg.file}; nothing was created.`)
+    return refused(`${cfg.file} is missing in the worktree: the core's settings must list ${cfg.file} in worktreeCopies (adf/settings.json); nothing was created.`)
   }
   if (stat.isSymbolicLink()) return refused(`${cfg.file} in the worktree is a symbolic link, which is never written through; nothing was created.`)
   if (!stat.isFile()) return refused(`${cfg.file} in the worktree is not a file; nothing was created.`)

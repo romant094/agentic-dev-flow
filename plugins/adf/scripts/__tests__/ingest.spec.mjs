@@ -40,7 +40,7 @@ function repo() {
     [`${MEM}/entities/b.md`]: '# B\n\nSee [b](../../../src/b.mjs#L2).\n',
     [`${MEM}/entities/c.md`]: '# C\n\nsrc/c.mjs holds the parser.\n',
     [`${MEM}/entities/d.md`]: '# D\n\nsrc/d.mjs and src/a.mjsx are fine.\n',
-    [`${MEM}/concepts/spec.md`]: '# Spec\n\nRead openspec/specs/widgets/spec.md.\n',
+    [`${MEM}/concepts/spec.md`]: '# Spec\n\nRead adf/specs/widgets/spec.md.\n',
     [`${MEM}/concepts/req.md`]: `# Req\n\nThe rule "${REQ}" holds.\n`,
     [`${MEM}/concepts/other.md`]: '# Other\n\nNothing here; `widgets-x` is another capability.\n'
   }, 'init')
@@ -51,9 +51,9 @@ function repo() {
   commitFiles(change, {
     'src/c.mjs': lines(4) + lines(6, 'new'),
     'src/d.mjs': lines(10).replace('line 3', 'line three'),
-    'openspec/changes/add-x/.adf.json': '{"base":"develop"}\n',
-    'openspec/changes/add-x/proposal.md': '# add-x\n',
-    'openspec/changes/add-x/specs/widgets/spec.md': `## MODIFIED Requirements\n\n### Requirement: ${REQ}\nThe system SHALL store.\n\n#### Scenario: s\n- **WHEN** x\n- **THEN** y\n`
+    'adf/changes/add-x/.adf.json': '{"base":"develop"}\n',
+    'adf/changes/add-x/proposal.md': '# add-x\n',
+    'adf/changes/add-x/specs/widgets/spec.md': `## MODIFIED Requirements\n\n### Requirement: ${REQ}\nThe system SHALL store.\n\n#### Scenario: s\n- **WHEN** x\n- **THEN** y\n`
   }, 'change')
   return { root, change }
 }
@@ -206,13 +206,13 @@ test('ingest.mjs stale writes the dispatch input, and check reads the tree; no p
   assert.equal(none.state, 'none')
   assert.match(none.report, /archive skips the ingest/)
   // The change is archived before the ingest.
-  mkdirSync(join(change, 'openspec/changes/archive'))
-  git(change, 'mv', 'openspec/changes/add-x', 'openspec/changes/archive/2026-10-19-add-x')
+  mkdirSync(join(change, 'adf/changes/archive'))
+  git(change, 'mv', 'adf/changes/add-x', 'adf/changes/archive/2026-10-19-add-x')
   git(change, 'commit', '-q', '-m', 'archive')
   assert.match(findChangeDir(change, 'add-x'), /archive\/2026-10-19-add-x$/)
   const stale = run(['stale', '--change', 'add-x', '--root', change], { knowledge })
   assert.equal(stale.ok, true)
-  assert.equal(stale.changeDir, 'openspec/changes/archive/2026-10-19-add-x')
+  assert.equal(stale.changeDir, 'adf/changes/archive/2026-10-19-add-x')
   assert.deepEqual(stale.stale.map((s) => s.path), [`${MEM}/concepts/req.md`, `${MEM}/concepts/spec.md`, `${MEM}/entities/a.md`, `${MEM}/entities/b.md`, `${MEM}/entities/c.md`])
   assert.deepEqual(stale.knowledge, { index: KNOWLEDGE.index, instruction: '/plugin/instructions/ingest.md', paths: KNOWLEDGE.paths, log: KNOWLEDGE.log })
 

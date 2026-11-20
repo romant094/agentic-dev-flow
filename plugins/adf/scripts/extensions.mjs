@@ -4,7 +4,7 @@
 //
 //   extensions.mjs init                      create the registry if missing; declare ADF
 //                                            in the host's .claude/settings.json; ignore
-//                                            the flow's local state; add the planning guide
+//                                            the flow's local state; add the settings, the planning guide
 //                                            and the review prompt (review.prompt);
 //                                            then the Superpowers gate (`superpowers`) and
 //                                            the registry check (`check`)
@@ -42,7 +42,7 @@ import { checkTree } from './lib/debt.mjs'
 import { fileURLToPath } from 'node:url'
 import { declareInHost, marketplaceSource } from './lib/host-settings.mjs'
 import { detectIntegration, readBranches, setBranches } from './lib/branches.mjs'
-import { createPlanningGuide, createReviewPrompt, ignoreLocalDirs } from './lib/host-files.mjs'
+import { createGuide, createReviewPrompt, createSettings, ignoreLocalDirs } from './lib/host-files.mjs'
 import { addExtension, addReport, branchesReport, checkRegistry, configExtension, configReport, initRegistry, initReport, readDebtRoot, removeExtension, removeReport } from './lib/registry.mjs'
 import { checkSuperpowers } from './lib/superpowers.mjs'
 import { detectRuntime, runtimeHome } from './lib/runtime.mjs'
@@ -89,7 +89,8 @@ export function run(argv) {
         contract: contract.version,
         settings: declareInHost(root, { source: marketplaceSource(home) }),
         gitignore: ignoreLocalDirs(root),
-        planningGuide: createPlanningGuide(root),
+        flowSettings: createSettings(root),
+        guide: createGuide(root),
         reviewPrompt: createReviewPrompt(root),
         branches: readBranches(root),
         detectedIntegration: detectIntegration(root),

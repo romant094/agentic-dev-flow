@@ -17,7 +17,8 @@ import { fileURLToPath } from 'node:url'
 import { changeMeta, CHANGES_DIR } from './changes.mjs'
 import { FILES, quote } from './commit.mjs'
 import { dispatchFields, QUICK_ROLES, sddDir, withPreamble } from './dispatch.mjs'
-import { PLANNING_FILE, sectionLine } from './guide.mjs'
+import { SETTINGS_FILE } from './layout.mjs'
+import { getSetting } from './settings.mjs'
 import { mainCheckout } from './installed.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { baseRef } from './plan-symbols.mjs'
@@ -204,10 +205,7 @@ export function estimatedType(main, change) {
 
 // ---------------------------------------------------------------- the affected tests
 
-export const AFFECTED_HEADING = '## Affected tests command'
 const OUTPUT_TAIL = 4000
-
-export const affectedCommandIn = (text) => sectionLine(text, AFFECTED_HEADING, 'command')
 
 const defaultRunner = (command, { cwd }) => spawnSync(command, { cwd, shell: true, encoding: 'utf8', windowsHide: true })
 
@@ -219,7 +217,7 @@ const gitOut = (root, ...args) => {
 
 // The files the change changed: the commits since the merge base with the base branch, then the
 // uncommitted tracked and untracked files, each once, those that still exist. The change's own
-// directory, the planning guide and the state under .superpowers/ are not test input.
+// directory, the settings and the state under .superpowers/ are not test input.
 function changedFiles(root, change) {
   const hasRef = (name) => spawnSync('git', ['rev-parse', '--verify', '--quiet', name], { cwd: root }).status === 0
   const ref = baseRef(changeMeta(root, change), hasRef)
@@ -234,26 +232,25 @@ function changedFiles(root, change) {
     if (/[RC]/.test(entry.slice(0, 2))) n++ // a rename or copy names its source in the next entry
   }
   const own = `${CHANGES_DIR}/${change}/`
-  const code = (p) => p && !p.startsWith(own) && p !== PLANNING_FILE && !p.startsWith('.superpowers/')
+  const code = (p) => p && !p.startsWith(own) && p !== SETTINGS_FILE && !p.startsWith('.superpowers/')
   return [...new Set([...committed, ...dirty].filter(code))].filter((p) => existsSync(join(root, p)))
 }
 
-// Runs the guide's affected tests command in the change worktree on the files the change
+// Runs the settings' affected tests command in the change worktree on the files the change
 // changed, `{files}` replaced by them, through the platform shell: the command is the developer's
-// own line in the guide. An empty section runs nothing and waits for a proposal. The run is
+// own line in the settings. No command runs nothing and waits for a proposal. The run is
 // recorded in quick/tests.json with HEAD.
 export function tests(root, change, { runner = defaultRunner } = {}) {
   if (!CHANGE.test(change ?? '')) refuse(`"${change ?? ''}" is not a kebab-case change name`)
   const top = resolve(root)
-  const file = join(top, PLANNING_FILE)
   let template = null
   try {
-    template = existsSync(file) ? affectedCommandIn(readFileSync(file, 'utf8')) : null
+    template = getSetting(top, 'affectedTestsCommand')
   } catch (error) {
     refuse(error.message)
   }
   if (template === null) {
-    return { ok: true, change, step: 'tests', waiting: "the affected tests command: propose one from the project's test runner, and write it under ## Affected tests command in openspec/planning.md on the developer's yes" }
+    return { ok: true, change, step: 'tests', waiting: `the affected tests command: propose one from the project's test runner, and record it as affectedTestsCommand in ${SETTINGS_FILE} on the developer's yes` }
   }
   const changed = changedFiles(top, change)
   if (changed.length === 0) return { ok: true, change, step: 'tests', skipped: 'no changed files' }

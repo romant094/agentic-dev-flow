@@ -69,9 +69,9 @@ The command `/adf:land` is not part of this cycle. See [the tracker role](../ext
 
 | Where | What |
 |---|---|
-| `openspec/changes/<name>/` while the change is in flight | `brainstorm.md`, `proposal.md`, `design.md` (optional), `specs/`, `tasks.md`, `plan.md`, then `verify.md` and `review.md` |
-| `openspec/changes/archive/<date>-<name>/` after `/adf:archive` | the same change directory, moved |
-| `openspec/specs/` | the main specs, with the change's delta specs merged in |
+| `adf/changes/<name>/` while the change is in flight | `brainstorm.md`, `proposal.md`, `design.md` (optional), `specs/`, `tasks.md`, `plan.md`, then `verify.md` and `review.md` |
+| `adf/changes/archive/<date>-<name>/` after `/adf:archive` | the same change directory, moved |
+| `adf/specs/` | the main specs, with the change's delta specs merged in |
 | `.claude/worktrees/` | the change's worktree, removed by `/adf:archive` |
 | the merge request | with a forge plugin, open on the forge, for you to merge |
 

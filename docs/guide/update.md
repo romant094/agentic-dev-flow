@@ -3,6 +3,7 @@
 - plugins/adf/scripts/update.mjs
 - plugins/adf/scripts/lib/update.mjs
 - plugins/adf/scripts/lib/host-merge.mjs
+- plugins/adf/scripts/lib/flow-migrate.mjs
 - plugins/adf/hooks/hooks.json
 -->
 
@@ -47,6 +48,7 @@ The update branch holds these changes:
 | `.claude/settings.json` | The `ref` of the marketplace is the new tag. |
 | `.claude/adf-extensions.json` | `contract` is the contract version of the new release. The `version` of each changed entry is its new version. The config migrations of the plugins run, in version order. See [the registry](concepts/registry.md). |
 | Host files | The templates of the new release are merged, by the table below. |
+| `openspec/` | Moved to `adf/`, when the project is still on the earlier layout. See [The move to adf/](#the-move-to-adf). |
 
 The plan lists a plugin that the new release no longer ships as dropped. Its registry entry stays as it is.
 
@@ -54,7 +56,7 @@ The command refuses an update that changes the major version of the extension co
 
 ### The host files
 
-The host files are `openspec/planning.md`, the review prompt, and the `hostFiles` of each enabled plugin of the package. See [Host files](concepts/host-files.md). The plan sorts each file into a class:
+The host files are the `hostFiles` of each enabled plugin of the package. See [Host files](concepts/host-files.md). The plan sorts each file into a class:
 
 | Class | What happens |
 |---|---|
@@ -68,11 +70,24 @@ For an `edited` file, the command shows the old template, your file and the new 
 - **Replace from the update.** The file becomes the new template.
 - **Manual.** The command leaves the file for you.
 
-These sections of `openspec/planning.md` hold values that the flow writes: the whole-suite command, the worktree copies, the worktree preparation, the format command and the affected tests command. Every choice keeps them.
+The settings, `adf/settings.json`, the planning guide, `adf/guide.md`, and the review prompt are no host files. `/adf:init` writes the planning guide and the review prompt once; then they are the project's files, and `/adf:update` never changes them. The settings hold only the project's values, and the instructions for each key are in the plugin (`plugins/adf/schema/settings.schema.json`). An update has nothing of them to merge.
 
 The pages under `.claude/memory/` are the project's own content. *Replace from the update* empties them. The command warns you before it asks.
 
 A merge conflict in *Keep everything* goes to the agent. It keeps your edits and carries the changes of the template. It shows you the result.
+
+### The move to adf/
+
+Releases before v0.22.0 kept the files of the flow in `openspec/`. When the integration branch still holds `openspec/` and no `adf/`, the plan shows the move in `migration`, and `apply` makes it in the update branch:
+
+1. `git mv openspec adf`. Every change, the archive, the specs, `context.md`, `rules/` and the review prompt move with the directory. The archived changes keep their text, old paths included.
+2. The planning guide `adf/planning.md` becomes two files. Its values go to `adf/settings.json`, one key for each section. Its prose, `Where to look`, `Checks that need the developer` and any section of your own, goes to `adf/guide.md`. A value that the settings cannot take stays in `adf/guide.md`, and `apply` says so in `migration.notes`. The old guide is removed.
+3. `review.prompt` in the registry moves with the directory when it names a path under `openspec/`.
+4. Everything is staged with `git add -A` and committed with the update.
+
+The move needs a freeze. The flow does not move a change branch, and it reads only `adf/`. So `apply` refuses the move while a change is in flight, and names each one: a directory of `openspec/changes/` other than `archive/`, or a worktree under `.claude/worktrees/`. Stop the development, archive or drop each change, then run `/adf:update` again. Development continues after the merge of the update.
+
+`apply` then lists in `migration.mentions` every tracked file outside `adf/` that still names `openspec/`, such as `CLAUDE.md`, memory pages, `.gitignore` or a CI file, with its lines. You fix them; the update does not edit them.
 
 ## The notice at the session start
 

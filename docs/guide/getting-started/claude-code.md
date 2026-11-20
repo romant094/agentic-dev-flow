@@ -69,7 +69,7 @@ Restart Claude Code in the project. The skills load at the restart.
 
 `/adf:init` is safe to run again. It creates only what is missing.
 
-`/adf:init` asks about these values. It asks only when the project has no value yet:
+`/adf:init` asks about these values. It asks only when the project has no value yet. A script records each value in the settings; nobody edits the file by hand:
 
 - the integration branch, and any other branch that nobody commits to directly;
 - the directory of the technical debt tree (it offers `docs/tech-debt`);
@@ -86,8 +86,9 @@ Restart Claude Code in the project. The skills load at the restart.
 |---|---|
 | `.claude/adf-extensions.json` | the registry: the branch policy and the enabled plugins |
 | `.claude/settings.json` | the `adf` plugin and the marketplace, only the keys that are missing |
-| `openspec/planning.md` | the planning guide, with the answers above |
-| `openspec/review-prompt.md` | the prompt of the code review |
+| `adf/settings.json` | the settings, with the answers above |
+| `adf/guide.md` | the planning guide, for the team to fill in |
+| `adf/review-prompt.md` | the prompt of the code review |
 | `.gitignore` | lines for the local state of the flow |
 | the debt tree's root index | created when the tree does not exist |
 | `.adf/retro/<date>-window.json` | the retrospective window, only when the integration branch already holds archived changes |

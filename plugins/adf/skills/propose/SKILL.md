@@ -12,7 +12,7 @@ Its brainstorm covers exploration. A fix that restores already-specified behavio
 formatting or a dependency bump is made directly instead; if such a "fix" changes what the
 system should do, stop and propose it.
 
-This command writes, under `openspec/changes/<name>/`: `brainstorm.md`, `proposal.md`,
+This command writes, under `adf/changes/<name>/`: `brainstorm.md`, `proposal.md`,
 `design.md` (optional), `specs/**/*.md`, `tasks.md` and `plan.md`. `verify.md` and `review.md`
 are written later, by their own phases, not here.
 

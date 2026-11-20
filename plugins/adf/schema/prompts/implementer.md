@@ -9,7 +9,7 @@ You implement the work the question names, and nothing else:
   reply's `concerns`, with the reason. The script reads the files of every commit you name and
   adds a concern for each one outside scope, named or not;
 - run the project's checks only with the commands the `Check commands` field quotes from
-  the planning guide, as written: never guess a package manager, an install or a build. A
+  the project's settings, as written: never guess a package manager, an install or a build. A
   command you need that it does not give goes in `blocker`, as `needs-context`;
 - run the tests that cover the files in scope, not the whole suite, whatever
   `superpowers:test-driven-development` says about running everything; which tests cover a file
@@ -18,7 +18,7 @@ You implement the work the question names, and nothing else:
   which runs the command in `<worktree>` and writes a test-run record of its command, exit code
   and counts; its `file` is that record. Name paths in the command relative to `<worktree>`:
   the script refuses an absolute path into the worktree or the main checkout. The script also
-  runs the builds the planning guide's worktree preparation lists; a build it does not run goes
+  runs the builds the settings' worktree preparation lists; a build it does not run goes
   in `blocker`, not into a command of yours. Name the record of every run you made in the reply's
   `testRuns`. The last run is the evidence they pass, and nobody re-runs them: a `done` reply
   whose last run failed, timed out or ran no test is refused. A change you made to the

@@ -12,8 +12,8 @@
 //      candidate, every one confirmed as init offers it (init's step 4); extensions.mjs add <this
 //      repository's plugin directory> --config <json> for each registry entry, in order (a path
 //      entry, not an installed id).
-//   3. The planning guide sections the switch writes from recorded values: the whole-suite
-//      command through `suite.mjs set`, the others by section.
+//   3. The settings the switch writes from recorded values: the whole-suite command through
+//      `suite.mjs set`, the others by key (lib/settings.mjs).
 //   4. The host checks, before any of the edits below: each refusal is recorded as it is, and
 //      only the minimal edit the switch would make is applied, listed as such.
 //   5. The price table: one seeded entry, since every node process of the sandbox runs under the
@@ -28,6 +28,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { assertIsolated, REPO } from './sandbox.mjs'
+import { LEGACY_ROOT, ROOT, SETTINGS_FILE } from '../../../plugins/adf/scripts/lib/layout.mjs'
+import { setSetting } from '../../../plugins/adf/scripts/lib/settings.mjs'
 
 export const PLUGINS = join(REPO, 'plugins')
 export const MARKETPLACE = 'agentic-dev-flow'
@@ -135,10 +137,16 @@ function snapshot(sandbox, main) {
   const out = new Map()
   // Not sandbox.git: it trims, and the first entry's status may start with a space.
   const status = execFileSync('git', ['status', '--porcelain=v1', '-uall', '-z'], { cwd: main, env: sandbox.env, encoding: 'utf8', maxBuffer: 1 << 28 })
-  for (const line of status.split('\0').filter(Boolean)) {
-    const path = line.slice(3)
+  const entries = status.split('\0').filter(Boolean)
+  const hash = (path) => {
     const file = join(main, path)
-    out.set(path, existsSync(file) ? createHash('sha256').update(readFileSync(file)).digest('hex') : null)
+    return existsSync(file) ? createHash('sha256').update(readFileSync(file)).digest('hex') : null
+  }
+  for (let i = 0; i < entries.length; i++) {
+    const path = entries[i].slice(3)
+    out.set(path, hash(path))
+    // A staged rename or copy names its source in the next entry: the source is gone.
+    if (/[RC]/.test(entries[i].slice(0, 2))) out.set(entries[++i], hash(entries[i]))
   }
   return out
 }
@@ -188,20 +196,6 @@ function fixDebtRefusal(tree, error, root) {
     return { file: join(root, error.file), line: i + 1, edit: `the example row naming ${named[1]} removed from the root index's format description; the switch replaces that description with the port's (plugins/adf/contract/debt-format.md)` }
   }
   return null
-}
-
-// ---------------------------------------------------------------- the planning guide
-
-// Replaces the body of `heading` in the guide with `body`, keeping its HTML comments.
-function setSection(text, heading, body) {
-  const lines = text.split('\n')
-  const at = lines.findIndex((l) => l.trim() === heading)
-  if (at === -1) return `${text.replace(/\n*$/, '\n')}\n${heading}\n\n${body.join('\n')}\n`
-  let end = lines.findIndex((l, i) => i > at && /^#{1,2}\s/.test(l))
-  if (end === -1) end = lines.length
-  const comments = (lines.slice(at + 1, end).join('\n').match(/<!--[\s\S]*?-->/g) ?? []).flatMap((c) => c.split('\n'))
-  lines.splice(at + 1, end - at - 1, '', ...(comments.length ? [...comments, ''] : []), ...body, '')
-  return lines.join('\n')
 }
 
 // ---------------------------------------------------------------- the host checks
@@ -272,12 +266,18 @@ export function setupHost(sandbox, candidate, { registry = recordedRegistry(), g
     throw new Error(`setupHost: ${what} refused: ${out.json?.error ?? out.json?.refusal ?? (out.stderr || out.stdout).trim()}`)
   }
 
+  // The origin keeps the flow's files under openspec/; the port reads them under its own root
+  // (lib/layout.mjs), so the setup moves the directory first, as /adf:update's migration does.
+  if (LEGACY_ROOT !== ROOT && existsSync(join(main, LEGACY_ROOT))) {
+    step(`git mv ${LEGACY_ROOT} ${ROOT}`, 'migrate', (path) => (path.startsWith(`${LEGACY_ROOT}/`) || path.startsWith(`${ROOT}/`) ? `the flow's directory moved from ${LEGACY_ROOT}/ to ${ROOT}/, as /adf:update's migration moves it` : null), () => sandbox.git(main, 'mv', LEGACY_ROOT, ROOT))
+  }
   const init = step('extensions.mjs init', 'init', (path, r) => {
     const j = r.json ?? {}
     if (path === '.claude/adf-extensions.json') return `the ADF registry, contract ${j.contract}${j.reviewPrompt?.registered ? ', with review.prompt' : ''}`
     if (path === '.claude/settings.json') return `ADF declared in the host settings: ${j.settings?.added?.join(', ') || 'nothing added'}`
     if (path === '.gitignore') return `the flow's local state ignored: ${j.gitignore?.added?.join(', ')}`
-    if (path === j.planningGuide?.path) return 'the planning guide template; the team fills it in'
+    if (path === j.flowSettings?.path) return 'the flow settings, every key at its initial value'
+    if (path === j.guide?.path) return 'the planning guide template; the team fills it in'
     if (path === j.reviewPrompt?.path) return 'the review prompt template; the team tunes its criteria'
     return null
   }, () => run.core('extensions.mjs', 'init'))
@@ -302,7 +302,7 @@ export function setupHost(sandbox, candidate, { registry = recordedRegistry(), g
     for (const c of offered.json.candidates) {
       const command = prepareCommand ? `${prepareCommand} ${c.command}` : c.command
       const what = prepareCommand ? `the substitute for \`${c.command}\`, the candidate init offers,` : 'the candidate init offers,'
-      const out = step(`prepare.mjs add ${command}`, 'prepare', (path) => (path === 'openspec/planning.md' ? `## Worktree preparation: \`${command}\` from ${c.inputs.join(', ')}, ${what} confirmed (${c.why})` : null), () => run.core('prepare.mjs', 'add', '--command', command, ...c.inputs.flatMap((p) => ['--input', p])))
+      const out = step(`prepare.mjs add ${command}`, 'prepare', (path) => (path === SETTINGS_FILE ? `worktreePreparation: \`${command}\` from ${c.inputs.join(', ')}, ${what} confirmed (${c.why})` : null), () => run.core('prepare.mjs', 'add', '--command', command, ...c.inputs.flatMap((p) => ['--input', p])))
       if (out.exit !== 0) refuse(`prepare.mjs add ${command}`, out)
       prepared.push({ command, offered: c.command })
     }
@@ -319,20 +319,19 @@ export function setupHost(sandbox, candidate, { registry = recordedRegistry(), g
     notes.push(...entry.notes.map((n) => `${entry.name}: ${n}`))
   }
 
-  // The planning guide sections the switch writes.
+  // The settings the switch writes.
   if (guide) {
-    const file = join(main, 'openspec', 'planning.md')
     if (guide.wholeSuite) {
-      const out = step('suite.mjs set', 'recorded', (path) => (path === 'openspec/planning.md' ? `## Whole-suite command: ${guide.wholeSuite.value} (${guide.wholeSuite.source})` : null), () => run.core('suite.mjs', 'set', '--command', guide.wholeSuite.value))
+      const out = step('suite.mjs set', 'recorded', (path) => (path === SETTINGS_FILE ? `wholeSuiteCommand: ${guide.wholeSuite.value} (${guide.wholeSuite.source})` : null), () => run.core('suite.mjs', 'set', '--command', guide.wholeSuite.value))
       if (out.exit !== 0) refuse('suite.mjs set', out)
     }
-    const sections = [
-      ['## Packages', guide.packages, (v) => v.map((p) => `- \`${p}\``)],
-      ['## Fresh-run proof', guide.proof, (v) => [`\`${v}\``]],
-      ['## Worktree copies', guide.copies, (v) => v.map((p) => `- \`${p}\``)]
+    const keys = [
+      ['packages', guide.packages],
+      ['freshRunProof', guide.proof],
+      ['worktreeCopies', guide.copies]
     ].filter(([, value]) => value)
-    for (const [heading, value, body] of sections) {
-      step(`guide ${heading}`, 'recorded', (path) => (path === 'openspec/planning.md' ? `${heading}: ${[].concat(value.value).join(', ')} (${value.source})` : null), () => writeFileSync(file, setSection(readFileSync(file, 'utf8'), heading, body(value.value))))
+    for (const [key, value] of keys) {
+      step(`settings ${key}`, 'recorded', (path) => (path === SETTINGS_FILE ? `${key}: ${[].concat(value.value).join(', ')} (${value.source})` : null), () => setSetting(main, key, value.value))
     }
   }
 
@@ -369,7 +368,11 @@ export function setupHost(sandbox, candidate, { registry = recordedRegistry(), g
   })
 
   const paths = [...new Set(edits.map((e) => e.path))]
-  sandbox.git(main, 'add', '--', ...paths)
+  // A path gone from the tree is staged as removed (the move already staged its sources).
+  const present = paths.filter((p) => existsSync(join(main, p)))
+  const gone = paths.filter((p) => !existsSync(join(main, p)))
+  if (present.length) sandbox.git(main, 'add', '--', ...present)
+  if (gone.length) sandbox.git(main, 'rm', '-q', '--cached', '--ignore-unmatch', '--', ...gone)
   sandbox.git(main, 'commit', '-q', '-m', message)
   const commit = sandbox.git(main, 'rev-parse', 'HEAD')
   sandbox.git(main, 'push', '-q', 'origin', integration)

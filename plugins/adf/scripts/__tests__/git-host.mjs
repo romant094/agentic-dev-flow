@@ -34,7 +34,7 @@ export function host(files = {}) {
   git(root, 'add', '.')
   git(root, 'commit', '-q', '-m', 'init')
   const made = create(root, { change: 'add-x', branch: 'feat/add-x', base: 'integration' })
-  const dir = join(made.root, 'openspec', 'changes', 'add-x')
+  const dir = join(made.root, 'adf', 'changes', 'add-x')
   mkdirSync(dir, { recursive: true })
   const all = { 'tasks.md': '- [x] 1.1 a\n- [ ] 1.2 b\n', '.adf.json': '{"base":"develop"}\n', ...files }
   for (const [name, text] of Object.entries(all)) {
