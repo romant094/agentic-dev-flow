@@ -159,7 +159,7 @@ With no bug issue type in the profile, `bugs` returns no item and the note "the 
 
 1. The developer as assignee, when the issue is not assigned to the developer. This row comes first, because a workflow may offer the start transition to the assignee only.
 2. The shortest route from the status of the issue to `statuses.start`.
-3. For an item with `corrections`, the correction comment. It holds the corrections and the `answers` of the developer. The plugin renders it with `templates/corrections.md`, or with the file named by `config.correctionTemplate`. The template has one `<!-- corrected -->` section, and lists `corrections` and `answers`.
+3. For an item with `corrections`, the correction comment. It holds the corrections and the `answers` of the developer. The plugin renders it with `templates/corrections.md`, or with the file named by `config.correctionTemplate`. The template has one `<!-- corrected -->` section, and lists `corrections` and `answers`. A correction line is `what: now (was was)`. A correction with no `what`, or with `what` equal to `now`, is `now` alone: a quick task's estimate gives each correction as one text.
 
 An item with no corrections gets no comment. The plan skips an issue with its reason when:
 
@@ -179,6 +179,15 @@ With `apply: <plan id>`, the plan runs.
 | `taken` | `done`, `test` (lists); `commit` | the route to `statuses.handoff`, the comment, then the tester (`JIRA_QA`) as assignee; every action on the issue first, the assignee last |
 | `partial` | `done`, `test`, `remains` (lists); `commit` | the route back to `statuses.initial`, never through `statuses.handoff`, then the comment; with no `statuses.initial`, the comment only and the status stays; `check` then notes that `config.statuses.initial` is unset; with `statuses.initial` set but no route back, the comment only and the status stays, and `unmoved` in the plan names why |
 | `not-reproduced` | `tried`, `commit`; `test` | as `taken`: the comment says the issue does not reproduce on that commit, and the tester retests it |
+
+Before it plans the route of a `taken` or `not-reproduced` issue, the plugin asks Jira which transitions the developer may run on the issue now (`GET /rest/api/2/issue/<key>/transitions?expand=transitions.fields`). Jira applies the workflow's conditions there. The rows follow the answer:
+
+- Jira offers the route's first transition: transition, comment, tester. The plugin does not take the issue.
+- Jira does not offer it, and the issue is not assigned to the developer: the developer as assignee first, then transition, comment, tester. The preview names both: `assignee <developer> first; <route>; assignee <tester>`.
+- Jira does not offer it, and the issue is the developer's already: the plan skips the issue. The reason names the transition and the status.
+- The transition's screen requires a field that the plan does not fill: the plan skips the issue. The reason names the field. A field with a default value does not count. The plugin never fills a required field, the assignee included.
+
+The issue can change between the plan and your yes. So, before each of these transitions, apply asks Jira again. When the transition is not offered, or a required field is missing, the row fails. Its reason names the transition and the status, or the field. Apply sends nothing more for that issue, and never adds a row that the plan does not show. A `partial` issue is not checked this way.
 
 The required fields are the core's. The core sends every text field as a list of one-line texts. The plugin checks them again before it sends anything. It refuses three things: a field that is not such a list, a text that holds a link or a URL, and a `commit` that is not a commit hash. The core checks the wording. The plugin renders the markup.
 

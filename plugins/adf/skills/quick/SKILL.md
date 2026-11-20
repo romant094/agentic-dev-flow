@@ -125,8 +125,9 @@ The branch and `quick.md` stay for the developer to keep or remove.
 
    On a refusal, send `errors` to the same agent once. After a second refusal, take the
    candidates to `/adf:propose`. Show each item's `fit`, `reason` and `files`. The developer
-   selects. Offer an item of fit `propose` to `/adf:propose`; this task never takes it. Record
-   the selection, and repeat until `undecided` is empty:
+   selects. Offer an item of fit `propose` to `/adf:propose`; this task never takes it. A debt
+   entry flagged as the mirror of a key is taken together with that key, so that archive
+   resolves it. Record the selection, and repeat until `undecided` is empty:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/scope.mjs" select --change <name> --take K1,K2 [--exclude "<KEY>: <reason>"] [--rest "<reason>"]
@@ -146,8 +147,13 @@ The branch and `quick.md` stay for the developer to keep or remove.
    ```
 
    On `keyChoices`, ask which key names the branch, and run suggest again with `--key <KEY>`.
-   Ask the developer, in one question, for the base (`bases`) and the branch name. The name is
-   `branch`; when it is null, ask for the type. Wait for an explicit answer. Then:
+   The type comes from the change name's prefix, or `fix` when every taken tracker issue is a
+   bug; `typeFrom` says which. A quick task can be a fix or another small patch, so never choose
+   a type yourself. When `branch` is null, ask the developer for the type. Show `suggestedType`,
+   the estimate's suggestion, when it is given. Then run suggest again with `--type <type>`.
+   Ask the developer, in one question, for the base (`bases`) and the branch name (`branch`).
+   A type that the developer names in the answer is passed with `--type <type>` again. Wait for
+   an explicit answer. Then:
 
    ```bash
    node "${CLAUDE_PLUGIN_ROOT}/scripts/propose.mjs" create --change <name> --branch <branch> --base <integration|current> --schema quick

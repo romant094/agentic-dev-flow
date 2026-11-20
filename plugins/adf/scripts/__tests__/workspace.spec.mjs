@@ -76,6 +76,51 @@ test('suggest with a key names the branch <type>/<KEY>/<change>; the worktree pa
   assert.throws(() => suggest(root, 'add-thing', { key: 'a b' }), /cannot name a branch/)
 })
 
+test('suggest takes a Conventional Commits type, which wins over the name prefix, and refuses another word', () => {
+  const root = host()
+  const s = suggest(root, 'proj-1', { key: 'PROJ-1', type: 'fix' })
+  assert.deepEqual([s.type, s.branch], ['fix', 'fix/PROJ-1/proj-1'])
+  assert.equal(suggest(root, 'add-thing', { type: 'fix' }).branch, 'fix/add-thing')
+  assert.throws(() => suggest(root, 'proj-1', { type: 'bugfix' }), /"bugfix" is not a Conventional Commits type: feat, fix, /)
+})
+
+test('suggest takes the type from the developer, then the name prefix, then the tracker; the estimate only suggests one', () => {
+  const root = host()
+  const s = suggest(root, 'proj-1', { key: 'PROJ-1', scopeType: 'fix' })
+  assert.deepEqual([s.type, s.typeFrom, s.branch], ['fix', 'tracker', 'fix/PROJ-1/proj-1'])
+  assert.deepEqual([suggest(root, 'add-thing', { scopeType: 'fix' }).type, suggest(root, 'add-thing', { scopeType: 'fix' }).typeFrom], ['feat', 'name'])
+  assert.deepEqual([suggest(root, 'add-thing', { type: 'perf', scopeType: 'fix' }).branch, suggest(root, 'add-thing', { type: 'perf' }).typeFrom], ['perf/add-thing', 'given'])
+  const asked = suggest(root, 'proj-1', { suggestedType: 'feat' })
+  assert.deepEqual([asked.type, asked.typeFrom, asked.branch, asked.suggestedType], [null, null, null, 'feat'])
+  assert.equal(suggest(root, 'fix-thing', { suggestedType: 'feat' }).suggestedType, undefined, 'a type is known: no suggestion')
+})
+
+test('workspace.mjs suggest reads the tracker type from the scope and the estimate suggestion from the quick estimate', () => {
+  const root = host()
+  const cli = (...args) => JSON.parse(spawnSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), '..', 'workspace.mjs'), ...args, '--root', root], { encoding: 'utf8' }).stdout)
+  const scopeDir = join(root, '.superpowers', 'sdd', 'proj-1')
+  mkdirSync(join(scopeDir, 'quick'), { recursive: true })
+  mkdirSync(join(scopeDir, 'scope'), { recursive: true })
+  const bug = { source: 'tracker', key: 'PROJ-1', kind: 'bug', state: 'taken', branchRank: 3, branchToken: 'PROJ-1' }
+  writeFileSync(join(scopeDir, 'scope', 'scope.json'), JSON.stringify({ items: [bug] }))
+  assert.equal(cli('suggest', '--change', 'proj-1').branch, 'fix/PROJ-1/proj-1')
+  writeFileSync(join(scopeDir, 'scope', 'scope.json'), JSON.stringify({ items: [{ ...bug, kind: 'task' }] }))
+  writeFileSync(join(scopeDir, 'quick', 'estimate.json'), JSON.stringify({ items: [{ key: 'PROJ-1', type: 'feat' }] }))
+  const asked = cli('suggest', '--change', 'proj-1')
+  assert.deepEqual([asked.branch, asked.suggestedType], [null, 'feat'])
+})
+
+test('workspace.mjs suggest reads --type, and refuses a flag it does not read', () => {
+  const root = host()
+  const cli = (...args) => spawnSync(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), '..', 'workspace.mjs'), ...args, '--root', root], { encoding: 'utf8' })
+  const typed = cli('suggest', '--change', 'proj-1', '--key', 'PROJ-1', '--type', 'fix')
+  assert.equal(typed.status, 0, typed.stdout)
+  assert.equal(JSON.parse(typed.stdout).branch, 'fix/PROJ-1/proj-1')
+  const unknown = cli('suggest', '--change', 'proj-1', '--kind-of', 'fix')
+  assert.equal(unknown.status, 1)
+  assert.deepEqual(JSON.parse(unknown.stdout), { ok: false, error: 'workspace.mjs suggest does not read --kind-of' })
+})
+
 test('suggest keeps every dirty line as git prints it, the first one included', () => {
   const root = host({ remote: false })
   writeFileSync(join(root, 'README.md'), 'changed\n')

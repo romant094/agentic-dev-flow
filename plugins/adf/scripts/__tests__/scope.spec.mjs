@@ -15,7 +15,7 @@ import { createChange, markDone } from '../lib/propose.mjs'
 import { initRegistry, readRegistry, setDebtRoot, writeRegistry } from '../lib/registry.mjs'
 import { CORE } from '../lib/roles.mjs'
 import { loadSchema } from '../lib/schema.mjs'
-import { changeScopeFile, matchesPhrase, phraseWords, readScope, renderSection, scopeFile, scopeSourcesGate } from '../lib/scope.mjs'
+import { changeScopeFile, matchesPhrase, phraseWords, readScope, renderSection, scopeFile, scopeSourcesGate, trackerType } from '../lib/scope.mjs'
 import { run } from '../scope.mjs'
 import { run as workspaceCli } from '../workspace.mjs'
 
@@ -204,6 +204,21 @@ test('gather returns resolved debt as precedents, never as items; check-input gi
 
   const section = renderSection(readScope(root, 'fix-pool'))
   assert.match(section, /\| snmp-05 \| debt \| Pool reconnect drops the session \| taken \|.*\n\nPrecedent: snmp-02, Trailing index parsed twice, resolved by `openspec\/changes\/archive\/2026-10-01-fix-index` on 2026-10-01\.\nPrecedent: snmp-04, Session pool reconnect leaks sockets, resolved by `openspec\/changes\/archive\/2026-10-02-fix-old-pool` on 2026-10-02\.$/)
+})
+
+test('render names a correction once when it has no subject of its own, or one equal to the correction', () => {
+  const check = { corrections: [{ what: '', was: '', now: 'the pool closes on reconnect' }, { what: 'the unit', was: '', now: 'the unit' }, { what: 'unit', was: 'count', now: 'gauge' }], questions: [] }
+  const section = renderSection({ tracker: { state: 'done', plugin: 'adf-jira' }, items: [{ key: 'P-3', source: 'tracker', title: 'Pool', state: 'taken', reason: null, verdict: 'corrected', check }] })
+  assert.match(section, /\| P-3 \| tracker \| Pool \| taken \| {2}\| corrected \| corrected: the pool closes on reconnect; corrected: the unit; corrected: unit \(was count\), now gauge \|$/m)
+})
+
+test('trackerType is fix when every taken or partial tracker item is a bug, and null otherwise', () => {
+  const item = (key, kind, state = 'taken') => ({ source: 'tracker', key, kind, state })
+  const debt = { source: 'debt', key: 'd-1', kind: 'debt', state: 'taken' }
+  assert.equal(trackerType({ items: [item('P-1', 'bug'), item('P-2', 'bug', 'partial'), debt, item('P-3', 'story', 'excluded')] }), 'fix')
+  assert.equal(trackerType({ items: [item('P-1', 'bug'), item('P-2', 'task')] }), null, 'another kind: no guess')
+  assert.equal(trackerType({ items: [item('P-1', 'bug', 'candidate'), debt] }), null, 'no tracker item taken')
+  assert.equal(trackerType(null), null)
 })
 
 test('keys gather the tracker items, the debt holding a key, and a change in flight holding one; a flag is shown once', () => {

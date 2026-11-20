@@ -130,6 +130,13 @@ const itemOf = (scope, key) => {
 // The keys a change takes on: every taken or partial item, a tracker key or a debt id.
 export const scopeKeys = (scope) => (scope?.items ?? []).filter((i) => IN_SCOPE.includes(i.state)).map((i) => i.key)
 
+// The commit type the tracker gives a change: fix when every taken or partial tracker item is a
+// bug; null when another kind is among them, or none is taken. No other kind is guessed.
+export function trackerType(scope) {
+  const kinds = (scope?.items ?? []).filter((i) => i.source === 'tracker' && IN_SCOPE.includes(i.state)).map((i) => i.kind)
+  return kinds.length > 0 && kinds.every((k) => k === 'bug') ? 'fix' : null
+}
+
 // The tracker issues a change works on and hands off: taken or partial, except a bug that did
 // not reproduce, which retest sends back instead.
 export const trackerTargets = (scope) => (scope?.items ?? []).filter((i) => i.source === 'tracker' && IN_SCOPE.includes(i.state) && i.verdict !== 'not-reproduced')
@@ -761,9 +768,12 @@ export function answer(root, change, { key, question = null, text: given = null,
 
 const cell = (value) => String(value ?? '').replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|')
 
+// A correction with no subject, or one equal to the correction (a quick estimate's), is named once.
 function noteOf(item) {
   const parts = []
-  for (const c of item.check?.corrections ?? []) parts.push(`corrected: ${c.what}${c.was ? ` (was ${c.was})` : ''}, now ${c.now}`)
+  for (const c of item.check?.corrections ?? []) {
+    parts.push(c.what && c.what !== c.now ? `corrected: ${c.what}${c.was ? ` (was ${c.was})` : ''}, now ${c.now}` : `corrected: ${c.now}${c.was ? ` (was ${c.was})` : ''}`)
+  }
   for (const q of item.check?.questions ?? []) parts.push(`asked: ${q.question}${q.answer ? ` answered: ${q.answer}` : ''}`)
   return parts.join('; ')
 }

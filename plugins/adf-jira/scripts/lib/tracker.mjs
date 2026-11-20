@@ -10,7 +10,9 @@
 //   start    a held plan: each issue to the start status, assigned to the developer; an item
 //            with corrections also gets the templated correction comment (decision D7)
 //   handoff  a held plan: the templated comment; for taken and not-reproduced items also the
-//            hand-off status and the tester (JIRA_QA) as assignee; a partial item goes back to
+//            hand-off status and the tester (JIRA_QA) as assignee, taken by the developer first
+//            only when Jira does not offer the first transition to the developer and the issue
+//            is not the developer's; a partial item goes back to
 //            statuses.initial by a route that avoids the hand-off status, or, with no initial
 //            status configured or no such route, keeps its status (the plan's `unmoved` says
 //            why); it always gets its comment
@@ -32,7 +34,7 @@ import { JiraClient, JiraError } from './client.mjs'
 import { checkFields, checkMr, loadCorrectionTemplate, loadTemplate, renderComment, renderCorrection } from './comment.mjs'
 import { mainCheckout, normalizeConfig } from './config.mjs'
 import { EnvError, resolveEnv } from './env.mjs'
-import { applyPlan } from './apply.mjs'
+import { applyPlan, transitionOffer, transitionText } from './apply.mjs'
 import { solvePath } from './paths.mjs'
 import { assertAllowlist, assertConfiguredAllowlist, digestMismatch, loadPlan, projectOf, rowsDigest, writePlan } from './plan.mjs'
 import { assertResolvable, placeholderValues, placeholdersIn, resolvePlaceholders } from './placeholders.mjs'
@@ -412,6 +414,17 @@ function route(facts, from, target, avoid = []) {
   return { steps: path.transitions.map((t) => ({ transitionId: t.id, to: t.to })) }
 }
 
+// A hand-off's transition steps, each with its name and the status it leaves, marked for apply
+// to ask Jira again whether it is offered (lib/apply.mjs).
+function checkedSteps(facts, from, steps) {
+  let at = from
+  return steps.map((s) => {
+    const step = { ...s, name: (facts.workflow[at] ?? []).find((t) => t.id === s.transitionId)?.name ?? s.transitionId, from: at, check: true }
+    at = s.to
+    return step
+  })
+}
+
 async function issueSummary(client, key) {
   return client.get(`/rest/api/2/issue/${key}?fields=summary,status,assignee`)
 }
@@ -437,11 +450,13 @@ function previewOf(plan, values) {
     const steps = rows.flatMap((row) => resolvePlaceholders(row, values).steps)
     const from = rows[0].from
     const stops = steps.map((s) => s.to).filter(Boolean)
-    const assignee = steps.find((s) => s.fields?.assignee)?.fields.assignee.name
+    // A hand-off that takes the issue first assigns it twice: the developer first, the tester last.
+    const assignees = steps.filter((s) => s.fields?.assignee).map((s) => s.fields.assignee.name)
     const parts = []
+    if (assignees.length > 1) parts.push(`assignee ${assignees[0]} first`)
     if (stops.length > 0) parts.push(`${[from, ...stops].join(' → ')}`)
     else if (from !== undefined) parts.push(`stays ${from}`)
-    if (assignee) parts.push(`assignee ${assignee}`)
+    if (assignees.length > 0) parts.push(`assignee ${assignees.at(-1)}`)
     const comments = steps.filter((s) => s.comment).map((s) => s.comment.body)
     if (comments.length > 0) parts.push('comment:')
     lines.push(`${key} ${rows[0].summary}: ${parts.join('; ')}`)
@@ -519,13 +534,16 @@ async function applyHeld(ctx, kind) {
 // One issue's rows, each checked against the status it expects when it runs. Taking an issue
 // (`takeFirst`, start) assigns it before moving it, since a workflow may offer the start
 // transition to the assignee only: assignee, transition, comment. Handing it over does every
-// action on the issue first and gives it away last: transition, comment, assignee. A row
-// without `from` (a partial hand-off's comment with no initial status configured) is not checked.
-function issueRows({ key, summary, from, hops, target, assignee, body, takeFirst = false }) {
+// action on the issue first and gives it away last: transition, comment, assignee. A hand-off
+// whose transition Jira offers only after a take (`takeAs`, handoff) takes the issue first:
+// assignee, transition, comment, assignee. A row without `from`
+// (a partial hand-off's comment with no initial status configured) is not checked.
+function issueRows({ key, summary, from, hops, target, assignee, body, takeFirst = false, takeAs = null }) {
   const rows = []
   const row = (step, steps, expected) => rows.push({ key, summary, step, ...(expected === undefined ? {} : { from: expected }), steps, state: 'pending' })
   const after = hops.length > 0 ? target : from
-  const assign = (expected) => assignee && row('assignee', [{ fields: { assignee: { name: assignee } } }], expected)
+  const assign = (expected, name = assignee) => name && row('assignee', [{ fields: { assignee: { name } } }], expected)
+  if (takeAs && hops.length > 0) assign(from, takeAs)
   if (takeFirst) assign(from)
   if (hops.length > 0) row('transition', hops, from)
   if (body !== undefined) row('comment', [{ comment: { action: 'add', body, once: true } }], after)
@@ -609,6 +627,9 @@ async function handoff(ctx) {
   const excluded = []
   // A partial issue with no route back: commented, not moved, and the plan says why.
   const unmoved = []
+  // The developer's login, read once and only when an issue moves.
+  let login
+  const developer = async () => (login === undefined ? (login = env.assignee ?? (await myself(client))?.name) : login)
   for (const item of input.items) {
     const body = renderComment(template, item.state, item.fields, input.mr)
     const issue = await issueSummary(client, item.key)
@@ -632,7 +653,28 @@ async function handoff(ctx) {
       excluded.push({ key: item.key, reason: way.reason })
       continue
     }
-    rows.push(...issueRows({ key: item.key, summary, from, hops: way.steps, target: partial ? initial : target, assignee: partial ? null : '<JIRA_QA>', body }))
+    // An issue that moves to the tester follows what Jira offers the developer now: its first
+    // transition offered, it moves as it is; not offered, an issue that is not the developer's is
+    // taken first, and apply asks again before each transition (the steps' `check`).
+    let steps = way.steps
+    let takeAs = null
+    if (!partial && steps.length > 0) {
+      steps = checkedSteps(facts, from, steps)
+      const offer = await transitionOffer(client, item.key, steps[0])
+      if (offer.offered && offer.missing.length > 0) {
+        excluded.push({ key: item.key, reason: `${transitionText(steps[0])} requires ${offer.missing.join(', ')}` })
+        continue
+      }
+      if (!offer.offered) {
+        const login = await developer()
+        if (issue.fields.assignee?.name === login) {
+          excluded.push({ key: item.key, reason: `${transitionText(steps[0])} is not offered to ${login}` })
+          continue
+        }
+        takeAs = '<JIRA_ASSIGNEE>'
+      }
+    }
+    rows.push(...issueRows({ key: item.key, summary, from, hops: steps, target: partial ? initial : target, assignee: partial ? null : '<JIRA_QA>', body, takeAs }))
   }
   const operation = rows.some((r) => r.steps.some((s) => s.transitionId)) ? 'transition' : 'comment'
   const plan = { version: 1, operation, purpose: 'handoff', allowlist: env.allowedProjects, discoveredAt: facts.discoveredAt, rows, excluded, ...(unmoved.length > 0 ? { unmoved } : {}) }

@@ -22,7 +22,13 @@ The branch name is `<type>/<change>`. The type comes from the start of the chang
 | `fix-` | `fix` |
 | `restructure-` or `refactor-` | `refactor` |
 
-When a tracker issue names the change, the branch is `<type>/<key>/<change>`. For another name, you confirm the branch name.
+When a tracker issue names the change, the branch is `<type>/<key>/<change>`. The type is the first of these:
+
+1. The type you give (`workspace.mjs suggest --type <type>`). It is one of the Conventional Commits types.
+2. The prefix of the change name.
+3. `fix`, when every tracker issue that the change takes is a bug. The tracker gives no other type.
+
+With none of these, the command asks you for the type. `/adf:quick` also shows the type that its estimate suggests, when there is one. That suggestion never names the branch by itself. You confirm the branch name.
 
 You choose the base of the change:
 

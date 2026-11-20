@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { largeItems, Refusal } from '../lib/quick.mjs'
+import { estimatedType, largeItems, Refusal } from '../lib/quick.mjs'
 import { readScope, writeScope } from '../lib/scope.mjs'
 import { run } from '../quick.mjs'
 import { run as scopeRun } from '../scope.mjs'
@@ -85,6 +85,25 @@ test('filter keeps a named key and flags it', () => {
   assert.equal(stateOf(root, 'P-2').state, 'excluded')
   quick(root, 'filter', '--change', 'fix-it')
   assert.equal(stateOf(root, 'P-1').flags.length, 1, 'a second filter adds no second flag')
+})
+
+test('filter keeps the debt entry that mirrors a named key, and flags it to be taken with that key', () => {
+  const root = host({ keys: ['P-3'] })
+  const scope = readScope(root, 'fix-it')
+  scope.items.find((i) => i.key === 'd-1').tracker = 'P-3'
+  scope.items.find((i) => i.key === 'd-3').tracker = 'P-3'
+  writeScope(root, 'fix-it', scope)
+  const out = quick(root, 'filter', '--change', 'fix-it')
+  assert.deepEqual(out.excluded.map((e) => e.key), ['P-1', 'P-2', 'd-2'])
+  assert.deepEqual(out.candidates, ['P-3', 'd-1', 'd-3'])
+  assert.deepEqual(out.flagged, [
+    { key: 'd-1', flag: 'd-1 mirrors P-3, a key you named; take it with P-3' },
+    { key: 'd-1', flag: 'd-1 looks too large for a quick task (class debt)' },
+    { key: 'd-3', flag: 'd-3 mirrors P-3, a key you named; take it with P-3' }
+  ])
+  assert.deepEqual(stateOf(root, 'd-1').flags, ['d-1 mirrors P-3, a key you named; take it with P-3', 'd-1 looks too large for a quick task (class debt)'])
+  quick(root, 'filter', '--change', 'fix-it')
+  assert.equal(stateOf(root, 'd-1').flags.length, 2, 'a second filter adds no second flag')
 })
 
 test('estimate-input writes the prompt, each candidate with its file and the reply schema', () => {
@@ -168,9 +187,23 @@ test('estimate-check records the verdicts that scope.mjs start requires', () => 
   assert.equal(quick(root, 'estimate-check', '--change', 'fix-it', '--file', reply(root, body)).ok, true)
   const item = stateOf(root, 'P-3')
   assert.equal(item.verdict, 'corrected')
-  assert.deepEqual(item.check.corrections, [{ what: 'the pool closes on reconnect', was: '', now: 'the pool closes on reconnect' }])
+  assert.deepEqual(item.check.corrections, [{ what: '', was: '', now: 'the pool closes on reconnect' }])
   // start now passes the verdict check; it stops at the missing worktree, which a later step makes.
   assert.throws(start, /start runs after the branch and the worktree exist/)
+})
+
+test('estimate-check takes a suggested commit type, refuses another word, and estimatedType reads it for the taken items', () => {
+  const root = prepared()
+  const bad = quick(root, 'estimate-check', '--change', 'fix-it', '--file', reply(root, { items: [est('P-3', { verdict: 'current', type: 'bugfix' }), est('d-3')] }))
+  assert.equal(bad.ok, false)
+  assert.equal(estimatedType(root, 'fix-it'), null, 'no estimate yet')
+  const body = { items: [est('P-3', { verdict: 'current', type: 'fix' }), est('d-3', { type: 'perf' })] }
+  assert.equal(quick(root, 'estimate-check', '--change', 'fix-it', '--file', reply(root, body)).ok, true)
+  assert.equal(estimatedType(root, 'fix-it'), null, 'nothing taken yet')
+  scopeRun(['select', '--change', 'fix-it', '--take', 'P-3', '--exclude', 'd-3: later', '--root', root])
+  assert.equal(estimatedType(root, 'fix-it'), 'fix')
+  scopeRun(['select', '--change', 'fix-it', '--take', 'd-3', '--root', root])
+  assert.equal(estimatedType(root, 'fix-it'), null, 'the taken items disagree: no suggestion')
 })
 
 test('estimate-check excludes an obsolete tracker item with the estimate\'s reason', () => {

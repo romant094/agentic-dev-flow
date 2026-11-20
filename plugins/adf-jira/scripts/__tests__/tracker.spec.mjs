@@ -609,6 +609,73 @@ describe('tracker handoff', () => {
     assert.match(jira.comments['PROJ-2'][0].body, /h3\. How to test\n# Edit one port and save 70000\.\n\nh3\. Remains\n# The bulk edit is not covered\./)
   })
 
+  // A retest hands off an issue that start never took; the workflow decides whether it is taken.
+  const elsewhere = (over = {}) => ({ 'PROJ-4': issue('PROJ-4', { status: 'Opened', type: 'Bug', assignee: 'other.login', ...over }) })
+  const retest4 = { ...retest, key: 'PROJ-4' }
+  const shape = (plan) => plan.rows.map((r) => `${r.step} ${r.from} ${r.steps[0].fields?.assignee.name ?? ''}`.trim())
+
+  it('moves an issue that is not the developer\'s without taking it when Jira offers the transition to the developer', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: elsewhere() })
+    const { result: held } = await call(jira, where, 'handoff', { items: [retest4], mr: null, stateDir: where.stateDir })
+    assert.ok(held.preview.includes('PROJ-4 Summary of PROJ-4: Opened → In Progress → Review; assignee qa.login; comment:'), held.preview.join('\n'))
+    assert.deepEqual(shape(JSON.parse(readFileSync(held.file, 'utf8'))), ['transition Opened', 'comment Review', 'assignee Review <JIRA_QA>'])
+    assert.ok(jira.calls.some((c) => c.method === 'GET' && c.path === '/rest/api/2/issue/PROJ-4/transitions' && c.query.expand === 'transitions.fields'), 'the plan asks Jira what it offers')
+    const { result } = await call(jira, where, 'handoff', { stateDir: where.stateDir, apply: held.plan })
+    assert.deepEqual(result.applied, ['PROJ-4'])
+    assert.deepEqual(jira.store['PROJ-4'].fields.assignee, { name: 'qa.login' })
+  })
+
+  it('takes the issue first when Jira offers the transition to the assignee only, then moves it and gives it to the tester', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: elsewhere({ offers: 'assignee' }) })
+    const { result: held } = await call(jira, where, 'handoff', { items: [retest4], mr: null, stateDir: where.stateDir })
+    assert.ok(held.preview.includes('PROJ-4 Summary of PROJ-4: assignee dev.login first; Opened → In Progress → Review; assignee qa.login; comment:'), held.preview.join('\n'))
+    assert.deepEqual(shape(JSON.parse(readFileSync(held.file, 'utf8'))), ['assignee Opened <JIRA_ASSIGNEE>', 'transition Opened', 'comment Review', 'assignee Review <JIRA_QA>'])
+    const { result } = await call(jira, where, 'handoff', { stateDir: where.stateDir, apply: held.plan })
+    assert.deepEqual(result.applied, ['PROJ-4'])
+    assert.deepEqual(
+      jira.writes().map((c) => `${c.method} ${c.path}`),
+      ['PUT /rest/api/2/issue/PROJ-4', 'POST /rest/api/2/issue/PROJ-4/transitions', 'POST /rest/api/2/issue/PROJ-4/transitions', 'POST /rest/api/2/issue/PROJ-4/comment', 'PUT /rest/api/2/issue/PROJ-4']
+    )
+    assert.equal(jira.store['PROJ-4'].fields.status, 'Review')
+    assert.deepEqual(jira.store['PROJ-4'].fields.assignee, { name: 'qa.login' })
+  })
+
+  it('fails the issue, naming the transition and the status, when Jira offers it to no one even after the take', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: elsewhere({ offers: 'none' }) })
+    const { result: held } = await call(jira, where, 'handoff', { items: [retest4], mr: null, stateDir: where.stateDir })
+    const { result } = await call(jira, where, 'handoff', { stateDir: where.stateDir, apply: held.plan })
+    assert.deepEqual(result.applied, [])
+    assert.equal(result.failed[0].key, 'PROJ-4')
+    assert.match(result.failed[0].reason, /^transition: the transition "Start Progress" from "Opened" is not offered to the current user/)
+    assert.deepEqual(jira.writes().map((c) => `${c.method} ${c.path}`), ['PUT /rest/api/2/issue/PROJ-4'], 'only the take the plan states')
+    assert.equal(jira.store['PROJ-4'].fields.status, 'Opened')
+  })
+
+  it('skips an issue already the developer\'s whose transition Jira does not offer, naming the transition and the status', async () => {
+    const where = project()
+    const jira = fakeJira({ issues: elsewhere({ offers: 'none', assignee: 'dev.login' }) })
+    const { result: held } = await call(jira, where, 'handoff', { items: [retest4], mr: null, stateDir: where.stateDir })
+    assert.ok(held.preview.includes('PROJ-4 skipped: the transition "Start Progress" from "Opened" is not offered to dev.login'), held.preview.join('\n'))
+    assert.deepEqual(JSON.parse(readFileSync(held.file, 'utf8')).rows, [])
+  })
+
+  it('skips at plan time, and fails at apply time, a transition whose screen requires a field the plan does not fill', async () => {
+    const where = project()
+    const note = { customfield_9: { name: 'Retest note', required: true }, resolution: { name: 'Resolution', required: true, hasDefaultValue: true }, labels: { name: 'Labels', required: false } }
+    const planned = await call(fakeJira({ issues: elsewhere({ screens: { 4: note } }) }), where, 'handoff', { items: [retest4], mr: null, stateDir: where.stateDir })
+    assert.ok(planned.result.preview.includes('PROJ-4 skipped: the transition "Start Progress" from "Opened" requires Retest note'), planned.result.preview.join('\n'))
+
+    const jira = fakeJira({ issues: elsewhere() })
+    const { result: held } = await call(jira, where, 'handoff', { items: [retest4], mr: null, stateDir: where.stateDir })
+    jira.store['PROJ-4'].screens = { 821: note }
+    const { result } = await call(jira, where, 'handoff', { stateDir: where.stateDir, apply: held.plan })
+    assert.match(result.failed[0].reason, /^transition: the transition "Review Issue" from "In Progress" requires Retest note/)
+    assert.equal(jira.store['PROJ-4'].fields.status, 'In Progress', 'the first hop ran, as the plan states')
+  })
+
   it('hands over with every action on the issue first and the assignee last: transition, comment, assignee', async () => {
     const where = project()
     const jira = fakeJira({ issues: issues() })

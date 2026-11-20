@@ -13,6 +13,7 @@ import { isProtected, requireBranches } from './branches.mjs'
 import { ARCHIVE, archivedDirs, CHANGES_DIR, isMainCheckout, LEDGER_FILE } from './changes.mjs'
 import { ledgerPath } from './ledger.mjs'
 import { teardownWorktree } from './provision.mjs'
+import { COMMIT_TYPES } from './roles.mjs'
 
 export const WORKTREES_DIR = '.claude/worktrees'
 
@@ -55,14 +56,26 @@ export function worktreePath(root, change) {
 
 // A key (a tracker issue's branch token) names the branch `<type>/<key>/<change>`; the worktree
 // path stays per change name. `keyChoices` lists the keys of a tie, for the developer to choose.
+// The type, a Conventional Commits type, comes from the first of: the developer's (`type`), the
+// change name's prefix, the tracker's (`scopeType`, lib/scope.mjs trackerType); `typeFrom` names
+// which. With none, `branch` is null, and `suggestedType` carries the quick estimate's
+// suggestion, if any, for the developer to confirm: it never names the branch by itself.
 const BRANCH_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
-export function suggest(root, change, { git = gitIn(root), key = null, keyChoices = null } = {}) {
+function typeSource(given, change, scopeType) {
+  if (given !== null) return { type: given, typeFrom: 'given' }
+  if (branchType(change)) return { type: branchType(change), typeFrom: 'name' }
+  if (scopeType) return { type: scopeType, typeFrom: 'tracker' }
+  return { type: null, typeFrom: null }
+}
+
+export function suggest(root, change, { git = gitIn(root), key = null, keyChoices = null, type: given = null, scopeType = null, suggestedType = null } = {}) {
   if (key !== null && !BRANCH_TOKEN.test(key)) throw new Error(`"${key}" cannot name a branch: a key is letters, digits, dots, underscores and hyphens`)
+  if (given !== null && !COMMIT_TYPES.includes(given)) throw new Error(`"${given}" is not a Conventional Commits type: ${COMMIT_TYPES.join(', ')}`)
   const branches = requireBranches(root)
   const current = attempt(git, 'branch', '--show-current') || null
   const currentProtected = current === null || isProtected(branches, current)
-  const type = branchType(change)
+  const { type, typeFrom } = typeSource(given, change, scopeType)
   return {
     change,
     integration: branches.integration,
@@ -70,6 +83,8 @@ export function suggest(root, change, { git = gitIn(root), key = null, keyChoice
     current,
     bases: currentProtected ? ['integration'] : ['integration', 'current'],
     type,
+    typeFrom,
+    ...(type === null && suggestedType ? { suggestedType } : {}),
     branch: type ? (key ? `${type}/${key}/${change}` : `${type}/${change}`) : null,
     ...(key ? { key } : {}),
     ...(keyChoices ? { keyChoices } : {}),

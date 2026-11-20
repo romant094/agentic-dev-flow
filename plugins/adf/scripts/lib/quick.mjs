@@ -21,7 +21,7 @@ import { PLANNING_FILE, sectionLine } from './guide.mjs'
 import { mainCheckout } from './installed.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
 import { baseRef } from './plan-symbols.mjs'
-import { answer, readScope, Refusal, renderSkeleton, select, writeScope } from './scope.mjs'
+import { answer, readScope, Refusal, renderSkeleton, scopeKeys, select, writeScope } from './scope.mjs'
 
 export { Refusal }
 
@@ -79,21 +79,26 @@ export const largeItems = (scope) => scope.items.filter((i) => i.state !== 'excl
 const candidatesOf = (scope) => scope.items.filter((i) => i.state !== 'excluded')
 
 // Excludes each large candidate as `scope.mjs select --exclude` does. A key the developer named
-// is never excluded: its item gets a flag line instead, once.
+// is never excluded: its item gets a flag line instead, once. A debt entry whose Tracker key the
+// developer named mirrors that issue, so it counts as named too; its first flag says to take it
+// with the issue, since archive resolves only a taken entry.
 export function filter(root, change) {
   const { main, scope } = load(root, change)
   const named = new Set(scope.from?.keys ?? [])
+  const mirrors = (item) => item.source === 'debt' && named.has(item.tracker)
+  const large = new Map(largeItems(scope).map((l) => [l.key, l.reason]))
   const excluded = []
   const flagged = []
-  for (const large of largeItems(scope)) {
-    if (!named.has(large.key)) {
-      excluded.push(large)
-      continue
-    }
-    const item = scope.items.find((i) => i.key === large.key)
-    const flag = `${large.key} looks too large for a quick task (${large.reason})`
-    if (!item.flags.includes(flag)) item.flags.push(flag)
-    flagged.push({ key: large.key, flag })
+  const flag = (item, text) => {
+    if (!item.flags.includes(text)) item.flags.push(text)
+    flagged.push({ key: item.key, flag: text })
+  }
+  for (const item of candidatesOf(scope)) {
+    if (mirrors(item)) flag(item, `${item.key} mirrors ${item.tracker}, a key you named; take it with ${item.tracker}`)
+    if (!large.has(item.key)) continue
+    const reason = large.get(item.key)
+    if (named.has(item.key) || mirrors(item)) flag(item, `${item.key} looks too large for a quick task (${reason})`)
+    else excluded.push({ key: item.key, reason })
   }
   if (flagged.length) writeScope(main, change, scope)
   if (excluded.length) select(root, change, { exclude: excluded.map(({ key, reason }) => ({ key, reason: `too large for a quick task (${reason})` })) })
@@ -168,7 +173,8 @@ export function estimateCheck(root, change, { file }) {
     const item = scope.items.find((i) => i.key === r.key)
     if (item.source !== 'tracker' || r.verdict === undefined) continue
     // The check `answer` and `start` read: no question, the corrections as the verdict gave them.
-    item.check = { verdict: r.verdict, requirements: [], bug: null, corrections: (r.corrections ?? []).map((c) => ({ what: c, was: '', now: c })), questions: [], checked: [], reply: `.superpowers/sdd/${change}/quick/estimate.json` }
+    // A quick correction is one text: it is the correction's `now`, with no subject (`what`).
+    item.check = { verdict: r.verdict, requirements: [], bug: null, corrections: (r.corrections ?? []).map((c) => ({ what: '', was: '', now: c })), questions: [], checked: [], reply: `.superpowers/sdd/${change}/quick/estimate.json` }
     item.verdict = null
   }
   writeScope(main, change, scope)
@@ -179,6 +185,21 @@ export function estimateCheck(root, change, { file }) {
   mkdirSync(quickDir(main, change), { recursive: true })
   writeFileSync(join(quickDir(main, change), 'estimate.json'), `${JSON.stringify({ items }, null, 2)}\n`)
   return { ok: true, valid: true, change, step: 'estimate-check', items, next: items.some((r) => r.fit === 'quick') ? 'show the estimate to the developer; take the quick items with scope.mjs select' : 'no candidate fits a quick task; take them to /adf:propose' }
+}
+
+// The commit type the estimate suggests for the change: the one `type` its taken or partial
+// items carry, or null with none, with two that differ, or before the estimate. Only a
+// suggestion: the developer confirms it.
+export function estimatedType(main, change) {
+  let items
+  try {
+    items = JSON.parse(readFileSync(join(quickDir(main, change), 'estimate.json'), 'utf8')).items ?? []
+  } catch {
+    return null
+  }
+  const taken = new Set(scopeKeys(readScope(main, change)))
+  const types = new Set(items.filter((r) => taken.has(r.key) && r.type).map((r) => r.type))
+  return types.size === 1 ? [...types][0] : null
 }
 
 // ---------------------------------------------------------------- the affected tests
