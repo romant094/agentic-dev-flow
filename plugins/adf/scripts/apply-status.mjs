@@ -34,10 +34,12 @@
 // `handoff` record's `blocked` field; `startable` are the groups to start now under the cap.
 // `completedThisSession` lists the items whose tick commits came after the last apply session
 // record. --report adds `report`, the apply command's closing block: Complete in full, or
-// Paused with `<the issue>` and `<option>` left for the orchestrator to write.
+// Paused with `<the issue>` and `<option>` left for the orchestrator to write. A complete
+// apply's report refuses until the recorded whole-suite run's marker is done
+// (lib/apply-status.mjs suiteRunRefusal).
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { applyStatus, recordHandoff, renderReport } from './lib/apply-status.mjs'
+import { applyStatus, recordHandoff, renderReport, suiteRunRefusal } from './lib/apply-status.mjs'
 import { changeDir } from './lib/changes.mjs'
 import { isMain } from './lib/main.mjs'
 import { parseTaskItems } from './lib/plan.mjs'
@@ -85,6 +87,8 @@ export function run(argv, { cwd = process.cwd(), env = process.env } = {}) {
   const tracks = schema.apply?.tracks ?? 'tasks.md'
   const status = applyStatus(root, change, { tracks, ...(cap ? { cap } : {}) })
   if (!report || !status.ok) return status
+  const refusal = suiteRunRefusal(root, change, status)
+  if (refusal) return { ok: false, change, error: refusal }
   let items = []
   try {
     items = parseTaskItems(readFileSync(join(changeDir(root, change), tracks), 'utf8'))

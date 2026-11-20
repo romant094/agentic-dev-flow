@@ -163,6 +163,13 @@ test('test runs from the suite records: runs, failed, uncounted, and a file that
   runner('T3 impl', 'true', '2026-10-19T10:03:00.000Z')
   writeFileSync(sdd(change, 'tests/junk.json'), '{"not":"a record"}\n')
   assert.deepEqual(readTests(change, CHANGE).value, { runs: 4, failed: 2, uncounted: 2, unreadable: ['junk.json'] })
+  // #29: the last whole-suite run's duration and the idle time until its result was read.
+  mkdirSync(sdd(change, 'suite'), { recursive: true })
+  const run = { state: 'done', startedAt: '2026-10-19T11:00:00.000Z', endedAt: '2026-10-19T11:02:30.000Z', durationMs: 150000, pid: 1, exit: 0, timedOut: false, status: 'pass' }
+  writeFileSync(sdd(change, 'suite/run.json'), JSON.stringify(run))
+  assert.deepEqual(readTests(change, CHANGE).value.suiteRun, { durationMs: 150000, idleMs: null })
+  writeFileSync(sdd(change, 'suite/run.json'), JSON.stringify({ ...run, readAt: '2026-10-19T11:30:30.000Z' }))
+  assert.deepEqual(readTests(change, CHANGE).value.suiteRun, { durationMs: 150000, idleMs: 1680000 })
 })
 
 test('review state: verdict from the assembled record, rounds, dispositions; ai-review from findings.json; after the move too', () => {

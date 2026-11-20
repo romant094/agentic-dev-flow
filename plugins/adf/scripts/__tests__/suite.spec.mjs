@@ -13,6 +13,7 @@ import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { appendRecord } from '../lib/ledger.mjs'
 import { initRegistry, readRegistry } from '../lib/registry.mjs'
 import { commandIn, countLines, countsOf, failingIn, proofIn, readCommand, readTestRecord, runCovering, runSuite, writeCommand } from '../lib/suite.mjs'
+import { isStale, readMarker, runMarker, waitForRun } from '../lib/suite-run.mjs'
 import { computeVerdict, runChecks, verifyDir } from '../lib/verify.mjs'
 import { create } from '../lib/workspace.mjs'
 import { judged } from './verify-replies.mjs'
@@ -28,6 +29,7 @@ const changeFile = (file) => `openspec/changes/${CHANGE}/${file}`
 const FAKE_SUITE = `import { readFileSync, writeFileSync } from 'node:fs'
 const [mode, extra] = readFileSync('mode.txt', 'utf8').trim().split('+')
 const picked = process.argv.slice(2)
+if (process.env.ADF_PEEK) console.log('PEEK ' + readFileSync(process.env.ADF_PEEK, 'utf8').replace(/\\s+/g, ' '))
 if (picked.length) console.log('SELECTED ' + picked.join(' '))
 if (extra === 'junk') writeFileSync('junk.txt', 'x')
 console.log('MARKER-RAW-OUTPUT')
@@ -195,6 +197,72 @@ test('a passing run writes the raw output to a file, a record verify accepts, an
   const section = verdict.checks.find((c) => c.id === 'test-record')
   assert.equal(section.verdict, 'pass')
   assert.equal(section.output, `.superpowers/sdd/${CHANGE}/verify/test-record-suite.txt`)
+})
+
+// #29: the run leaves a marker, running while it runs and done with its result, so an agent can
+// wait for a background run by script and the next apply step knows the run ended.
+test('a run writes its marker: running while the suite runs, done with its result after; the base check its own', () => {
+  const { root, head } = host({ headMode: 'fail:b' })
+  const marker = runMarker(root, CHANGE)
+  process.env.ADF_PEEK = marker
+  let r
+  try {
+    r = runSuite(root, { change: CHANGE, baseCheck: true })
+  } finally {
+    delete process.env.ADF_PEEK
+  }
+  assert.equal(marker, join(root, '.superpowers', 'sdd', CHANGE, 'suite', 'run.json'))
+  const peek = /^PEEK (.*)$/m.exec(readFileSync(join(root, r.outputFile), 'utf8'))[1]
+  assert.deepEqual([JSON.parse(peek).state, JSON.parse(peek).pid, JSON.parse(peek).commit], ['running', process.pid, head])
+  const done = readMarker(marker)
+  assert.deepEqual([done.state, done.exit, done.timedOut, done.status, done.commit, done.outputFile], ['done', 1, false, 'fail', head, r.outputFile])
+  assert.ok(Number.isInteger(done.durationMs) && done.durationMs >= 0 && done.endedAt >= done.startedAt)
+  const base = readMarker(runMarker(root, CHANGE, 'base'))
+  assert.deepEqual([base.state, base.exit, base.timedOut], ['done', 0, false])
+})
+
+test('wait returns a done run at once and records when it was first read; a repeated wait keeps that time', () => {
+  const { root } = host()
+  runSuite(root, { change: CHANGE })
+  // Read right after the run's end: the idle time is short.
+  const out = cli(['wait', '--change', CHANGE, '--root', root])
+  assert.equal(out.code, 0)
+  assert.deepEqual([out.json.ok, out.json.state, out.json.exit, out.json.timedOut, out.json.status, out.json.already], [true, 'done', 0, false, 'pass', false])
+  assert.ok(out.json.readAt >= out.json.endedAt && out.json.idleMs >= 0 && out.json.idleMs < 60000, JSON.stringify(out.json))
+  assert.equal(readMarker(runMarker(root, CHANGE)).readAt, out.json.readAt)
+  // A repeated wait, once no new run started within its grace, returns the same result and time.
+  const again = waitForRun(root, CHANGE, { maxMs: 2000, graceMs: 50, pollMs: 10 })
+  assert.deepEqual([again.state, again.already, again.readAt, again.idleMs], ['done', true, out.json.readAt, out.json.idleMs])
+  assert.equal(readMarker(runMarker(root, CHANGE)).readAt, out.json.readAt)
+  // Read with a delay: the idle time is the gap from the run's end.
+  const file = runMarker(root, CHANGE)
+  const endedAt = new Date(Date.now() - 120000).toISOString()
+  writeFileSync(file, JSON.stringify({ state: 'done', startedAt: endedAt, endedAt, durationMs: 0, pid: 1, exit: 0, timedOut: false, status: 'pass' }))
+  const late = waitForRun(root, CHANGE, { maxMs: 2000, pollMs: 10 })
+  assert.ok(late.idleMs >= 120000 && late.idleMs < 180000, String(late.idleMs))
+  const none = cli(['wait', '--change', CHANGE, '--root', host().root, '--max-minutes', '0.01'])
+  assert.deepEqual([none.code, none.json.ok], [1, false])
+  assert.match(none.json.error, /no whole-suite run is recorded/)
+})
+
+test('wait gives up on a running run before the Bash limit, and calls a run with a dead process or past its time stale', () => {
+  const { root } = host()
+  const file = runMarker(root, CHANGE)
+  mkdirSync(dirname(file), { recursive: true })
+  const now = Date.now()
+  const running = (over) => writeFileSync(file, JSON.stringify({ state: 'running', startedAt: new Date(now).toISOString(), pid: process.pid, timeoutMs: 60000, ...over }))
+  running()
+  assert.equal(waitForRun(root, CHANGE, { maxMs: 50, pollMs: 10 }).state, 'running')
+  const cliOut = cli(['wait', '--change', CHANGE, '--root', root, '--max-minutes', '0.001'])
+  assert.deepEqual([cliOut.code, cliOut.json.state], [3, 'running'])
+  const dead = spawnSync(process.execPath, ['-e', '']).pid
+  running({ pid: dead })
+  assert.equal(isStale(readMarker(file)), true)
+  assert.throws(() => waitForRun(root, CHANGE, { maxMs: 1000, pollMs: 10 }), /the whole-suite run died/)
+  running({ startedAt: new Date(now - 3 * 3600000).toISOString() })
+  assert.equal(isStale(readMarker(file)), true)
+  running()
+  assert.equal(isStale(readMarker(file)), false)
 })
 
 test('a failure the base does not have blocks; the base-check worktree is removed', () => {

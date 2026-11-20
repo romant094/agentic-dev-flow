@@ -70,7 +70,7 @@ When the project has no whole-suite command in `openspec/planning.md`, the comma
 
 When the whole suite fails, the command runs it again on the base branch after the main run, to find the failures that are not new. When `openspec/planning.md` has a `## Failed-tests command` with `{tests}`, the command runs only the failed tests on the base.
 
-The command waits for the whole suite in the foreground, for up to 10 minutes. Only a suite that is known to take longer runs in the background. The command never schedules a wakeup, so a headless session ends when its work ends.
+The command waits for the whole suite in the foreground, for up to 10 minutes. A longer suite runs in the background, and the command waits for it with `suite.mjs wait`, which returns the result as soon as the run ends. Each run writes a marker, `.superpowers/sdd/<name>/suite/run.json`, and the report refuses until the marker of the recorded run says done. The command never schedules a wakeup, so a headless session ends when its work ends.
 
 ## How it resumes
 

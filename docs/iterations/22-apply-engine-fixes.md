@@ -107,6 +107,27 @@ Decided during the iteration:
 - **#29.** The rule is one paragraph under the whole-suite command in `apply.md`; `review.md` and
   `verify.md` point to it. The frame's Tools rule (option 2 of the issue) is not changed: it binds
   dispatched agents, and the suite runs in the orchestrator's session.
+- **#29, enforced by script (the developer's follow-up, 2026-11-20; a hook was dropped by the
+  developer).** `suite.mjs run` writes a run marker, `.superpowers/sdd/<change>/suite/run.json`
+  (`lib/suite-run.mjs`): `{ state: "running", startedAt, pid, timeoutMs, commit }` at the start,
+  `{ state: "done", startedAt, endedAt, durationMs, pid, commit, exit, timedOut, status,
+  outputFile }` at the end, written whole through a temporary file. It spans the whole command,
+  the base check and the record included, so a waiter never reads a result before the record is
+  written; the base check's own run has `base-run.json`. A run that throws still ends `done`, with
+  `exit: null` and `error`. A `running` marker is stale when its pid is gone or it has outlived
+  twice its timeout plus 10 minutes (the main and the base run). `suite.mjs wait --change`
+  polls the marker each second and returns a done result at once; after `--max-minutes`
+  (default 9) it returns `{ state: "running" }` with exit 3, and a stale or missing marker is a
+  refusal, exit 1. `readAt` is written on the first read only; `idleMs` is `readAt - endedAt`.
+  A result already read is returned again (`already: true`, the same `readAt`) only after 15 s
+  with no new run, since a run started in the background may not have written its marker yet.
+  The marker holds the last run of the change: verify's and the review's runs overwrite apply's.
+  The gate is `apply-status.mjs --report` of a complete apply: it refuses unless the marker is done
+  for the commit the test record ran on, and records the report's read as the first read when no
+  `wait` made it. A record of no run (`not-run`) needs no marker. A change in flight whose record
+  predates the marker is refused until its suite runs again. The metrics record's `tests` group
+  takes an optional `suiteRun { durationMs, idleMs }` from the marker. `apply.md` keeps one short
+  paragraph in the `finish` part.
 - **#48.** "Verification-only" keeps its existing meaning: a plan task whose Commit step says
   none (`commitsNothing`). `tasks.mjs tick --plan-task <N> --evidence <file>` takes such a task
   past the review gate. The evidence is a non-empty file inside the change directory, such as

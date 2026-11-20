@@ -64,7 +64,7 @@ person. A plugin reads records; it never writes one.
 | `autonomy` | transcripts, ledger | `developerMessages`, `askUserQuestion`, `clears`, `sessions`, `rulings` |
 | `replies` | `attempts.jsonl` | per role: `dispatches`, `valid`, `invalid`, `retries`, `stops` |
 | `impl` | `attempts.jsonl` | the accepted impl replies per status: `DONE`, `DONE_WITH_CONCERNS`, `BLOCKED`, `NEEDS_CONTEXT` |
-| `tests` | `tests/*.json` | `runs`, `failed`, `uncounted` (no count line), `unreadable` |
+| `tests` | `tests/*.json`, `suite/run.json` | `runs`, `failed`, `uncounted` (no count line), `unreadable`; `suiteRun` (optional) `{ durationMs, idleMs }`: the last whole-suite run's duration and the time from its end to the first read of its result, `idleMs` null while unread |
 | `findings` | `attempts.jsonl`, `review/` | per layer `review`, `re-review`, `final-review`, `merge-review`, `sweep`, `ai-review`: `dispatches`, `findings`, `native` (per the layer's own severity), `mapped` (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`; null for the sweep, which has no severity), `uncounted` (accepted replies with no computed result); a layer that did not run has no entry |
 | `review` | `review/` | `verdict`, `rounds`, `dispositions` per kind, `stopped` |
 | `verify` | `verify/` | `verdict`, `checks` (`{ <id>: pass, warn, fail, not-run or ruled }`), `warnings` `{ check, summary }`, `filesOutsidePlan` |

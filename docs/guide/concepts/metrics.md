@@ -36,7 +36,7 @@ The record has these groups:
 | `timing` | The time between propose and extract, the active minutes, and the minutes for each task. |
 | `autonomy` | How often the developer wrote, answered a question or cleared the session. |
 | `replies`, `impl` | How many replies of each role were valid, retried or stopped, and the status of the implementers. |
-| `tests` | The runs of the test suite. |
+| `tests` | The runs of the test suite. Optional `suiteRun`: the duration of the last whole-suite run, and the idle time from its end to the first read of its result. |
 | `findings`, `review`, `verify` | The findings of each review layer, and the verdicts of review and verify. |
 | `ledger`, `isolation`, `compliance` | The ledger counts, the files and worktrees outside the change, and the plan rules that were performed. |
 | `maintainability` | The lines changed, by file and by capability. |
