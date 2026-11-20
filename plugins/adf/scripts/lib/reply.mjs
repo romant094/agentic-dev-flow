@@ -71,7 +71,7 @@ import { attemptsFile } from './attempts.mjs'
 import { globToRegExp } from './changes.mjs'
 import { APPLY_SCHEMAS, parseGraph, parseName, planDispatch, RETRO_ROLES, retroInputFile, sddDir } from './dispatch.mjs'
 import { parseReply, readSchema, validateJson } from './json-schema.mjs'
-import { readRecords } from './ledger.mjs'
+import { isSweepId, readRecords } from './ledger.mjs'
 import { consolidationState, loopState, REVIEW_ROLES, subjectHistory, subjectOf, subjectRulings, subjectSince, SWEEP_SUBJECT } from './loop.mjs'
 import { parsePlan, rangeCommits, taskMatchers } from './plan.mjs'
 import { readRegistry } from './registry.mjs'
@@ -159,7 +159,7 @@ const reReview = {
     const routed = routeFindings(reply.findings, ctx.history)
     const status = (s) => reply.previous.filter((p) => p.status === s).map((p) => p.id)
     // A sweep finding (S<n>) stays the re-sweep's to clear: it is reported, never looped.
-    const swept = (id) => id.startsWith('S')
+    const swept = isSweepId
     const open = [...status('not-addressed').filter((id) => !swept(id)), ...routed.open]
     return {
       subject: subjectOf(ctx.parts),

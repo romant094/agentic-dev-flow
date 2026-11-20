@@ -203,18 +203,15 @@ export async function checkPlanSymbols({ read, exists, lineCount, grep, branchCh
   if (!tasks.length) return [{ task: null, kind: 'no-tasks', message: NO_TASKS }]
   const apply = phase === 'apply'
 
-  let ticked = () => false
-  let changes = { added: new Set(), modified: new Set(), removed: new Set() }
-  if (apply) {
-    let taskList = ''
-    try {
-      taskList = await read(`${dir}/tasks.md`)
-    } catch {
-      // no task list: nothing is ticked
-    }
-    ticked = (item) => TICK(item).test(taskList)
-    changes = await branchChanges()
+  let taskList = ''
+  try {
+    taskList = await read(`${dir}/tasks.md`)
+  } catch {
+    // no task list: nothing is ticked
   }
+  const ticked = (item) => TICK(item).test(taskList)
+  let changes = { added: new Set(), modified: new Set(), removed: new Set() }
+  if (apply) changes = await branchChanges()
 
   const findings = []
   // A bare filename that is not in the first path's directory but is at the repository root
@@ -230,8 +227,11 @@ export async function checkPlanSymbols({ read, exists, lineCount, grep, branchCh
     for (const f of t.files) if (f.verb === 'Modify' && !modified.has(f.path)) modified.set(f.path, t.number)
 
   for (const t of tasks) {
-    // Under --phase apply a task whose tasks.md item is ticked is done: skip it.
-    if (apply && t.implements && ticked(t.implements)) continue
+    // A task whose tasks.md item is ticked is done. Under --phase apply it is skipped; under
+    // --phase propose its Create lines are (#55): the file it created is there, and a plan revised
+    // later keeps the verb that records what the task did.
+    const done = Boolean(t.implements && ticked(t.implements))
+    if (apply && done) continue
     const say = (kind, fields, what, why) => findings.push({ task: t.number, kind, ...fields, message: `${what} — ${why}` })
     // A file an earlier task of this plan creates is not there yet to be checked: its
     // path, its line ranges and the symbols it holds are all that task's to deliver.
@@ -245,7 +245,7 @@ export async function checkPlanSymbols({ read, exists, lineCount, grep, branchCh
       const present = await exists(f.path)
       const where = { verb: f.verb, path: f.path }
       if (f.verb === 'Create') {
-        if (present && !(apply && changes.added.has(f.path))) say('path-exists', where, `Create ${f.path}`, 'path already exists')
+        if (present && !done && !(apply && changes.added.has(f.path))) say('path-exists', where, `Create ${f.path}`, 'path already exists')
         continue
       }
       if (!present) {

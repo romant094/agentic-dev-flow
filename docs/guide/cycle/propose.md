@@ -67,6 +67,8 @@ Run `/adf:propose <name>` again with the same name.
 2. On a yes, the command makes the change the active change in that worktree.
 3. It goes on at the artifact step. A script names the next artifact that is not done.
 
+When you update an artifact after the plan exists, the command revises `plan.md` in the same pass. Each new item of `tasks.md` gets its plan task. `/adf:apply` refuses a change with an open item of `tasks.md` that no plan task covers.
+
 A refusal creates nothing. The preflight refuses when the Superpowers skills are missing, when the root is not the main checkout, or when tracked files have uncommitted changes. It never stashes or commits your work.
 
 Not checked: the stay-on-branch mode named in the resolve instruction. This page describes the worktree mode only.

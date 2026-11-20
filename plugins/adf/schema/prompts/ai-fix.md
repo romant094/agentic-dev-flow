@@ -5,7 +5,8 @@ whether the finding holds in the code as it is, not as the finding describes it.
 
 - **It holds: fix it.** Edit the file in scope and, when the behaviour you change has a test
   file, that test file too; no other file. Make the smallest change that removes the failure
-  mode, and run the tests that cover the file. Commit once, in Conventional Commits form, with
+  mode, and run the tests that cover the file, with the commands the `Check commands` field
+  quotes and no other. Commit once, in Conventional Commits form, with
   `node "${CLAUDE_PLUGIN_ROOT}/scripts/commit.mjs" --root <worktree> --only <path> --message "fix(<scope>): <description>"`,
   one `--only` per file. The reply's `outcome` is `fixed` and its `sha` is that commit.
 - **It does not hold: claim a false positive.** Edit nothing and commit nothing. The reply's

@@ -4,11 +4,31 @@
 // committed in a sibling's worktree, is caught at the dispatch that did it. Ignored files (the
 // ledger, reply files) do not count.
 //
+// A move the round could not cause is `foreign`, reported and not failed (#27, #43), only with
+// proof that it is not the round's:
+// - in the worktree of another active change (it holds a change directory, not this change's),
+//   new commits on the branch it had at the snapshot, its status unchanged, when that change's
+//   own records (`.superpowers/sdd/<other>/attempts.jsonl` and `ledger.jsonl` there) name every
+//   new commit, as an accepted impl or fix reply names its commits; or, failing that, when those
+//   records advanced between snapshot and compare (their size or time), so its own session was at
+//   work. An uncommitted edit there is never foreign: our dispatch may have made it. Known limit:
+//   a commit our dispatch makes there while that change's session also writes its records in the
+//   same round passes as foreign;
+// - in the main checkout, a fast-forward of a protected branch (its reflog since the snapshot
+//   holds only fast-forwards) with the status unchanged.
+// Every other move fails: a branch switch, a rewind, a commit in the main checkout, a worktree of
+// no change. A snapshot written before `foreign` existed records no branch, and every move in it
+// fails, as before.
+//
 // The targets are computed from the round's dispatch names, by the rule that places each
 // dispatch (lib/dispatch.mjs planDispatch), never listed by hand: a target typed wrong leaves
 // the checkout it should watch unwatched, or watches the one the dispatch writes in.
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { isProtected, readBranches } from './branches.mjs'
+import { attemptsFile } from './attempts.mjs'
+import { ARCHIVE, CHANGES_DIR } from './changes.mjs'
+import { ledgerPath } from './ledger.mjs'
 import { parseName, planDispatch } from './dispatch.mjs'
 import { mainCheckout } from './installed.mjs'
 import { gitIn } from './workspace.mjs'
@@ -18,7 +38,90 @@ const real = (path) => realpathSync(path)
 
 function state(root) {
   const git = gitIn(root)
-  return { head: git('rev-parse', 'HEAD'), status: git('status', '--porcelain', '--untracked-files=all') }
+  let branch = null
+  try {
+    branch = git('branch', '--show-current') || null
+  } catch {
+    // a detached HEAD or an old git: no branch, so no move there is foreign
+  }
+  return { head: git('rev-parse', 'HEAD'), branch, status: git('status', '--porcelain', '--untracked-files=all') }
+}
+
+// The change directories a checkout holds; none when it holds the guarded change itself.
+function otherChanges(root, change) {
+  let names = []
+  try {
+    names = readdirSync(join(root, CHANGES_DIR), { withFileTypes: true })
+      .filter((e) => e.isDirectory() && e.name !== ARCHIVE && !e.name.startsWith('.'))
+      .map((e) => e.name)
+  } catch {
+    return []
+  }
+  return names.includes(change) ? [] : names.sort()
+}
+
+// The records of another change in its worktree that name its commits or show its session at
+// work: { change: { file: { size, mtimeMs } | null } }.
+const recordFiles = (root, change) => [attemptsFile(root, change), ledgerPath(root, change)]
+function recordStamps(root, changes) {
+  const stamp = (file) => {
+    try {
+      const s = statSync(file)
+      return { size: s.size, mtimeMs: s.mtimeMs }
+    } catch {
+      return null
+    }
+  }
+  return Object.fromEntries(changes.map((c) => [c, Object.fromEntries(recordFiles(root, c).map((f) => [f, stamp(f)]))]))
+}
+
+const attempt = (fn) => {
+  try {
+    return fn()
+  } catch {
+    return null
+  }
+}
+
+// HEAD moved forward only: the new HEAD is the old one or descends from it.
+const forward = (git, from, to) => from === to || attempt(() => git('merge-base', '--is-ancestor', from, to)) !== null
+
+// Every move of HEAD since `from` is a fast-forward, by the reflog; false when the reflog does not
+// reach `from`.
+function fastForwards(git, from) {
+  const rows = (attempt(() => git('reflog', 'show', '--format=%H%x09%gs', 'HEAD')) ?? '').split('\n').filter(Boolean)
+  for (const row of rows) {
+    const [sha, ...subject] = row.split('\t')
+    if (sha === from) return true
+    if (!/Fast-forward/.test(subject.join('\t'))) return false
+  }
+  return false
+}
+
+// New commits in another change's worktree, never an edit, with that change's records as proof.
+function otherChangeReason(root, git, before, after) {
+  if (after.status !== before.status || after.head === before.head) return null
+  const names = before.changes.join(', ')
+  const commits = (attempt(() => git('rev-list', `${before.head}..${after.head}`)) ?? '').split('\n').filter(Boolean)
+  const text = before.changes.flatMap((c) => recordFiles(root, c)).map((f) => attempt(() => readFileSync(f, 'utf8')) ?? '').join('\n')
+  if (commits.length && commits.every((sha) => text.includes(sha))) return `commits on ${before.branch} in the worktree of another active change: ${names}'s own records name every new commit`
+  const now = recordStamps(root, before.changes)
+  const moved = Object.entries(before.records ?? {}).some(([c, files]) => Object.entries(files).some(([f, was]) => JSON.stringify(was) !== JSON.stringify(now[c]?.[f] ?? null)))
+  if (before.records && moved) return `commits on ${before.branch} in the worktree of another active change: ${names}'s own records advanced in the round`
+  return null
+}
+
+// Why a recorded checkout's move is foreign, or null when the round may have made it.
+function foreignReason(root, before, after) {
+  if (!before.branch || after.head === null || after.branch !== before.branch) return null
+  const git = gitIn(root)
+  if (!forward(git, before.head, after.head)) return null
+  if (before.changes?.length) return otherChangeReason(root, git, before, after)
+  if (before.main && after.head !== before.head && after.status === before.status) {
+    const branches = readBranches(root)
+    if (branches && isProtected(branches, before.branch) && fastForwards(git, before.head)) return `a fast-forward of ${before.branch} in the main checkout`
+  }
+  return null
 }
 
 function guardFile(root, change) {
@@ -47,7 +150,9 @@ export function snapshot(root, { change, targets, dispatches }) {
   const skip = new Set(targets.map(real))
   const watched = {}
   for (const c of [...checkouts(root), ...groupCheckouts(root)]) {
-    if (!skip.has(real(c.root))) watched[c.root] = state(c.root)
+    if (skip.has(real(c.root))) continue
+    const others = c.main ? [] : otherChanges(c.root, change)
+    watched[c.root] = { ...state(c.root), ...(c.main ? { main: true } : {}), ...(others.length ? { changes: others, records: recordStamps(c.root, others) } : {}) }
   }
   const file = guardFile(root, change)
   mkdirSync(dirname(file), { recursive: true })
@@ -64,6 +169,7 @@ export function compare(root, { change }) {
     throw new Error(`no snapshot for ${change}; run snapshot before the dispatch`)
   }
   const changed = []
+  const foreign = []
   for (const [path, before] of Object.entries(saved.watched)) {
     let after
     try {
@@ -71,9 +177,14 @@ export function compare(root, { change }) {
     } catch {
       after = { head: null, status: 'the checkout is gone' }
     }
-    if (after.head !== before.head || after.status !== before.status) changed.push({ root: path, before, after })
+    // A branch switch on one commit is a move too, where the snapshot recorded the branch.
+    const sameBranch = !('branch' in before) || after.branch === before.branch
+    if (after.head === before.head && after.status === before.status && sameBranch) continue
+    const reason = foreignReason(path, before, after)
+    if (reason) foreign.push({ root: path, reason, before, after })
+    else changed.push({ root: path, before, after })
   }
-  return { ok: changed.length === 0, ...(saved.dispatches ? { dispatches: saved.dispatches } : {}), targets: saved.targets, changed }
+  return { ok: changed.length === 0, ...(saved.dispatches ? { dispatches: saved.dispatches } : {}), targets: saved.targets, changed, foreign }
 }
 
 // Group worktrees are skipped when a phase resolves a change, but a dispatch must not touch a

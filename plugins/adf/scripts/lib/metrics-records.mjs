@@ -28,6 +28,7 @@ import { MAX_ATTEMPTS, parseGraph, parseName, sddDir } from './dispatch.mjs'
 import { ledgerPath, readLedger as parseLedger, unresolvedDebt } from './ledger.mjs'
 import { checkRecord, loadState, reviewDir } from './review-state.mjs'
 import { readTestRecord, TESTS_DIR } from './suite.mjs'
+import { readMarker, runMarker } from './suite-run.mjs'
 import { computeVerdict, verifyDir } from './verify.mjs'
 
 export const SEVERITY_MAP = { critical: 'CRITICAL', important: 'HIGH', minor: 'MEDIUM' }
@@ -164,7 +165,9 @@ export function readCompliance(root, change) {
 // ---------------------------------------------------------------- tests
 
 // A run fails on a non-zero or missing exit, a timeout, or a failed count; a run with no count
-// line is uncounted. A file that is no test-run record is listed, not counted.
+// line is uncounted. A file that is no test-run record is listed, not counted. `suiteRun`, when
+// the last whole-suite run's marker is done (lib/suite-run.mjs): its duration, and the idle time
+// from its end to the first read of its result, null while unread.
 export function readTests(root, change) {
   const dir = join(sddDir(root, change), TESTS_DIR)
   if (!existsSync(dir)) return absent(`no ${rel(change, `${TESTS_DIR}/`)}`)
@@ -180,6 +183,11 @@ export function readTests(root, change) {
     out.runs++
     if (record.exit !== 0 || record.timedOut || (record.counts?.fail ?? 0) > 0) out.failed++
     if (record.counts === null) out.uncounted++
+  }
+  const marker = readMarker(runMarker(root, change))
+  if (marker?.state === 'done' && Number.isInteger(marker.durationMs)) {
+    const idle = Date.parse(marker.readAt) - Date.parse(marker.endedAt)
+    out.suiteRun = { durationMs: marker.durationMs, idleMs: Number.isFinite(idle) ? Math.max(0, idle) : null }
   }
   return present(out)
 }

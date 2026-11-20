@@ -31,6 +31,7 @@ import { appendRecord, applyRound, readRecords, unresolvedDebt } from './ledger.
 import { sweepState } from './loop.mjs'
 import { DEFAULT_CAP, parsePlan, parseTaskItems, schedule, testFirst } from './plan.mjs'
 import { tickMessage } from './tasks.mjs'
+import { readMarker, readResult, runMarker } from './suite-run.mjs'
 import { gitIn } from './workspace.mjs'
 
 export const TEST_RECORD = '.apply-test-record.md'
@@ -155,6 +156,23 @@ export function applyStatus(root, change, { tracks = 'tasks.md', cap = DEFAULT_C
     round: round && { round: round.round, base: round.base, checks: round.checks, tasks: round.tasks, group: round.group, frozen: round.frozen },
     complete
   }
+}
+
+// The report of a complete apply reads the recorded whole-suite run's result (#29): its marker
+// must be done, for the commit the record ran on, and the report's read is recorded as the
+// result's first read when no `suite.mjs wait` made it. Returns the refusal, or null. A record
+// of no run (`not-run`) has no marker to read.
+export function suiteRunRefusal(root, change, status) {
+  const s = status.suite
+  if (!status.complete || s.state === 'absent' || s.state === 'not-run' || !s.commit) return null
+  const file = runMarker(root, change)
+  const marker = readMarker(file)
+  const same = marker?.commit && (marker.commit.startsWith(s.commit) || s.commit.startsWith(marker.commit))
+  if (marker?.state !== 'done' || !same) {
+    return `the whole-suite run of ${s.commit} has no done marker: wait for it with suite.mjs wait --change ${change}, or run the whole suite again if it died`
+  }
+  readResult(file, marker)
+  return null
 }
 
 // A handoff record written from the state: `merged` and `remaining` as they are, `blocked` every

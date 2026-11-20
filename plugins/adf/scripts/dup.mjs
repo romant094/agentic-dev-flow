@@ -9,6 +9,7 @@
 //                --reason <developer's reason> [--task <n>] [--root <change worktree>]
 //
 // --finding names the sweep's reply file (relative to --root) and --id the open finding S<n>
+// (R<k>-S<n> in apply round k)
 // (lib/loop.mjs sweepState); the file, line, `existing` and `why` are read from that finding of
 // the reply, so the finding's prose never passes through the shell. The explicit form gives them
 // as flags: --file is the finding's introduced file, --line its introduced line (none: the whole

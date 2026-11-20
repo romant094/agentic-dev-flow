@@ -2,11 +2,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setBranches } from '../lib/branches.mjs'
-import { addBaseCheck, addGroup, baseCheckPath, listGroups, mergeGroup, removeBaseCheck, removeGroup } from '../lib/groups.mjs'
+import { addBaseCheck, addGroup, baseCheckPath, groupState, listGroups, mergeGroup, removeBaseCheck, removeGroup } from '../lib/groups.mjs'
 import { compare, snapshot } from '../lib/guard.mjs'
 import { ignoreLocalDirs } from '../lib/host-files.mjs'
 import { initRegistry } from '../lib/registry.mjs'
@@ -51,6 +51,7 @@ function commitIn(dir, file, text) {
   writeFileSync(join(dir, file), text)
   git(dir, 'add', file)
   git(dir, 'commit', '-q', '-m', file)
+  return git(dir, 'rev-parse', 'HEAD')
 }
 
 test('find reads every checkout and reports the change where it lives', () => {
@@ -86,6 +87,30 @@ test('a group is made from the change branch at the main checkout, merged and re
   assert.throws(() => addGroup(change, { change: 'add-x', group: 0 }), /not a positive number/)
 })
 
+// #48: a group whose tasks commit nothing, such as a bench pass, merges as an empty merge commit.
+test('a group with no commit of its own merges as an empty merge commit and counts as merged', () => {
+  const { change } = host()
+  const bench = addGroup(change, { change: 'add-x', group: 1 })
+  const coded = addGroup(change, { change: 'add-x', group: 2 })
+  commitIn(coded.root, 'g2.txt', 'two\n')
+  assert.equal(mergeGroup(change, { change: 'add-x', group: 2 }).merged, true)
+  const tree = git(change, 'rev-parse', 'HEAD^{tree}')
+  const merged = mergeGroup(change, { change: 'add-x', group: 1 })
+  assert.deepEqual([merged.merged, merged.empty, merged.already], [true, true, false])
+  assert.equal(git(change, 'log', '-1', '--format=%s'), "Merge branch 'feat/add-x--group-1' into feat/add-x")
+  assert.deepEqual([git(change, 'rev-parse', 'HEAD^{tree}'), merged.firstParent], [tree, git(change, 'rev-parse', 'HEAD^1')])
+  assert.equal(git(change, 'status', '--porcelain', '--untracked-files=no'), '')
+  assert.deepEqual(groupState(change, 'add-x')(1), { merged: true, kept: true })
+  // Called again, it reports the same merge; then the group is removed like any merged group.
+  assert.deepEqual([mergeGroup(change, { change: 'add-x', group: 1 }).already, mergeGroup(change, { change: 'add-x', group: 1 }).mergeCommit], [true, merged.mergeCommit])
+  assert.equal(removeGroup(change, { change: 'add-x', group: 1 }).removed, bench.root)
+  // A group branch fast-forwarded into the change branch by hand moved since it was made: refused.
+  const hand = addGroup(change, { change: 'add-x', group: 3 })
+  commitIn(hand.root, 'g3.txt', 'three\n')
+  git(change, 'merge', '-q', '--ff-only', 'feat/add-x--group-3')
+  assert.throws(() => mergeGroup(change, { change: 'add-x', group: 3 }), /without a merge commit/)
+})
+
 test('a conflicting merge lists the files and stays in progress for the resolver', () => {
   const { change } = host()
   const one = addGroup(change, { change: 'add-x', group: 1 })
@@ -104,13 +129,67 @@ test('the guard passes a dispatch that wrote only in its target, and names any o
   const watched = snapshot(change, { change: 'add-x', targets: [group.root] }).watched.sort()
   assert.deepEqual(watched, [change, root].sort())
   commitIn(group.root, 'g.txt', 'g\n')
-  assert.deepEqual(compare(change, { change: 'add-x' }), { ok: true, targets: [group.root], changed: [] })
+  assert.deepEqual(compare(change, { change: 'add-x' }), { ok: true, targets: [group.root], changed: [], foreign: [] })
   writeFileSync(join(root, 'stray.txt'), 'x\n')
   const after = compare(change, { change: 'add-x' })
   assert.equal(after.ok, false)
   assert.deepEqual(after.changed.map((c) => c.root), [root])
   assert.throws(() => compare(change, { change: 'other' }), /no snapshot/)
   assert.throws(() => snapshot(change, { change: 'add-x', targets: [] }), /dispatch targets/)
+})
+
+// #27, #43: a move the round could not cause is reported as foreign, not as a change.
+test('the guard reports a commit in another change\'s worktree and a fast-forward of the main checkout as foreign', () => {
+  const { root, change } = host()
+  const other = create(root, { change: 'add-b', branch: 'feat/add-b', base: 'integration' }).root
+  mkdirSync(join(other, 'openspec/changes/add-b'), { recursive: true })
+  commitIn(other, 'openspec/changes/add-b/tasks.md', '- [ ] 1.1 b\n')
+  const records = join(other, '.superpowers', 'sdd', 'add-b')
+  mkdirSync(records, { recursive: true })
+  writeFileSync(join(records, 'ledger.jsonl'), '{"id":"session-1","kind":"session"}\n')
+  const stray = create(root, { change: 'fix-y', branch: 'fix/fix-y', base: 'integration' }).root
+  const round = () => snapshot(change, { change: 'add-x', targets: [change] })
+  const otherOf = (result) => result.foreign.find((f) => f.root === other)
+  // (b) The other change's session commits, and its reply naming the commit is recorded; a pull
+  // fast-forwards develop in the main checkout.
+  round()
+  const sha = commitIn(other, 'b.txt', 'b\n')
+  writeFileSync(join(records, 'attempts.jsonl'), `${JSON.stringify({ event: 'valid', name: 'T1 impl', result: { commits: [{ sha }] } })}\n`)
+  git(root, 'merge', '-q', '--ff-only', 'feat/add-b')
+  const named = compare(change, { change: 'add-x' })
+  assert.deepEqual([named.ok, named.changed], [true, []])
+  assert.deepEqual(named.foreign.map((f) => f.root).sort(), [other, root].sort())
+  assert.match(otherOf(named).reason, /add-b's own records name every new commit/)
+  assert.match(named.foreign.find((f) => f.root === root).reason, /fast-forward of develop/)
+  // (b) A commit its records do not name, while its records advanced: its session was at work.
+  round()
+  commitIn(other, 'c.txt', 'c\n')
+  writeFileSync(join(records, 'ledger.jsonl'), '{"id":"session-1","kind":"session"}\n{"id":"debt-1","kind":"debt"}\n')
+  const advanced = compare(change, { change: 'add-x' })
+  assert.equal(advanced.ok, true)
+  assert.match(otherOf(advanced).reason, /add-b's own records advanced/)
+  // (a) A commit the other change's records neither name nor follow: our dispatch made it.
+  round()
+  commitIn(other, 'd.txt', 'd\n')
+  const ours = compare(change, { change: 'add-x' })
+  assert.deepEqual([ours.ok, ours.changed.map((c) => c.root), ours.foreign], [false, [other], []])
+  // (c) An uncommitted edit there is never foreign, whatever its records do.
+  round()
+  writeFileSync(join(other, 'wip.txt'), 'w\n')
+  writeFileSync(join(records, 'ledger.jsonl'), '{"id":"session-2","kind":"session"}\n')
+  const edit = compare(change, { change: 'add-x' })
+  assert.deepEqual([edit.ok, edit.changed.map((c) => c.root)], [false, [other]])
+  rmSync(join(other, 'wip.txt'))
+  // A commit in the main checkout, a commit in a worktree of no change, and a branch switch in
+  // another change's worktree are not foreign: the round may have made them.
+  round()
+  commitIn(root, 'm.txt', 'm\n')
+  commitIn(stray, 's.txt', 's\n')
+  git(other, 'checkout', '-q', '-b', 'feat/elsewhere')
+  const caught = compare(change, { change: 'add-x' })
+  assert.equal(caught.ok, false)
+  assert.deepEqual(caught.changed.map((c) => c.root).sort(), [other, root, stray].sort())
+  assert.deepEqual(caught.foreign, [])
 })
 
 test('a worktree with no readable change is listed as unresolved, never dropped', () => {

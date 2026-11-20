@@ -78,6 +78,12 @@ export function addGroup(changeRoot, { change, group }, { core } = {}) {
 // made, by this call or by the resolver's commit, reports the merge commit and its first parent:
 // the range of the merge review. Called again once the resolver committed, it merges nothing and
 // reports the same pair, with `already` true.
+//
+// A group whose tasks committed nothing, such as a developer's bench pass (#48), has a branch that
+// never moved since addGroup made it: it is merged as an empty merge commit, HEAD's tree with the
+// group's tip as second parent and git's own subject, so groupState reads the group as merged. The
+// result says `empty: true`, and the empty range needs no merge review. A branch that moved and is
+// in the change branch without a merge commit (a fast-forward by hand) is still refused.
 export function mergeGroup(changeRoot, { change, group }) {
   const { git, branch, groupBranch } = names(changeRoot, change, group)
   if (attempt(git, 'rev-parse', '--verify', '--quiet', 'MERGE_HEAD')) {
@@ -89,8 +95,12 @@ export function mergeGroup(changeRoot, { change, group }) {
   if (!tip) throw new Error(`branch ${groupBranch} does not exist`)
   if (attempt(git, 'merge-base', '--is-ancestor', tip, 'HEAD') !== null) {
     const found = mergeOf(git, tip)
-    if (!found) throw new Error(`${groupBranch} is already in ${branch} without a merge commit; there is no merge to review`)
-    return { merged: true, already: true, into: branch, branch: groupBranch, commit: found.mergeCommit, ...found, conflicts: [], prepare: prepareMerged(changeRoot) }
+    if (found) return { merged: true, already: true, into: branch, branch: groupBranch, commit: found.mergeCommit, ...found, conflicts: [], ...(found.empty ? { empty: true } : {}), prepare: prepareMerged(changeRoot) }
+    if (!neverMoved(git, groupBranch)) throw new Error(`${groupBranch} is already in ${branch} without a merge commit; there is no merge to review`)
+    const firstParent = git('rev-parse', 'HEAD')
+    const empty = git('commit-tree', 'HEAD^{tree}', '-p', 'HEAD', '-p', tip, '-m', `Merge branch '${groupBranch}' into ${branch}`)
+    git('merge', '--ff-only', '--quiet', empty)
+    return { merged: true, already: false, empty: true, into: branch, branch: groupBranch, commit: empty, mergeCommit: empty, firstParent, conflicts: [], prepare: prepareMerged(changeRoot) }
   }
   try {
     git('merge', '--no-ff', '--no-edit', groupBranch)
@@ -110,14 +120,23 @@ function prepareMerged(changeRoot) {
   return { ok: p.ok, ran: p.ran, skipped: p.skipped, ...(p.error ? { error: p.error } : {}) }
 }
 
-// The merge commit on the change branch whose second parent is the group branch's tip.
+// The merge commit on the change branch whose second parent is the group branch's tip; `empty`
+// when it changed nothing (the tip was already in its first parent).
 function mergeOf(git, tip) {
   const rows = (attempt(git, 'log', '--merges', '--format=%H %P', 'HEAD') ?? '').split('\n').filter(Boolean)
   for (const row of rows) {
     const [mergeCommit, firstParent, ...others] = row.split(' ')
-    if (others.includes(tip)) return { mergeCommit, firstParent }
+    if (!others.includes(tip)) continue
+    const empty = attempt(git, 'merge-base', '--is-ancestor', tip, firstParent) !== null
+    return { mergeCommit, firstParent, ...(empty ? { empty: true } : {}) }
   }
   return null
+}
+
+// The group branch never moved since addGroup made it: its reflog holds its creation alone.
+function neverMoved(git, groupBranch) {
+  const rows = (attempt(git, 'reflog', 'show', '--format=%gs', `refs/heads/${groupBranch}`) ?? '').split('\n').filter(Boolean)
+  return rows.length === 1 && rows[0].startsWith('branch: Created from')
 }
 
 // Only a merged group is removed; a blocked group keeps its worktree and branch.

@@ -19,8 +19,9 @@ lands in them, if one depends on another. -->
 
 ## How to run the checks
 
-<!-- The commands that build, test and lint the project, and which of them a task's
-verification runs. -->
+<!-- The commands that install, build, test, lint, format and type-check the project, one per
+line, and which of them a task's verification runs. Every implementer and fixer prompt quotes
+these lines, and the agent runs them as written instead of guessing a command. -->
 
 ## Whole-suite command
 
@@ -37,6 +38,14 @@ quick task runs it from the change worktree on the files the change changed, eac
 and records the result; apply's whole-suite command stays the proof for any other change. Delete the section, or
 leave it empty, and a quick task asks for the command. /adf:init proposes a command and writes
 the one the developer confirms. -->
+
+## Failed-tests command
+
+<!-- Optional. The one command, in backticks, that runs only the tests it is given, with `{tests}`
+where their names go, for example `npx vitest run {tests}`. When the whole suite fails, the flow
+checks each failure on the change's base after the run; with this command it runs only the
+tests that failed, each name quoted, instead of the whole suite a second time. Delete the
+section, or leave it empty, to run the whole suite on the base. -->
 
 ## Fresh-run proof
 

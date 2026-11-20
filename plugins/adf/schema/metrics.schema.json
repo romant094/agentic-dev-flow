@@ -214,7 +214,13 @@
         "runs": { "$ref": "#/$defs/count" },
         "failed": { "$ref": "#/$defs/count" },
         "uncounted": { "$ref": "#/$defs/count" },
-        "unreadable": { "type": "array", "items": { "type": "string" } }
+        "unreadable": { "type": "array", "items": { "type": "string" } },
+        "suiteRun": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["durationMs", "idleMs"],
+          "properties": { "durationMs": { "$ref": "#/$defs/count" }, "idleMs": { "type": ["integer", "null"], "minimum": 0 } }
+        }
       }
     },
     "findings": {

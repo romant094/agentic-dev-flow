@@ -75,6 +75,7 @@ A refusal is a stop that changes nothing, or nothing that you must undo. A scrip
 | `the registry sets no branch policy, so the protected branches are unknown; run /adf:init.` | The registry has no `branches` key. | Run `/adf:init`. |
 | `Cannot apply this change yet. Missing artifacts: <ids>. Create them first. Run /adf:propose <change> to continue its artifacts up to the plan.` | An artifact that apply needs is not done. | Run `/adf:propose <change>`. |
 | `The plan names <n> thing(s) the tree does not hold; correct plan.md from planFindings, then run apply again.` | `plan.md` names a file or symbol that the tree does not hold. | Correct `plan.md`, then run `/adf:apply` again. |
+| `The change has <n> item(s) of tasks.md no plan task covers; revise plan.md from planFindings, then run apply again.` | An open item of `tasks.md` has no task in `plan.md`. This happens when a change is updated after its plan was written. | Add a plan task for each item that `planFindings` names, then run `/adf:apply` again. |
 | `Every task is complete; run /adf:verify next.` | No task is left. | Run `/adf:verify`. |
 | ``Every task is complete and openspec/changes/<change>/verify.md says Verdict: FAIL; open an apply round for the fix with plan.mjs reopen --change <change> --title "<the fix>" --task-file <file>, then run apply again.`` | Verify failed, and the plan has no open task. | Run `plan.mjs reopen` as the message says. |
 

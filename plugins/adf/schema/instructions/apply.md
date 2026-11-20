@@ -126,7 +126,10 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/guard.mjs" compare --change <change> --root 
 ```
 
 `ok` false means a dispatch wrote outside its worktree, into the main checkout, a sibling's
-worktree or another change's: STOP apply and show `changed`. Three times an implementer wrote
+worktree or another change's: STOP apply and show `changed`. `foreign` lists the moves the round
+could not cause, each with its `reason`: commits in the worktree of another active change that
+its own records name, or made while its records advanced, and a fast-forward of a protected
+branch in the main checkout. An uncommitted edit in another change's worktree always stops. They do not stop the round and need no deviation; name them in the report. Three times an implementer wrote
 where it was not sent, and nothing noticed but a refused merge and a crashed server. One
 snapshot is open at a time, so no orchestrator write (a tick, a merge) happens inside a round.
 
@@ -318,7 +321,7 @@ load beside `subagent-driven-development`:
   ```
 
   `accepted` and `dismissed` close the item; `fix` sends it into the fix loop, whose next prompt
-  lists it among the open findings. The last ruling of an id wins.
+  lists it among the open findings, a `U<n>` with its check. The last ruling of an id wins.
 - **Per task, the covering tests; once, the whole suite.** The whole suite runs once, at the end.
 - **One task, one commit,** also when the skill batches small same-shape tasks into one
   dispatch. A verification-only task, whose Commit step in `plan.md` says none, commits
@@ -362,7 +365,7 @@ It ticks the `tasks.md` item the plan task's back-reference names and commits it
 never a group's, so two groups never conflict over `tasks.md`, and committing at once leaves the
 change worktree clean for the next merge.
 
-<!-- part: groups | when a group's tasks are complete: work added during apply, a delta edited after propose, merging and pushing a group, wave 2 and a blocked group -->
+<!-- part: groups | when a group's tasks are complete: work added during apply, a delta edited after propose, a bench pass, merging and pushing a group, wave 2 and a blocked group -->
 **Work added during apply is recorded against the plan.**
 
 Every fix (a task's fix round, a merge fix, the final-review fix, the sweep's consolidation) is
@@ -388,6 +391,19 @@ the edit and commit `specs-base.json` with it; verify's `specs-base` check state
 node "${CLAUDE_PLUGIN_ROOT}/scripts/specs.mjs" base --change <change> --root <root>
 ```
 
+**A bench pass is ticked on its evidence.** A verification-only task whose check no agent can
+run, such as the developer's bench pass, has no implementer and no review. Ask the developer to
+run it, record what they report in a file in the change directory, such as
+`openspec/changes/<change>/bench-pass.md`, and tick the task on that file:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/tasks.mjs" tick --plan-task <N> --evidence <file> --change <change> --root <root> --commit
+```
+
+The script refuses a task whose Commit step does not say none, and an evidence file that is
+missing, empty or outside the change directory; `--commit` commits the file with the tick. No
+deviation and no tick by hand.
+
 **Merge a group as soon as every task of it is complete.**
 
 From the change worktree, never a group's:
@@ -397,6 +413,8 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/workspace.mjs" group-merge --change <change>
 ```
 
 - `merged` true: the merge is made, but not done; `package` is the merge-review package.
+- `merged` and `empty` true: the group's tasks committed nothing, a bench pass for example, and
+  the merge is an empty merge commit. There is nothing to review: run `group-finish` now.
 - `merged` false: `conflicts` lists the files and the merge is left in progress. Dispatch a
   scoped resolver, `fix` with `--group`, with the conflict list and both groups' tasks in the
   question. Any conflict goes to it, not only mechanical hunks. It completes the merge commit;
@@ -482,7 +500,7 @@ recorded, and the first consolidation waits for both.
 
 **A sweep finding naming both locations blocks apply from concluding.** It is the only
 maintainability finding that blocks; every other stays advisory. `apply-status.mjs` lists the
-open ones as `sweep.open`, each `S<n>` by its first report, `sweep p1`'s before `sweep p2`'s,
+open ones as `sweep.open`, each `S<n>` by its first report (in apply round k, `R<k>-S<n>`), `sweep p1`'s before `sweep p2`'s,
 and reports `complete` false while one is open; a later report at shifted lines keeps the id.
 Resolution is one of two things: consolidate on the existing code, or the developer dismisses
 the finding. A consolidation clears it when a later sweep no longer reports it and its
@@ -577,6 +595,18 @@ count from the round's start, so each starts anew. Then run verify again.
 node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" run --change <change> --root <root> --base-check --record --commit
 ```
 
+**Wait for the run by script.** Run it in the foreground, one Bash call with the maximum
+timeout, 600000 ms, when it fits in 10 minutes. Otherwise run it in the background, then wait:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/suite.mjs" wait --change <change> --root <root>
+```
+
+It returns the run's result once its marker says done; exit 3, `state` `running`, means call it
+again. Never schedule a wakeup (`ScheduleWakeup`, `CronCreate`), in any session of the flow: a
+pending wakeup keeps a headless session alive after its work is done. The report refuses until
+the recorded run's marker is done.
+
 It runs the `## Whole-suite command` of the project's planning guide, `openspec/planning.md`,
 uncached, with `<root>` as the working directory, its output to a file, never to your context.
 When the guide has a `## Fresh-run proof` line, a run whose output lacks it fails: it may be
@@ -584,7 +614,8 @@ cached.
 It is the whole suite, not the parts this change touched: this is the only point where a
 cross-group regression shows, since two groups green in isolation can merge red. A failure
 blocks unless it also fails on the change's base. `--base-check` checks that in a throwaway
-worktree of the base, never by stashing, made as `workspace.mjs base-check-add --change <change>
+worktree of the base, never by stashing, after the main run and, when the planning guide has a
+`## Failed-tests command`, on the failed tests alone, made as `workspace.mjs base-check-add --change <change>
 --root <root>` makes it and removed, never forced; `preExisting` failures are named as separate
 work and do not block, `newFailures` pause apply like any other implementation issue, and a
 base that cannot run the command blocks until the developer rules. When the runner's names

@@ -1,6 +1,6 @@
 // apply-status.mjs: where apply stands, from the graph, git, the ticks, the ledger and the record.
 import { strict as assert } from 'node:assert'
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { blockedNames, pushLine, suiteOf } from '../lib/apply-status.mjs'
@@ -86,7 +86,20 @@ test('every group merged and every task ticked renders the Complete block', () =
   }
   for (const item of ['1.1', '1.2', '2.1']) tick(change, item)
   writeFileSync(join(dir, '.apply-test-record.md'), '# Apply test record\n\n**Commit:** `abcdef1`\n**Ran on:** `abcdef1`\n**Result:** pass\n')
+  // #29: the report waits for the run's done marker, the one of the recorded run.
+  const marker = join(change, '.superpowers', 'sdd', 'add-x', 'suite', 'run.json')
+  const refused = run(['--change', 'add-x', '--root', change, '--report'])
+  assert.equal(refused.ok, false)
+  assert.match(refused.error, /the whole-suite run of abcdef1 has no done marker: wait for it with suite\.mjs wait/)
+  mkdirSync(join(marker, '..'), { recursive: true })
+  const done = { state: 'done', startedAt: '2026-11-20T10:00:00.000Z', endedAt: '2026-11-20T10:02:00.000Z', pid: 1, commit: 'abcdef1234567', exit: 0, timedOut: false, status: 'pass' }
+  writeFileSync(marker, JSON.stringify({ ...done, state: 'running' }))
+  assert.match(run(['--change', 'add-x', '--root', change, '--report']).error, /has no done marker/)
+  writeFileSync(marker, JSON.stringify({ ...done, commit: '1234567abcdef' }))
+  assert.match(run(['--change', 'add-x', '--root', change, '--report']).error, /has no done marker/)
+  writeFileSync(marker, JSON.stringify(done))
   const s = run(['--change', 'add-x', '--root', change, '--report'])
+  assert.ok(JSON.parse(readFileSync(marker, 'utf8')).readAt, 'the report reads the result and records when')
   assert.equal(s.complete, true)
   assert.equal(
     s.report,

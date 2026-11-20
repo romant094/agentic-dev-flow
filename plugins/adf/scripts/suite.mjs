@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // CLI over lib/suite.mjs. Prints one JSON object on stdout; exit 1 on a refusal, or when a run
-// is not a pass (a blocking failure, or the suite not run), exit 2 on a usage error.
+// is not a pass (a blocking failure, or the suite not run), exit 2 on a usage error, exit 3 when
+// `wait` returns with the run still going.
 //
 //   suite.mjs command [--root <dir>]
 //       the whole-suite command of <root>/openspec/planning.md: { file, command | null, reason? }
@@ -15,8 +16,10 @@
 //       { status, exit, counts, outputFile, failing, base?, environment?, preExisting,
 //         newFailures, blocking, comparison, ok, record?, section? }; status is pass, fail,
 //       pre-existing, environment-broken (with `environment.reason`) or not-run
-//       --base-check on a failure runs it again in a worktree of the change's base, then
-//       removes that worktree (never forced) to tell a pre-existing failure from a new one
+//       --base-check on a failure runs it again in a worktree of the change's base, after the
+//       main run, then removes that worktree (never forced) to tell a pre-existing failure from
+//       a new one; with the guide's `## Failed-tests command` it runs only the failed tests
+//       there, listed in `base.selected`
 //       --record writes openspec/changes/<change>/.apply-test-record.md, apply's final commit;
 //       --commit then commits that record alone through lib/commit.mjs with the message
 //       recordMessage(<change>), whatever the run's status but not-run, and pushes the change branch once
@@ -29,6 +32,15 @@
 //       --base-check were given), which review.mjs assemble requires when a fix landed
 //       --timeout stops each run after that many minutes (default 30, DEFAULT_TIMEOUT_MINUTES);
 //       a stopped run is cannotRun with timedOut: true, a failure and never a pass
+//       Each run writes its marker, .superpowers/sdd/<change>/suite/run.json (lib/suite-run.mjs):
+//       running while it runs, done with exit, timedOut, durationMs and status after
+//   suite.mjs wait --change <name> [--root <change worktree>] [--max-minutes <n>]
+//       blocks until the change's run marker is done and returns it at once, its first read
+//       recorded as `readAt` and the gap from the run's end as `idleMs`: { ok, state: "done",
+//       exit, timedOut, durationMs, status, startedAt, endedAt, readAt, idleMs, already }.
+//       After --max-minutes (default 9, under the Bash tool's 10-minute limit) it returns
+//       { ok: true, state: "running", ... } with exit 3: call it again. A run that died (its
+//       process gone, or past twice its timeout) or no recorded run is a refusal, exit 1
 //   suite.mjs covering --change <name> --name <dispatch name> --command "<cmd>" --worktree <dir>
 //                      [--root <change worktree>] [--timeout <minutes>]
 //       run the tests covering one dispatch's work in <dir>, through runOnce, its output to
@@ -46,10 +58,11 @@ import { commitPaths } from './lib/commit.mjs'
 import { pushChange } from './lib/groups.mjs'
 import { isMain } from './lib/main.mjs'
 import { defaultHome } from './lib/runtime.mjs'
+import { waitForRun, WAIT_MINUTES } from './lib/suite-run.mjs'
 import { DEFAULT_TIMEOUT_MINUTES, readCommand, recordMessage, recordName, runCovering, runSuite, SECTIONS, SET_MESSAGE, writeCommand } from './lib/suite.mjs'
 
 export const USAGE =
-  'usage: suite.mjs command [--root <dir>] | suite.mjs set --command "<cmd>" [--root <dir>] [--commit] | suite.mjs run --change <name> [--root <dir>] [--base-check] [--record [--commit]] [--section test-record|review] [--timeout <minutes>] | suite.mjs covering --change <name> --name <dispatch name> --command "<cmd>" --worktree <dir> [--root <dir>] [--timeout <minutes>]'
+  'usage: suite.mjs command [--root <dir>] | suite.mjs set --command "<cmd>" [--root <dir>] [--commit] | suite.mjs run --change <name> [--root <dir>] [--base-check] [--record [--commit]] [--section test-record|review] [--timeout <minutes>] | suite.mjs wait --change <name> [--root <dir>] [--max-minutes <n>] | suite.mjs covering --change <name> --name <dispatch name> --command "<cmd>" --worktree <dir> [--root <dir>] [--timeout <minutes>]'
 
 export class UsageError extends Error {}
 
@@ -60,7 +73,7 @@ function core() {
   return { coreContract: c.version, points: c.points, home: defaultHome() }
 }
 
-const VALUED = ['--change', '--root', '--command', '--section', '--timeout', '--name', '--worktree']
+const VALUED = ['--change', '--root', '--command', '--section', '--timeout', '--name', '--worktree', '--max-minutes']
 const FLAGS = ['--base-check', '--record', '--commit']
 
 function parse(argv) {
@@ -125,6 +138,13 @@ export function run(argv, { cwd = process.cwd() } = {}) {
       // that could not start has already stopped the commit.
       return { ...out, commit, push: pushChange(root, values.change, core()) }
     }
+    case 'wait': {
+      only(['change', 'max-minutes'])
+      if (!values.change) throw new UsageError('wait needs --change')
+      const minutes = values['max-minutes'] === undefined ? WAIT_MINUTES : Number(values['max-minutes'])
+      if (!(minutes > 0 && Number.isFinite(minutes))) throw new UsageError('--max-minutes must be a positive number of minutes')
+      return { ok: true, ...waitForRun(root, values.change, { maxMs: Math.round(minutes * 60000) }) }
+    }
     case 'covering': {
       only(['change', 'name', 'command', 'worktree', 'timeout'])
       for (const key of ['change', 'name', 'command', 'worktree']) if (!values[key]) throw new UsageError(`covering needs --${key}`)
@@ -145,7 +165,7 @@ if (isMain(import.meta.url)) {
   try {
     const result = run(process.argv.slice(2))
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
-    process.exitCode = result.ok === false ? 1 : 0
+    process.exitCode = result.ok === false ? 1 : result.state === 'running' ? 3 : 0
   } catch (error) {
     process.stdout.write(`${JSON.stringify({ ok: false, error: error.message, ...(error instanceof UsageError ? { usage: USAGE } : {}) })}\n`)
     process.exitCode = error instanceof UsageError ? 2 : 1

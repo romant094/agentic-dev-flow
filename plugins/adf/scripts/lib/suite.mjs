@@ -22,7 +22,11 @@
 // A failure with `baseCheck` is checked on the change's base: a detached worktree made by
 // addBaseCheck, the same command run there (its output to `<stamp>-base.txt`), then
 // removeBaseCheck, never forced; a refused removal is reported and the worktree left. A base-check
-// worktree whose provisioning refused runs nothing: the base check could not run.
+// worktree whose provisioning refused runs nothing: the base check could not run. The base run
+// starts once the main run has ended, never beside it (#54). When the guide has a
+// `## Failed-tests command`, a command line with `{tests}` where the names go, and the main run
+// named its failing tests, the base runs that command on those names alone, each quoted for the
+// platform shell, and its result lists them in `selected`; otherwise it runs the whole command.
 // Failing test identifiers are parsed from the output (TAP `not ok`, Jest/Vitest `FAIL` and
 // `✕`/`×` lines, the node:test spec reporter's `✖` lines but its `✖ failing tests:` header,
 // pytest `FAILED`, Go `--- FAIL:`). When both runs name their failures, a failure
@@ -56,11 +60,15 @@ import { mainCheckout } from './installed.mjs'
 import { PLANNING_FILE, sectionBounds as guideSectionBounds, sectionLine } from './guide.mjs'
 import { prepareWorktree } from './prepare.mjs'
 import { CHECKS, countsIn, RECORD_FILE, reconcileCounts, verifyDir } from './verify.mjs'
+import { quote } from './commit.mjs'
+import { marked, runMarker } from './suite-run.mjs'
 import { gitIn } from './workspace.mjs'
 
 export { PLANNING_FILE }
 export const HEADING = '## Whole-suite command'
 export const PROOF_HEADING = '## Fresh-run proof'
+export const FAILED_HEADING = '## Failed-tests command'
+export const TESTS_TOKEN = '{tests}'
 export const SECTION_ID = 'test-record'
 // `--section review`: the run after the review stage's last fix, always with the base check,
 // written to the review state as `review/suite.json` (lib/review-state.mjs reads it).
@@ -90,6 +98,18 @@ export const commandIn = (text) => sectionLine(text, HEADING, 'command')
 
 // The line the whole-suite output must contain to prove the run fresh; null without the section.
 export const proofIn = (text) => sectionLine(text, PROOF_HEADING, 'line')
+
+// The command that runs only the named tests, with TESTS_TOKEN where they go; null without the
+// section, or when its line holds no token.
+export const failedCommandIn = (text) => {
+  const line = sectionLine(text, FAILED_HEADING, 'command')
+  return line && line.includes(TESTS_TOKEN) ? line : null
+}
+
+export function readFailedCommand(root) {
+  const file = join(resolve(root), PLANNING_FILE)
+  return existsSync(file) ? failedCommandIn(readFileSync(file, 'utf8')) : null
+}
 
 export function readProof(root) {
   const file = join(resolve(root), PLANNING_FILE)
@@ -302,7 +322,9 @@ function environmentOf(headNotRun, base, data = ENVIRONMENT) {
   return reasons.length ? { ...out, reason: reasons.join('; ') } : null
 }
 
-function baseCheck(root, change, command, file, timeoutMinutes) {
+function baseCheck(root, change, command, file, timeoutMinutes, failing = []) {
+  const failed = failing.length ? readFailedCommand(root) : null
+  const run = failed ? failed.replaceAll(TESTS_TOKEN, failing.map(quote).join(' ')) : command
   let made
   try {
     made = addBaseCheck(root, { change })
@@ -312,10 +334,11 @@ function baseCheck(root, change, command, file, timeoutMinutes) {
   let base
   if (made.ok === false) base = { ref: made.ref, commit: made.commit, error: made.error, cannotRun: true }
   else {
-    const ran = runOnce(command, made.root, file, timeoutMinutes)
+    const ran = marked(runMarker(root, change, 'base'), { timeoutMs: Math.round(timeoutMinutes * 60000), commit: made.commit }, () => runOnce(run, made.root, file, timeoutMinutes))
     base = {
       ref: made.ref,
       commit: made.commit,
+      ...(failed ? { selected: failing } : {}),
       exit: ran.exit,
       outputFile: rel(root, file),
       failing: failingIn(ran.text),
@@ -388,6 +411,7 @@ export function recordText(result) {
     lines.push('## Base check', '')
     if (b.error && b.exit === undefined) lines.push(`- ${b.error}`)
     else lines.push(`- base \`${b.ref}\` at \`${b.commit}\`: exit ${b.exit}${b.cannotRun ? ' (the command could not run there)' : ''}, output \`${b.outputFile}\``)
+    if (b.selected) lines.push(`- the base ran the failed tests alone: ${b.selected.join(', ')}`)
     if (b.removed === false) lines.push(`- the base-check worktree was not removed: ${b.removeError}`)
     lines.push(`- comparison: ${result.comparison}`, '')
   }
@@ -480,56 +504,66 @@ export function runSuite(rootArg, { change, baseCheck: withBaseArg = false, reco
   const withBase = withBaseArg || section === REVIEW_SECTION
   const git = gitIn(root)
   const { command, reason } = readCommand(root)
-  let result
   if (command === null) {
-    result = { status: 'not-run', reason, command: null, now, exit: null, counts: [], outputFile: null, preExisting: [], newFailures: [], blocking: true }
-  } else {
-    prepared(root, root)
-    const commit = git('rev-parse', 'HEAD')
-    const dirty = dirtyPaths(git, change)
-    const stamp = stampOf(now)
-    const dir = join(root, '.superpowers', 'sdd', change, 'suite')
-    const file = join(dir, `${stamp}.txt`)
-    const ran = runOnce(command, root, file, timeoutMinutes)
-    const head = { failing: failingIn(ran.text) }
-    // A run whose output lacks the guide's proof line may be a replay: it blocks, and its
-    // failures are not compared with the base.
-    const proof = readProof(root)
-    const fresh = proof === null || ran.text.replace(ANSI, '').includes(proof)
-    let base
-    let verdict
-    let environment = null
-    if (!fresh) verdict = { preExisting: [], newFailures: head.failing, blocking: true, comparison: 'none' }
-    else if (ran.exit === 0) verdict = { preExisting: [], newFailures: [], blocking: false, comparison: 'none' }
-    else if (ran.cannotRun) verdict = { preExisting: [], newFailures: head.failing, blocking: true, comparison: 'none' }
-    else {
-      if (withBase) base = baseCheck(root, change, command, join(dir, `${stamp}-base.txt`), timeoutMinutes)
-      // A base broken by its environment measures nothing, so nothing on it is pre-existing.
-      environment = environmentOf(notRunIn(ran.text), base)
-      verdict = environment ? { preExisting: [], newFailures: [], blocking: true, comparison: 'none' } : compare(head, base)
-    }
-    const status = ran.exit === 0 && fresh ? 'pass' : environment ? ENVIRONMENT_BROKEN : verdict.blocking ? 'fail' : 'pre-existing'
-    result = {
-      status,
-      command,
-      now,
-      commit,
-      dirty,
-      exit: ran.exit,
-      ...(ran.signal ? { signal: ran.signal } : {}),
-      ...(ran.error ? { error: ran.error } : {}),
-      cannotRun: ran.cannotRun,
-      ...(ran.timedOut ? { timedOut: true, timeoutMinutes } : {}),
-      ...(proof === null ? {} : { fresh, ...(fresh ? {} : { reason: `the output lacks the fresh-run proof line \`${proof}\` of ${PLANNING_FILE}: the run may be cached` }) }),
-      counts: countLines(ran.text),
-      quote: ran.text.split(/\r?\n/).map((l) => l.trimEnd()).filter((l, i, all) => i < all.length - 1 || l).slice(-QUOTE_LINES),
-      outputFile: rel(root, file),
-      failing: head.failing,
-      ...(base ? { base } : {}),
-      ...(environment ? { environment } : {}),
-      ...verdict
-    }
+    return finish(root, change, { status: 'not-run', reason, command: null, now, exit: null, counts: [], outputFile: null, preExisting: [], newFailures: [], blocking: true }, { record, section })
   }
+  // The run marker spans the whole run, the base check and the record included, so a waiter
+  // reads the result only once the record is written (lib/suite-run.mjs).
+  const commit = git('rev-parse', 'HEAD')
+  const ended = (out) => ({ exit: out.exit, timedOut: Boolean(out.timedOut), status: out.status, outputFile: out.outputFile })
+  const timeoutMs = Math.round(timeoutMinutes * 60000)
+  return marked(runMarker(root, change), { timeoutMs, commit }, () => finish(root, change, measure(root, change, { command, commit, now, timeoutMinutes, withBase, git }), { record, section }), ended)
+}
+
+// The run itself, its base check and the verdict, under the marker runSuite holds.
+function measure(root, change, { command, commit, now, timeoutMinutes, withBase, git }) {
+  prepared(root, root)
+  const dirty = dirtyPaths(git, change)
+  const stamp = stampOf(now)
+  const dir = join(root, '.superpowers', 'sdd', change, 'suite')
+  const file = join(dir, `${stamp}.txt`)
+  const ran = runOnce(command, root, file, timeoutMinutes)
+  const head = { failing: failingIn(ran.text) }
+  // A run whose output lacks the guide's proof line may be a replay: it blocks, and its
+  // failures are not compared with the base.
+  const proof = readProof(root)
+  const fresh = proof === null || ran.text.replace(ANSI, '').includes(proof)
+  let base
+  let verdict
+  let environment = null
+  if (!fresh) verdict = { preExisting: [], newFailures: head.failing, blocking: true, comparison: 'none' }
+  else if (ran.exit === 0) verdict = { preExisting: [], newFailures: [], blocking: false, comparison: 'none' }
+  else if (ran.cannotRun) verdict = { preExisting: [], newFailures: head.failing, blocking: true, comparison: 'none' }
+  else {
+    if (withBase) base = baseCheck(root, change, command, join(dir, `${stamp}-base.txt`), timeoutMinutes, head.failing)
+    // A base broken by its environment measures nothing, so nothing on it is pre-existing.
+    environment = environmentOf(notRunIn(ran.text), base)
+    verdict = environment ? { preExisting: [], newFailures: [], blocking: true, comparison: 'none' } : compare(head, base)
+  }
+  const status = ran.exit === 0 && fresh ? 'pass' : environment ? ENVIRONMENT_BROKEN : verdict.blocking ? 'fail' : 'pre-existing'
+  return {
+    status,
+    command,
+    now,
+    commit,
+    dirty,
+    exit: ran.exit,
+    ...(ran.signal ? { signal: ran.signal } : {}),
+    ...(ran.error ? { error: ran.error } : {}),
+    cannotRun: ran.cannotRun,
+    ...(ran.timedOut ? { timedOut: true, timeoutMinutes } : {}),
+    ...(proof === null ? {} : { fresh, ...(fresh ? {} : { reason: `the output lacks the fresh-run proof line \`${proof}\` of ${PLANNING_FILE}: the run may be cached` }) }),
+    counts: countLines(ran.text),
+    quote: ran.text.split(/\r?\n/).map((l) => l.trimEnd()).filter((l, i, all) => i < all.length - 1 || l).slice(-QUOTE_LINES),
+    outputFile: rel(root, file),
+    failing: head.failing,
+    ...(base ? { base } : {}),
+    ...(environment ? { environment } : {}),
+    ...verdict
+  }
+}
+
+function finish(root, change, result, { record, section }) {
   const out = { ...result }
   delete out.quote
   delete out.now

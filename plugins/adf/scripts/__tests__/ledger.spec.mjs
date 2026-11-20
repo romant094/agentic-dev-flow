@@ -62,13 +62,18 @@ test('a ruling on an apply loop or sweep item names its subject, an id of that s
   assert.equal(buildRecord('ruling', { subject: 'final', finding: 'U1', as: 'dismissed', decision: 'checked on the bench' }).finding, 'U1')
   assert.equal(buildRecord('ruling', { subject: 'B', finding: 'F1', as: 'fix', decision: 'the plan is wrong' }).as, 'fix')
   assert.equal(buildRecord('ruling', { subject: 'sweep', finding: 'S2', as: 'dismissed', decision: 'the wire format differs' }).finding, 'S2')
+  // An apply round's sweep finding carries the round (#52).
+  assert.equal(buildRecord('ruling', { subject: 'sweep', finding: 'R2-S1', as: 'dismissed', decision: 'kept' }).finding, 'R2-S1')
+  assert.throws(() => buildRecord('ruling', { subject: 'sweep', finding: 'R2-S1', as: 'fix', decision: 'd' }), /consolidated/)
+  assert.throws(() => buildRecord('ruling', { subject: 'T2', finding: 'R2-S1', as: 'accepted', decision: 'd' }), /--finding must be a finding id/)
   assert.throws(() => buildRecord('ruling', { subject: 'T2', finding: 'F3', decision: 'd' }), /ruling needs --as/)
   assert.throws(() => buildRecord('ruling', { subject: 'task 2', finding: 'F3', as: 'accepted', decision: 'd' }), /--subject must be T<n>, a group letter, final or sweep/)
   assert.throws(() => buildRecord('ruling', { subject: 'T2', finding: 'S1', as: 'accepted', decision: 'd' }), /--finding must be a finding id such as F3/)
   assert.throws(() => buildRecord('ruling', { subject: 'sweep', finding: 'X1', as: 'dismissed', decision: 'd' }), /a sweep finding id such as S2/)
   // The sweep's subject also holds its consolidation's review loop.
   assert.equal(buildRecord('ruling', { subject: 'sweep', finding: 'F1', as: 'fix', decision: 'the export breaks a caller' }).finding, 'F1')
-  assert.throws(() => buildRecord('ruling', { subject: 'T2', finding: 'U1', as: 'fix', decision: 'd' }), /U1 is accepted or dismissed, never ruled fix/)
+  // An unverifiable item ruled fix enters the fix loop (#28); a sweep finding is consolidated.
+  assert.equal(buildRecord('ruling', { subject: 'T2', finding: 'U1', as: 'fix', decision: 'check it with a test' }).as, 'fix')
   assert.throws(() => buildRecord('ruling', { subject: 'sweep', finding: 'S1', as: 'fix', decision: 'd' }), /consolidated/)
   assert.throws(() => buildRecord('ruling', { subject: 'T2', finding: 'F3', as: 'accepted', decision: 'd', check: 'x' }), /ruling takes no --subject/)
 })

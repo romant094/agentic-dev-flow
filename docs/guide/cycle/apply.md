@@ -22,6 +22,7 @@ The command refuses, and changes nothing, in these cases:
 - The change root that the command resolves is the main checkout, or its branch is unnamed or protected.
 - The plan is missing. The message sends you to `/adf:propose <name>`.
 - The plan names a file or symbol that the tree does not hold. Correct `plan.md` first.
+- An open item of `tasks.md` has no plan task, for example after an update of the change. Revise `plan.md` first.
 - Every task is complete. The message sends you to `/adf:verify`.
 - Every task is complete and `verify.md` says `Verdict: FAIL`. Open an apply round with `plan.mjs reopen`.
 
@@ -44,12 +45,14 @@ It stops and reports in these cases:
 
 1. Provision the worktree with the hooks of the project's plugins.
 2. Show the progress: the tasks complete, the tasks remaining, and the test-first tasks.
-3. Dispatch an implementer and reviewers for each task, into the worktree of its task group. The main session never implements a task.
-4. Tick each task when its review loop is clean.
+3. Dispatch an implementer and reviewers for each task, into the worktree of its task group. The main session never implements a task. Each implementer and fixer prompt quotes the commands of `## How to run the checks` in `openspec/planning.md`, so the agent runs the project's own commands.
+4. Tick each task when its review loop is clean. A task with no code whose check only you can run, such as a bench pass, is ticked on the file that records your result.
 5. Merge each group when every task of it is complete. A scoped review checks the merge.
 6. Run the final review, the reuse sweep and the whole suite.
 
 A blocked group keeps its worktree and pauses apply. Independent groups continue.
+
+The tree guard checks after each round of dispatches that no other checkout moved. It does not stop for a move the round could not cause, and reports it as `foreign`: commits in the worktree of another change in flight that the records of that change name, or that came while those records advanced, and a fast-forward of a protected branch in the main checkout, such as a `git pull`. An uncommitted edit in the worktree of another change always stops apply.
 
 ## What it writes and commits
 
@@ -64,6 +67,10 @@ A blocked group keeps its worktree and pauses apply. Independent groups continue
 The command pushes the change branch through the forge plugin after each group merge and after the suite record. With no forge plugin, nothing is pushed. This is not an error.
 
 When the project has no whole-suite command in `openspec/planning.md`, the command finds one with you and records it.
+
+When the whole suite fails, the command runs it again on the base branch after the main run, to find the failures that are not new. When `openspec/planning.md` has a `## Failed-tests command` with `{tests}`, the command runs only the failed tests on the base.
+
+The command waits for the whole suite in the foreground, for up to 10 minutes. A longer suite runs in the background, and the command waits for it with `suite.mjs wait`, which returns the result as soon as the run ends. Each run writes a marker, `.superpowers/sdd/<name>/suite/run.json`, and the report refuses until the marker of the recorded run says done. The command never schedules a wakeup, so a headless session ends when its work ends.
 
 ## How it resumes
 
