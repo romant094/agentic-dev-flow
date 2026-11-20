@@ -9,6 +9,11 @@ import { isAbsolute, join, posix, relative, resolve } from 'node:path'
 export const PLUGIN_NAME = 'adf-english-check'
 export const REGISTRY_PATH = '.claude/adf-extensions.json'
 const DECLARATION_FILE = 'adf-extension.json'
+// The flow's directory in the host, the core's lib/layout.mjs ROOT: this plugin cannot import the
+// core and keeps its own copy, as it does for the registry path. Releases before v0.22.0 kept the
+// flow in LEGACY_FLOW_ROOT; the 0.8.2 config migration rewrites a config that names it.
+export const FLOW_ROOT = 'adf'
+export const LEGACY_FLOW_ROOT = 'openspec'
 
 // Cyrillic, CJK punctuation, ideographs, and fullwidth forms: the origin's four ranges.
 // Deliberately does not match em dashes, arrows or typographic quotes, which are fine in
@@ -16,10 +21,10 @@ const DECLARATION_FILE = 'adf-extension.json'
 export const FOREIGN = /[\u0400-\u04ff\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]/
 
 export const DEFAULT_CONFIG = Object.freeze({
-  include: ['openspec/changes/**', 'openspec/specs/**'],
+  include: [`${FLOW_ROOT}/changes/**`, `${FLOW_ROOT}/specs/**`],
   // A plan quotes code and fixtures verbatim; `**` also covers archive/<date>-<name>/plan.md,
   // so archiving, which moves the file without changing a byte, does not change the verdict.
-  exclude: ['openspec/changes/**/plan.md'],
+  exclude: [`${FLOW_ROOT}/changes/**/plan.md`],
   extensions: ['md', 'mjs', 'yaml', 'yml', 'json']
 })
 
@@ -228,20 +233,20 @@ export const CORE_COMMIT_SCRIPTS = {
   'tasks.mjs': (args) => {
     const change = optionValues(args, '--change')[0]
     if (args[0] !== 'tick' || !args.includes('--commit') || !change) return null
-    return [`openspec/changes/${change}/tasks.md`, `openspec/changes/${change}/plan.md`]
+    return [`${FLOW_ROOT}/changes/${change}/tasks.md`, `${FLOW_ROOT}/changes/${change}/plan.md`]
   },
   // propose.mjs commit [--change <name>]: the change directory; without --change the one
   // active change, which the hook cannot name, so every change directory.
   'propose.mjs': (args) => {
     if (args[0] !== 'commit') return null
     const change = optionValues(args, '--change')[0]
-    return [change ? `openspec/changes/${change}` : 'openspec/changes']
+    return [change ? `${FLOW_ROOT}/changes/${change}` : `${FLOW_ROOT}/changes`]
   },
   // verify.mjs assemble --change <name> --commit: the record; verify.mjs skill-edit: the
   // host's skills, the only paths it commits.
   'verify.mjs': (args) => {
     const change = optionValues(args, '--change')[0]
-    if (args[0] === 'assemble' && args.includes('--commit') && change) return [`openspec/changes/${change}/verify.md`]
+    if (args[0] === 'assemble' && args.includes('--commit') && change) return [`${FLOW_ROOT}/changes/${change}/verify.md`]
     if (args[0] === 'skill-edit') return ['.claude/skills']
     return null
   },
@@ -250,12 +255,12 @@ export const CORE_COMMIT_SCRIPTS = {
   'suite.mjs': (args) => {
     if (!args.includes('--commit')) return null
     const change = optionValues(args, '--change')[0]
-    if (args[0] === 'run' && args.includes('--record') && change) return [`openspec/changes/${change}/.apply-test-record.md`]
-    if (args[0] === 'set') return ['openspec/settings.json']
+    if (args[0] === 'run' && args.includes('--record') && change) return [`${FLOW_ROOT}/changes/${change}/.apply-test-record.md`]
+    if (args[0] === 'set') return [`${FLOW_ROOT}/settings.json`]
     return null
   },
   // settings.mjs set --key <k> --value <json> --commit: the flow's settings.
-  'settings.mjs': (args) => (args[0] === 'set' && args.includes('--commit') ? ['openspec/settings.json'] : null),
+  'settings.mjs': (args) => (args[0] === 'set' && args.includes('--commit') ? [`${FLOW_ROOT}/settings.json`] : null),
   // dup.mjs mark --file <path> --commit: the marked file.
   'dup.mjs': (args) => (args[0] === 'mark' && args.includes('--commit') ? optionValues(args, '--file') : null),
   // review.mjs assemble --change <name> --commit: the record; review.mjs mark --file <path>
@@ -263,7 +268,7 @@ export const CORE_COMMIT_SCRIPTS = {
   'review.mjs': (args) => {
     if (!args.includes('--commit')) return null
     const change = optionValues(args, '--change')[0]
-    if (args[0] === 'assemble' && change) return [`openspec/changes/${change}/review.md`]
+    if (args[0] === 'assemble' && change) return [`${FLOW_ROOT}/changes/${change}/review.md`]
     if (args[0] === 'mark') return optionValues(args, '--file')
     return null
   },
@@ -273,7 +278,7 @@ export const CORE_COMMIT_SCRIPTS = {
   // (`.`); archive refuses any uncommitted file there that it did not write.
   'archive.mjs': (args) => {
     const change = optionValues(args, '--change')[0]
-    if (args[0] === 'commit-specs' && change) return [`openspec/changes/${change}`, 'openspec/changes/archive', 'openspec/specs']
+    if (args[0] === 'commit-specs' && change) return [`${FLOW_ROOT}/changes/${change}`, `${FLOW_ROOT}/changes/archive`, `${FLOW_ROOT}/specs`]
     if (args[0] === 'commit-memory') return ['.']
     return null
   },
@@ -282,7 +287,7 @@ export const CORE_COMMIT_SCRIPTS = {
   'plan.mjs': (args) => {
     if (args[0] !== 'added' || !args.includes('--commit')) return null
     const change = optionValues(args, '--change')[0]
-    return [change ? `openspec/changes/${change}/plan.md` : 'openspec/changes']
+    return [change ? `${FLOW_ROOT}/changes/${change}/plan.md` : `${FLOW_ROOT}/changes`]
   },
   // retro.mjs record --root <retro worktree>: the retrospective's report and sidecar. The
   // hook resolves them under --root, so the run names the retro worktree, where they are.

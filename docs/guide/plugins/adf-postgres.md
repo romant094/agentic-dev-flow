@@ -63,7 +63,7 @@ An example, for a project whose Postgres runs in the Docker container `db` and w
 
 ## Order in the registry
 
-The env file must be in the worktree before this plugin runs. The core copies the files that the key `worktreeCopies` of the settings names. This plugin only rewrites the copy. It refuses a missing copy with `the core's ## Worktree copies must name <file>`.
+The env file must be in the worktree before this plugin runs. The core copies the files that the key `worktreeCopies` of the settings names. This plugin only rewrites the copy. It refuses a missing copy with `the core's settings must list <file> in worktreeCopies (adf/settings.json)`.
 
 Put this plugin after `adf-npm-workspaces` and before `adf-prisma`. The database must exist before `adf-prisma` runs `migrate deploy` against the URL that this plugin wrote.
 

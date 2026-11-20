@@ -1,6 +1,7 @@
 <!-- sources:
 - plugins/adf-english-check/scripts/*.mjs
 - plugins/adf-english-check/scripts/lib/*.mjs
+- plugins/adf-english-check/scripts/migrations/*.mjs
 - plugins/adf-english-check/adf-extension.json
 - plugins/adf-english-check/hooks/**
 -->
@@ -42,13 +43,15 @@ The `config` object of the entry in `.claude/adf-extensions.json`:
 
 | Key | Meaning | Default |
 |---|---|---|
-| `include` | globs of repository-relative paths in scope | `openspec/changes/**`, `openspec/specs/**` |
-| `exclude` | globs taken out of scope; an exclusion wins over an inclusion | `openspec/changes/**/plan.md` |
+| `include` | globs of repository-relative paths in scope | `adf/changes/**`, `adf/specs/**` |
+| `exclude` | globs taken out of scope; an exclusion wins over an inclusion | `adf/changes/**/plan.md` |
 | `extensions` | file extensions read, without the dot | `md`, `mjs`, `yaml`, `yml`, `json` |
 
 A key the configuration sets replaces that default; a key it does not set keeps it. In a glob, `**` spans directories, and `a/**/b` also matches `a/b`. The characters `*` and `?` stay inside one path segment.
 
-The default exclusion exempts a change's `plan.md`, also after archive moves it under `openspec/changes/archive/<date>-<name>/`. A plan quotes code and fixtures verbatim.
+The default exclusion exempts a change's `plan.md`, also after archive moves it under `adf/changes/archive/<date>-<name>/`. A plan quotes code and fixtures verbatim.
+
+Releases before v0.22.0 kept the flow in `openspec/`, and the defaults named `openspec/`. The config migration `0.8.2` rewrites each glob of `include` and `exclude` that starts with `openspec/` to start with `adf/`. `/adf:update` runs it when the plugin moves past 0.8.1. Any other glob stays as it is.
 
 ## When the hook runs
 
@@ -78,18 +81,18 @@ Some core scripts run `git commit` themselves, out of the command line's sight. 
 | Script | Commits | Files checked |
 |---|---|---|
 | `commit.mjs --root <r> --only <path> ... --message <m>` | always | the staged, modified and untracked files under each `--only` path |
-| `tasks.mjs tick ... --change <name> --commit` | with `--commit` | `openspec/changes/<name>/tasks.md` and its `plan.md` |
-| `propose.mjs commit [--change <name>]` | always | `openspec/changes/<name>/`; without `--change`, every change directory |
-| `verify.mjs assemble --change <name> --commit` | with `--commit` | `openspec/changes/<name>/verify.md` |
+| `tasks.mjs tick ... --change <name> --commit` | with `--commit` | `adf/changes/<name>/tasks.md` and its `plan.md` |
+| `propose.mjs commit [--change <name>]` | always | `adf/changes/<name>/`; without `--change`, every change directory |
+| `verify.mjs assemble --change <name> --commit` | with `--commit` | `adf/changes/<name>/verify.md` |
 | `verify.mjs skill-edit ...` | always | `.claude/skills/`, in scope only when the registry includes it; with `--diff-file`, also the lines the diff adds, which are not in the files yet |
-| `suite.mjs run --change <name> --record --commit` | with `--commit` | `openspec/changes/<name>/.apply-test-record.md` |
-| `suite.mjs set --command <c> --commit` | with `--commit` | `openspec/settings.json` |
-| `settings.mjs set --key <k> --value <json> --commit` | with `--commit` | `openspec/settings.json` |
+| `suite.mjs run --change <name> --record --commit` | with `--commit` | `adf/changes/<name>/.apply-test-record.md` |
+| `suite.mjs set --command <c> --commit` | with `--commit` | `adf/settings.json` |
+| `settings.mjs set --key <k> --value <json> --commit` | with `--commit` | `adf/settings.json` |
 | `dup.mjs mark --file <path> ... --commit` | with `--commit` | the `--file` path |
-| `review.mjs assemble --change <name> --commit` | with `--commit` | `openspec/changes/<name>/review.md` |
+| `review.mjs assemble --change <name> --commit` | with `--commit` | `adf/changes/<name>/review.md` |
 | `review.mjs mark --file <path> ... --commit` | with `--commit` | the `--file` path |
-| `plan.mjs added [--change <name>] ... --commit` | with `--commit` | `openspec/changes/<name>/plan.md`; without `--change`, every change directory |
-| `archive.mjs commit-specs --change <name>` | always | `openspec/changes/<name>/`, `openspec/changes/archive/` and `openspec/specs/` |
+| `plan.mjs added [--change <name>] ... --commit` | with `--commit` | `adf/changes/<name>/plan.md`; without `--change`, every change directory |
+| `archive.mjs commit-specs --change <name>` | always | `adf/changes/<name>/`, `adf/changes/archive/` and `adf/specs/` |
 | `archive.mjs commit-memory --change <name>` | always | every uncommitted file; the hook cannot read where the knowledge base and the debt tree are, and archive refuses any uncommitted file there that it did not write |
 | `update.mjs commit --worktree <w> --to <tag>` | always | the `written` and `manual` files of the record `<w>/.adf/update-<version>.json`, under `<w>` |
 | `update.mjs apply ...` | with no conflict and no manual file | none: it commits the release's templates and text merged from files already checked, and writes them only after the hook runs |

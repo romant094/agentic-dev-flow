@@ -1,5 +1,6 @@
 {
   "name": "adf-english-check",
   "contract": "1.1",
-  "provides": {}
+  "provides": {},
+  "migrations": [{ "version": "0.8.2", "script": "scripts/migrations/0.8.2.mjs" }]
 }
