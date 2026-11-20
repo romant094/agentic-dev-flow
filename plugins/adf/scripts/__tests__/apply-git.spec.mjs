@@ -2,7 +2,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setBranches } from '../lib/branches.mjs'
@@ -51,6 +51,7 @@ function commitIn(dir, file, text) {
   writeFileSync(join(dir, file), text)
   git(dir, 'add', file)
   git(dir, 'commit', '-q', '-m', file)
+  return git(dir, 'rev-parse', 'HEAD')
 }
 
 test('find reads every checkout and reports the change where it lives', () => {
@@ -143,20 +144,45 @@ test('the guard reports a commit in another change\'s worktree and a fast-forwar
   const other = create(root, { change: 'add-b', branch: 'feat/add-b', base: 'integration' }).root
   mkdirSync(join(other, 'openspec/changes/add-b'), { recursive: true })
   commitIn(other, 'openspec/changes/add-b/tasks.md', '- [ ] 1.1 b\n')
+  const records = join(other, '.superpowers', 'sdd', 'add-b')
+  mkdirSync(records, { recursive: true })
+  writeFileSync(join(records, 'ledger.jsonl'), '{"id":"session-1","kind":"session"}\n')
   const stray = create(root, { change: 'fix-y', branch: 'fix/fix-y', base: 'integration' }).root
-  snapshot(change, { change: 'add-x', targets: [change] })
-  // Another session commits in its change's worktree, and edits there; a pull fast-forwards develop.
-  commitIn(other, 'b.txt', 'b\n')
-  writeFileSync(join(other, 'wip.txt'), 'w\n')
+  const round = () => snapshot(change, { change: 'add-x', targets: [change] })
+  const otherOf = (result) => result.foreign.find((f) => f.root === other)
+  // (b) The other change's session commits, and its reply naming the commit is recorded; a pull
+  // fast-forwards develop in the main checkout.
+  round()
+  const sha = commitIn(other, 'b.txt', 'b\n')
+  writeFileSync(join(records, 'attempts.jsonl'), `${JSON.stringify({ event: 'valid', name: 'T1 impl', result: { commits: [{ sha }] } })}\n`)
   git(root, 'merge', '-q', '--ff-only', 'feat/add-b')
-  const after = compare(change, { change: 'add-x' })
-  assert.deepEqual([after.ok, after.changed], [true, []])
-  assert.deepEqual(after.foreign.map((f) => f.root).sort(), [other, root].sort())
-  assert.match(after.foreign.find((f) => f.root === other).reason, /another active change: add-b/)
-  assert.match(after.foreign.find((f) => f.root === root).reason, /fast-forward of develop/)
+  const named = compare(change, { change: 'add-x' })
+  assert.deepEqual([named.ok, named.changed], [true, []])
+  assert.deepEqual(named.foreign.map((f) => f.root).sort(), [other, root].sort())
+  assert.match(otherOf(named).reason, /add-b's own records name every new commit/)
+  assert.match(named.foreign.find((f) => f.root === root).reason, /fast-forward of develop/)
+  // (b) A commit its records do not name, while its records advanced: its session was at work.
+  round()
+  commitIn(other, 'c.txt', 'c\n')
+  writeFileSync(join(records, 'ledger.jsonl'), '{"id":"session-1","kind":"session"}\n{"id":"debt-1","kind":"debt"}\n')
+  const advanced = compare(change, { change: 'add-x' })
+  assert.equal(advanced.ok, true)
+  assert.match(otherOf(advanced).reason, /add-b's own records advanced/)
+  // (a) A commit the other change's records neither name nor follow: our dispatch made it.
+  round()
+  commitIn(other, 'd.txt', 'd\n')
+  const ours = compare(change, { change: 'add-x' })
+  assert.deepEqual([ours.ok, ours.changed.map((c) => c.root), ours.foreign], [false, [other], []])
+  // (c) An uncommitted edit there is never foreign, whatever its records do.
+  round()
+  writeFileSync(join(other, 'wip.txt'), 'w\n')
+  writeFileSync(join(records, 'ledger.jsonl'), '{"id":"session-2","kind":"session"}\n')
+  const edit = compare(change, { change: 'add-x' })
+  assert.deepEqual([edit.ok, edit.changed.map((c) => c.root)], [false, [other]])
+  rmSync(join(other, 'wip.txt'))
   // A commit in the main checkout, a commit in a worktree of no change, and a branch switch in
   // another change's worktree are not foreign: the round may have made them.
-  snapshot(change, { change: 'add-x', targets: [change] })
+  round()
   commitIn(root, 'm.txt', 'm\n')
   commitIn(stray, 's.txt', 's\n')
   git(other, 'checkout', '-q', '-b', 'feat/elsewhere')

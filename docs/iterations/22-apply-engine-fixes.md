@@ -65,8 +65,8 @@ before the iteration began, and the rest during it.
   1. A move in a worktree that belongs to another active change: the worktree holds a change
      directory under `openspec/changes/` other than the guarded change, and its branch is the
      same branch it was at the snapshot. Its HEAD may only have moved forward (the new HEAD
-     descends from the old one); its status may differ, since the session that drives that
-     change edits files there. Whichever session drives it does not matter.
+     descends from the old one). (Revised below: its status may not differ, and the commits
+     need proof.)
   2. A fast-forward of a protected or integration branch in the main checkout: the same branch,
      the new HEAD descends from the old one, and the status is unchanged.
   A move in a dispatch target is never watched. Any other move still fails: a branch switch, a
@@ -94,6 +94,19 @@ before the iteration began, and the rest during it.
 
 Decided during the iteration:
 
+- **#27, #43, revised by the developer (2026-11-20): isolation stays.** In another active
+  change's worktree an uncommitted edit is never foreign: it fails the round, as before #43. New
+  commits on the same branch, the status unchanged, are foreign only with proof that the other
+  change's session made them. The strongest form: every new commit is named in that change's own
+  records, `.superpowers/sdd/<other>/attempts.jsonl` or `ledger.jsonl` in its worktree. An
+  accepted `impl` or `fix` reply names its commits there (`result.commits[].sha`, written by
+  `dispatch.mjs reply`), so an implementer's commit is proven once its reply is recorded. The
+  records do not name every commit of the flow: a tick, a group merge, a plan or record commit is
+  named by no record. So the fallback applies when the first form fails: the snapshot records the
+  size and the time of those two files, and the commits are foreign when either changed by the
+  compare. Without either proof the round fails. Known limit of the fallback: a commit our
+  dispatch makes in that worktree while that change's own session writes its records in the same
+  round passes as foreign. The main-checkout rule is unchanged.
 - **#27, #43.** The main checkout's fast-forward is read from its HEAD reflog: every entry since
   the snapshot's HEAD says `Fast-forward` (`git pull`, `git merge --ff-only`). A commit made in the
   main checkout also moves HEAD forward, and the reflog is what tells the two apart. A branch

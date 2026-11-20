@@ -52,7 +52,7 @@ It stops and reports in these cases:
 
 A blocked group keeps its worktree and pauses apply. Independent groups continue.
 
-The tree guard checks after each round of dispatches that no other checkout moved. It does not stop for a move the round could not cause: a commit in the worktree of another change in flight, from your own session or another, and a fast-forward of a protected branch in the main checkout, such as a `git pull`. It reports these moves as `foreign`.
+The tree guard checks after each round of dispatches that no other checkout moved. It does not stop for a move the round could not cause, and reports it as `foreign`: commits in the worktree of another change in flight that the records of that change name, or that came while those records advanced, and a fast-forward of a protected branch in the main checkout, such as a `git pull`. An uncommitted edit in the worktree of another change always stops apply.
 
 ## What it writes and commits
 

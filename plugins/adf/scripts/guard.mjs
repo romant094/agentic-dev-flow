@@ -10,9 +10,10 @@
 //       { dispatches, targets, watched }
 //   guard.mjs compare --change <name> [--root <change worktree>]
 //       after it: every recorded checkout must be unchanged: { ok, dispatches, targets, changed,
-//       foreign }; a move the round could not cause (a commit in another active change's
-//       worktree, a fast-forward of a protected branch in the main checkout) is in `foreign`,
-//       with its `reason`, and does not make `ok` false
+//       foreign }; a move the round could not cause (commits in another active change's
+//       worktree that its own records name or made while they advanced, a fast-forward of a
+//       protected branch in the main checkout) is in `foreign`, with its `reason`, and does not
+//       make `ok` false
 import { compare, snapshot, targetsOf } from './lib/guard.mjs'
 import { isMain } from './lib/main.mjs'
 
